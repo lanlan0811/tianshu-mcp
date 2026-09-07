@@ -116,6 +116,14 @@ export class TaskStore {
     await this.writeSnapshot(meta);
   }
 
+  /** cancel_requested 事件 + cancelReason 落盘（供后续终态判定 cancelled vs interrupted） */
+  async markCancelRequested(meta: TaskMeta, reason?: string): Promise<void> {
+    meta.cancelReason = reason;
+    meta.updatedAt = nowIso();
+    await this.appendEvent(meta.taskId, "cancel_requested", meta.status, reason ? `收到取消请求：${reason}` : "收到取消请求");
+    await this.writeSnapshot(meta);
+  }
+
   /* ---------- 报告 ---------- */
   async saveReport(taskId: string, report: VerifyReport): Promise<void> {
     await mkdirp(this.dir(taskId));

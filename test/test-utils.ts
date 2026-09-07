@@ -20,7 +20,7 @@ const THIS_DIR = path.dirname(fileURLToPath(import.meta.url));
 export const FIXTURE_DIR = path.join(THIS_DIR, "stub-agent", "fixture");
 export const STUB_SCRIPT = path.join(THIS_DIR, "stub-agent", "stub-agent.mjs");
 
-export type Playbook = "good" | "fix-on-first" | "never";
+export type Playbook = "good" | "fix-on-first" | "never" | "sleep";
 
 export async function makeTmpRoot(tag: string): Promise<string> {
   const root = path.join(os.tmpdir(), `tianshu-mcp-test-${tag}-${randomBytes(4).toString("hex")}`);
@@ -34,7 +34,7 @@ function execGit(cwd: string, args: string[]): void {
 }
 
 /** 复制 fixture 为一个独立 git 仓库项目（含初始 commit 基线） */
-export async function makeGitProject(playbook: Playbook): Promise<string> {
+export async function makeGitProject(playbook: Playbook, extra?: { sleepMs?: number }): Promise<string> {
   const tmp = await makeTmpRoot("proj");
   await fsp.mkdir(path.join(tmp, ".tianshu-mcp"), { recursive: true });
   // 复制 fixture 文件（不含 .git 等）
@@ -48,9 +48,18 @@ export async function makeGitProject(playbook: Playbook): Promise<string> {
       await fsp.copyFile(s, d);
     }
   }
-  await fsp.writeFile(path.join(tmp, ".tianshu-mcp", "playbook.json"), JSON.stringify({ playbook }, null, 2), "utf8");
+  await fsp.writeFile(
+    path.join(tmp, ".tianshu-mcp", "playbook.json"),
+    JSON.stringify({ playbook, ...(extra?.sleepMs ? { sleepMs: extra.sleepMs } : {}) }, null, 2),
+    "utf8",
+  );
   await gitInitAndCommit(tmp);
   return tmp;
+}
+
+/** 修改已有项目的 playbook 配置（供中途换剧本/加 sleep） */
+export async function writePlaybook(projectPath: string, cfg: { playbook: string; sleepMs?: number }): Promise<void> {
+  await fsp.writeFile(path.join(projectPath, ".tianshu-mcp", "playbook.json"), JSON.stringify(cfg, null, 2), "utf8");
 }
 
 export async function gitInitAndCommit(projectPath: string): Promise<void> {

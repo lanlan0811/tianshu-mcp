@@ -69,7 +69,7 @@ export class TaskOrchestrator {
       const maxRounds = meta.autoFixRounds;
 
       for (;;) {
-        if (this.aborted()) return this.interrupted();
+        if (this.aborted()) return this.abortTerminal();
         await store.updateStatus(meta, "running", `第 ${round} 轮 agent 执行`, "started");
         const ctx = this.deps.buildCtx(meta, round, feedback);
         const runRes = await this.runAgentOnce(ctx, resolved);
@@ -82,7 +82,7 @@ export class TaskOrchestrator {
           return this.finish("failed", "timeout", `任务超时（${meta.taskTimeoutMs}ms），进程树已终止。日志 ${runRes.logFile}`);
         }
         if (runRes.killed) {
-          return this.interrupted();
+          return this.abortTerminal();
         }
         if (!runRes.ok && !meta.autoVerify) {
           return this.finish("failed", "agent_failed", `agent 执行失败（exit=${runRes.exitCode ?? "n/a"}）。日志 ${runRes.logFile}`);
@@ -101,6 +101,7 @@ export class TaskOrchestrator {
         meta.changedFiles = verdict.touchedFiles;
         meta.diffstat = verdict.diffstat;
 
+        if (this.aborted()) return this.abortTerminal(); // 验收期间被取消：进入终态，不进入返修
         if (verdict.passed) {
           return this.finish("succeeded", null, verdict.summary);
         }
@@ -133,12 +134,27 @@ export class TaskOrchestrator {
     return this.signal?.aborted ?? false;
   }
 
-  private interrupted(): OrchestrateResult {
-    if (!this.done) {
-      this.done = true;
-      this.meta.lastMessage = "任务已中止（cancel 或 server 退出）。";
+  /**
+   * 取消/中断的终态落盘：cancel_requested → cancelled（持久化 errorType/cancelReason/finishedAt）；
+   * 无 cancel_requested（如 server 关闭或未显式取消的 abort）→ interrupted。
+   * 由 orchestrator 在子进程真正关闭后调用，避免只返回游离 status。
+   */
+  private async abortTerminal(): Promise<OrchestrateResult> {
+    if (this.done) return { status: this.meta.status, meta: this.meta, reason: this.meta.lastMessage };
+    this.done = true;
+    const meta = this.meta;
+    const hadCancelRequest = Boolean(meta.cancelReason) || meta.status === "queued";
+    const isCancelled = hadCancelRequest;
+    if (isCancelled) {
+      meta.errorType = "cancelled";
+      meta.lastMessage = meta.cancelReason ? `已取消：${meta.cancelReason}` : "已取消";
+      await this.deps.store.updateStatus(meta, "cancelled", meta.lastMessage);
+    } else {
+      meta.errorType = "interrupted";
+      meta.lastMessage = "任务已中断（server 退出 / 父进程 EOF / 未显式取消的中止）。";
+      await this.deps.store.updateStatus(meta, "interrupted", meta.lastMessage);
     }
-    return { status: "interrupted", meta: this.meta, reason: this.meta.lastMessage };
+    return { status: meta.status, meta, reason: meta.lastMessage, summary: meta.lastMessage };
   }
 
   private async finish(

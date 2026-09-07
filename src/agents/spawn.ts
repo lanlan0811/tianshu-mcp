@@ -31,34 +31,54 @@ export interface SpawnResult {
   logFile: string;
 }
 
-export function killTree(pid: number, mode: "taskkill" | "group"): Promise<void> {
+/**
+ * 终止进程树。平台策略在实现内部决定：
+ * - Windows：`taskkill /pid <pid> /T /F`（含子进程、无条件强制）。
+ * - POSIX（macOS/Linux）：对独立进程组（detached 子进程）先 SIGTERM，等有限 grace 再 SIGKILL。
+ * 即使调用方从旧 profile 传入 "taskkill"，非 Windows 平台也绝不执行 taskkill（R2 修复）。
+ */
+export function killTree(pid: number, _mode?: "taskkill" | "group" | "auto"): Promise<void> {
   return new Promise((resolve) => {
-    if (process.platform === "win32" || mode === "taskkill") {
+    if (process.platform === "win32") {
       const killer = nodeSpawn("taskkill", ["/pid", String(pid), "/T", "/F"], {
         windowsHide: true,
         stdio: "ignore",
       });
       killer.on("error", () => resolve());
       killer.on("close", () => resolve());
-    } else {
+      return;
+    }
+    // POSIX：先 SIGTERM 整组
+    const sigTerm = (): boolean => {
       try {
         process.kill(-pid, "SIGTERM");
-        setTimeout(() => {
-          try {
-            process.kill(-pid, "SIGKILL");
-          } catch {
-            /* 已退出 */
-          }
-        }, 1500).unref();
+        return true;
       } catch {
         try {
           process.kill(pid, "SIGTERM");
+          return true;
+        } catch {
+          return false; // 进程已不存在
+        }
+      }
+    };
+    if (!sigTerm()) {
+      resolve();
+      return;
+    }
+    // grace 后 SIGKILL
+    setTimeout(() => {
+      try {
+        process.kill(-pid, "SIGKILL");
+      } catch {
+        try {
+          process.kill(pid, "SIGKILL");
         } catch {
           /* 已退出 */
         }
       }
       resolve();
-    }
+    }, 1200).unref();
   });
 }
 

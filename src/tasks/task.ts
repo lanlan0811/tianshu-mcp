@@ -60,6 +60,10 @@ export interface CheckResult {
   timeout: boolean;
   skipped?: boolean;
   reason?: string;
+  /** 被外部 abort（如任务取消）打断 */
+  aborted?: boolean;
+  /** optional:true 的检查失败不使本轮 verdict 失败，仅记 warning */
+  optional?: boolean;
 }
 
 /** 代码分析结果（report.json analysis 段） */

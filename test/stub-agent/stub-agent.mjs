@@ -20,16 +20,26 @@ async function main() {
 
   // 读取剧本（来自项目内配置，像真实 agent 依据项目上下文行事）
   let playbook = "good";
+  let sleepMs = 400;
   const cfgPath = path.join(cwd, ".tianshu-mcp", "playbook.json");
   try {
     const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
     if (cfg && typeof cfg.playbook === "string") playbook = cfg.playbook;
+    if (cfg && typeof cfg.sleepMs === "number") sleepMs = cfg.sleepMs;
   } catch {
     /* 缺省 good */
   }
 
   console.log(`[stub-agent] playbook=${playbook} 任务目录=${cwd}`);
   console.log(`[stub-agent] 收到任务书（前 200 字）: ${prompt.slice(0, 200)}`);
+
+  // sleep 剧本：长时间不退出（供取消/超时测试）；收到 kill 后退出
+  if (playbook === "sleep") {
+    console.log(`[stub-agent] sleep 模式：保持运行 ${sleepMs}ms，等待被取消/超时`);
+    await sleep(sleepMs);
+    process.exit(0);
+  }
+
   await sleep(400); // 模拟一点工作耗时
 
   const hasFeedback = /失败|修复|修改|请.*改|上一轮验收/.test(prompt);

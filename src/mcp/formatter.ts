@@ -18,6 +18,9 @@ export interface MetaBlockFields {
   reportFiles?: { md?: string; json?: string };
   logFile?: string;
   message: string;
+  errorType?: string;
+  cancelReason?: string;
+  finishedAt?: string;
 }
 
 export type ToolResult = {
@@ -53,6 +56,9 @@ export function metaFromTask(meta: TaskMeta, extra?: Partial<MetaBlockFields>): 
     reportFiles: meta.reportMd || meta.reportJson ? { md: meta.reportMd, json: meta.reportJson } : undefined,
     logFile: meta.logFile,
     message: meta.lastMessage ?? "",
+    errorType: meta.errorType ?? undefined,
+    cancelReason: meta.cancelReason,
+    finishedAt: meta.finishedAt,
     ...extra,
   };
 }

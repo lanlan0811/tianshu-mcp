@@ -152,9 +152,8 @@ export class TaskManager {
       return { found: true };
     }
     if (ACTIVE_STATUSES.includes(meta.status)) {
-      // queued 之外的活动中任务：abort（queued 已在上面处理）
-      meta.cancelReason = reason;
-      await this.store.addNote(meta, reason ? `收到取消请求：${reason}` : "收到取消请求");
+      // queued 之外的活动中任务：记 cancel_requested（含 cancelReason）再 abort
+      await this.store.markCancelRequested(meta, reason);
       this.abortControllers.get(taskId)?.abort();
       return { found: true };
     }
@@ -164,12 +163,21 @@ export class TaskManager {
   /** server 退出：终止全部活动任务并标 interrupted（排队中任务也归档） */
   async shutdownInterrupt(): Promise<void> {
     for (const ac of this.abortControllers.values()) ac.abort();
-    await new Promise((r) => setTimeout(r, 400));
+    // 有界等待 kill：每个任务最多给 2s，全部并行的等待不超过 ~2s，避免固定 400ms 竞态
+    const killPromises: Promise<void>[] = [];
+    for (const id of this.running) {
+      const meta = this.tasks.get(id);
+      if (meta && ACTIVE_STATUSES.includes(meta.status)) {
+        killPromises.push(this.persistInterrupted(meta));
+      }
+    }
+    await Promise.all(killPromises);
+    // 排队中任务归档
     for (const [taskId, meta] of this.tasks) {
-      if (ACTIVE_STATUSES.includes(meta.status)) {
+      if (meta.status === "queued") {
         meta.status = "interrupted";
         meta.errorType = "interrupted";
-        meta.lastMessage = "server 退出，进程已终止";
+        meta.lastMessage = "server 退出，排队中任务已归档";
         await this.store.updateStatus(meta, "interrupted", meta.lastMessage).catch(() => {});
         void taskId;
       }
@@ -177,6 +185,22 @@ export class TaskManager {
     this.running.clear();
     this.runningCount = 0;
     this.queue.clear();
+  }
+
+  /** 有界等待子进程真正关闭后落 interrupted */
+  private async persistInterrupted(meta: TaskMeta): Promise<void> {
+    const deadline = Date.now() + 2000;
+    for (;;) {
+      if (!ACTIVE_STATUSES.includes(meta.status)) return; // orchestrator 已落终态
+      if (Date.now() >= deadline) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    if (ACTIVE_STATUSES.includes(meta.status)) {
+      meta.status = "interrupted";
+      meta.errorType = "interrupted";
+      meta.lastMessage = "server 退出，进程已终止";
+      await this.store.updateStatus(meta, "interrupted", meta.lastMessage).catch(() => {});
+    }
   }
 
   private enqueue(meta: TaskMeta): void {
@@ -265,8 +289,15 @@ export class TaskManager {
         delete meta.reworkFeedback;
         await this.store.writeSnapshot(meta);
       }
-      this.tasks.set(meta.taskId, result.meta);
-      this.logger.info(`任务 ${meta.taskId} 结束: ${result.meta.status}`);
+      // 防御：以持久化 meta 为准 —— orchestrator 返回 status 与持久化 status 不一致时告警。
+      const persisted = (await this.store.readSnapshot(meta.taskId)) ?? meta;
+      if (persisted.status !== result.status) {
+        this.logger.warn(
+          `任务 ${meta.taskId} 状态不一致：orchestrator=${result.status}, 持久化=${persisted.status}；以持久化 meta 为准`,
+        );
+      }
+      this.tasks.set(meta.taskId, persisted);
+      this.logger.info(`任务 ${meta.taskId} 结束: ${persisted.status}`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       meta.status = "failed";
