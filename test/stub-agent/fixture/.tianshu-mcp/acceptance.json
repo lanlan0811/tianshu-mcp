@@ -1,0 +1,9 @@
+{
+  "checks": [
+    {
+      "name": "done-marker",
+      "cmd": ["node", "check.mjs"],
+      "timeoutMs": 20000
+    }
+  ]
+}
