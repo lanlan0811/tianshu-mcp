@@ -54,8 +54,7 @@
 
 - 只发现遗留缓存目录：`%APPDATA%\Trae CN`、`%APPDATA%\TRAE SOLO CN`（含 VSCode 系缓存：Cache/Local Storage/GPUCache…），无可执行文件；`%APPDATA%\TRAE Work CN` 目录为空。
 - `AppData` 下 `find -iname "trae*.exe"` 无结果；`%LOCALAPPDATA%\Programs` 无 Trae。
-- 因此：**adapter 保持 `research` 占位**（开发计划 §13 T1 的无接口/不可验证分支）。本机无 Trae 时 `traework` 不可用属正确行为。
-- 若后续安装 Trae 系产品：重新执行 T1（查 CLI/HTTP/MCP host/登录态），有接口再实现 adapter；仍无接口则标 `unsupported` + 替代建议（不 pty 硬接）。
+- 因此：**adapter 保持 `research` 占位**，无法在本机给出「可接入/unsupported」的明确结论——该结论只能在装有 Trae/TraeWork 的机器上完成（见 §开发计划 §13 T1）。若后续安装 Trae 系产品：重新执行 T1（查 CLI/HTTP/MCP host/登录态），有接口再实现 adapter；仍无接口则标 `unsupported` + 替代建议（不 pty 硬接）。
 
 ## Z1 — Zcode headless 入口（M2 前置，进行中）
 

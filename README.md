@@ -72,14 +72,18 @@ run_task(projectPath=D:/xxx/my-app, task=「…任务书…」, agentId=codex, a
 - **M1 — 核心引擎 + stub-agent 全链路** ✅
   - 8 工具、TaskManager 状态机/队列/并发闸/cancel(kill tree)/事件流落盘
   - 验收引擎（git 基线/diff、默认集推导、命令 runner、代码分析、report.md/json）
-  - fix-loop 自动返修 + needs_attention；技能自检安装
+  - fix-loop 自动返修 + needs_attention；技能自检安装（已在本机真实 `~/.rivet/skills` 验证）
   - stub-agent 三剧本（good/fix-on-first/never）集成测试 + 协议测试，**32/32 绿**
 - **M2 — 真实 Codex CLI 冒烟 + rework 闭环** ✅（2026-09-07）
   - 真实 `codex exec` 跑通 `run_task → query_task → verify_task`（[m2-smoke-record.md](docs/m2-smoke-record.md)）
   - 真实 **失败→rework_task→再验收 succeeded** 闭环（[m2-rework-record.md](docs/m2-rework-record.md)，物证 `docs/m2-evidence/`）
   - 修复冒烟暴露的 3 个真实缺陷（Windows npm 垫片 / spawn 日志竞态崩溃 / codex flags 互斥）并各加回归测试
   - Zcode headless 入口（Z1）仍待产品侧确认
-- **M3 — TraeWork 调研 + 全套交付** 🔜（TraeWork 状态见 adapter-matrix；npm publish / 天枢真实会话技能实测 待做）
+- **工程/CI** ✅（2026-09-07）
+  - GitHub Actions 实测：`CI`（Node 20/22 矩阵）与 `Release`（tag v0.1.0 触发）均绿（提交 d91aea8 起）
+  - 技能自检安装已在本机真实 `~/.rivet/skills/tianshu-mcp` 验证生效且幂等
+  - npm 包名 `tianshu-mcp` 在 npmjs 可用（未占用）
+- **M3 — TraeWork 调研 + 全套交付** 🔜（TraeWork 状态见 adapter-matrix；npm publish 需 npmjs token；天枢真实会话技能触发实测 需 GUI 会话）
 
 ## 推荐用法（给天枢的提示语）
 
