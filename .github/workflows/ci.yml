@@ -9,11 +9,12 @@ on:
 
 jobs:
   build-test:
-    name: Build & Test (Node ${{ matrix.node }})
-    runs-on: ubuntu-latest
+    name: Build & Test (${{ matrix.os }} / Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
         node: [20, 22]
     steps:
       - uses: actions/checkout@v4
@@ -43,10 +44,20 @@ jobs:
       - name: Build (tsc → dist/)
         run: npm run build
       - name: Server boots & exits cleanly on stdin EOF
+        shell: bash
         run: timeout 20 node dist/index.js --no-skill-install < /dev/null; test $? -eq 0 -o $? -eq 124
+      - name: No unexpected tracked diff after build
+        shell: bash
+        run: |
+          MODIFIED=$(git status --porcelain | awk '{print $1}' | grep -v '^??' || true)
+          if [ -z "$MODIFIED" ]; then
+            echo "worktree clean (no tracked modifications)"
+          else
+            echo "unexpected tracked diff after build:"; git status --porcelain; exit 1
+          fi
 
   pack-check:
-    name: npm pack dry-run
+    name: npm tarball content check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -62,5 +73,17 @@ jobs:
             echo "npm ci attempt $i failed, retrying..."; sleep 5
           done
           npm ci || { echo "npm ci failed after 3 attempts"; exit 1; }
-      - name: Build & npm pack dry-run
-        run: npm run build && npm pack --dry-run
+      - name: Build
+        run: npm run build
+      - name: Pack to temp and assert required contents
+        run: |
+          mkdir -p /tmp/pkg
+          npm pack --pack-destination /tmp/pkg
+          TGZ=$(ls /tmp/pkg/*.tgz | head -1)
+          test -n "$TGZ"
+          tar -tzf "$TGZ" | grep -q "package/dist/index.js" || { echo "dist/index.js missing"; exit 1; }
+          tar -tzf "$TGZ" | grep -q "package/skills/tianshu-mcp/SKILL.md" || { echo "SKILL.md missing"; exit 1; }
+          tar -tzf "$TGZ" | grep -q "package/README.md" || { echo "README.md missing"; exit 1; }
+          tar -tzf "$TGZ" | grep -q "package/README.en.md" || { echo "README.en.md missing"; exit 1; }
+          tar -tzf "$TGZ" | grep -q "package/LICENSE" || { echo "LICENSE missing"; exit 1; }
+          echo "tarball content OK: $TGZ"

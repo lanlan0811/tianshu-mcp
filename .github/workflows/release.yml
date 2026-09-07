@@ -1,13 +1,13 @@
 name: Release
 
-# 触发：手工（workflow_dispatch，填 tag）或推送 v* tag 时。
-# 会构建并产出 npm 包内容（tarball），由维护者选择是否 `npm publish`。
+# 触发：推送 v* tag 或手工（workflow_dispatch）。
+# 严格保证 package.json.version === tag/输入版本 === tarball 文件名一致（R6）。
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "要发布的版本（如 0.2.0）"
+        description: "要发布的版本（必须与 package.json.version 一致）"
         required: true
   push:
     tags:
@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   release:
-    name: Build & draft release
+    name: Build, verify version & draft release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,7 +28,7 @@ jobs:
           cache: npm
           registry-url: "https://registry.npmjs.org"
 
-      - name: Install & verify (3 attempts on transient failures)
+      - name: Install dependencies (3 attempts)
         shell: bash
         run: |
           for i in 1 2 3; do
@@ -40,21 +40,33 @@ jobs:
           npm test
           npm run build
 
-      - name: npm pack
-        id: pack
-        run: |
-          npm pack --pack-destination "$RUNNER_TEMP"
-          echo "tarball=$(ls $RUNNER_TEMP/*.tgz | head -1)" >> "$GITHUB_OUTPUT"
+      - name: Read package version
+        id: pkgver
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
-      - name: Resolve version
+      - name: Resolve & validate target version
         id: version
         run: |
+          PKG_VER="${{ steps.pkgver.outputs.version }}"
           if [ -n "${{ github.event.inputs.version }}" ]; then
-            V="${{ github.event.inputs.version }}"
+            TARGET="${{ github.event.inputs.version }}"
+            [ "$TARGET" = "$PKG_VER" ] || { echo "ERROR: input version '$TARGET' != package.json '$PKG_VER'"; exit 1; }
           else
-            V="${GITHUB_REF_NAME#v}"
+            TARGET="${GITHUB_REF_NAME#v}"
+            [ "$TARGET" = "$PKG_VER" ] || { echo "ERROR: tag '${GITHUB_REF_NAME}' != package.json version '$PKG_VER'"; exit 1; }
           fi
-          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "version=$TARGET" >> "$GITHUB_OUTPUT"
+          echo "Validated: tag/input version '$TARGET' matches package.json '$PKG_VER'"
+
+      - name: npm pack (single tarball capture)
+        id: pack
+        run: |
+          rm -f ./*.tgz
+          npm pack --pack-destination "$RUNNER_TEMP"
+          # 只捕获本次生成、与解析版本一致的那个 tarball
+          TGZ="$RUNNER_TEMP/tianshu-mcp-${{ steps.version.outputs.version }}.tgz"
+          test -f "$TGZ" || { echo "expected tarball $TGZ not found"; ls "$RUNNER_TEMP"/*.tgz; exit 1; }
+          echo "tarball=$TGZ" >> "$GITHUB_OUTPUT"
 
       - name: Draft GitHub Release
         uses: softprops/action-gh-release@v2
