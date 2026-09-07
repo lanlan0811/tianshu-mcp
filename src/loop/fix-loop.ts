@@ -143,6 +143,13 @@ export class TaskOrchestrator {
     if (this.done) return { status: this.meta.status, meta: this.meta, reason: this.meta.lastMessage };
     this.done = true;
     const meta = this.meta;
+    if (meta.errorType === "timeout") {
+      // 超时兜底 guard 已标 timeout → 落 failed(timeout)，记录 timeout_killed 事件
+      meta.lastMessage = meta.lastMessage || "任务超时，进程树已终止。";
+      await this.deps.store.updateStatus(meta, "failed", meta.lastMessage);
+      await this.deps.store.appendEvent(meta.taskId, "timeout_killed", "failed", meta.lastMessage).catch(() => {});
+      return { status: "failed", meta, reason: meta.lastMessage, summary: meta.lastMessage };
+    }
     const hadCancelRequest = Boolean(meta.cancelReason) || meta.status === "queued";
     const isCancelled = hadCancelRequest;
     if (isCancelled) {

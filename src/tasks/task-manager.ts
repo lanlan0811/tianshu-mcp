@@ -259,14 +259,18 @@ export class TaskManager {
     this.abortControllers.set(meta.taskId, ac);
     this.logger.info(`任务 ${meta.taskId} 启动（agent=${meta.agentId}, project=${meta.projectPath}, roundsUsed=${meta.roundsUsed}）`);
 
-    // 超时护栏（orchestrator/spawn 内部超时先触发 kill；这里兜底）
+    // 超时兜底（R2）：runChild 在 meta.taskTimeoutMs 处自行 kill 并返回 timeout → orchestrator 落 failed(timeout)。
+    // 此 guard 只在非子进程阶段（resolve/编排卡死）长时间未返回时兜底，附一小段有文档说明的 kill grace。
+    const KILL_GRACE_MS = 15_000;
     const guard = setTimeout(() => {
       const m = this.tasks.get(meta.taskId);
       if (m && ACTIVE_STATUSES.includes(m.status)) {
-        this.logger.warn(`任务 ${meta.taskId} 超过任务级超时护栏，触发 abort`);
+        this.logger.warn(`任务 ${meta.taskId} 超过任务级超时兜底（${meta.taskTimeoutMs}+${KILL_GRACE_MS}ms），标记 timeout 并 abort`);
+        m.errorType = "timeout";
+        m.lastMessage = `任务超时兜底触发（${meta.taskTimeoutMs}ms + ${KILL_GRACE_MS}ms grace）。`;
         ac.abort();
       }
-    }, meta.taskTimeoutMs + 60_000);
+    }, meta.taskTimeoutMs + KILL_GRACE_MS);
     guard.unref?.();
 
     try {

@@ -45,7 +45,9 @@ export class CliAdapter implements AgentAdapter {
       spec: { command: resolved.command, args, cwd, env, killTree: profile.killTree ?? "taskkill" },
       promptText,
       stdinText,
-      timeoutMs: profile.timeoutMs ?? ctx.taskTimeoutMs,
+      // 任务超时已在提交时固化到 ctx.taskTimeoutMs（调用参数 > profile > server 默认），
+      // adapter 不得用 profile 再次覆盖（R2）。
+      timeoutMs: ctx.taskTimeoutMs > 0 ? ctx.taskTimeoutMs : profile.timeoutMs,
       logFile: ctx.taskDir + path.sep + `agent-${ctx.round}.log`,
     };
   }

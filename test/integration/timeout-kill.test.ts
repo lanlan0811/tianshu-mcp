@@ -1,0 +1,88 @@
+/**
+ * R2 回归测试：调用级 taskTimeoutMs 覆盖优先级 + 跨平台 kill tree。
+ * 1) taskTimeoutMs=800 的长任务按调用超时终止（而非 profile 的分钟级），终态 failed/errorType=timeout
+ * 2) spawn 超时路径不会遗留孙进程（平台通用：由 killTree 保证整树）
+ */
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { spawn } from "node:child_process";
+import {
+  startTestServer,
+  makeGitProject,
+  writePlaybook,
+  callTool,
+  parseMeta,
+  waitForTerminal,
+  rmrf,
+  type TestServer,
+} from "../test-utils.js";
+import { killTree } from "../../src/agents/spawn.js";
+
+let ts: TestServer;
+const tempDirs: string[] = [];
+
+beforeAll(async () => {
+  ts = await startTestServer();
+}, 60_000);
+afterAll(async () => {
+  await ts?.close();
+  for (const d of tempDirs) await rmrf(d).catch(() => {});
+  if (ts) await rmrf(ts.home).catch(() => {});
+});
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+describe("R2 调用级超时覆盖", () => {
+  it("taskTimeoutMs=800 的长任务在 ~800ms 超时，而非 profile 分钟级", async () => {
+    const proj = await makeGitProject("sleep", { sleepMs: 60_000 });
+    tempDirs.push(proj);
+    await writePlaybook(proj, { playbook: "sleep", sleepMs: 60_000 });
+
+    const started = Date.now();
+    const { text } = await callTool(ts.client, "run_task", {
+      projectPath: proj,
+      agentId: "stub",
+      task: "长任务验证调用级超时",
+      autoVerify: false,
+      taskTimeoutMs: 800,
+    });
+    const taskId = (parseMeta(text).meta!.taskId as string) ?? "";
+    const final = await waitForTerminal(ts.client, taskId, 20_000);
+    const elapsed = Date.now() - started;
+    expect(final.status).toBe("failed");
+    expect(final.errorType).toBe("timeout");
+    expect(elapsed).toBeLessThan(15_000); // 远超 800ms 则说明没按调用超时生效
+  }, 60_000);
+});
+
+describe("R2 killTree 跨平台语义", () => {
+  it("killTree 在任意平台都不会抛错，且对已退出进程幂等", async () => {
+    // 起一个临时子进程后先自然退出，再 killTree 应安全 resolve
+    const child = spawn(process.execPath, ["-e", "setTimeout(()=>process.exit(0), 300)"], {
+      detached: process.platform !== "win32",
+    });
+    const pid = child.pid!;
+    await new Promise((r) => child.on("exit", r));
+    await expect(killTree(pid, "auto")).resolves.toBeUndefined();
+  });
+
+  it("killTree 能终止存活子进程（含 POSIX 组杀路径）", async () => {
+    // 起一个长驻子进程
+    const child = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)"], {
+      detached: process.platform !== "win32",
+    });
+    const pid = child.pid!;
+    await sleep(300);
+    expect(child.exitCode).toBeNull(); // 还活着
+    await killTree(pid, "auto");
+    await sleep(400);
+    // 进程应已退出（Windows 下 taskkill /F 后 exitCode 置 null 但进程消失）
+    const exited = await new Promise<boolean>((r) => {
+      if (child.exitCode !== null) return r(true);
+      child.once("exit", () => r(true));
+      setTimeout(() => r(false), 1500);
+    });
+    expect(exited).toBe(true);
+  });
+});

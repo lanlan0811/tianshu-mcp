@@ -82,7 +82,12 @@ function runTaskHandler(ctx: AppContext, defaults: Defaults): Handler {
     }
 
     const cfg = await dataHome.loadConfig();
-    const taskTimeoutMs = args.taskTimeoutMs ?? cfg.defaultTaskTimeoutMs ?? 30 * 60_000;
+    // 有效任务超时（R2）：调用参数 > profile > server 默认值，在提交时固化
+    const taskTimeoutMs =
+      args.taskTimeoutMs ??
+      resolved.profile.timeoutMs ??
+      cfg.defaultTaskTimeoutMs ??
+      30 * 60_000;
     const meta = await manager.submit({
       projectPath: norm,
       displayPath: dir.raw,
