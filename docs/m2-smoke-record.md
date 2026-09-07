@@ -4,7 +4,6 @@
 - 环境：本机 Windows（Node v24.18.0）；Codex 桌面端自带 CLI `codex-cli 0.153.4`（`~/.codex` 登录态）
 - 数据目录：`%TEMP%\m2-smoke\home`（临时，不触碰真实 ~/.tianshu-mcp）
 - 项目：临时 git 仓库 `fibonacci` 示例（基线：`package.json` + `verify.mjs`；`npm test` 校验 `lib.js` 的 `fibonacci(10)===55`）
-
 ## 任务书（喂给 codex 的原文）
 
 > 在本仓库创建 lib.js（ES module），导出一个 fibonacci 函数。要求：fibonacci(10) === 55；本仓库 `npm test` 会运行 node verify.mjs（导入并校验 lib.js），必须通过。只新增必要文件；不要改动 verify.mjs 的内容，不要改动 package.json 的 test 脚本。
@@ -59,3 +58,11 @@ Codex 生成的 `lib.js` 正确实现 fibonacci（含输入校验）；验收通
 ```
 
 > `<hash>` 随 Codex 更新变化：用 `executableDiscovery` 每次 resolve 自动取最新目录即可，无需改 command。
+
+## CI / Release workflow 实测（2026-09-07 补记）
+
+- 推送 `d91aea8`（修复 core.test.ts 跨平台失败）后 GitHub Actions：
+  - `CI`（Node 20 + Node 22 矩阵）：**success** —— typecheck / lint / 32 项测试 / build / stdin-EOF 冒烟 全绿。
+  - `Release`（tag `v0.1.0` 触发）：**success** —— 安装校验 + npm pack + Draft GitHub Release 步骤 success。
+- 曾因 `test/unit/core.test.ts` 用 `path.resolve("D:\...")` 在 Linux 上把 `\` 当字面量导致 hash 断言失败（CI 全红 5 次）；改为平台无关写法后修复（提交 d91aea8）。
+- 结论：AGENTS.md 要求的 ci.yml / release.yml 均已实际运行通过。
