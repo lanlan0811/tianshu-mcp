@@ -22,24 +22,24 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-      - name: Install dependencies (retry on transient network failures)
-        uses: nick-fields/retry-action@v3
-        with:
-          timeout_minutes: 5
-          max_attempts: 3
-          retry_on: error
-          command: npm ci
+      - name: Install dependencies (3 attempts for transient network failures)
+        shell: bash
+        run: |
+          for i in 1 2 3; do
+            npm ci && break
+            echo "npm ci attempt $i failed, retrying..."; sleep 5
+          done
+          npm ci || { echo "npm ci failed after 3 attempts"; exit 1; }
       - name: Typecheck
         run: npx tsc --noEmit -p tsconfig.json
       - name: Lint
         run: npm run lint
-      - name: Unit & integration & protocol tests (retry once on flake)
-        uses: nick-fields/retry-action@v3
-        with:
-          timeout_minutes: 10
-          max_attempts: 2
-          retry_on: error
-          command: npm test
+      - name: Unit & integration & protocol tests (2 attempts on flake)
+        shell: bash
+        run: |
+          npm test && exit 0
+          echo "tests failed on first attempt, retrying once..."; sleep 3
+          npm test
       - name: Build (tsc → dist/)
         run: npm run build
       - name: Server boots & exits cleanly on stdin EOF
@@ -54,12 +54,13 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Install dependencies (retry)
-        uses: nick-fields/retry-action@v3
-        with:
-          timeout_minutes: 5
-          max_attempts: 3
-          retry_on: error
-          command: npm ci
-      - name: npm pack --dry-run
+      - name: Install dependencies (3 attempts)
+        shell: bash
+        run: |
+          for i in 1 2 3; do
+            npm ci && break
+            echo "npm ci attempt $i failed, retrying..."; sleep 5
+          done
+          npm ci || { echo "npm ci failed after 3 attempts"; exit 1; }
+      - name: Build & npm pack dry-run
         run: npm run build && npm pack --dry-run

@@ -28,17 +28,17 @@ jobs:
           cache: npm
           registry-url: "https://registry.npmjs.org"
 
-      - name: Install & verify (retry on transient failures)
-        uses: nick-fields/retry-action@v3
-        with:
-          timeout_minutes: 10
-          max_attempts: 3
-          retry_on: error
-          command: |
-            npm ci
-            npm run typecheck
-            npm test
-            npm run build
+      - name: Install & verify (3 attempts on transient failures)
+        shell: bash
+        run: |
+          for i in 1 2 3; do
+            npm ci && break
+            echo "npm ci attempt $i failed, retrying..."; sleep 5
+          done
+          npm ci || { echo "npm ci failed after 3 attempts"; exit 1; }
+          npm run typecheck
+          npm test
+          npm run build
 
       - name: npm pack
         id: pack
