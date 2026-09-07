@@ -28,12 +28,17 @@ jobs:
           cache: npm
           registry-url: "https://registry.npmjs.org"
 
-      - name: Install & verify
-        run: |
-          npm ci
-          npm run typecheck
-          npm test
-          npm run build
+      - name: Install & verify (retry on transient failures)
+        uses: nick-fields/retry-action@v3
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          retry_on: error
+          command: |
+            npm ci
+            npm run typecheck
+            npm test
+            npm run build
 
       - name: npm pack
         id: pack

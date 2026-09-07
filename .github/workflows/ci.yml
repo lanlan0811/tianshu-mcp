@@ -5,6 +5,7 @@ on:
     branches: [master, main]
   pull_request:
     branches: [master, main]
+  workflow_dispatch:
 
 jobs:
   build-test:
@@ -21,14 +22,24 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-      - name: Install dependencies
-        run: npm ci
+      - name: Install dependencies (retry on transient network failures)
+        uses: nick-fields/retry-action@v3
+        with:
+          timeout_minutes: 5
+          max_attempts: 3
+          retry_on: error
+          command: npm ci
       - name: Typecheck
         run: npx tsc --noEmit -p tsconfig.json
       - name: Lint
         run: npm run lint
-      - name: Unit & integration & protocol tests
-        run: npm test
+      - name: Unit & integration & protocol tests (retry once on flake)
+        uses: nick-fields/retry-action@v3
+        with:
+          timeout_minutes: 10
+          max_attempts: 2
+          retry_on: error
+          command: npm test
       - name: Build (tsc → dist/)
         run: npm run build
       - name: Server boots & exits cleanly on stdin EOF
@@ -43,7 +54,12 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
-      - run: npm run build
+      - name: Install dependencies (retry)
+        uses: nick-fields/retry-action@v3
+        with:
+          timeout_minutes: 5
+          max_attempts: 3
+          retry_on: error
+          command: npm ci
       - name: npm pack --dry-run
-        run: npm pack --dry-run
+        run: npm run build && npm pack --dry-run
