@@ -56,7 +56,7 @@ describe("R5 profile 热加载", () => {
     const first = await reg.resolve("stub", true);
     expect(first.ok).toBe(true); // node 从 PATH 解析到绝对路径
     expect(first.profile.argsTemplate).toEqual(["-v"]);
-    // 修改 profiles 文件
+    // 修改 profiles 文件（内容与大小均不同 → stamp 必然变化）
     await fsp.writeFile(
       path.join(home, "agent-profiles.json"),
       JSON.stringify({
@@ -65,7 +65,8 @@ describe("R5 profile 热加载", () => {
         },
       }),
     );
-    // 热加载：mtime 变化 → DataHome 重建 → registry 重解析
+    await new Promise((r) => setTimeout(r, 20)); // 确保 FS 落盘
+    // 热加载：stamp(mtime+size) 变化 → DataHome 重建 → registry 重解析
     const second = await reg.resolve("stub", true);
     expect(second.profile.argsTemplate).toEqual(["--version"]);
   });

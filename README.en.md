@@ -29,7 +29,7 @@ Tianshu plays the role of the overall commander; this MCP server is the **schedu
 ```bash
 npm install
 npm run build        # → dist/
-npm test             # 25 tests: unit + stub-agent 3-playbook integration + protocol
+npm test             # 53 tests: unit + stub-agent 3-playbook integration + protocol + cancel/timeout/baseline/params regression
 ```
 
 Register as a Tianshu MCP server (local dev mode):
@@ -73,7 +73,7 @@ run_task(projectPath=D:/xxx/my-app, task=「…task brief…」, agentId=codex, 
   - 8 tools, TaskManager state machine / queue / concurrency gate / cancel (kill tree) / event-stream persistence
   - Acceptance engine (git baseline & diff, default-set derivation, command runner, code analysis, report.md/json)
   - fix-loop auto rework + needs_attention; skill self-install
-  - Stub-agent 3 playbooks (good / fix-on-first / never) integration tests + protocol tests — **32/32 green**
+  - Stub-agent 3 playbooks (good / fix-on-first / never) integration tests + protocol tests — **53/53 green** (incl. R1–R5 cancel/timeout/baseline/params regressions)
 - **M2 — Real Codex CLI smoke + rework loop** ✅ (2026-09-07)
   - Real `codex exec` completed `run_task → query_task → verify_task` (see [m2-smoke-record.md](docs/m2-smoke-record.md))
   - Real **failure → rework_task → re-verify succeeded** loop ([m2-rework-record.md](docs/m2-rework-record.md), artifacts in `docs/m2-evidence/`)

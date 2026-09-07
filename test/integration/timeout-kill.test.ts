@@ -76,12 +76,11 @@ describe("R2 killTree 跨平台语义", () => {
     await sleep(300);
     expect(child.exitCode).toBeNull(); // 还活着
     await killTree(pid, "auto");
-    await sleep(400);
-    // 进程应已退出（Windows 下 taskkill /F 后 exitCode 置 null 但进程消失）
+    // killTree 会轮询确认进程消失（POSIX 最长 ~3s）；这里等更长的退出确认预算
     const exited = await new Promise<boolean>((r) => {
       if (child.exitCode !== null) return r(true);
       child.once("exit", () => r(true));
-      setTimeout(() => r(false), 1500);
+      setTimeout(() => r(false), 6000);
     });
     expect(exited).toBe(true);
   });

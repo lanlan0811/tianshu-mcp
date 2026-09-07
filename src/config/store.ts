@@ -51,11 +51,11 @@ export function toAcceptanceDef(c: AcceptanceCheck): AcceptanceCheckDef {
 export class DataHome {
   readonly dir: string;
   private configCache: ServerConfig | null = null;
-  private configCacheMtime = -1;
+  private configCacheStamp = "";
   private projectsCache: Record<string, ProjectRecord> | null = null;
-  private projectsCacheMtime = -1;
+  private projectsCacheStamp = "";
   private _profilesCache: Record<string, AgentProfile> | null = null;
-  private _profilesCacheMtime = -1;
+  private _profilesCacheStamp = "";
 
   constructor(
     dir: string,
@@ -92,19 +92,22 @@ export class DataHome {
 
   /* ---------- config ---------- */
 
-  /** mtime 轻量失效：外部编辑文件后，下一次读取即重载（R5 热加载）。失败返回 0（每次重读）。 */
-  private async fileMtime(p: string): Promise<number> {
+  /**
+   * 轻量失效签名：mtime(ms) + 文件大小。同一 mtime tick 内的内容变化（快速 FS/CI）也能被捕获。
+   * 失败返回 "0:0"（每次重读）。
+   */
+  private async fileStamp(p: string): Promise<string> {
     try {
       const st = await fsp.stat(p);
-      return st.mtimeMs;
+      return `${st.mtimeMs}:${st.size}`;
     } catch {
-      return 0;
+      return "0:0";
     }
   }
 
   async loadConfig(): Promise<ServerConfig> {
-    const mtime = await this.fileMtime(this.configPath);
-    if (this.configCache && this.configCacheMtime === mtime) return this.configCache;
+    const stamp = await this.fileStamp(this.configPath);
+    if (this.configCache && this.configCacheStamp === stamp) return this.configCache;
     const raw = await readJsonSafe<unknown>(this.configPath);
     let cfg: ServerConfig = ServerConfigSchema.parse({});
     if (raw != null) {
@@ -112,7 +115,7 @@ export class DataHome {
       if (r.success) {
         cfg = r.data;
         this.configCache = cfg;
-        this.configCacheMtime = mtime;
+        this.configCacheStamp = stamp;
       } else {
         // 解析失败保留上一有效配置（R5）
         this.logger.warn(`config.json 解析失败，保留上一有效配置: ${r.error.message}`);
@@ -120,7 +123,7 @@ export class DataHome {
       }
     } else {
       this.configCache = cfg;
-      this.configCacheMtime = mtime;
+      this.configCacheStamp = stamp;
     }
     return this.configCache ?? cfg;
   }
@@ -128,15 +131,15 @@ export class DataHome {
   async saveConfig(cfg: ServerConfig): Promise<void> {
     await writeJsonAtomic(this.configPath, cfg);
     this.configCache = cfg;
-    this.configCacheMtime = await this.fileMtime(this.configPath);
+    this.configCacheStamp = await this.fileStamp(this.configPath);
   }
 
   /* ---------- agent-profiles ---------- */
 
   /** 用户级 profiles（数据目录）叠加内置 profiles，用户键覆盖内置；按 mtime 轻量热加载（R5） */
   async loadProfiles(): Promise<Record<string, AgentProfile>> {
-    const mtime = await this.fileMtime(this.profilesPath);
-    if (this._profilesCache && this._profilesCacheMtime === mtime) return this._profilesCache;
+    const stamp = await this.fileStamp(this.profilesPath);
+    if (this._profilesCache && this._profilesCacheStamp === stamp) return this._profilesCache;
     const merged: Record<string, AgentProfile> = {};
     // 先内置，再数据目录覆盖（clone 防串改缓存）
     for (const [k, v] of Object.entries(this.builtinProfiles)) {
@@ -155,7 +158,7 @@ export class DataHome {
       }
     }
     this._profilesCache = merged;
-    this._profilesCacheMtime = mtime;
+    this._profilesCacheStamp = stamp;
     return merged;
   }
 
@@ -180,8 +183,8 @@ export class DataHome {
   /* ---------- projects 自动登记 ---------- */
 
   async loadProjects(): Promise<Record<string, ProjectRecord>> {
-    const mtime = await this.fileMtime(this.projectsPath);
-    if (this.projectsCache && this.projectsCacheMtime === mtime) return this.projectsCache;
+    const stamp = await this.fileStamp(this.projectsPath);
+    if (this.projectsCache && this.projectsCacheStamp === stamp) return this.projectsCache;
     const raw = await readJsonSafe<unknown>(this.projectsPath);
     const map: Record<string, ProjectRecord> = {};
     if (raw != null && typeof raw === "object") {
@@ -192,7 +195,7 @@ export class DataHome {
       }
     }
     this.projectsCache = map;
-    this.projectsCacheMtime = mtime;
+    this.projectsCacheStamp = stamp;
     return map;
   }
 

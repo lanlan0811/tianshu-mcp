@@ -35,6 +35,7 @@ export interface SpawnResult {
  * 终止进程树。平台策略在实现内部决定：
  * - Windows：`taskkill /pid <pid> /T /F`（含子进程、无条件强制）。
  * - POSIX（macOS/Linux）：对独立进程组（detached 子进程）先 SIGTERM，等有限 grace 再 SIGKILL。
+ * 终止后轮询确认进程已消失再 resolve（确定性，避免调用方误判）。
  * 即使调用方从旧 profile 传入 "taskkill"，非 Windows 平台也绝不执行 taskkill（R2 修复）。
  */
 export function killTree(pid: number, _mode?: "taskkill" | "group" | "auto"): Promise<void> {
@@ -48,37 +49,46 @@ export function killTree(pid: number, _mode?: "taskkill" | "group" | "auto"): Pr
       killer.on("close", () => resolve());
       return;
     }
-    // POSIX：先 SIGTERM 整组
-    const sigTerm = (): boolean => {
+    const alive = (target: number): boolean => {
       try {
-        process.kill(-pid, "SIGTERM");
+        process.kill(target, 0);
         return true;
       } catch {
-        try {
-          process.kill(pid, "SIGTERM");
-          return true;
-        } catch {
-          return false; // 进程已不存在
-        }
+        return false;
       }
     };
-    if (!sigTerm()) {
-      resolve();
-      return;
-    }
-    // grace 后 SIGKILL
-    setTimeout(() => {
+    // 发送信号到进程组（负 pid）或单进程
+    const signal = (target: number, sig: NodeJS.Signals): void => {
       try {
-        process.kill(-pid, "SIGKILL");
+        process.kill(-target, sig);
       } catch {
         try {
-          process.kill(pid, "SIGKILL");
+          process.kill(target, sig);
         } catch {
           /* 已退出 */
         }
       }
+    };
+    if (!alive(pid)) {
       resolve();
-    }, 1200).unref();
+      return;
+    }
+    signal(pid, "SIGTERM");
+    // grace 后 SIGKILL，并轮询确认退出（最长 ~3s）
+    const started = Date.now();
+    const poll = (): void => {
+      if (!alive(pid) && !alive(-pid)) {
+        resolve();
+        return;
+      }
+      if (Date.now() - started > 800) signal(pid, "SIGKILL");
+      if (Date.now() - started > 3000) {
+        resolve(); // 尽力而为：信号已发，不再无限等待
+        return;
+      }
+      setTimeout(poll, 100).unref();
+    };
+    poll();
   });
 }
 
