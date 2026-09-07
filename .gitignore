@@ -1,11 +1,11 @@
 AGENTS.md
 
 .zcode/*
+.codex/*
 
 analysis-tools/*
 
-# 根级本地开发数据目录（仅忽略根级；项目内 .tianshu-mcp/ 属验收配置，各项目自行决定是否入库）
-/.tianshu-mcp/
+/.tianshu-mcp/*
 
 node_modules/*
 dist/*
