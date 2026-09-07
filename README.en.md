@@ -4,7 +4,7 @@
 
 **Tianshu × AI-Agent orchestration MCP server**
 
-Registered by Tianshu as a standard MCP server, it dispatches external AI-Agent CLIs (Codex / Zcode; TraeWork/TRAE SOLO CN verified unsupported — architecture stays horizontally extensible) to drive the closed loop of **project development → acceptance → failure rework → re-acceptance**.
+Registered by Tianshu as a standard MCP server, it dispatches external AI-Agent CLIs (Codex; Zcode and TraeWork/TRAE SOLO CN verified to lack headless interfaces → unsupported; architecture stays horizontally extensible) to drive the closed loop of **project development → acceptance → failure rework → re-acceptance**.
 
 TypeScript · Node.js ≥ 20 · `@modelcontextprotocol/sdk` (stdio)
 
@@ -78,7 +78,7 @@ run_task(projectPath=D:/xxx/my-app, task=「…task brief…」, agentId=codex, 
   - Real `codex exec` completed `run_task → query_task → verify_task` (see [m2-smoke-record.md](docs/m2-smoke-record.md))
   - Real **failure → rework_task → re-verify succeeded** loop ([m2-rework-record.md](docs/m2-rework-record.md), artifacts in `docs/m2-evidence/`)
   - Fixed 3 real bugs the smoke exposed (Windows npm shim / spawn log race crash / codex flag conflict) + regression tests
-  - Zcode headless entry (Z1) still pending product-side confirmation
+  - Zcode headless entry (Z1) verified: ZCode desktop ships no headless CLI → unsupported
 - **M3 — TraeWork research + full delivery** ✅ (2026-09-07 T1 settled + delivery ready)
   - T1 settled: local TRAE SOLO CN v1.107.1 verified **unsupported** (no headless programmable agent interface; VS Code-family CLI only; see [adapter-matrix.md](docs/adapter-matrix.md))
   - npm name `tianshu-mcp` available; npm publish needs an npmjs token

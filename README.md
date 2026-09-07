@@ -4,7 +4,7 @@
 
 **天枢 × AI-Agent 编排 MCP server**
 
-由天枢（Tianshu）当作标准 MCP server 接入，调度外部 AI-Agent CLI（Codex / Zcode；TraeWork/TRAE SOLO CN 经实测标 unsupported，架构可横向扩展）完成 **项目开发 → 验收 → 失败返修 → 再验收** 的闭环。
+由天枢（Tianshu）当作标准 MCP server 接入，调度外部 AI-Agent CLI（Codex；Zcode 与 TraeWork/TRAE SOLO CN 经实测无无头接口标 unsupported，架构可横向扩展）完成 **项目开发 → 验收 → 失败返修 → 再验收** 的闭环。
 
 TypeScript · Node.js ≥ 20 · `@modelcontextprotocol/sdk`（stdio）
 
@@ -79,7 +79,7 @@ run_task(projectPath=D:/xxx/my-app, task=「…任务书…」, agentId=codex, a
   - 真实 `codex exec` 跑通 `run_task → query_task → verify_task`（[m2-smoke-record.md](docs/m2-smoke-record.md)）
   - 真实 **失败→rework_task→再验收 succeeded** 闭环（[m2-rework-record.md](docs/m2-rework-record.md)，物证 `docs/m2-evidence/`）
   - 修复冒烟暴露的 3 个真实缺陷（Windows npm 垫片 / spawn 日志竞态崩溃 / codex flags 互斥）并各加回归测试
-  - Zcode headless 入口（Z1）仍待产品侧确认
+  - Zcode 无头接口（Z1）实测定论：ZCode 桌面无随包 headless CLI → unsupported
 - **工程/CI** ✅（2026-09-07）
   - GitHub Actions 实测：`CI`（Node 20/22 矩阵）与 `Release`（tag v0.1.0 触发）均绿（提交 d91aea8/2a9ac82 起）
   - 技能自检安装已在本机真实 `~/.rivet/skills/tianshu-mcp` 验证生效且幂等

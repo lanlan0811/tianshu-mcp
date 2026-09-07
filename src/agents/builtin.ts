@@ -25,9 +25,9 @@ export const BUILTIN_PROFILES: Record<string, AgentProfile> = {
     note: "M2 真实冒烟已定稿（见 docs/m2-smoke-record.md）：--sandbox workspace-write 非交互通过",
   },
   zcode: {
-    displayName: "Zcode (本机 CLI)",
+    displayName: "Zcode (ZCode 桌面)",
     type: "cli",
-    status: "research",
+    status: "unsupported",
     command: null,
     argsTemplate: [],
     promptMode: "arg",
@@ -35,8 +35,8 @@ export const BUILTIN_PROFILES: Record<string, AgentProfile> = {
     env: {},
     timeoutMs: 30 * 60_000,
     killTree: "taskkill",
-    authNote: "复用本机 Zcode 登录态",
-    note: "M2 前置调研（开发计划 §13 Z1）确认真实无头入口后再填 command/argsTemplate；当前不自动探测，避免误判",
+    authNote: "复用本机 ZCode 登录态",
+    note: "Z1 实测（2026-09-07）：ZCode = Electron 桌面（D:/Z-Code/ZCode/ZCode.exe），无随包 headless agent-exec CLI，打包 tools 仅 cua-helper/ripgrep/ugrep → 无法无头 spawn → unsupported（详见 docs/adapter-matrix.md §Z1）",
   },
   traework: {
     displayName: "TraeWork (TRAE SOLO CN)",

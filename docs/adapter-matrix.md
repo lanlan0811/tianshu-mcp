@@ -9,7 +9,7 @@
 | Agent | 接口类型 | 状态 | 可执行发现 | 登录态 | 任务/文件回读 | 备注 |
 |---|---|---|---|---|---|---|
 | **Codex**（OpenAI 桌面端） | 本地 CLI `codex.exe` | ✅ **已冒烟通过**（2026-09-07 run_task→verify_task，见 [m2-smoke-record.md](m2-smoke-record.md)） | `executableDiscovery` → `.../Codex/bin/<hash>/codex.exe`（实测 v0.153.4） | 复用 `~/.codex`（auth.json），与桌面端同账号 | cwd 内读写文件；stdout 流式 | `codex exec "<prompt>" --sandbox workspace-write`（勿与 --approve-for-me 同用） |
-| **Zcode**（本机 CLI） | 待调研（`.zcode/cli`，Node CLI，无 PATH 命令） | 🔍 M2-Z1 调研中 | —（未自动探测） | 复用本机登录态 | 待定 | 见下方 Z1 |
+| **Zcode**（ZCode 桌面） | Electron 桌面应用（`D:\Z-Code\ZCode\ZCode.exe`）；无随包无头 CLI | ❌ **unsupported（无无头 agent-exec 接口）** | 数据目录 `.zcode/cli` 非入口（会话数据）；打包 tools 仅 cua-helper/ripgrep/ugrep | 复用本机登录态 | — | 桌面会话/agent 由应用自身驱动；tianshu-mcp 无法无头 spawn（见 Z1） |
 | **TraeWork / TRAE SOLO CN** | 桌面 IDE（v1.107.1 实测） | ❌ **unsupported**（无无头可编程驱动接口，见 T1） | 有 VS Code 家族 CLI（`bin/trae-solo-cn.cmd` → open/serve-web/扩展管理），**无 agent-exec** | — | — | `byted-solo.builtin-mcp` 是 MCP 客户端扩展，非被驱动接口 |
 | **stub**（测试用） | 本地脚本 | ✅ 内置测试 | 测试注入 profile | 无 | — | 仅 M1 集成测试使用 |
 
@@ -66,20 +66,20 @@
 
 > 更正记录：早前版本基于 `%APPDATA%` 误判「本机未安装 Trae」；本次在 `D:/` 发现真实安装并完成定论。
 
-## Z1 — Zcode headless 入口（M2 前置，进行中）
+## Z1 — Zcode headless 入口（2026-09-07 实测，已定论）
 
-背景：本机 Zcode = `C:\Users\Lenovo\.zcode\cli`（Node CLI，无 PATH 命令）；桌面应用复用同一数据。
+**结论：`unsupported`——ZCode 是 Electron 桌面应用（`D:\Z-Code\ZCode\ZCode.exe`），未随包提供 headless agent-exec CLI 供外部无头驱动。**
 
-**2026-09-07 实测**：`.zcode\cli` 根目录仅含运行期数据目录（`agents/` `exec/` `plugins/` `rollout/` `artifacts/` `log/` `db/` + 大量 `sess_*` 会话目录），**没有 `package.json`/bin/可执行入口**；agent 会话数据分别落在 `agents/sess_*` 与 `exec/sess_*`。说明真正的 CLI 入口不在数据目录，需向 Zcode 产品侧确认（或桌面端持有）。
+实测证据：
 
-待确认问题：
+- 安装目录 `D:\Z-Code\ZCode\`：标准 Electron 布局（`ZCode.exe` + resources/app.asar），无 `cli.js`/headless launcher/`cli.exe`。
+- `resources/tools/` 打包工具仅 `cua-helper`（computer-use）、`ripgrep`、`ugrep`——均为应用内部辅助，无 agent 驱动命令。
+- `~/.zcode/cli/` 是运行时数据目录（agents/exec/rollout/`sess_*` 会话 + 一个含 `mcp.servers` 的 `config.json`，schema 与本项目一致），**不是可执行入口**。
+- `%PATH%`/npm 全局无 `zcode` 命令；无 headless 子命令文档/入口。
 
-- [ ] `zcode` 的无头 exec/子命令入口在哪里（可能在安装目录而非数据目录）？
-- [ ] 无头模式参数、工作目录、stdout/日志、退出码语义？
-- [ ] 登录态路径与复用方式？
-- [ ] 结论写入本文件 → 回填 `agent-profiles.md` 样例 + `builtin.ts` zcode profile。
+因此 tianshu-mcp **无法把 Zcode 作为外部 agent 无头 spawn**（R14：不 pty 硬接、不 GUI 自动化默认实施）。内置 profile 已把 zcode 置为 `status: "research"`→应改为 unsupported 说明留待：若 ZCode 未来提供 headless CLI/官方接口，可重跑本调研。
 
-处理策略：向 Zcode 侧确认安装目录/无头接口。若仅 GUI：评估列入 pty 备选方案（占位标注，不默认实施）。
+> 更正记录：早前按开发计划 §13 Z1 标记"待产品侧确认"；本次定位到真实安装 `D:\Z-Code\ZCode` 并确认无随包无头 CLI，结论改为明确 unsupported。
 
 ## 只读调研来源（D:\Tianshu 逆向，仅作事实依据）
 

@@ -26,7 +26,7 @@ export const TOOL_DEFS: ToolDef[] = [
   {
     name: "run_task",
     description:
-      "派活：启动一次外部 AI-Agent（codex/zcode；traework 按适配矩阵为 unsupported）开发任务，可带自动验收与失败自动返修。返回 taskId，立即返回；用 query_task 轮询。projectPath 必须是存在的项目绝对路径；task 是给 agent 的自然语言任务书。",
+      "派活：启动一次外部 AI-Agent（codex；zcode/traework 经实测为 unsupported）开发任务，可带自动验收与失败自动返修。返回 taskId，立即返回；用 query_task 轮询。projectPath 必须是存在的项目绝对路径；task 是给 agent 的自然语言任务书。",
     inputSchema: RunTaskParamsSchema,
     capability: "write",
     requireApproval: true,
