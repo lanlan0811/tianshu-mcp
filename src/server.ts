@@ -60,7 +60,7 @@ export async function buildServer(opts: { home?: string; logger?: Logger; skipSk
     {
       capabilities: { tools: {} },
       instructions:
-        "tianshu-mcp：调度外部 AI-Agent（codex/zcode/traework）完成 项目开发 → 验收 → 返修 闭环。工具返回文本 + ---tianshu-mcp-meta--- JSON 块。run_task 是异步的：先拿 taskId 再用 query_task 轮询。",
+        "tianshu-mcp：调度外部 AI-Agent（codex/zcode）完成 项目开发 → 验收 → 返修 闭环。工具返回文本 + ---tianshu-mcp-meta--- JSON 块。run_task 是异步的：先拿 taskId 再用 query_task 轮询。",
     },
   );
 

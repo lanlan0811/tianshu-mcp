@@ -4,7 +4,7 @@
 
 **天枢 × AI-Agent 编排 MCP server**
 
-由天枢（Tianshu）当作标准 MCP server 接入，调度外部 AI-Agent CLI（Codex / Zcode / TraeWork，可横向扩展）完成 **项目开发 → 验收 → 失败返修 → 再验收** 的闭环。
+由天枢（Tianshu）当作标准 MCP server 接入，调度外部 AI-Agent CLI（Codex / Zcode；TraeWork/TRAE SOLO CN 经实测标 unsupported，架构可横向扩展）完成 **项目开发 → 验收 → 失败返修 → 再验收** 的闭环。
 
 TypeScript · Node.js ≥ 20 · `@modelcontextprotocol/sdk`（stdio）
 
@@ -83,7 +83,10 @@ run_task(projectPath=D:/xxx/my-app, task=「…任务书…」, agentId=codex, a
   - GitHub Actions 实测：`CI`（Node 20/22 矩阵）与 `Release`（tag v0.1.0 触发）均绿（提交 d91aea8 起）
   - 技能自检安装已在本机真实 `~/.rivet/skills/tianshu-mcp` 验证生效且幂等
   - npm 包名 `tianshu-mcp` 在 npmjs 可用（未占用）
-- **M3 — TraeWork 调研 + 全套交付** 🔜（TraeWork 状态见 adapter-matrix；npm publish 需 npmjs token；天枢真实会话技能触发实测 需 GUI 会话）
+- **M3 — TraeWork 调研 + 全套交付** ✅（2026-09-07 T1 定论 + 交付就绪）
+  - T1 定论：本机 TRAE SOLO CN v1.107.1 实测 **unsupported**（无无头可编程 agent 接口，仅 VS Code 家族 CLI；见 [adapter-matrix.md](docs/adapter-matrix.md)）
+  - npm 包名 `tianshu-mcp` 可用；npm publish 需 npmjs token
+  - 天枢真实会话技能触发实测（DoD #8）需 GUI 会话（技能已自检安装就位）
 
 ## 推荐用法（给天枢的提示语）
 

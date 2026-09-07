@@ -10,7 +10,7 @@
 |---|---|---|---|---|---|---|
 | **Codex**（OpenAI 桌面端） | 本地 CLI `codex.exe` | ✅ **已冒烟通过**（2026-09-07 run_task→verify_task，见 [m2-smoke-record.md](m2-smoke-record.md)） | `executableDiscovery` → `.../Codex/bin/<hash>/codex.exe`（实测 v0.153.4） | 复用 `~/.codex`（auth.json），与桌面端同账号 | cwd 内读写文件；stdout 流式 | `codex exec "<prompt>" --sandbox workspace-write`（勿与 --approve-for-me 同用） |
 | **Zcode**（本机 CLI） | 待调研（`.zcode/cli`，Node CLI，无 PATH 命令） | 🔍 M2-Z1 调研中 | —（未自动探测） | 复用本机登录态 | 待定 | 见下方 Z1 |
-| **TraeWork**（Trae CN / TRAE SOLO CN） | 本机未安装，无可验证接口 | 🔍 M3-T1（本机实测：仅遗留缓存目录，无 exe） | — | — | — | 装回 Trae 后再查 CLI/HTTP；仍无则标 unsupported（见 T1） |
+| **TraeWork / TRAE SOLO CN** | 桌面 IDE（v1.107.1 实测） | ❌ **unsupported**（无无头可编程驱动接口，见 T1） | 有 VS Code 家族 CLI（`bin/trae-solo-cn.cmd` → open/serve-web/扩展管理），**无 agent-exec** | — | — | `byted-solo.builtin-mcp` 是 MCP 客户端扩展，非被驱动接口 |
 | **stub**（测试用） | 本地脚本 | ✅ 内置测试 | 测试注入 profile | 无 | — | 仅 M1 集成测试使用 |
 
 状态图例：✅ 可接入（已实现/已冒烟）｜🔍 调研中｜⬜ 规划/占位｜❌ 已证伪不支持
@@ -48,13 +48,23 @@
 }
 ```
 
-## T1 — TraeWork 可编程接口（2026-09-07 实测）
+## T1 — TraeWork / TRAE SOLO CN 可编程接口（2026-09-07 实测，已定论）
 
-结论：**本机未安装可运行的 Trae / TraeWork**，无可编程接口可验证。
+**结论：`unsupported`——本机安装的 Trae 产品（TRAE SOLO CN v1.107.1）无 codex 风格的无头可编程 agent 驱动接口。**
 
-- 只发现遗留缓存目录：`%APPDATA%\Trae CN`、`%APPDATA%\TRAE SOLO CN`（含 VSCode 系缓存：Cache/Local Storage/GPUCache…），无可执行文件；`%APPDATA%\TRAE Work CN` 目录为空。
-- `AppData` 下 `find -iname "trae*.exe"` 无结果；`%LOCALAPPDATA%\Programs` 无 Trae。
-- 因此：**adapter 保持 `research` 占位**，无法在本机给出「可接入/unsupported」的明确结论——该结论只能在装有 Trae/TraeWork 的机器上完成（见 §开发计划 §13 T1）。若后续安装 Trae 系产品：重新执行 T1（查 CLI/HTTP/MCP host/登录态），有接口再实现 adapter；仍无接口则标 `unsupported` + 替代建议（不 pty 硬接）。
+实测证据（安装目录 `D:\TRAE Work CN`，即 TRAE SOLO CN）：
+
+- 应用：`D:\TRAE Work CN\TRAE SOLO CN.exe`（Electron，product.json `name: TRAE SOLO CN`，version `1.107.1`）。
+- 提供的 CLI 仅 VS Code 家族命令（`bin/trae-solo-cn.cmd` 以 ELECTRON_RUN_AS_NODE 调 `resources/app/out/cli.js`）：
+  - `open` / `open-url` / `serve-web` / `install-extension` / `uninstall-extension` / `list-extensions` / `locate-extension` / `version` / `tunnel` / `command` / `open-devtools`
+  - **没有任何 `agent exec` / headless agent 驱动子命令**。
+- 全安装目录（排除 node_modules）`find -iname "*codex*" -o -iname "*agent*.exe" -o -iname "*solo*cli*"` 无结果；无独立 agent CLI 二进制。
+- 扩展含 `byted-solo.builtin-mcp`（MCP **客户端**扩展，供 IDE 内接 MCP server）与 `cloudide.icube-agent-shell-exec`；这些是 IDE 侧能力，不是可供本 MCP server 外部调用的无头接口。
+- `%PATH%` 无 trae；无 `--headless`/远程 agent API。
+
+因此：TRAE SOLO CN（TraeWork 系）当前**不能被 tianshu-mcp 作为外部 agent 无头驱动**。已在内置 profile 标 `status: "unsupported"`。若 Trae 未来提供 headless agent CLI / 官方远程接口，可重跑本调研并实现 adapter（R14：不 pty 硬接、不 GUI 自动化默认实施）。
+
+> 更正记录：早前版本基于 `%APPDATA%` 误判「本机未安装 Trae」；本次在 `D:/` 发现真实安装并完成定论。
 
 ## Z1 — Zcode headless 入口（M2 前置，进行中）
 

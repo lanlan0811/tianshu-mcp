@@ -39,9 +39,9 @@ export const BUILTIN_PROFILES: Record<string, AgentProfile> = {
     note: "M2 前置调研（开发计划 §13 Z1）确认真实无头入口后再填 command/argsTemplate；当前不自动探测，避免误判",
   },
   traework: {
-    displayName: "TraeWork",
+    displayName: "TraeWork (TRAE SOLO CN)",
     type: "cli",
-    status: "research",
+    status: "unsupported",
     command: null,
     argsTemplate: [],
     promptMode: "arg",
@@ -50,7 +50,7 @@ export const BUILTIN_PROFILES: Record<string, AgentProfile> = {
     timeoutMs: 30 * 60_000,
     killTree: "taskkill",
     authNote: "",
-    note: "M3 调研（§13 T1）：Trae CN / TRAE SOLO CN 是否提供可编程 CLI/接口；无接口则标 unsupported",
+    note: "T1 实测（2026-09-07）：本机 D:/TRAE Work CN = TRAE SOLO CN v1.107.1，仅有 VS Code 家族 CLI（open/serve-web/扩展管理），无 codex 风格无头 agent-exec，builtin-mcp 为 MCP 客户端扩展。无可编程无头驱动接口 → unsupported（详见 docs/adapter-matrix.md §T1）。若 Trae 未来提供 headless agent CLI 可重评",
   },
 };
 
