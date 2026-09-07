@@ -1,6 +1,6 @@
 {
   "name": "tianshu-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "天枢 × AI-Agent 编排 MCP server —— 由天枢调度本 server 去驱动外部 AI-Agent CLI（Codex/Zcode/TraeWork）完成 项目开发 → 验收 → 失败返修 → 再验收 的闭环。",
   "type": "module",
   "license": "MIT",
