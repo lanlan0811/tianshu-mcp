@@ -1,13 +1,23 @@
 /**
- * 代码分析（开发计划 §8.3）：程序化"读取并分析项目代码"——
- * 变更清单 / diffstat / 可疑标记扫描 / 结构性核对。确定性、不依赖 LLM。
+ * 代码分析（开发计划 §8.3，R3 重构）：程序化"读取并分析项目代码"——
+ * 变更清单 / diffstat / 可疑标记扫描 / 结构性核对，全部相对动工前 git 基线。
+ * 基线前已存在且内容未变的脏文件从"任务新增变更"中扣除；agent 是否创建提交都不丢变更。
  */
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import type { AnalysisResult } from "../tasks/task.js";
-import { parsePorcelain, gitChangedLines, gitNumstat, gitStatusPorcelain } from "./git-baseline.js";
+import { parsePorcelain, diffSinceBaseline, gitStatusPorcelain, type Baseline } from "./git-baseline.js";
 import { readTextSafe } from "../util/fs.js";
 import { scanChangedLinesForSignals } from "./signals.js";
+
+/** diffstat per-file 行（report.json analysis.diffstat.perFile） */
+interface NumstatLike {
+  file: string;
+  add: number;
+  del: number;
+  binary?: boolean;
+}
 
 const BIG_FILE_THRESHOLD = 500;
 const LOCKFILE_PATTERN = /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock|go\.sum|Pipfile\.lock|poetry\.lock|composer\.lock)$/;
@@ -19,50 +29,56 @@ const BINARY_EXT = new Set([
 ]);
 
 export interface AnalyzeOpts {
-  /** 非 git 仓库时把整树变化视作不可用（返回空变更） */
-  isRepo: boolean;
+  /** 动工前基线；非 git 仓库时 isRepo=false */
+  baseline: Baseline;
   projectPath: string;
   taskText?: string;
 }
 
 export async function analyzeChanges(opts: AnalyzeOpts): Promise<AnalysisResult> {
-  const empty: AnalysisResult = {
-    changedFiles: [],
-    untrackedFiles: [],
-    diffstat: { totalAdd: 0, totalDel: 0, perFile: [] },
-    signals: { todo: 0, consoleDebug: 0, commentedBlock: 0, secretLike: 0 },
-    bigFileChanges: [],
-    warnings: [],
-    notes: [],
-  };
-  if (!opts.isRepo) {
-    empty.notes.push("项目不是 git 仓库，未做变更清单/diffstat 分析。");
-    return empty;
+  const { baseline } = opts;
+  const notes: string[] = [];
+  if (!baseline.isRepo) {
+    notes.push("项目不是 git 仓库，未做变更清单/diffstat 分析。");
+    return { ...emptyResult(), notes };
   }
+
+  // 当前状态（工作树）
   const lines = await gitStatusPorcelain(opts.projectPath);
   const parsed = parsePorcelain(lines);
-  const numstat = await gitNumstat(opts.projectPath);
-  const numstatByFile = new Map(numstat.map((r) => [r.file, r]));
 
-  const changedFiles = parsed.changed;
-  const untrackedFiles = parsed.untracked;
+  // 基线前已存在的脏文件集合
+  const preChanged = new Set(baseline.preExistingChanged);
+  const preUntracked = new Set(baseline.preExistingUntracked);
 
-  // per-file add/del
-  const perFile: { file: string; add: number; del: number; binary?: boolean }[] = [];
-  const fileSet = new Set<string>();
-  for (const f of changedFiles) {
-    fileSet.add(f);
-    const row = numstatByFile.get(f);
-    if (row) perFile.push({ file: f, add: row.add, del: row.del, binary: row.binary });
-    else perFile.push({ file: f, add: 0, del: 0 });
+  // 相对基线 ref 的已跟踪差异（含 agent 提交前移 + 工作树）
+  const { numstat, changedLinesPerFile } = await diffSinceBaseline(opts.projectPath, baseline.head);
+  const perFile: NumstatLike[] = [];
+  const trackedSeen = new Set<string>();
+
+  // 已跟踪变更：diffSinceBaseline 以 baseline.head 为边界（含 agent 提交前移），净增删为 0 的剔除。
+  for (const row of numstat) {
+    trackedSeen.add(row.file);
+    if (row.add === 0 && row.del === 0 && !row.binary) continue;
+    perFile.push({ file: row.file, add: row.add, del: row.del, binary: row.binary });
   }
-  for (const f of untrackedFiles) {
-    if (fileSet.has(f)) continue;
+
+  // 新增未跟踪文件：基线前不存在 → 整文件计入；基线前已存在 → 内容 hash 变化才计入，未变则排除。
+  for (const f of parsed.untracked) {
+    if (trackedSeen.has(f)) continue;
     const full = path.join(opts.projectPath, f);
+    if (preUntracked.has(f)) {
+      const baseHash = baseline.preUntrackedHashes[f];
+      const nowHash = await fileHashQuick(full);
+      if (baseHash && nowHash && baseHash === nowHash) continue; // 基线前已有且未变：非任务改动
+      notes.push(`未跟踪文件 ${f} 在动工前已存在但内容发生变化，已整文件计入本轮变更（无法按行精确归因）。`);
+    }
     const isBinary = BINARY_EXT.has(path.extname(f).toLowerCase()) || looksBinary(full);
     const { add, del } = isBinary ? { add: 0, del: 0 } : countLines(full);
     perFile.push({ file: f, add, del, binary: isBinary });
   }
+
+  // 汇总
   let totalAdd = 0;
   let totalDel = 0;
   for (const pf of perFile) {
@@ -72,25 +88,51 @@ export async function analyzeChanges(opts: AnalyzeOpts): Promise<AnalysisResult>
   const bigFileChanges = perFile.filter((pf) => pf.add + pf.del > BIG_FILE_THRESHOLD).map((pf) => `${pf.file} (+${pf.add} -${pf.del})`);
 
   const warnings: string[] = [];
-  for (const f of changedFiles) if (LOCKFILE_PATTERN.test(f)) warnings.push(`锁文件被修改: ${f}（确认依赖变更是有意的）`);
-  for (const f of untrackedFiles) if (LOCKFILE_PATTERN.test(f)) warnings.push(`新增锁文件: ${f}（确认依赖变更是有意的）`);
+  for (const f of perFile) {
+    if (LOCKFILE_PATTERN.test(f.file)) warnings.push(`锁文件被修改: ${f.file}（确认依赖变更是有意的）`);
+  }
 
-  // 可疑标记：变更行扫描
+  // 可疑标记：只扫描"相对基线新增的行"
   const signals = { todo: 0, consoleDebug: 0, commentedBlock: 0, secretLike: 0 };
-  const { addedLines } = await gitChangedLines(opts.projectPath);
-  for (const f of untrackedFiles) {
+  const allAdded: string[] = [];
+  for (const arr of changedLinesPerFile.values()) allAdded.push(...arr);
+  // 未跟踪且基线前不存在 → 全量扫描；基线前已有且内容没变 → 已排除
+  for (const f of parsed.untracked) {
+    if (preUntracked.has(f)) {
+      const full = path.join(opts.projectPath, f);
+      const baseHash = baseline.preUntrackedHashes[f];
+      const nowHash = await fileHashQuick(full);
+      if (baseHash && nowHash && baseHash === nowHash) continue;
+    }
     const full = path.join(opts.projectPath, f);
     if (!looksTextFile(full)) continue;
     const text = await readTextSafe(full);
-    if (text) addedLines.push(...text.split("\n"));
+    if (text) allAdded.push(...text.split("\n"));
   }
-  const scanRes = scanChangedLinesForSignals(addedLines);
+  const scanRes = scanChangedLinesForSignals(allAdded);
   signals.todo = scanRes.todo;
   signals.consoleDebug = scanRes.consoleDebug;
   signals.commentedBlock = scanRes.commentedBlock;
   signals.secretLike = scanRes.secretLike;
 
-  const notes: string[] = [];
+  const trackedFiles = [...new Set(perFile.filter((p) => !parsed.untracked.includes(p.file)).map((p) => p.file))];
+  const untrackedFiles = parsed.untracked.filter((f) => {
+    if (!preUntracked.has(f)) return true;
+    // 基线前已有：内容变了才作为本轮新增未跟踪
+    const full = path.join(opts.projectPath, f);
+    const b = baseline.preUntrackedHashes[f];
+    const n = fileHashSync(full);
+    return !(b && n && b === n);
+  });
+  const changedFiles = [...trackedFiles];
+
+  if (preChanged.size || preUntracked.size) {
+    notes.push(`动工前工作区已有 ${preChanged.size} 个已跟踪脏文件 + ${preUntracked.size} 个未跟踪文件；本报告仅归因相对动工前基线的净变更。`);
+  }
+  if (baseline.head && (await gitHeadMoved(opts.projectPath, baseline.head))) {
+    notes.push("agent 在任务中创建了 git 提交；变更清单已按基线到当前 HEAD 合并，不丢失。");
+  }
+
   // 结构性核对（启发式提示，不作失败依据）
   const fileTexts = changedFiles.concat(untrackedFiles).join("\n").toLowerCase();
   const task = (opts.taskText ?? "").toLowerCase();
@@ -109,6 +151,44 @@ export async function analyzeChanges(opts: AnalyzeOpts): Promise<AnalysisResult>
     warnings,
     notes,
   };
+}
+
+async function gitHeadMoved(projectPath: string, baseHead: string): Promise<boolean> {
+  const { execFileAsync } = await import("./exec.js");
+  const r = await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: projectPath });
+  return r.status === 0 && r.stdout.trim() !== baseHead;
+}
+
+function emptyResult(): AnalysisResult {
+  return {
+    changedFiles: [],
+    untrackedFiles: [],
+    diffstat: { totalAdd: 0, totalDel: 0, perFile: [] },
+    signals: { todo: 0, consoleDebug: 0, commentedBlock: 0, secretLike: 0 },
+    bigFileChanges: [],
+    warnings: [],
+    notes: [],
+  };
+}
+
+async function fileHashQuick(p: string): Promise<string | null> {
+  try {
+    const buf = fs.readFileSync(p);
+    if (buf.length > 4 * 1024 * 1024) return null;
+    return createHash("sha1").update(buf).digest("hex");
+  } catch {
+    return null;
+  }
+}
+
+function fileHashSync(p: string): string | null {
+  try {
+    const buf = fs.readFileSync(p);
+    if (buf.length > 4 * 1024 * 1024) return null;
+    return createHash("sha1").update(buf).digest("hex");
+  } catch {
+    return null;
+  }
 }
 
 const SUGGESTED_EXTS_PATTERNS: [RegExp, string][] = [

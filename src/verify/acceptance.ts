@@ -14,7 +14,7 @@ import {
 import { toAcceptanceDef } from "../config/store.js";
 import { runVerifyCommand, makeSkipResult } from "./runner.js";
 import { analyzeChanges } from "./code-analysis.js";
-import { captureBaseline } from "./git-baseline.js";
+import { captureBaseline, gitDiffCheckSince } from "./git-baseline.js";
 import { nowIso } from "../util/id.js";
 import type { VerifyReport, CheckResult } from "../tasks/task.js";
 import { TaskStore } from "../tasks/task-store.js";
@@ -135,13 +135,12 @@ export class AcceptanceEngine {
     const { checks: rawChecks, notes } = await this.resolveChecks(req);
     const checks: CheckResult[] = [];
 
-    // 内置 git diff --check（任何项目；非 git 仓库跳过并标注）
+    // 内置 git diff --check（相对动工前基线；非 git 仓库跳过并标注）
     if (baseline.isRepo) {
-      const { execFileAsync } = await import("./exec.js");
-      const r = await execFileAsync("git", ["diff", "--check"], { cwd: req.projectPath, timeoutMs: 30_000 });
+      const r = await gitDiffCheckSince(req.projectPath, baseline.head);
       checks.push({
         name: "git-diff-check",
-        cmd: "git diff --check",
+        cmd: `git diff --check${baseline.head ? ` (base=${baseline.head.slice(0, 7)})` : ""}`,
         passed: r.status === 0,
         durationMs: r.durationMs,
         exitCode: r.status,
@@ -180,9 +179,9 @@ export class AcceptanceEngine {
       }
     }
 
-    // 代码分析
+    // 代码分析（相对动工前基线）
     const analysis = await analyzeChanges({
-      isRepo: baseline.isRepo,
+      baseline,
       projectPath: req.projectPath,
       taskText: req.taskText,
     });
