@@ -65,6 +65,7 @@ run_task(projectPath=D:/xxx/my-app, task=「…task brief…」, agentId=codex, 
 | [docs/m2-smoke-record.md](docs/m2-smoke-record.md) | M2 real-Codex smoke record (run_task→verify_task passed + bug fixes) |
 | [docs/m2-rework-record.md](docs/m2-rework-record.md) | M2 codex rework-loop record (failure→rework_task→re-verify, with artifacts) |
 | [docs/acceptance-config.md](docs/acceptance-config.md) | Project-level `.tianshu-mcp/acceptance.json` acceptance config spec |
+| English docs | [acceptance-config.en.md](docs/acceptance-config.en.md) · [tianshu-integration.en.md](docs/tianshu-integration.en.md) · [agent-profiles.en.md](docs/agent-profiles.en.md) · [adapter-matrix.en.md](docs/adapter-matrix.en.md) |
 | [skills/tianshu-mcp/](skills/tianshu-mcp/SKILL.md) | Skill teaching Tianshu how to orchestrate this MCP (with usage examples) |
 
 ## Milestone status
@@ -83,6 +84,19 @@ run_task(projectPath=D:/xxx/my-app, task=「…task brief…」, agentId=codex, 
   - T1 settled: local TRAE SOLO CN v1.107.1 verified **unsupported** (no headless programmable agent interface; VS Code-family CLI only; see [adapter-matrix.md](docs/adapter-matrix.md))
   - npm name `tianshu-mcp` available; npm publish needs an npmjs token
   - Real Tianshu-session skill-trigger validation (DoD #8) needs a GUI session (skill self-installed and ready)
+
+## Acceptance remediation (R1–R8, 2026-09-07)
+
+Per the acceptance-remediation plan, all P1/P2 findings are fixed with regression tests (total **53/53**):
+
+- **R1** ✅ cancel/interrupt state persistence (`cancel_requested → cancelled`, cancelReason/finishedAt/errorType, restart-recoverable, idempotent, bounded shutdown)
+- **R2** ✅ call-level `taskTimeoutMs` wins (adapter no longer overrides); POSIX process-group SIGTERM→SIGKILL with exit polling; Windows `taskkill /T /F`; single kill-tree impl + abort-race guard
+- **R3** ✅ git baseline participates in diff (baseline.head boundary; agent commits don't lose changes; dirty-worktree hash attribution; `--untracked-files=all`)
+- **R4** ✅ params: `round=0` valid; manual verify allocates next round (no overwrite); `extraChecks` append + `checksMode=replace`; `optional` doesn't fail verdict; `baselineRef` validated
+- **R5** ✅ hardcoded paths removed (`{LOCALAPPDATA}` placeholders + platform defaults); mtime+size hot reload for config/profile/projects
+- **R6** ✅ CI matrix win/mac/linux × Node 20/22 all green (run 25); Release version consistency (tag=package=tarball, v0.1.1 draft OK); tarball content check
+- **R7** 🟡 real Tianshu loop: host connect (DoD #6) + skill install verified; GUI-session invoke needs a user session
+- **R8** 🔄 docs synced (ZH/EN + dev-plan checklist); see [remediation-recheck report](.codex/review/2026-09-07-remediation-recheck.md)
 
 ## Recommended phrasing (for Tianshu)
 

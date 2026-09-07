@@ -4,7 +4,7 @@
 
 ## 配置优先级（高 → 低）
 
-1. `verify_task` 调用时的 `extraChecks`（临时追加，不落盘）
+1. `verify_task` 调用时的 `extraChecks`（**追加**到基础集之后；`checksMode:"replace"` 才替换）
 2. 项目内 `<project>/.tianshu-mcp/acceptance.json`
 3. server 数据目录 `projects.json[pathHash].verify`（管理员补录）
 4. 默认集（按项目技术栈自动推导，见下）
@@ -21,7 +21,7 @@
       // 也可以写字符串，会被安全分词（不经过 shell）：
       // "cmd": "npm run typecheck"
       "timeoutMs": 120000,               // 选填，单条超时；缺省 server 级 5 分钟
-      "optional": false                  // 选填；optional:true 失败只提示不判失败（未来语义，当前仍参与判定）
+      "optional": false                  // 选填；optional:true 失败只记 warning，不影响本轮 verdict
     },
     { "name": "lint", "cmd": ["npm", "run", "lint"] },
     { "name": "test", "cmd": ["npm", "test"] }
@@ -49,6 +49,14 @@
 | `Cargo.toml` | `cargo test` | — |
 
 > 规则数据化，可后续扩展；不需要改代码。
+
+## 检查语义（R4 定稿）
+
+- **optional:true**：该检查失败只记为 warning（`report.message` 标注 "optional 检查未通过"），**不影响本轮 verdict**；必选（默认）失败才使 verdict=failed。
+- **extraChecks 追加**：默认 `checksMode:"append"`——先解析项目/默认检查，再**追加** extraChecks（不削弱基础门禁）。`checksMode:"replace"` 才完全替换为只跑 extraChecks。
+- **报告轮次 0-based**：`report-N.*` 从 0 起；`get_task_report(round=0)` 合法，缺省返回最新。
+- **手动 `verify_task(taskId)`**：自动分配下一可用轮次写入任务目录，不覆盖已有 `report-0.*`。
+- **baselineRef**：`verify_task` 可传 Git ref 或任务 ID（taskId 场景默认读取该任务动工前基线）；无效 ref 返回结构化错误，不静默退回当前 HEAD。
 
 ## 与 tasks 结合
 

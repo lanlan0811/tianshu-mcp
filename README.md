@@ -66,6 +66,7 @@ run_task(projectPath=D:/xxx/my-app, task=「…任务书…」, agentId=codex, a
 | [docs/m2-rework-record.md](docs/m2-rework-record.md) | M2 codex rework 闭环记录（失败→rework_task→再验收，含物证） |
 | [docs/host-integration-record.md](docs/host-integration-record.md) | 天枢宿主真实接入实测（DoD #6：2 servers / 10 tools） |
 | [docs/acceptance-config.md](docs/acceptance-config.md) | 项目级 `.tianshu-mcp/acceptance.json` 验收配置规范 |
+| English docs | [acceptance-config.en.md](docs/acceptance-config.en.md) · [tianshu-integration.en.md](docs/tianshu-integration.en.md) · [agent-profiles.en.md](docs/agent-profiles.en.md) · [adapter-matrix.en.md](docs/adapter-matrix.en.md) |
 | [skills/tianshu-mcp/](skills/tianshu-mcp/SKILL.md) | 教天枢编排本 MCP 的技能（含使用示例） |
 
 ## 里程碑状态
