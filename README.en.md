@@ -64,6 +64,7 @@ run_task(projectPath=D:/xxx/my-app, task=「…task brief…」, agentId=codex, 
 | [docs/adapter-matrix.md](docs/adapter-matrix.md) | Agent capability research matrix (Codex/Zcode/TraeWork/extension slots) |
 | [docs/m2-smoke-record.md](docs/m2-smoke-record.md) | M2 real-Codex smoke record (run_task→verify_task passed + bug fixes) |
 | [docs/m2-rework-record.md](docs/m2-rework-record.md) | M2 codex rework-loop record (failure→rework_task→re-verify, with artifacts) |
+| [docs/dod7-release-record.md](docs/dod7-release-record.md) | DoD #7: npm publish tianshu-mcp@0.1.1 + npx-raise connect record |
 | [docs/acceptance-config.md](docs/acceptance-config.md) | Project-level `.tianshu-mcp/acceptance.json` acceptance config spec |
 | English docs | [acceptance-config.en.md](docs/acceptance-config.en.md) · [tianshu-integration.en.md](docs/tianshu-integration.en.md) · [agent-profiles.en.md](docs/agent-profiles.en.md) · [adapter-matrix.en.md](docs/adapter-matrix.en.md) |
 | [skills/tianshu-mcp/](skills/tianshu-mcp/SKILL.md) | Skill teaching Tianshu how to orchestrate this MCP (with usage examples) |
@@ -82,7 +83,7 @@ run_task(projectPath=D:/xxx/my-app, task=「…task brief…」, agentId=codex, 
   - Zcode headless entry (Z1) verified: ZCode desktop ships no headless CLI → unsupported
 - **M3 — TraeWork research + full delivery** ✅ (2026-09-07 T1 settled + delivery ready)
   - T1 settled: local TRAE SOLO CN v1.107.1 verified **unsupported** (no headless programmable agent interface; VS Code-family CLI only; see [adapter-matrix.md](docs/adapter-matrix.md))
-  - npm name `tianshu-mcp` available; npm publish needs an npmjs token
+  - npm name `tianshu-mcp` published: `tianshu-mcp@0.1.1` (`npm view` resolves; `npx -y tianshu-mcp` raises and connects 8 tools, see [dod7-release-record.md](docs/dod7-release-record.md))
   - Real Tianshu-session skill-trigger validation (DoD #8) needs a GUI session (skill self-installed and ready)
 
 ## Acceptance remediation (R1–R8, 2026-09-07)
@@ -95,7 +96,7 @@ Per the acceptance-remediation plan, all P1/P2 findings are fixed with regressio
 - **R4** ✅ params: `round=0` valid; manual verify allocates next round (no overwrite); `extraChecks` append + `checksMode=replace`; `optional` doesn't fail verdict; `baselineRef` validated
 - **R5** ✅ hardcoded paths removed (`{LOCALAPPDATA}` placeholders + platform defaults); mtime+size hot reload for config/profile/projects
 - **R6** ✅ CI matrix win/mac/linux × Node 20/22 all green (run 25); Release version consistency (tag=package=tarball, v0.1.1 draft OK); tarball content check
-- **R7** 🟡 real Tianshu loop: host connect (DoD #6) + skill install verified; GUI-session invoke needs a user session
+- **R7** ✅ real Tianshu loop: host connect (DoD #6) + skill load & MCP tool call + task loop (DoD #8) + npm publish & npx raise (DoD #7) all verified
 - **R8** 🔄 docs synced (ZH/EN + dev-plan checklist); see [remediation-recheck report](.codex/review/2026-09-07-remediation-recheck.md)
 
 ## Recommended phrasing (for Tianshu)

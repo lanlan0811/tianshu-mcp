@@ -65,6 +65,7 @@ run_task(projectPath=D:/xxx/my-app, task=「…任务书…」, agentId=codex, a
 | [docs/m2-smoke-record.md](docs/m2-smoke-record.md) | M2 真实 codex 冒烟记录（run_task→verify_task 通过 + 缺陷修复） |
 | [docs/m2-rework-record.md](docs/m2-rework-record.md) | M2 codex rework 闭环记录（失败→rework_task→再验收，含物证） |
 | [docs/host-integration-record.md](docs/host-integration-record.md) | 天枢宿主真实接入实测（DoD #6：2 servers / 10 tools） |
+| [docs/dod7-release-record.md](docs/dod7-release-record.md) | DoD #7：npm 发布 tianshu-mcp@0.1.1 + npx 拉起连通记录 |
 | [docs/acceptance-config.md](docs/acceptance-config.md) | 项目级 `.tianshu-mcp/acceptance.json` 验收配置规范 |
 | English docs | [acceptance-config.en.md](docs/acceptance-config.en.md) · [tianshu-integration.en.md](docs/tianshu-integration.en.md) · [agent-profiles.en.md](docs/agent-profiles.en.md) · [adapter-matrix.en.md](docs/adapter-matrix.en.md) |
 | [skills/tianshu-mcp/](skills/tianshu-mcp/SKILL.md) | 教天枢编排本 MCP 的技能（含使用示例） |
@@ -88,9 +89,9 @@ run_task(projectPath=D:/xxx/my-app, task=「…任务书…」, agentId=codex, a
 - **天枢宿主真实接入（DoD #6）** ✅（2026-09-07，[host-integration-record.md](docs/host-integration-record.md)）
   - 在真实 `D:\Tianshu` 桌面宿主 `mcp.servers` 配置 §11.1 本地模式 → sidecar `MCP: 2 servers connected, 10 tools`（含本 server 8 工具），spawn 子进程并 stdio 连通
   - 实测暴露并修复技能安装源路径 bug（fileURLToPath，提交 55cf2d0）
-- **M3 — TraeWork 调研 + 全套交付** ✅（2026-09-07 T1 定论 + 交付就绪）
+- **M3 — TraeWork 调研 + 全套交付** ✅（2026-09-07 T1 定论 + **npm 已发布**）
   - T1 定论：本机 TRAE SOLO CN v1.107.1 实测 **unsupported**（无无头可编程 agent 接口，仅 VS Code 家族 CLI；见 [adapter-matrix.md](docs/adapter-matrix.md)）
-  - npm 包名 `tianshu-mcp` 可用；npm publish 需 npmjs token
+  - **npm 已发布**：`tianshu-mcp@0.1.1`（`npm view` 可查，`npx -y tianshu-mcp` 拉起 8 工具连通，见 [dod7-release-record.md](docs/dod7-release-record.md)）
   - GUI 聊天会话内实际调用工具（DoD #8 最后一环）需用户开天枢新会话（宿主连通与 8 工具注册已就位）
 
 ## 验收整改（R1–R8，2026-09-07）
