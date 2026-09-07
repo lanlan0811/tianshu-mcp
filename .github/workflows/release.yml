@@ -1,0 +1,62 @@
+name: Release
+
+# 触发：手工（workflow_dispatch，填 tag）或推送 v* tag 时。
+# 会构建并产出 npm 包内容（tarball），由维护者选择是否 `npm publish`。
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "要发布的版本（如 0.2.0）"
+        required: true
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & draft release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install & verify
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+          npm run build
+
+      - name: npm pack
+        id: pack
+        run: |
+          npm pack --pack-destination "$RUNNER_TEMP"
+          echo "tarball=$(ls $RUNNER_TEMP/*.tgz | head -1)" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            V="${{ github.event.inputs.version }}"
+          else
+            V="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+      - name: Draft GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: tianshu-mcp v${{ steps.version.outputs.version }}
+          draft: true
+          generate_release_notes: true
+          files: |
+            ${{ steps.pack.outputs.tarball }}

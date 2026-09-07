@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  build-test:
+    name: Build & Test (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit -p tsconfig.json
+      - name: Lint
+        run: npm run lint
+      - name: Unit & integration & protocol tests
+        run: npm test
+      - name: Build (tsc → dist/)
+        run: npm run build
+      - name: Server boots & exits cleanly on stdin EOF
+        run: timeout 20 node dist/index.js --no-skill-install < /dev/null; test $? -eq 0 -o $? -eq 124
+
+  pack-check:
+    name: npm pack dry-run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: npm pack --dry-run
+        run: npm pack --dry-run
