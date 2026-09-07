@@ -104,8 +104,13 @@ export type ServerConfig = z.infer<typeof ServerConfigSchema>;
 /* ---------------- agent-profiles.json ---------------- */
 
 export const ExecutableDiscoverySchema = z.object({
+  /**
+   * 候选根目录。支持 {LOCALAPPDATA} {APPDATA} {HOME} {USERPROFILE} 占位符与
+   * 平台相对路径；留空时由实现按平台注入标准候选（如 Windows 的 LOCALAPPDATA、macOS 的 ~/Applications）。
+   */
   dirs: z.array(z.string()).default([]),
   fileNames: z.array(z.string()).default([]),
+  /** PATH 中查找的回退命令名 */
   fallbackCommand: z.string().optional(),
 });
 

@@ -42,3 +42,48 @@ function statOrNull(p: string): { isDirectory(): boolean } | null {
     return null;
   }
 }
+
+/**
+ * 展开 profile 发现目录中的平台环境占位符（R5：源码不含用户名/盘符硬编码）。
+ * 支持：{LOCALAPPDATA} {APPDATA} {HOME} {USERPROFILE} {PROGRAMFILES} {XDG_DATA_HOME}
+ * 无法解析的占位符原样返回（探测时该目录不存在会被忽略）。
+ */
+export function expandEnvPath(tpl: string): string {
+  const envMap: Record<string, string | undefined> = {
+    LOCALAPPDATA: process.env.LOCALAPPDATA,
+    APPDATA: process.env.APPDATA,
+    HOME: process.env.HOME,
+    USERPROFILE: process.env.USERPROFILE,
+    PROGRAMFILES: process.env.PROGRAMFILES,
+    "PROGRAMFILES(X86)": process.env["PROGRAMFILES(X86)"],
+    XDG_DATA_HOME: process.env.XDG_DATA_HOME,
+  };
+  let out = tpl;
+  for (const [k, v] of Object.entries(envMap)) {
+    if (v) out = out.split(`{${k}}`).join(v);
+  }
+  // Windows 下把模板里的正斜杠统一为平台分隔符（env 值本身已是平台分隔）
+  if (process.platform === "win32") out = out.split("/").join("\\");
+  return out;
+}
+
+/** 平台标准候选根（用于 dirs 留空时的注入）：Windows/macOS/Linux 常见应用与用户目录 */
+export function platformDefaultDiscoveryDirs(): string[] {
+  const dirs = new Set<string>();
+  const push = (v: string | undefined): void => {
+    if (v) dirs.add(v);
+  };
+  if (process.platform === "win32") {
+    push(process.env.LOCALAPPDATA);
+    push(process.env.USERPROFILE ? path.join(process.env.USERPROFILE, "AppData", "Local") : undefined);
+    push(process.env.PROGRAMFILES);
+    push(process.env["PROGRAMFILES(X86)"]);
+  } else {
+    push(process.env.HOME ? path.join(process.env.HOME, "Applications") : undefined);
+    push("/Applications");
+    push("/usr/local/bin");
+    push("/opt/homebrew/bin");
+    push("/usr/bin");
+  }
+  return [...dirs].filter(Boolean);
+}

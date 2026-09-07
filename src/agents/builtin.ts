@@ -18,7 +18,7 @@ export const BUILTIN_PROFILES: Record<string, AgentProfile> = {
     killTree: "taskkill",
     authNote: "复用 ~/.codex 登录态（与桌面端同账号）；需本机已装 Codex 桌面端；勿与 --approve-for-me 同用（实测互斥）",
     executableDiscovery: {
-      dirs: ["C:/Users/Lenovo/AppData/Local/OpenAI/Codex/bin"],
+      dirs: ["{LOCALAPPDATA}/OpenAI/Codex/bin", "{USERPROFILE}/AppData/Local/OpenAI/Codex/bin", "/Applications/Codex.app/Contents/Resources/app/bin"],
       fileNames: ["codex.exe", "codex"],
       fallbackCommand: "codex",
     },

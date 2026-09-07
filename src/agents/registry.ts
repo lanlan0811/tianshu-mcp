@@ -10,6 +10,7 @@ import { CliAdapter } from "./cli.js";
 import type { AgentProfile } from "../config/schema.js";
 import type { SpawnResult } from "./spawn.js";
 import { Logger } from "../util/log.js";
+import { expandEnvPath, platformDefaultDiscoveryDirs } from "../util/path.js";
 
 export class AgentAdapterRegistry {
   private adapters = new Map<string, AgentAdapter>();
@@ -46,17 +47,16 @@ export class AgentAdapterRegistry {
     }
   }
 
-  /** 解析并探测一个 agent。cache=false 强制重探（版本目录失效场景） */
+  /** 解析并探测一个 agent。loadProfiles 按 mtime 热加载；cache 命中依赖 profile 对象引用（R5）。 */
   async resolve(agentId: string, cache = true): Promise<ResolvedAgent> {
-    if (cache) {
-      const cached = this.resolveCache.get(agentId);
-      if (cached) return cached;
-    }
     const profiles = await this.loadProfiles();
     const profile = profiles[agentId];
     if (!profile) {
+      this.resolveCache.delete(agentId);
       return { id: agentId, displayName: agentId, profile: {} as AgentProfile, command: "", argsTemplate: [], ok: false, message: `未配置 agent '${agentId}'，请在 agent-profiles.json 中添加 profile` };
     }
+    const cached = this.resolveCache.get(agentId);
+    if (cache && cached && cached.profile === profile) return cached;
     const resolved = this.resolveProfile(agentId, profile);
     if (resolved.ok) this.resolveCache.set(agentId, resolved);
     return resolved;
@@ -75,11 +75,11 @@ export class AgentAdapterRegistry {
         ok: false, message: profile.note || `agent '${agentId}' 被标记为 unsupported`,
       };
     }
-    if (profile.status === "research" || !profile.command || profile.command.trim() === "") {
+    if (profile.status === "research") {
       const disc = profile.executableDiscovery;
-      if (disc && (disc.dirs.length > 0 || disc.fallbackCommand)) {
-        // 仍尝试探测，探到即视为可用
-        const found = this.probeDiscovery(agentId, disc.fileNames, disc.dirs, disc.fallbackCommand);
+      if (disc && (disc.dirs.length > 0 || disc.fallbackCommand) && disc.fileNames.length > 0) {
+        const dirs = (disc.dirs.length > 0 ? disc.dirs : platformDefaultDiscoveryDirs()).map((d) => expandEnvPath(d));
+        const found = this.probeDiscovery(agentId, disc.fileNames, dirs, disc.fallbackCommand);
         if (found) {
           return { id: agentId, displayName: profile.displayName || agentId, profile, command: found, argsTemplate: profile.argsTemplate, ok: true, message: `探测到可执行: ${found}`, discovered: { source: "discovery" } };
         }
@@ -94,8 +94,23 @@ export class AgentAdapterRegistry {
       };
     }
 
-    const cmd = profile.command.trim();
-    // 占位符形如 <M2调研确定：…> → 视为未配置
+    const cmd = (profile.command ?? "").trim();
+    // command 为空但配置了 discovery（ready + 自动发现）→ 走共享发现逻辑
+    if (cmd === "") {
+      const disc = profile.executableDiscovery;
+      if (disc && disc.fileNames.length > 0) {
+        const dirs = (disc.dirs.length > 0 ? disc.dirs : platformDefaultDiscoveryDirs()).map((d) => expandEnvPath(d));
+        const found = this.probeDiscovery(agentId, disc.fileNames, dirs, disc.fallbackCommand);
+        if (found) {
+          return { id: agentId, displayName: profile.displayName || agentId, profile, command: found, argsTemplate: profile.argsTemplate, ok: true, message: `探测到可执行: ${found}`, discovered: { source: "discovery" } };
+        }
+      }
+      return {
+        id: agentId, displayName: profile.displayName || agentId, profile, command: "", argsTemplate: profile.argsTemplate,
+        ok: false, message: profile.note || `agent '${agentId}' 未配置可执行 command 且未探测到`,
+      };
+    }
+    // 占位符形如 <…> → 视为未配置
     if (cmd.startsWith("<")) {
       return { id: agentId, displayName: profile.displayName || agentId, profile, command: "", argsTemplate: profile.argsTemplate, ok: false, message: profile.note || `agent '${agentId}' 的 command 仍是占位符，请按 docs/agent-profiles.md 配置真实路径` };
     }
@@ -104,10 +119,11 @@ export class AgentAdapterRegistry {
     if (fs.existsSync(cmd)) {
       return { id: agentId, displayName: profile.displayName || agentId, profile, command: cmd, argsTemplate: profile.argsTemplate, ok: true, message: "使用显式 command", discovered: { source: "explicit" } };
     }
-    // 2) discovery 目录扫描
+    // 2) discovery 目录扫描（占位符展开 + 平台标准候选；源码无用户名/盘符硬编码）
     const disc = profile.executableDiscovery;
-    if (disc && disc.dirs.length > 0) {
-      const found = this.probeDiscovery(agentId, disc.fileNames, disc.dirs, disc.fallbackCommand);
+    if (disc && disc.fileNames.length > 0) {
+      const dirs = (disc.dirs.length > 0 ? disc.dirs : platformDefaultDiscoveryDirs()).map((d) => expandEnvPath(d));
+      const found = this.probeDiscovery(agentId, disc.fileNames, dirs, disc.fallbackCommand);
       if (found) {
         return { id: agentId, displayName: profile.displayName || agentId, profile, command: found, argsTemplate: profile.argsTemplate, ok: true, message: `探测到可执行: ${found}`, discovered: { source: "discovery" } };
       }
