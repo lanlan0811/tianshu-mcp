@@ -45,7 +45,15 @@ jobs:
         run: npm run build
       - name: Server boots & exits cleanly on stdin EOF
         shell: bash
-        run: timeout 20 node dist/index.js --no-skill-install < /dev/null; test $? -eq 0 -o $? -eq 124
+        # macOS 无 GNU timeout；用 node 起子进程喂 EOF，10s 未退出则判失败
+        run: |
+          node -e "
+            const { spawn } = require('child_process');
+            const cp = spawn(process.execPath, ['dist/index.js', '--no-skill-install'], { stdio: ['pipe','inherit','inherit'] });
+            cp.stdin.end();
+            const t = setTimeout(() => { console.error('server did not exit within 10s'); cp.kill(); process.exit(1); }, 10000);
+            cp.on('exit', (c) => { clearTimeout(t); console.log('server exited code', c); process.exit(c === 0 ? 0 : 1); });
+          "
       - name: No unexpected tracked diff after build
         shell: bash
         run: |
