@@ -64,6 +64,7 @@ run_task(projectPath=D:/xxx/my-app, task=「…任务书…」, agentId=codex, a
 | [docs/adapter-matrix.md](docs/adapter-matrix.md) | 各 Agent 能力调研矩阵（Codex/Zcode/TraeWork/扩展位） |
 | [docs/m2-smoke-record.md](docs/m2-smoke-record.md) | M2 真实 codex 冒烟记录（run_task→verify_task 通过 + 缺陷修复） |
 | [docs/m2-rework-record.md](docs/m2-rework-record.md) | M2 codex rework 闭环记录（失败→rework_task→再验收，含物证） |
+| [docs/host-integration-record.md](docs/host-integration-record.md) | 天枢宿主真实接入实测（DoD #6：2 servers / 10 tools） |
 | [docs/acceptance-config.md](docs/acceptance-config.md) | 项目级 `.tianshu-mcp/acceptance.json` 验收配置规范 |
 | [skills/tianshu-mcp/](skills/tianshu-mcp/SKILL.md) | 教天枢编排本 MCP 的技能（含使用示例） |
 
@@ -80,13 +81,16 @@ run_task(projectPath=D:/xxx/my-app, task=「…任务书…」, agentId=codex, a
   - 修复冒烟暴露的 3 个真实缺陷（Windows npm 垫片 / spawn 日志竞态崩溃 / codex flags 互斥）并各加回归测试
   - Zcode headless 入口（Z1）仍待产品侧确认
 - **工程/CI** ✅（2026-09-07）
-  - GitHub Actions 实测：`CI`（Node 20/22 矩阵）与 `Release`（tag v0.1.0 触发）均绿（提交 d91aea8 起）
+  - GitHub Actions 实测：`CI`（Node 20/22 矩阵）与 `Release`（tag v0.1.0 触发）均绿（提交 d91aea8/2a9ac82 起）
   - 技能自检安装已在本机真实 `~/.rivet/skills/tianshu-mcp` 验证生效且幂等
   - npm 包名 `tianshu-mcp` 在 npmjs 可用（未占用）
+- **天枢宿主真实接入（DoD #6）** ✅（2026-09-07，[host-integration-record.md](docs/host-integration-record.md)）
+  - 在真实 `D:\Tianshu` 桌面宿主 `mcp.servers` 配置 §11.1 本地模式 → sidecar `MCP: 2 servers connected, 10 tools`（含本 server 8 工具），spawn 子进程并 stdio 连通
+  - 实测暴露并修复技能安装源路径 bug（fileURLToPath，提交 55cf2d0）
 - **M3 — TraeWork 调研 + 全套交付** ✅（2026-09-07 T1 定论 + 交付就绪）
   - T1 定论：本机 TRAE SOLO CN v1.107.1 实测 **unsupported**（无无头可编程 agent 接口，仅 VS Code 家族 CLI；见 [adapter-matrix.md](docs/adapter-matrix.md)）
   - npm 包名 `tianshu-mcp` 可用；npm publish 需 npmjs token
-  - 天枢真实会话技能触发实测（DoD #8）需 GUI 会话（技能已自检安装就位）
+  - GUI 聊天会话内实际调用工具（DoD #8 最后一环）需用户开天枢新会话（宿主连通与 8 工具注册已就位）
 
 ## 推荐用法（给天枢的提示语）
 
