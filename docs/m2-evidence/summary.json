@@ -1,0 +1,17 @@
+{
+  "taskId": "tsk_20260907185811_43f6b6",
+  "phaseA": {
+    "status": "succeeded",
+    "round": 1
+  },
+  "verifyAfterInject": {
+    "status": "failed"
+  },
+  "phaseC": {
+    "status": "succeeded",
+    "round": 2
+  },
+  "reportA": "# 验收报告 — 第 0 轮\n\n- 任务: tsk_20260907185811_43f6b6\n- 项目: c:/Users/Lenovo/AppData/Local/Temp/m2-rework/repo\n- 开始: 2026-09-07T10:59:01.628Z\n- 结束: 2026-09-07T10:59:03.115Z\n- 结论: **通过 ✅**\n\n## 自动命令检查\n\n- [PASS] git-diff-check — `git diff --check` (80ms)\n- [PASS] test — `npm run test` (1152ms)\n## 代码分析\n\n### 变更清单（0 个已跟踪 + 1 个未跟踪）\n\n- (未跟踪) lib.js\n\n### diffstat：+11 -0\n\n- lib.js: +11 -0\n- 💡 package.json 缺少脚本（跳过）: typecheck/lint/build。\n- 💡 使用默认验收集（依据项目技术栈推导）。\n\n---\n\n验收通过。\n",
+  "verifyText": "❌ 验收失败（手动验收）：1 项检查未通过。\n变更 1 个文件，diffstat +1 -10。\n报告：C:\\Users\\Lenovo\\AppData\\Local\\Temp\\m2-rework\\home\\tasks\\vfy_1788778746256\\report-0.md\nJSON：C:\\Users\\Lenovo\\AppData\\Local\\Temp\\m2-rework\\home\\tasks\\vfy_1788778746256\\report-0.json\n---tianshu-mcp-meta---\n{\n  \"ok\": false,\n  \"taskId\": \"vfy_1788778746256\",\n  \"status\": \"failed\",\n  \"agentId\": \"manual-verify\",\n  \"projectPath\": \"c:/Users/Lenovo/AppData/Local/Temp/m2-rework/repo\",\n  \"round\": 0,\n  \"changedFiles\": [\n    \"lib.js\"\n  ],\n  \"diffstat\": \"+1 -10\",\n  \"reportFiles\": {\n    \"md\": \"C:\\\\Users\\\\Lenovo\\\\AppData\\\\Local\\\\Temp\\\\m2-rework\\\\home\\\\tasks\\\\vfy_1788778746256\\\\report-0.md\",\n    \"json\": \"C:\\\\Users\\\\Lenovo\\\\AppData\\\\Local\\\\Temp\\\\m2-rework\\\\home\\\\tasks\\\\vfy_1788778746256\\\\report-0.json\"\n  },\n  \"message\": \"❌ 验收失败（手动验收）：1 项检查未通过。\"\n}\n---tianshu-mc",
+  "reportC": "# 验收报告 — 第 1 轮\n\n- 任务: tsk_20260907185811_43f6b6\n- 项目: c:/Users/Lenovo/AppData/Local/Temp/m2-rework/repo\n- 开始: 2026-09-07T11:00:05.858Z\n- 结束: 2026-09-07T11:00:07.296Z\n- 结论: **通过 ✅**\n\n## 自动命令检查\n\n- [PASS] git-diff-check — `git diff --check` (71ms)\n- [PASS] test — `npm run test` (1124ms)\n## 代码分析\n\n### 变更清单（1 个已跟踪 + 0 个未跟踪）\n\n- lib.js\n\n### diffstat：+1 -1\n\n- lib.js: +1 -1\n- 💡 package.json 缺少脚本（跳过）: typecheck/lint/build。\n- 💡 使用默认验收集（依据项目技术栈推导）。\n\n---\n\n验收通过。\n"
+}

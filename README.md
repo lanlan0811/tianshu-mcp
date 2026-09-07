@@ -63,6 +63,7 @@ run_task(projectPath=D:/xxx/my-app, task=「…任务书…」, agentId=codex, a
 | [docs/agent-profiles.md](docs/agent-profiles.md) | agent profiles 字段说明 + 真实机器样例（codex M2 定稿） |
 | [docs/adapter-matrix.md](docs/adapter-matrix.md) | 各 Agent 能力调研矩阵（Codex/Zcode/TraeWork/扩展位） |
 | [docs/m2-smoke-record.md](docs/m2-smoke-record.md) | M2 真实 codex 冒烟记录（run_task→verify_task 通过 + 缺陷修复） |
+| [docs/m2-rework-record.md](docs/m2-rework-record.md) | M2 codex rework 闭环记录（失败→rework_task→再验收，含物证） |
 | [docs/acceptance-config.md](docs/acceptance-config.md) | 项目级 `.tianshu-mcp/acceptance.json` 验收配置规范 |
 | [skills/tianshu-mcp/](skills/tianshu-mcp/SKILL.md) | 教天枢编排本 MCP 的技能（含使用示例） |
 
@@ -73,8 +74,9 @@ run_task(projectPath=D:/xxx/my-app, task=「…任务书…」, agentId=codex, a
   - 验收引擎（git 基线/diff、默认集推导、命令 runner、代码分析、report.md/json）
   - fix-loop 自动返修 + needs_attention；技能自检安装
   - stub-agent 三剧本（good/fix-on-first/never）集成测试 + 协议测试，**32/32 绿**
-- **M2 — 真实 Codex CLI 冒烟** ✅（2026-09-07）
-  - 真实 `codex exec` 在临时 git 仓库跑通 `run_task → query_task → verify_task`（见 [m2-smoke-record.md](docs/m2-smoke-record.md)）
+- **M2 — 真实 Codex CLI 冒烟 + rework 闭环** ✅（2026-09-07）
+  - 真实 `codex exec` 跑通 `run_task → query_task → verify_task`（[m2-smoke-record.md](docs/m2-smoke-record.md)）
+  - 真实 **失败→rework_task→再验收 succeeded** 闭环（[m2-rework-record.md](docs/m2-rework-record.md)，物证 `docs/m2-evidence/`）
   - 修复冒烟暴露的 3 个真实缺陷（Windows npm 垫片 / spawn 日志竞态崩溃 / codex flags 互斥）并各加回归测试
   - Zcode headless 入口（Z1）仍待产品侧确认
 - **M3 — TraeWork 调研 + 全套交付** 🔜（TraeWork 状态见 adapter-matrix；npm publish / 天枢真实会话技能实测 待做）

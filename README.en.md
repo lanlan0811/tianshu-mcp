@@ -63,6 +63,7 @@ run_task(projectPath=D:/xxx/my-app, task=「…task brief…」, agentId=codex, 
 | [docs/agent-profiles.md](docs/agent-profiles.md) | Agent profile field reference + real-machine samples (codex M2 finalized) |
 | [docs/adapter-matrix.md](docs/adapter-matrix.md) | Agent capability research matrix (Codex/Zcode/TraeWork/extension slots) |
 | [docs/m2-smoke-record.md](docs/m2-smoke-record.md) | M2 real-Codex smoke record (run_task→verify_task passed + bug fixes) |
+| [docs/m2-rework-record.md](docs/m2-rework-record.md) | M2 codex rework-loop record (failure→rework_task→re-verify, with artifacts) |
 | [docs/acceptance-config.md](docs/acceptance-config.md) | Project-level `.tianshu-mcp/acceptance.json` acceptance config spec |
 | [skills/tianshu-mcp/](skills/tianshu-mcp/SKILL.md) | Skill teaching Tianshu how to orchestrate this MCP (with usage examples) |
 
@@ -73,8 +74,9 @@ run_task(projectPath=D:/xxx/my-app, task=「…task brief…」, agentId=codex, 
   - Acceptance engine (git baseline & diff, default-set derivation, command runner, code analysis, report.md/json)
   - fix-loop auto rework + needs_attention; skill self-install
   - Stub-agent 3 playbooks (good / fix-on-first / never) integration tests + protocol tests — **32/32 green**
-- **M2 — Real Codex CLI smoke** ✅ (2026-09-07)
-  - Real `codex exec` completed `run_task → query_task → verify_task` in a temp git repo (see [m2-smoke-record.md](docs/m2-smoke-record.md))
+- **M2 — Real Codex CLI smoke + rework loop** ✅ (2026-09-07)
+  - Real `codex exec` completed `run_task → query_task → verify_task` (see [m2-smoke-record.md](docs/m2-smoke-record.md))
+  - Real **failure → rework_task → re-verify succeeded** loop ([m2-rework-record.md](docs/m2-rework-record.md), artifacts in `docs/m2-evidence/`)
   - Fixed 3 real bugs the smoke exposed (Windows npm shim / spawn log race crash / codex flag conflict) + regression tests
   - Zcode headless entry (Z1) still pending product-side confirmation
 - **M3 — TraeWork research + full delivery** 🔜 (TraeWork status in adapter-matrix; npm publish / real-session skill validation pending)
