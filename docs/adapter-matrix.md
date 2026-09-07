@@ -59,18 +59,20 @@
 - 因此：**adapter 保持 `research` 占位**（开发计划 §13 T1 的无接口/不可验证分支）。本机无 Trae 时 `traework` 不可用属正确行为。
 - 若后续安装 Trae 系产品：重新执行 T1（查 CLI/HTTP/MCP host/登录态），有接口再实现 adapter；仍无接口则标 `unsupported` + 替代建议（不 pty 硬接）。
 
-## Z1 — Zcode headless 入口（M2 前置，未完成）
+## Z1 — Zcode headless 入口（M2 前置，进行中）
 
-背景：本机 Zcode = `C:\Users\Lenovo\.zcode\cli`（Node CLI：含 agents/exec/plugins…），无 PATH 命令；桌面应用复用同一数据。
+背景：本机 Zcode = `C:\Users\Lenovo\.zcode\cli`（Node CLI，无 PATH 命令）；桌面应用复用同一数据。
+
+**2026-09-07 实测**：`.zcode\cli` 根目录仅含运行期数据目录（`agents/` `exec/` `plugins/` `rollout/` `artifacts/` `log/` `db/` + 大量 `sess_*` 会话目录），**没有 `package.json`/bin/可执行入口**；agent 会话数据分别落在 `agents/sess_*` 与 `exec/sess_*`。说明真正的 CLI 入口不在数据目录，需向 Zcode 产品侧确认（或桌面端持有）。
 
 待确认问题：
 
-- [ ] `zcode` CLI 有无无头 exec/子命令（如 `zcode run <prompt>` / agent exec）？
+- [ ] `zcode` 的无头 exec/子命令入口在哪里（可能在安装目录而非数据目录）？
 - [ ] 无头模式参数、工作目录、stdout/日志、退出码语义？
 - [ ] 登录态路径与复用方式？
 - [ ] 结论写入本文件 → 回填 `agent-profiles.md` 样例 + `builtin.ts` zcode profile。
 
-处理策略：查 `.zcode/cli` 结构与命令帮助；必要时与 Zcode 侧确认。若仅 GUI：评估列入 pty 备选方案（占位标注，不默认实施）。
+处理策略：向 Zcode 侧确认安装目录/无头接口。若仅 GUI：评估列入 pty 备选方案（占位标注，不默认实施）。
 
 ## 只读调研来源（D:\Tianshu 逆向，仅作事实依据）
 
