@@ -1,0 +1,9 @@
+# 统一 LF 行尾，避免 Windows 检出 CRLF 破坏 frontmatter 正则/脚本
+* text=auto eol=lf
+*.md text eol=lf
+*.ts text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.mjs text eol=lf
+*.js text eol=lf
+*.sh text eol=lf

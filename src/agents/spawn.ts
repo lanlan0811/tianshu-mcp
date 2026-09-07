@@ -126,7 +126,7 @@ export function runChild(spec: SpawnSpec, opts: { signal?: AbortSignal; stdinTex
 
       const onAbort = (): void => {
         killedBySignal = true;
-        if (child.pid) void killTree(child.pid, spec.killTree);
+        if (child && child.pid) void killTree(child.pid, spec.killTree);
       };
       if (signal) {
         if (signal.aborted) onAbort();
@@ -155,6 +155,11 @@ export function runChild(spec: SpawnSpec, opts: { signal?: AbortSignal; stdinTex
         finish({ ok: false, exitCode: null, timeout: false, killed: false, error: `spawn 失败: ${msg}`, durationMs: Date.now() - startedAt, logFile: spec.logFile });
         return;
       }
+      // spawn 期间收到 abort（cancel 竞态）→ 立即终止刚拉起的进程
+      if (signal?.aborted && child.pid) {
+        killedBySignal = true;
+        void killTree(child.pid, spec.killTree);
+      }
 
       child.stdout?.on("data", (d: Buffer) => safeWrite(`[stdout] ${d.toString()}`));
       child.stderr?.on("data", (d: Buffer) => safeWrite(`[stderr] ${d.toString()}`));
@@ -178,7 +183,7 @@ export function runChild(spec: SpawnSpec, opts: { signal?: AbortSignal; stdinTex
       if (spec.timeoutMs && spec.timeoutMs > 0) {
         timeoutTimer = setTimeout(() => {
           timedOut = true;
-          if (child.pid) void killTree(child.pid, spec.killTree);
+          if (child && child.pid) void killTree(child.pid, spec.killTree);
         }, spec.timeoutMs);
       }
 

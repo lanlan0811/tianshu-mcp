@@ -11,7 +11,9 @@ const THIS_DIR = path.dirname(fileURLToPath(import.meta.url));
 const SKILL_DIR = path.resolve(THIS_DIR, "../../skills/tianshu-mcp");
 
 function readFrontmatter(file: string): Record<string, string> {
-  const text = fs.readFileSync(path.join(SKILL_DIR, file), "utf8");
+  let text = fs.readFileSync(path.join(SKILL_DIR, file), "utf8");
+  // 容忍 Windows 检出 CRLF：统一为 LF 再匹配
+  text = text.replace(/\r\n/g, "\n");
   const m = text.match(/^---\n([\s\S]*?)\n---/);
   expect(m, "必须有 frontmatter").not.toBeNull();
   const body = m![1]!;
