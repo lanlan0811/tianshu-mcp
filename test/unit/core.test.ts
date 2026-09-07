@@ -8,17 +8,19 @@ import { TRANSITIONS, isTerminal, TERMINAL_STATUSES, ACTIVE_STATUSES } from "../
 
 describe("路径规范化", () => {
   it("盘符小写 + 正斜杠（目录名保留大小写）", () => {
-    if (process.platform === "win32") {
-      const p = normPath("D:\\Trae项目\\Foo\\");
-      expect(p).toBe("d:/Trae项目/Foo");
-      expect(/^[a-z]:/.test(p)).toBe(true);
-      expect(p).not.toContain("\\");
-    }
+    if (process.platform !== "win32") return; // Windows 专用语义
+    const p = normPath("D:\\Trae项目\\Foo\\");
+    expect(p).toBe("d:/Trae项目/Foo");
+    expect(/^[a-z]:/.test(p)).toBe(true);
+    expect(p).not.toContain("\\");
   });
   it("相同路径 hash 稳定且 16 位", () => {
-    const a = projectHash(path.resolve("D:\\Trae项目\\tianshu-mcp"));
-    const b = projectHash(path.resolve("d:/Trae项目/tianshu-mcp"));
-    expect(a).toBe(b);
+    const base = path.resolve("tianshu-mcp");
+    const a = projectHash(base);
+    const b = projectHash(`${base}${path.sep}`);
+    const c = projectHash(base);
+    expect(a).toBe(b); // 尾分隔符不影响
+    expect(a).toBe(c);
     expect(a).toHaveLength(16);
   });
 });
