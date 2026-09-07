@@ -21,9 +21,23 @@ import type { TaskStore } from "../tasks/task-store.js";
 import type { TaskMeta } from "../tasks/task.js";
 import type { Logger } from "../util/log.js";
 import { formatToolResult, errorResult, metaFromTask, readLogTail, textResult, type ToolResult } from "./formatter.js";
-import { captureBaseline } from "../verify/git-baseline.js";
-import { readTextSafe } from "../util/fs.js";
+import { captureBaseline, gitRefExists, type Baseline as BaselineT } from "../verify/git-baseline.js";
+import { readTextSafe, readJsonSafe } from "../util/fs.js";
 import { readLatestReportSummary } from "../loop/fix-loop.js";
+import { readDirSafe } from "../util/fs.js";
+
+/** 任务目录里下一可用 report round（避免手动验收覆盖已有 report-0/1…） */
+async function nextReportRound(store: TaskStore, taskId: string | undefined): Promise<number> {
+  if (!taskId) return 0;
+  const dirs = await readDirSafe(store.dir(taskId));
+  const rounds = dirs
+    .filter((d) => /^report-(\d+)\.(md|json)$/.test(d))
+    .map((d) => {
+      const m = /^report-(\d+)\./.exec(d);
+      return m ? Number(m[1]) : -1;
+    });
+  return rounds.length ? Math.max(...rounds) + 1 : 0;
+}
 
 export interface AppContext {
   manager: TaskManager;
@@ -190,9 +204,9 @@ function getReportHandler(ctx: AppContext): Handler {
     const args = rawArgs as GetReportParams;
     const meta = await manager.getMeta(args.taskId);
     if (!meta) return errorResult(`任务不存在: ${args.taskId}`);
-    // 找最近一轮有报告的 round
+    // round 缺省（undefined）取最新；显式 0 取第 0 轮（R4：0-based 合法）
     let round = args.round;
-    if (!round) {
+    if (round === undefined) {
       const latest = await readLatestReportSummary(store, args.taskId);
       if (!latest) return errorResult(`任务 ${args.taskId} 还没有验收报告（可能未启用验收或尚未验收）。`);
       round = latest.round;
@@ -227,28 +241,53 @@ function verifyTaskHandler(ctx: AppContext): Handler {
     let displayPath: string;
     let taskText: string | undefined;
     let taskId = args.taskId;
-    if (args.projectPath) {
+    let baseline;
+    if (args.projectPath && !taskId) {
       const dir = assertExistingDir(args.projectPath);
       projectPath = normPath(dir.raw);
       displayPath = dir.raw;
+      // baselineRef：Git ref（任务 ID 不适用独立路径）
+      if (args.baselineRef) {
+        if (!(await gitRefExists(projectPath, args.baselineRef))) {
+          return errorResult(`baselineRef '${args.baselineRef}' 不是有效 Git ref（项目 ${projectPath}）。`);
+        }
+        baseline = { ...(await captureBaseline(projectPath)), head: args.baselineRef };
+      } else {
+        baseline = await captureBaseline(projectPath);
+      }
     } else if (taskId) {
       const meta = await manager.getMeta(taskId);
       if (!meta) return errorResult(`任务不存在: ${taskId}`);
       projectPath = meta.projectPath;
       displayPath = meta.displayPath;
       taskText = meta.task;
+      // 默认用该任务动工前基线（保存于任务目录）；baselineRef=task 或特定 git ref 可覆盖
+      const savedBaseline = await readJsonSafe<BaselineT>(store.baselinePath(taskId));
+      if (args.baselineRef && args.baselineRef !== "task") {
+        if (!(await gitRefExists(projectPath, args.baselineRef))) {
+          return errorResult(`baselineRef '${args.baselineRef}' 不是有效 Git ref（项目 ${projectPath}）。`);
+        }
+        baseline = { ...(savedBaseline ?? (await captureBaseline(projectPath))), head: args.baselineRef };
+      } else {
+        baseline = savedBaseline ?? (await captureBaseline(projectPath));
+        if (!savedBaseline) {
+          return errorResult(`任务 ${taskId} 没有保存的动工前基线（任务可能在改造前创建）。请用 projectPath 单独验收，或传 baselineRef=git ref。`);
+        }
+      }
     } else {
       return errorResult("verify_task 需要 taskId 或 projectPath（二选一）。");
     }
 
-    const round = 0; // 手动验收独立记账：round 0（不与任务轮次混淆）
-    const baseline = await captureBaseline(projectPath);
     const cfg = await dataHome.loadConfig();
     const proj = await dataHome.projectByPath(projectPath);
     const projectVerify = proj.record?.verify?.map((v) => {
       const cmd = Array.isArray(v.cmd) ? [...v.cmd] : v.cmd;
       return { name: v.name, cmd: Array.isArray(cmd) ? cmd : [cmd], displayCmd: Array.isArray(cmd) ? cmd.join(" ") : cmd };
     });
+
+    // round 分配：手动验收写入任务目录时不能覆盖已有 report-0.*，分配下一可用轮次
+    const round = await nextReportRound(store, taskId);
+
     const req = {
       taskId: taskId ?? `vfy_${Date.now()}`,
       projectPath,
@@ -257,6 +296,7 @@ function verifyTaskHandler(ctx: AppContext): Handler {
       round,
       config: cfg,
       extraChecks,
+      checksMode: args.checksMode ?? "append",
       projectVerify,
       baseline,
       store,

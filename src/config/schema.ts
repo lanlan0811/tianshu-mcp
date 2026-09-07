@@ -34,7 +34,8 @@ export type ListTasksParams = z.infer<typeof ListTasksParamsSchema>;
 
 export const GetReportParamsSchema = z.object({
   taskId: z.string().min(1),
-  round: z.number().int().positive().optional(),
+  /** 0-based 报告轮次；缺省返回最新报告 */
+  round: z.number().int().min(0).optional(),
 });
 export type GetReportParams = z.infer<typeof GetReportParamsSchema>;
 
@@ -64,15 +65,21 @@ export type AcceptanceCheckDef = {
 export const VerifyTaskParamsSchema = z.object({
   taskId: z.string().optional(),
   projectPath: AbsPath.optional(),
+  /** 临时追加的验收命令（追加到项目/默认集之后，不替换）。见 checksMode */
   extraChecks: z.array(AcceptanceCheckSchema).optional(),
-  baselineRef: z.string().optional(),
+  /** append（默认）= 项目/默认检查 + extraChecks；replace = 只用 extraChecks */
+  checksMode: z.enum(["append", "replace"]).optional(),
+  /**
+   * 基线引用：任务 ID（用该任务动工前基线）或 Git ref（如 HEAD~1 / <sha>）。
+   * 独立 projectPath 验收缺省不设 = 采集当前基线，仅做项目当前健康检查。
+   */
+  baselineRef: z.string().min(1).optional(),
 });
 export type VerifyTaskParams = z.infer<typeof VerifyTaskParamsSchema>;
 
 export const ReworkTaskParamsSchema = z.object({
   taskId: z.string().min(1),
   feedback: z.string().optional(),
-  round: z.number().int().positive().optional(),
 });
 export type ReworkTaskParams = z.infer<typeof ReworkTaskParamsSchema>;
 

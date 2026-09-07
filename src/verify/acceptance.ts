@@ -28,6 +28,8 @@ export interface VerifyRequest {
   round: number;
   config?: ServerConfig;
   extraChecks?: AcceptanceCheckDef[];
+  /** append（默认）/ replace */
+  checksMode?: "append" | "replace";
   projectVerify?: AcceptanceCheckDef[]; // projects.json 补录
   baseline?: Awaited<ReturnType<typeof captureBaseline>>;
   store: TaskStore;
@@ -85,13 +87,11 @@ export class AcceptanceEngine {
   ): Promise<{ checks: AcceptanceCheckDef[]; notes: string[] }> {
     const notes: string[] = [];
     const out: AcceptanceCheckDef[] = [];
-    // 1) 显式 extraChecks
-    if (req.extraChecks?.length) {
-      out.push(...req.extraChecks);
-    }
-    const hasExtra = req.extraChecks && req.extraChecks.length > 0;
-    if (!hasExtra) {
-      // 2) 项目内验收配置
+    const mode = req.checksMode ?? "append";
+    const hasExtra = !!req.extraChecks?.length;
+
+    // 先取基础集（项目/默认），除非 replace 模式只用 extraChecks
+    if (!(mode === "replace" && hasExtra)) {
       const inProject = await this.readProjectAcceptance(req.projectPath);
       if (inProject) {
         notes.push(`使用项目内验收配置 <project>/.tianshu-mcp/acceptance.json（${inProject.length} 项）。`);
@@ -100,14 +100,21 @@ export class AcceptanceEngine {
         notes.push(`使用 server 数据目录 projects.json 补录的验收配置（${req.projectVerify.length} 项）。`);
         out.push(...req.projectVerify);
       } else {
-        // 4) 默认集
         const def = await deriveDefaultChecks(req.projectPath);
         out.push(...def.checks);
         notes.push(...def.notes);
         notes.push("使用默认验收集（依据项目技术栈推导）。");
       }
-    } else {
-      notes.push("使用调用方 extraChecks（临时验收，不落库）。");
+    }
+
+    // extraChecks：append 追加到基础集后；replace 时替换为基础集不加载（上面已跳过）
+    if (hasExtra) {
+      if (mode === "replace") {
+        notes.push("checksMode=replace：仅执行调用方 extraChecks（跳过项目/默认检查）。");
+      } else {
+        notes.push(`extraChecks 追加 ${req.extraChecks!.length} 项临时检查（不替换基础门禁）。`);
+      }
+      out.push(...(req.extraChecks ?? []));
     }
     return { checks: out, notes };
   }
@@ -172,11 +179,8 @@ export class AcceptanceEngine {
         logFile: verifyLog,
         env: {},
       });
-      if (res.skipped) {
-        checks.push(res);
-      } else {
-        checks.push(res);
-      }
+      if (c.optional) res.optional = true;
+      checks.push(res);
     }
 
     // 代码分析（相对动工前基线）
@@ -187,13 +191,18 @@ export class AcceptanceEngine {
     });
     for (const n of notes) analysis.notes.push(n);
 
-    const failed = checks.filter((c) => !c.passed && !c.skipped);
+    // optional:true 的失败只记 warning，不使本轮 verdict 失败（R4）
+    const failed = checks.filter((c) => !c.passed && !c.skipped && !c.optional);
+    const optFailed = checks.filter((c) => !c.passed && !c.skipped && c.optional);
     const passed = failed.length === 0;
     const finishedAt = nowIso();
 
     const summaryBits: string[] = [];
     if (failed.length) {
       summaryBits.push(`未通过检查: ${failed.map((c) => c.name).join(", ")}`);
+    }
+    if (optFailed.length) {
+      summaryBits.push(`optional 检查未通过（不影响结论）: ${optFailed.map((c) => c.name).join(", ")}`);
     }
     if (analysis.signals.consoleDebug || analysis.signals.todo) {
       summaryBits.push("存在可疑标记，建议人工查看报告");
