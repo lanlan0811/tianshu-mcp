@@ -1,0 +1,6 @@
+
+===== spawn: D:/node.js/node.exe D:/Trae项目/tianshu-mcp/test/stub-agent/stub-agent.mjs 在项目根目录创建 done.txt 文件，内容写入字符串 PASS（不要有多余空格、换行或其它字符）。验收标准：运行 `node check.mjs` 应输出 PASS 且退出码为 0。相关文件：项目根目录已存在 check.mjs（验收脚本，勿修改）。 (cwd=c:/Users/Lenovo/AppData/Local/Temp/dod8-proj) @ 2026-09-07T14:46:49.309Z =====
+[stdout] [stub-agent] playbook=good 任务目录=c:\Users\Lenovo\AppData\Local\Temp\dod8-proj
+[stdout] [stub-agent] 收到任务书（前 200 字）: 在项目根目录创建 done.txt 文件，内容写入字符串 PASS（不要有多余空格、换行或其它字符）。验收标准：运行 `node check.mjs` 应输出 PASS 且退出码为 0。相关文件：项目根目录已存在 check.mjs（验收脚本，勿修改）。
+[stdout] [stub-agent] 完成：写入 done.txt = PASS
+[exit] code=0  duration=635ms

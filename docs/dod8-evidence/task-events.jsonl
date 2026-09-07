@@ -1,0 +1,5 @@
+{"ts":"2026-09-07T14:46:48.879Z","event":"created","state":"queued","detail":"任务已创建"}
+{"ts":"2026-09-07T14:46:48.892Z","event":"note","state":"queued","detail":"采集 git 基线…"}
+{"ts":"2026-09-07T14:46:49.296Z","event":"started","state":"running","detail":"第 0 轮 agent 执行"}
+{"ts":"2026-09-07T14:46:49.942Z","event":"verify_start","state":"verify_start","detail":"第 0 轮验收开始"}
+{"ts":"2026-09-07T14:46:51.158Z","event":"succeeded","state":"succeeded","detail":"✅ 验收通过（第 0 轮）：2/2 项命令检查通过。\n\n- [PASS] git-diff-check — git diff --check (base=e585064)（95ms, exit=0）\n- [PASS] done-marker — node check.mjs（159ms, exit=0）\n\n代码分析：变更 0 个已跟踪 + 1 个未跟踪文件，diffstat +2 -0。\n\n报告：C:\\Users\\Lenovo\\AppData\\Local\\Temp\\dod8-mcp-data\\tasks\\tsk_20260907224648_a04e3c\\report-0.md\nJSON：C:\\Users\\Lenovo\\AppData\\Local\\Temp\\dod8-mcp-data\\tasks\\tsk_20260907224648_a04e3c\\report-0.json"}
