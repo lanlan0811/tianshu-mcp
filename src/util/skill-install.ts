@@ -8,6 +8,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Logger } from "./log.js";
 import { mkdirp } from "./fs.js";
 
@@ -15,10 +16,11 @@ export const SKILL_NAME = "tianshu-mcp";
 
 /** 源目录定位：本地 dev 指向仓库 skills/；npm 包内通过 import.meta.url 定位 */
 export function resolveSkillSourceDir(): string {
-  const here = new URL(import.meta.url);
-  // dist/skill-install.js → 上两级到包根；包内 skills/ 与 dist/ 同级
+  const here = fileURLToPath(import.meta.url); // 正确处理 Windows 盘符与非 ASCII 路径
+  // <…>/dist/util/skill-install.js → 上三级到包根；包内 skills/ 与 dist/ 同级
   const candidates = [
-    path.resolve(path.dirname(here.pathname), "..", "skills", SKILL_NAME), // dist → 包根/skills
+    path.resolve(path.dirname(here), "..", "..", "skills", SKILL_NAME), // dist/util → 包根/skills
+    path.resolve(path.dirname(here), "..", "skills", SKILL_NAME), // dist → 包根/skills（宽松）
     path.resolve(process.cwd(), "skills", SKILL_NAME),
   ];
   for (const c of candidates) {
