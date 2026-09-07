@@ -73,15 +73,18 @@ describe("R2 killTree 跨平台语义", () => {
       detached: process.platform !== "win32",
     });
     const pid = child.pid!;
-    await sleep(300);
-    expect(child.exitCode).toBeNull(); // 还活着
-    await killTree(pid, "auto");
-    // killTree 会轮询确认进程消失（POSIX 最长 ~3s）；这里等更长的退出确认预算
-    const exited = await new Promise<boolean>((r) => {
-      if (child.exitCode !== null) return r(true);
-      child.once("exit", () => r(true));
-      setTimeout(() => r(false), 6000);
+    let exited = false;
+    child.once("exit", () => {
+      exited = true;
     });
+    // 等子进程真正起来（CI 负载下 spawn 可能延迟）
+    const upDeadline = Date.now() + 5000;
+    while (child.exitCode === null && !exited && Date.now() < upDeadline) await sleep(50);
+    expect(exited).toBe(false); // 此刻应仍在运行
+    await killTree(pid, "auto");
+    // 等待 killTree 生效（轮询确认消失最长 ~3s）+ exit 事件（监听器已在 kill 前挂好，不丢事件）
+    const deadline = Date.now() + 8000;
+    while (!exited && Date.now() < deadline) await sleep(100);
     expect(exited).toBe(true);
   });
 });
