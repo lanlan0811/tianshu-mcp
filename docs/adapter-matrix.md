@@ -8,7 +8,7 @@
 
 | Agent | 接口类型 | 状态 | 可执行发现 | 登录态 | 任务/文件回读 | 备注 |
 |---|---|---|---|---|---|---|
-| **Codex**（OpenAI 桌面端） | 本地 CLI `codex.exe` | ✅ 可接入（M2 冒烟待跑） | `executableDiscovery` → `.../Codex/bin/<hash>/codex.exe` | 复用 `~/.codex`（auth.json），与桌面端同账号 | cwd 内读写文件；`--json` JSONL / `-o` 末条消息 | `codex exec "<prompt>" -C .`；sandbox/审批模式 M2 定（见 C1） |
+| **Codex**（OpenAI 桌面端） | 本地 CLI `codex.exe` | ✅ **已冒烟通过**（2026-09-07 run_task→verify_task，见 [m2-smoke-record.md](m2-smoke-record.md)） | `executableDiscovery` → `.../Codex/bin/<hash>/codex.exe`（实测 v0.153.4） | 复用 `~/.codex`（auth.json），与桌面端同账号 | cwd 内读写文件；stdout 流式 | `codex exec "<prompt>" --sandbox workspace-write`（勿与 --approve-for-me 同用） |
 | **Zcode**（本机 CLI） | 待调研（`.zcode/cli`，Node CLI，无 PATH 命令） | 🔍 M2-Z1 调研中 | —（未自动探测） | 复用本机登录态 | 待定 | 见下方 Z1 |
 | **TraeWork**（Trae CN / TRAE SOLO CN） | 本机未安装，无可验证接口 | 🔍 M3-T1（本机实测：仅遗留缓存目录，无 exe） | — | — | — | 装回 Trae 后再查 CLI/HTTP；仍无则标 unsupported（见 T1） |
 | **stub**（测试用） | 本地脚本 | ✅ 内置测试 | 测试注入 profile | 无 | — | 仅 M1 集成测试使用 |
@@ -29,17 +29,17 @@
 
 - Prompt 即参数 `[PROMPT]`；用 `-` 或管道时从 stdin 读（**promptMode 可 arg 或 stdin**，若 stdin 有管道且给了参数则拼 `<stdin>` 块）。
 - `-C, --cd <DIR>` 指定工作根（配合 `cwd: task` 双保险）。
-- `--sandbox read-only|workspace-write|danger-full-access`；`--approve-for-me` 走自动审批；非交互自动化需按策略选 sandbox/审批模式（**M2 真实冒烟定 profile 时确认**）。
+- `--sandbox read-only|workspace-write|danger-full-access`；**实测 0.153.4 中 `--sandbox` 与 `--approve-for-me` 互斥**，不能同用；非交互自动化用 `--sandbox workspace-write` 即可（approval 输出显示 never）。
 - `--json` 事件输出 JSONL；`-o, --output-last-message <FILE>` 取末条消息；`--ephemeral` 不落会话文件。
 - `--skip-git-repo-check`：允许非 git 仓库（我们的任务都在 git 项目内，可留可去）。
-- 精确 `argsTemplate`（sandbox 模式/是否需要 `--json`）→ M2 用真实小任务冒烟后回填 agent-profiles.md 样例，属数据调整。
+- 详细实测记录见 [m2-smoke-record.md](m2-smoke-record.md)。
 
-**结论（adapter 配置基线）**：
+**结论（adapter 配置基线，M2 已真实冒烟定稿）**：
 
 ```jsonc
 "codex": {
   "command": "<bin 绝对路径，或用 executableDiscovery 自动取最新 <hash>>",
-  "argsTemplate": ["exec", "<prompt:arg>", "-C", ".", "--skip-git-repo-check"],
+  "argsTemplate": ["exec", "<prompt:arg>", "--skip-git-repo-check", "--sandbox", "workspace-write"],
   "promptMode": "arg",
   "cwd": "task",
   "env": {},
@@ -47,8 +47,6 @@
   "executableDiscovery": { "dirs": ["C:/Users/Lenovo/AppData/Local/OpenAI/Codex/bin"], "fileNames": ["codex.exe"] }
 }
 ```
-
-> 说明：`-C .` 里的 `.` 在 spawn cwd=项目目录下即项目根；若某些版本需要绝对路径，可在 M2 联调时把 argsTemplate 改为显式绝对路径（profile 数据可改）。sandbox 与审批：自动化场景倾向 `--sandbox workspace-write`；若 codex 触发审批请求会阻塞非交互执行，届时改用 `--approve-for-me` 或按需 `danger-full-access`，并在 profile `authNote` 注明。
 
 ## T1 — TraeWork 可编程接口（2026-09-07 实测）
 

@@ -55,7 +55,7 @@
 
 > Codex 的 `<hash>` 版本目录更新：dirs 配到 `.../Codex/bin`、fileNames 配 `codex.exe`，每次 resolve 自动取最新目录；也可在 run 前手动重启 server 重探。
 
-## 本机真实样例
+## 本机真实样例（M2 codex 真实冒烟已定稿，2026-09-07）
 
 ```jsonc
 // ~/.tianshu-mcp/agent-profiles.json （Windows 示例）
@@ -66,12 +66,12 @@
       "type": "cli",
       "status": "ready",
       "command": "C:/Users/Lenovo/AppData/Local/OpenAI/Codex/bin/8e5b6932251c2c1c/codex.exe",
-      "argsTemplate": ["exec", "<prompt:arg>", "--skip-git-repo-check"],
+      "argsTemplate": ["exec", "<prompt:arg>", "--skip-git-repo-check", "--sandbox", "workspace-write"],
       "promptMode": "arg",
       "cwd": "task",
       "timeoutMs": 1800000,
       "killTree": "taskkill",
-      "authNote": "复用 ~/.codex 登录态（与 Codex 桌面端同账号）",
+      "authNote": "复用 ~/.codex 登录态；非交互保持 --sandbox workspace-write（勿与 --approve-for-me 同用，实测互斥）",
       "executableDiscovery": {
         "dirs": ["C:/Users/Lenovo/AppData/Local/OpenAI/Codex/bin"],
         "fileNames": ["codex.exe", "codex"],
@@ -82,7 +82,7 @@
 }
 ```
 
-> 说明：`argsTemplate` 中 `codex exec` 的精确 flags / 输出模式以 `codex exec --help` 实测为准（profile 数据可改，不需改代码）。M2 联调完成后把权威配置回填到 `docs/` 与本文件。
+> 实测详情见 [m2-smoke-record.md](m2-smoke-record.md)：run_task → verify_task 真实跑通；`<hash>` 版本目录随 Codex 更新，用 `executableDiscovery` 自动取最新即可。
 
 ## 状态与轮询语义
 
