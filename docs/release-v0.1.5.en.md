@@ -93,3 +93,17 @@ run_task(projectPath=..., agentId=traework, task=..., mode=Code)
 - `mode` only applies to GUI agents (`traework`); CLI agents (`codex`) ignore it.
 - The TraeWork window must stay visible (sending relies on simulated input).
 - TraeWork UI upgrades may change selectors; diagnose with `scripts/probe-traework.mjs` and override them via the profile's `gui.selectors`.
+
+---
+
+## Release artifacts (measured 2026-09-08)
+
+| Channel | Result |
+|---|---|
+| npm | `tianshu-mcp@0.1.5`, `dist-tags.latest = 0.1.5`; `npx -y tianshu-mcp@0.1.5` starts and reports "connected (stdio) … tools: 8" |
+| GitHub Release | [v0.1.5](https://github.com/lanlan0811/tianshu-mcp/releases/tag/v0.1.5) published (not draft), asset `tianshu-mcp-0.1.5.tgz` |
+| Gitee Release | [v0.1.5](https://gitee.com/lan0811/tianshu-mcp/releases/v0.1.5) created, asset `tianshu-mcp-0.1.5.tgz` |
+| Git tag | `v0.1.5` pushed to both github and gitee |
+| CI | commit `bdac27d`: **7/7 green** (ubuntu/windows/macos × Node 20/22 + tarball check) |
+| Release workflow | verified `tag == package.json == 0.1.5`, packed and created the Release |
+

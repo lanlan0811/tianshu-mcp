@@ -93,3 +93,17 @@ run_task(projectPath=..., agentId=traework, task=..., mode=Code)
 - `mode` 仅对 GUI 类 agent（`traework`）生效，CLI 类 agent（`codex`）忽略该参数。
 - TraeWork 窗口需保持可见（发送依赖模拟输入）。
 - TraeWork UI 升级可能改变选择器；可用 `scripts/probe-traework.mjs` 诊断，并在 profile 的 `gui.selectors` 中覆盖。
+
+---
+
+## 发布产物（2026-09-08 实测）
+
+| 渠道 | 结果 |
+|---|---|
+| npm | `tianshu-mcp@0.1.5`，`dist-tags.latest = 0.1.5`；`npx -y tianshu-mcp@0.1.5` 启动并报告「已连接（stdio）… 工具数: 8」 |
+| GitHub Release | [v0.1.5](https://github.com/lanlan0811/tianshu-mcp/releases/tag/v0.1.5) 已发布（非 draft），附件 `tianshu-mcp-0.1.5.tgz` |
+| Gitee Release | [v0.1.5](https://gitee.com/lan0811/tianshu-mcp/releases/v0.1.5) 已创建，附件 `tianshu-mcp-0.1.5.tgz` |
+| Git tag | `v0.1.5` 已推送到 github 与 gitee |
+| CI | 提交 `bdac27d`：**7/7 全绿**（ubuntu/windows/macos × Node 20/22 + tarball 检查） |
+| Release workflow | 校验 `tag == package.json == 0.1.5` 通过，自动打包并创建 Release |
+
