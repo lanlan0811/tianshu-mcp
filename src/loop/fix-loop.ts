@@ -135,29 +135,32 @@ export class TaskOrchestrator {
   }
 
   /**
-   * 取消/中断的终态落盘：cancel_requested → cancelled（持久化 errorType/cancelReason/finishedAt）；
-   * 无 cancel_requested（如 server 关闭或未显式取消的 abort）→ interrupted。
-   * 由 orchestrator 在子进程真正关闭后调用，避免只返回游离 status。
+   * 取消/中断的终态落盘（S1）：用独立 cancelRequestedAt/abortSource 判断来源，不依赖可选 reason。
+   * - 用户取消（cancelRequestedAt 已置位 / abortSource=user / 排队中）→ cancelled
+   * - server 关闭/EOF/未显式取消的中止 → interrupted
+   * - 超时 → failed(timeout) + timeout_killed
    */
   private async abortTerminal(): Promise<OrchestrateResult> {
     if (this.done) return { status: this.meta.status, meta: this.meta, reason: this.meta.lastMessage };
     this.done = true;
     const meta = this.meta;
-    if (meta.errorType === "timeout") {
+    if (meta.abortSource === "timeout") {
       // 超时兜底 guard 已标 timeout → 落 failed(timeout)，记录 timeout_killed 事件
       meta.lastMessage = meta.lastMessage || "任务超时，进程树已终止。";
       await this.deps.store.updateStatus(meta, "failed", meta.lastMessage);
       await this.deps.store.appendEvent(meta.taskId, "timeout_killed", "failed", meta.lastMessage).catch(() => {});
       return { status: "failed", meta, reason: meta.lastMessage, summary: meta.lastMessage };
     }
-    const hadCancelRequest = Boolean(meta.cancelReason) || meta.status === "queued";
-    const isCancelled = hadCancelRequest;
+    // 用户取消判定：cancelRequestedAt 置位 或 显式 user abortSource 或 queued 阶段取消
+    const isCancelled = Boolean(meta.cancelRequestedAt) || meta.abortSource === "user" || meta.status === "queued";
     if (isCancelled) {
       meta.errorType = "cancelled";
+      meta.abortSource = "user";
       meta.lastMessage = meta.cancelReason ? `已取消：${meta.cancelReason}` : "已取消";
       await this.deps.store.updateStatus(meta, "cancelled", meta.lastMessage);
     } else {
       meta.errorType = "interrupted";
+      meta.abortSource = "shutdown";
       meta.lastMessage = "任务已中断（server 退出 / 父进程 EOF / 未显式取消的中止）。";
       await this.deps.store.updateStatus(meta, "interrupted", meta.lastMessage);
     }

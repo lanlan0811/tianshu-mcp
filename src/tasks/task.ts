@@ -119,6 +119,10 @@ export interface TaskMeta {
   reportMd?: string;
   reportJson?: string;
   cancelReason?: string;
+  /** 用户取消意图的独立结构化标记（S1）：一旦用户调用 cancel_task 即置位，不依赖可选 reason 推断 */
+  cancelRequestedAt?: string;
+  /** 中断来源：user=用户取消；shutdown=server 关闭/EOF；timeout=任务超时；internal=内部错误 */
+  abortSource?: "user" | "shutdown" | "timeout" | "internal";
   /** rework_task 注入的追加指示（仅作用于下一轮 agent） */
   reworkFeedback?: string;
 }

@@ -116,11 +116,13 @@ export class TaskStore {
     await this.writeSnapshot(meta);
   }
 
-  /** cancel_requested 事件 + cancelReason 落盘（供后续终态判定 cancelled vs interrupted） */
+  /** cancel_requested 事件 + 独立取消意图字段落盘（S1：不依赖可选 reason 判断取消来源） */
   async markCancelRequested(meta: TaskMeta, reason?: string): Promise<void> {
     meta.cancelReason = reason;
-    meta.updatedAt = nowIso();
-    await this.appendEvent(meta.taskId, "cancel_requested", meta.status, reason ? `收到取消请求：${reason}` : "收到取消请求");
+    meta.cancelRequestedAt = nowIso();
+    meta.abortSource = "user";
+    meta.updatedAt = meta.cancelRequestedAt;
+    await this.appendEvent(meta.taskId, "cancel_requested", meta.status, reason ? `收到取消请求：${reason}` : "收到取消请求（无 reason）");
     await this.writeSnapshot(meta);
   }
 

@@ -53,6 +53,7 @@ export class TaskManager {
     for (const meta of legacy) {
       this.tasks.set(meta.taskId, meta);
       meta.errorType = "interrupted";
+      meta.abortSource = "shutdown";
       meta.lastMessage = "server 重启遗留（启动时归档，不续跑）。";
       await this.store.updateStatus(meta, "interrupted", "server 重启遗留归档");
     }
@@ -146,8 +147,14 @@ export class TaskManager {
       }
       meta.status = "cancelled";
       meta.errorType = "cancelled";
+      meta.abortSource = "user";
+      meta.cancelRequestedAt = nowIso();
       meta.cancelReason = reason;
+      meta.finishedAt = meta.cancelRequestedAt;
+      meta.updatedAt = meta.cancelRequestedAt;
       meta.lastMessage = reason ? `已取消（排队中）：${reason}` : "已取消（排队中）";
+      // 追加 cancel_requested 事件后再落 cancelled，保证事件流完整
+      await this.store.appendEvent(meta.taskId, "cancel_requested", "queued", reason ? `收到取消请求：${reason}` : "收到取消请求（无 reason）");
       await this.store.updateStatus(meta, "cancelled", meta.lastMessage);
       return { found: true };
     }
@@ -177,6 +184,7 @@ export class TaskManager {
       if (meta.status === "queued") {
         meta.status = "interrupted";
         meta.errorType = "interrupted";
+        meta.abortSource = "shutdown";
         meta.lastMessage = "server 退出，排队中任务已归档";
         await this.store.updateStatus(meta, "interrupted", meta.lastMessage).catch(() => {});
         void taskId;
@@ -187,7 +195,7 @@ export class TaskManager {
     this.queue.clear();
   }
 
-  /** 有界等待子进程真正关闭后落 interrupted */
+  /** 有界等待子进程真正关闭后落 interrupted（server 关闭路径，不得误记为 cancelled） */
   private async persistInterrupted(meta: TaskMeta): Promise<void> {
     const deadline = Date.now() + 2000;
     for (;;) {
@@ -198,6 +206,7 @@ export class TaskManager {
     if (ACTIVE_STATUSES.includes(meta.status)) {
       meta.status = "interrupted";
       meta.errorType = "interrupted";
+      meta.abortSource = "shutdown";
       meta.lastMessage = "server 退出，进程已终止";
       await this.store.updateStatus(meta, "interrupted", meta.lastMessage).catch(() => {});
     }
@@ -267,6 +276,7 @@ export class TaskManager {
       if (m && ACTIVE_STATUSES.includes(m.status)) {
         this.logger.warn(`任务 ${meta.taskId} 超过任务级超时兜底（${meta.taskTimeoutMs}+${KILL_GRACE_MS}ms），标记 timeout 并 abort`);
         m.errorType = "timeout";
+        m.abortSource = "timeout";
         m.lastMessage = `任务超时兜底触发（${meta.taskTimeoutMs}ms + ${KILL_GRACE_MS}ms grace）。`;
         ac.abort();
       }
