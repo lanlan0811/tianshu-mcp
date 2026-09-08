@@ -32,15 +32,15 @@
 | 项 | 状态 |
 |---|---|
 | 分支 | `master`（**只在此分支提交**，不建其他分支） |
-| 最新提交 | `3d7ce22 fix: 修复 TraeWork 项目文件夹绑定卡住 + v0.1.6` |
-| 版本 / 许可证 | `0.1.6` / Apache-2.0 |
-| 标签 | `v0.1.0` … `v0.1.6`（v0.1.2+ 均已推双仓） |
+| 最新提交 | `d27555a fix: 修复 TraeWork 项目文件夹绑定根因（路径形式）+ v0.1.7` |
+| 版本 / 许可证 | `0.1.7` / Apache-2.0 |
+| 标签 | `v0.1.0` … `v0.1.7`（v0.1.2+ 均已推双仓） |
 | 工作树 | 干净；`github/master` 与 `gitee/master` 均同步 |
-| 测试 | **172/172 通过**（27 个测试文件：单元 16 + 集成 10 + 协议 1） |
+| 测试 | **178/178 通过**（27 个测试文件：单元 16 + 集成 10 + 协议 1） |
 | 门禁 | lint 0 warning、typecheck clean、build 成功、`npm pack` 内容校验通过 |
 | CI | `CI` workflow：ubuntu/windows/macos × Node 20/22 + tarball 检查 = **7/7 全绿** |
-| npm | `tianshu-mcp@0.1.6` 已发布，`dist-tags.latest = 0.1.6` |
-| Release | GitHub Release `v0.1.6` 已发布（附 tarball）；Gitee Release `v0.1.6` 已创建（附 tarball） |
+| npm | `tianshu-mcp@0.1.7` 已发布，`dist-tags.latest = 0.1.7` |
+| Release | GitHub Release `v0.1.7` 已发布（附 tarball）；Gitee Release `v0.1.7` 已创建（附 tarball） |
 
 ### Agent 适配现状
 
@@ -62,6 +62,7 @@
 - **M4** TraeWork GUI 驱动接入（CDP）——`driver=gui` 落地，真机 e2e 通过 — 153 测试
 - **M5** 面板模式切换（Work/Code/Design）+ v0.1.5 发布 + README 重写/SVG 资产 — **167 测试**
 - **M6** 项目文件夹绑定修复（footer 确认弹窗 / 检测预算 / CJK 路径 WM_SETTEXT / Code→Work 兜底）+ v0.1.6 — **172 测试**
+- **M7** 绑定**根因**修复（规范化路径被选择器拒绝 → `toNativeWindowsPath`）+ 写入回读校验 / hwnd 贯穿 / 遗留对话框清理 + v0.1.7 — **178 测试**
 
 ### 实现期修复的两个既有缺陷（重要）
 
@@ -71,6 +72,7 @@
    - 修复：改为 `startTask` 启动时**原子取走并清空**。回归：`test/integration/rework-feedback-race.test.ts`。
 2. **`projectBasename` 跨平台**：原用 `path.basename`（POSIX 不切反斜杠），Linux/macOS CI 必失败 → 改为显式按 `\` 与 `/` 切分。
 3. **项目文件夹绑定卡住**（M6，实战反馈）：三处叠加缺陷 —— footer 点击未确认弹窗、检测被 PowerShell 冷启动吃光预算、CJK 路径被控制台代码页破坏。详见 §8.1。
+4. **绑定仍失败的真根因**（M7）：MCP 传 `normPath()` 规范化路径（`d:/a/b`），**Windows 原生选择器不接受** → 必须 `toNativeWindowsPath()` 转 `D:\a\b`。详见 §8.1。
 
 ---
 
@@ -230,6 +232,23 @@ node scripts/probe-traework.mjs send "任务书"       # 端到端发一条并�
 3. **CJK 路径被控制台代码页破坏**：实测 `D:\Trae项目	s-bind-test` 被写成 `D:Traes-bind-test`。
    **修复**：改用 Win32 **`WM_SETTEXT`**（句柄由 UIA 提供）写编辑框。
 
+### ★ 真根因（M7 / v0.1.7）：路径形式不对
+
+MCP 内部传给对话框的是 `normPath()` **规范化路径**（小写盘符 + 正斜杠，如 `d:/Trae项目/AI游戏/象棋`），
+而 **Windows 原生文件夹选择器不接受该形式**。实测对照（同一对话框、同一台机器）：
+
+| 写入 | 回读 | 点确认后 |
+|---|---|---|
+| `d:/Trae项目/AI游戏/象棋` | `d:/Trae项目/AI游戏/象棋` | **对话框不关闭**（路径被拒） |
+| `D:\Trae项目\AI游戏\象棋` | `D:\Trae项目\AI游戏\象棋` | **对话框关闭，绑定成功** |
+
+**注意**：回读校验会「通过」，因为写进去的确实是那个字符串——所以**光有回读校验不够**，
+必须先把路径转成原生形式（`toNativeWindowsPath()`：正斜杠→反斜杠 + 盘符大写）。
+
+配套修复：写入后 `WM_GETTEXT` 回读 + 重试（最多 3 次，失败不点确认）、
+hwnd 贯穿传递（只操作探测到的那个窗口）、下拉未命中时先清理遗留对话框、
+确认按钮要求矩形在对话框下半部。
+
 ### 另外两个定位陷阱（已修）
 
 - **确认按钮 `AutomationId="1"` 不唯一**：文件列表行也用 0/1/2…。必须用
@@ -272,6 +291,7 @@ node scripts/probe-traework.mjs send "任务书"       # 端到端发一条并�
 | `docs/agent-profiles.md` / `.en.md` | profile 字段说明（含 `driver`/`gui`） |
 | `docs/adapter-matrix.md` / `.en.md` | 各 agent 能力调研矩阵 |
 | `docs/acceptance-config.md` / `.en.md` | 项目级验收配置规范 |
+| `docs/release-v0.1.7.md` / `.en.md` | v0.1.7 发布说明（绑定根因：原生路径形式） |
 | `docs/release-v0.1.6.md` / `.en.md` | v0.1.6 发布说明（项目文件夹绑定修复） |
 | `docs/release-v0.1.5.md` / `.en.md` | v0.1.5 发布说明与产物记录 |
 | `docs/npm-publish-guide.md` | npm 发布步骤与凭证 |
