@@ -79,7 +79,8 @@ export class TaskOrchestrator {
           return this.finish("failed", "spawn", `agent 基础设施失败：${runRes.error ?? "未知"}（日志 ${runRes.logFile}）`);
         }
         if (runRes.timeout) {
-          return this.finish("failed", "timeout", `任务超时（${meta.taskTimeoutMs}ms），进程树已终止。日志 ${runRes.logFile}`);
+          // S2：统一超时终态 —— 落 failed(timeout) 并记录一次 timeout_killed
+          return this.timeoutTerminal(`任务超时（${meta.taskTimeoutMs}ms），进程树已终止。日志 ${runRes.logFile}`);
         }
         if (runRes.killed) {
           return this.abortTerminal();
@@ -135,22 +136,35 @@ export class TaskOrchestrator {
   }
 
   /**
-   * 取消/中断的终态落盘（S1）：用独立 cancelRequestedAt/abortSource 判断来源，不依赖可选 reason。
-   * - 用户取消（cancelRequestedAt 已置位 / abortSource=user / 排队中）→ cancelled
-   * - server 关闭/EOF/未显式取消的中止 → interrupted
-   * - 超时 → failed(timeout) + timeout_killed
+   * 统一超时终态（S2）：落 failed(errorType=timeout) 并记录一次 timeout_killed 事件。
+   * 普通 runRes.timeout 与 abort guard 超时共用此路径，保证事件不重复、顺序固定。
    */
-  private async abortTerminal(): Promise<OrchestrateResult> {
+  private async timeoutTerminal(reason: string): Promise<OrchestrateResult> {
     if (this.done) return { status: this.meta.status, meta: this.meta, reason: this.meta.lastMessage };
     this.done = true;
     const meta = this.meta;
-    if (meta.abortSource === "timeout") {
-      // 超时兜底 guard 已标 timeout → 落 failed(timeout)，记录 timeout_killed 事件
-      meta.lastMessage = meta.lastMessage || "任务超时，进程树已终止。";
-      await this.deps.store.updateStatus(meta, "failed", meta.lastMessage);
-      await this.deps.store.appendEvent(meta.taskId, "timeout_killed", "failed", meta.lastMessage).catch(() => {});
-      return { status: "failed", meta, reason: meta.lastMessage, summary: meta.lastMessage };
+    meta.errorType = "timeout";
+    meta.abortSource = "timeout";
+    meta.lastMessage = reason;
+    // 事件顺序固定：先 failed 落盘（含 finishedAt），再记 timeout_killed
+    await this.deps.store.updateStatus(meta, "failed", reason);
+    await this.deps.store.appendEvent(meta.taskId, "timeout_killed", "failed", reason).catch(() => {});
+    return { status: "failed", meta, reason, summary: reason };
+  }
+
+  /**
+   * 取消/中断的终态落盘（S1）：用独立 cancelRequestedAt/abortSource 判断来源，不依赖可选 reason。
+   * - 用户取消（cancelRequestedAt 已置位 / abortSource=user / 排队中）→ cancelled
+   * - server 关闭/EOF/未显式取消的中止 → interrupted
+   * - 超时 → failed(timeout) + timeout_killed（委托 timeoutTerminal）
+   */
+  private async abortTerminal(): Promise<OrchestrateResult> {
+    if (this.done) return { status: this.meta.status, meta: this.meta, reason: this.meta.lastMessage };
+    if (this.meta.abortSource === "timeout") {
+      return this.timeoutTerminal(this.meta.lastMessage || "任务超时，进程树已终止。");
     }
+    this.done = true;
+    const meta = this.meta;
     // 用户取消判定：cancelRequestedAt 置位 或 显式 user abortSource 或 queued 阶段取消
     const isCancelled = Boolean(meta.cancelRequestedAt) || meta.abortSource === "user" || meta.status === "queued";
     if (isCancelled) {
