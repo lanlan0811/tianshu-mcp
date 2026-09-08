@@ -32,15 +32,15 @@
 | 项 | 状态 |
 |---|---|
 | 分支 | `master`（**只在此分支提交**，不建其他分支） |
-| 最新提交 | `1732afe docs: 中英 README 与接入教程补充天枢官方仓库链接` |
-| 版本 / 许可证 | `0.1.5` / Apache-2.0 |
-| 标签 | `v0.1.0` … `v0.1.5`（v0.1.2+ 均已推双仓） |
+| 最新提交 | `3d7ce22 fix: 修复 TraeWork 项目文件夹绑定卡住 + v0.1.6` |
+| 版本 / 许可证 | `0.1.6` / Apache-2.0 |
+| 标签 | `v0.1.0` … `v0.1.6`（v0.1.2+ 均已推双仓） |
 | 工作树 | 干净；`github/master` 与 `gitee/master` 均同步 |
-| 测试 | **167/167 通过**（25 个测试文件：单元 15 + 集成 9 + 协议 1） |
+| 测试 | **172/172 通过**（27 个测试文件：单元 16 + 集成 10 + 协议 1） |
 | 门禁 | lint 0 warning、typecheck clean、build 成功、`npm pack` 内容校验通过 |
 | CI | `CI` workflow：ubuntu/windows/macos × Node 20/22 + tarball 检查 = **7/7 全绿** |
-| npm | `tianshu-mcp@0.1.5` 已发布，`dist-tags.latest = 0.1.5` |
-| Release | GitHub Release `v0.1.5` 已发布（附 tarball）；Gitee Release `v0.1.5` 已创建（附 tarball） |
+| npm | `tianshu-mcp@0.1.6` 已发布，`dist-tags.latest = 0.1.6` |
+| Release | GitHub Release `v0.1.6` 已发布（附 tarball）；Gitee Release `v0.1.6` 已创建（附 tarball） |
 
 ### Agent 适配现状
 
@@ -61,6 +61,7 @@
 - **R1–R8 / S1–S6** 两轮验收整改（取消/超时/基线归因/参数语义/热加载/CI 加固）— 72 测试
 - **M4** TraeWork GUI 驱动接入（CDP）——`driver=gui` 落地，真机 e2e 通过 — 153 测试
 - **M5** 面板模式切换（Work/Code/Design）+ v0.1.5 发布 + README 重写/SVG 资产 — **167 测试**
+- **M6** 项目文件夹绑定修复（footer 确认弹窗 / 检测预算 / CJK 路径 WM_SETTEXT / Code→Work 兜底）+ v0.1.6 — **172 测试**
 
 ### 实现期修复的两个既有缺陷（重要）
 
@@ -69,6 +70,7 @@
    - 根因：终态快照先落盘，调用方立即写入 `reworkFeedback`；上一轮收尾的 `delete meta.reworkFeedback` 把它抹掉。
    - 修复：改为 `startTask` 启动时**原子取走并清空**。回归：`test/integration/rework-feedback-race.test.ts`。
 2. **`projectBasename` 跨平台**：原用 `path.basename`（POSIX 不切反斜杠），Linux/macOS CI 必失败 → 改为显式按 `\` 与 `/` 切分。
+3. **项目文件夹绑定卡住**（M6，实战反馈）：三处叠加缺陷 —— footer 点击未确认弹窗、检测被 PowerShell 冷启动吃光预算、CJK 路径被控制台代码页破坏。详见 §8.1。
 
 ---
 
@@ -200,7 +202,50 @@ node scripts/probe-traework.mjs send "任务书"       # 端到端发一条并�
 - **UI 升级会漂移**：选择器集中在 `src/agents/traework/cdp/selectors.ts`，可经 profile `gui.selectors` 覆盖；用探针诊断。
 - **macOS 未验证**：CDP 机制平台无关，但可执行探测与原生对话框驱动（AppleScript 路线）未实测；当前 macOS 分支 fail-closed。
 - **`mode` 仅 GUI 类 agent 生效**：CLI 类（codex）忽略该参数。
-- **npm 上的 README 停留在 0.1.5 发布时**：之后新增的文档（开源协作入口、天枢官方仓库链接）只在仓库里；如需同步到 npm 需再发版本。
+- **原生对话框链路依赖桌面状态**：TraeWork 窗口必须可见，且不能有第三方工具（如 Snipaste 截图器）抢焦点。
+- **npm 上的 README 停留在发布时**：之后新增的文档只在仓库里；如需同步到 npm 需再发版本。
+
+---
+
+## 8.1 TraeWork 项目文件夹绑定排障（M6 实战教训）
+
+### 事实：下拉项 ≠ 项目 map
+
+| 数据源 | 说明 |
+|---|---|
+| 下拉列表（`readProjectItems`） | 来自 TraeWork **服务端**项目列表，实测本机 11–12 项 |
+| `solo-lite.local-project-folders`（state.vscdb） | 仅本地**路径回填缓存**，实测 22–23 条 |
+
+两者不是同一份数据。**「项目已在 map 里」不代表下拉能命中**——未命中仍会走原生对话框。
+（曾误判为「项目已注册所以不该走对话框」，实测证伪。）
+
+### 三处叠加缺陷（2026-09-08 修复）
+
+1. **footer 点击未确认弹窗**：`element.click()` 返回 true ≠ 原生弹窗出现。
+   旧代码只看返回值 → 日志报「等待原生对话框超时」（下游症状）。
+   **修复**：点击后调 `findFolderDialog()` 确认，未出现则记录下拉 DOM 快照并明确失败。
+2. **检测预算被 PowerShell 冷启动吃光**：实测冷启动 **4.5–6.3s/次**（UIA 与 Win32 都一样），
+   旧代码 Node 侧每 800ms 轮询 → 15s 只够约 2 次。
+   **修复**：单次 PowerShell 调用内轮询（400ms 间隔），预算 30s；`spawnSync` → 异步 `spawn`。
+3. **CJK 路径被控制台代码页破坏**：实测 `D:\Trae项目	s-bind-test` 被写成 `D:Traes-bind-test`。
+   **修复**：改用 Win32 **`WM_SETTEXT`**（句柄由 UIA 提供）写编辑框。
+
+### 另外两个定位陷阱（已修）
+
+- **确认按钮 `AutomationId="1"` 不唯一**：文件列表行也用 0/1/2…。必须用
+  **AutomationId=1 且 ControlType=Pane** 组合定位（实测误点到 `.rivet` 列表项）。
+- **「文件夹」编辑框**：`AutomationId=1152` 且 **ClassName=`Edit`**（它是 Pane 类型、无 ValuePattern）。
+
+### 排障顺序（下次遇到卡住先做这几步）
+
+1. `node scripts/probe-traework.mjs selectors` —— 确认选择器是否命中。
+2. 看任务日志 `<home>/tasks/<taskId>/agent-0.log`：区分「下拉未命中」「对话框未弹出」「写入失败」「确认失败」。
+3. 手工验证对话框是否开着：
+   ```bash
+   powershell -NoProfile -Command "Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes; \$r=[System.Windows.Automation.AutomationElement]::RootElement; \$c=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::Window); foreach(\$w in \$r.FindAll([System.Windows.Automation.TreeScope]::Children,\$c)){ if(\$w.Current.Name -match 'TraeWork'){ foreach(\$d in \$w.FindAll([System.Windows.Automation.TreeScope]::Descendants,\$c)){ Write-Output \$d.Current.Name } } }"
+   ```
+4. **不要**用 TraeWork 的 `--folder-uri` / `-a` 预注册（已证伪：只写原生 `history.recentlyOpenedPathsList`，
+   Solo 下拉不读它）；**不要**直写 `state.vscdb` 的 map（renderer 有内存缓存，且 key 需后端 `createProject` 分配）。
 
 ---
 
@@ -227,6 +272,7 @@ node scripts/probe-traework.mjs send "任务书"       # 端到端发一条并�
 | `docs/agent-profiles.md` / `.en.md` | profile 字段说明（含 `driver`/`gui`） |
 | `docs/adapter-matrix.md` / `.en.md` | 各 agent 能力调研矩阵 |
 | `docs/acceptance-config.md` / `.en.md` | 项目级验收配置规范 |
+| `docs/release-v0.1.6.md` / `.en.md` | v0.1.6 发布说明（项目文件夹绑定修复） |
 | `docs/release-v0.1.5.md` / `.en.md` | v0.1.5 发布说明与产物记录 |
 | `docs/npm-publish-guide.md` | npm 发布步骤与凭证 |
 | `docs/m2-*.md`、`docs/host-integration-record.md`、`docs/dod7/dod8-*` | 历史里程碑物证（中文，无英文版） |
@@ -241,6 +287,7 @@ node scripts/probe-traework.mjs send "任务书"       # 端到端发一条并�
 
 1. 先跑 `npm ci && npm run typecheck && npm run lint && npm test && npm run build`，确认基线绿。
 2. 读 `README.md` + `docs/traework-cdp.md §6/§8`（安全红线与踩坑），再动 TraeWork 相关代码。
+   项目文件夹绑定出问题时，先看本文 §8.1 的排障顺序（下拉项 ≠ 项目 map、三处已修缺陷、两个定位陷阱）。
 3. 若 TraeWork 升级导致选择器失效：用 `scripts/probe-traework.mjs selectors` 诊断，优先用 profile `gui.selectors` 覆盖，不改代码。
 4. 新增 agent：优先只加 profile（见 `docs/agent-profiles.md`）；需要特殊输出解析再写 adapter。
 5. 发版前务必确认 `src/version.generated.ts` 与 `package.json` 同步提交（CI 有「构建后无 tracked diff」门禁）。
