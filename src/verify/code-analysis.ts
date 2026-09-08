@@ -51,8 +51,18 @@ export async function analyzeChanges(opts: AnalyzeOpts): Promise<AnalysisResult>
   const preChanged = new Set(baseline.preExistingChanged);
   const preUntracked = new Set(baseline.preExistingUntracked);
 
-  // 相对基线 ref 的已跟踪差异（含 agent 提交前移 + 工作树）
-  const { numstat, changedLinesPerFile } = await diffSinceBaseline(opts.projectPath, baseline.head);
+  // S3：排除"基线前脏且任务期间内容未变化"的 tracked 文件（避免把用户原有改动归因给 agent）。
+  // 对每个基线前脏文件，比较基线内容 hash 与当前工作树内容 hash；一致 = agent 未触碰 → 完全排除。
+  const unchangedPreDirty = new Set<string>();
+  for (const f of [...preChanged]) {
+    const baseHash = baseDirtyHash(baseline, f);
+    if (!baseHash) continue; // 无基线 hash（超大/删除等）不排除，交给 diff 判断
+    const nowHash = await fileHashQuick(path.join(opts.projectPath, f));
+    if (nowHash === baseHash) unchangedPreDirty.add(f);
+  }
+
+  // 相对基线 ref 的已跟踪差异（含 agent 提交前移 + 工作树）；排除未变化的预脏文件
+  const { numstat, changedLinesPerFile } = await diffSinceBaseline(opts.projectPath, baseline.head, unchangedPreDirty);
   const perFile: NumstatLike[] = [];
   const trackedSeen = new Set<string>();
 
@@ -68,7 +78,7 @@ export async function analyzeChanges(opts: AnalyzeOpts): Promise<AnalysisResult>
     if (trackedSeen.has(f)) continue;
     const full = path.join(opts.projectPath, f);
     if (preUntracked.has(f)) {
-      const baseHash = baseline.preUntrackedHashes[f];
+      const baseHash = baseDirtyHash(baseline, f);
       const nowHash = await fileHashQuick(full);
       if (baseHash && nowHash && baseHash === nowHash) continue; // 基线前已有且未变：非任务改动
       notes.push(`未跟踪文件 ${f} 在动工前已存在但内容发生变化，已整文件计入本轮变更（无法按行精确归因）。`);
@@ -100,7 +110,7 @@ export async function analyzeChanges(opts: AnalyzeOpts): Promise<AnalysisResult>
   for (const f of parsed.untracked) {
     if (preUntracked.has(f)) {
       const full = path.join(opts.projectPath, f);
-      const baseHash = baseline.preUntrackedHashes[f];
+      const baseHash = baseDirtyHash(baseline, f);
       const nowHash = await fileHashQuick(full);
       if (baseHash && nowHash && baseHash === nowHash) continue;
     }
@@ -120,7 +130,7 @@ export async function analyzeChanges(opts: AnalyzeOpts): Promise<AnalysisResult>
     if (!preUntracked.has(f)) return true;
     // 基线前已有：内容变了才作为本轮新增未跟踪
     const full = path.join(opts.projectPath, f);
-    const b = baseline.preUntrackedHashes[f];
+    const b = baseDirtyHash(baseline, f);
     const n = fileHashSync(full);
     return !(b && n && b === n);
   });
@@ -179,6 +189,11 @@ async function fileHashQuick(p: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/** 基线脏文件内容 hash：优先新字段 preDirtyHashes，兼容旧快照回退 preUntrackedHashes */
+function baseDirtyHash(baseline: Baseline, f: string): string | undefined {
+  return baseline.preDirtyHashes?.[f] ?? baseline.preUntrackedHashes?.[f];
 }
 
 function fileHashSync(p: string): string | null {

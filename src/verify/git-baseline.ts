@@ -15,7 +15,9 @@ export interface Baseline {
   /** 相对动工前 HEAD 的已跟踪变更（基线前已存在） */
   preExistingChanged: string[];
   preExistingUntracked: string[];
-  /** 基线前未跟踪文件的内容 hash（便于区分 agent 是否改动） */
+  /** 基线前脏文件（已跟踪 staged/unstaged + 未跟踪）的内容 hash：区分基线已有内容与 agent 后续改动 */
+  preDirtyHashes: Record<string, string>;
+  /** 基线前未跟踪文件的内容 hash（兼容旧字段，逻辑并入 preDirtyHashes） */
   preUntrackedHashes: Record<string, string>;
   capturedAt: string;
   message: string;
@@ -31,6 +33,7 @@ export async function captureBaseline(projectPath: string): Promise<Baseline> {
       dirtyFiles: [],
       preExistingChanged: [],
       preExistingUntracked: [],
+      preDirtyHashes: {},
       preUntrackedHashes: {},
       capturedAt: new Date().toISOString(),
       message: "非 git 仓库：变更清单/diffstat 不可用（验收仍执行命令检查）。",
@@ -41,10 +44,17 @@ export async function captureBaseline(projectPath: string): Promise<Baseline> {
   const statusRes = await gitOk(projectPath, ["status", "--porcelain", "--untracked-files=all"]);
   const porcelain = statusRes.ok ? statusRes.stdout.split("\n").filter((s) => s.trim().length > 0) : [];
   const parsed = parsePorcelain(porcelain);
+  // 记录全部预脏文件（已跟踪 staged/unstaged + 未跟踪）的内容 hash
+  const dirtyPaths = [...parsed.changed, ...parsed.untracked];
   const hashes: Record<string, string> = {};
-  for (const f of parsed.untracked) {
+  for (const f of dirtyPaths) {
     const h = await fileHash(path.join(projectPath, f));
     if (h) hashes[f] = h;
+  }
+  const preUntrackedHashes: Record<string, string> = {};
+  for (const f of parsed.untracked) {
+    const h = await fileHash(path.join(projectPath, f));
+    if (h) preUntrackedHashes[f] = h;
   }
   return {
     isRepo: true,
@@ -53,7 +63,8 @@ export async function captureBaseline(projectPath: string): Promise<Baseline> {
     dirtyFiles: porcelain,
     preExistingChanged: parsed.changed,
     preExistingUntracked: parsed.untracked,
-    preUntrackedHashes: hashes,
+    preDirtyHashes: hashes,
+    preUntrackedHashes,
     capturedAt: new Date().toISOString(),
     message: head
       ? `基线 HEAD=${head}，工作树${porcelain.length > 0 ? `脏（${porcelain.length} 项）` : "干净"}。`
@@ -143,17 +154,22 @@ export async function gitRefExists(projectPath: string, ref: string): Promise<bo
  * 相对基线 ref 的工作树差异 numstat：
  * - 若当前 HEAD === baseline.head：`git diff baseline.head`（含 staged+unstaged）
  * - 若 agent 创建了新提交（HEAD 前移）：`git diff baseline.head..HEAD` 拿到已提交变更，再叠加工作树 diff
+ * excludeUnchangedPreDirty：基线前脏文件集合（按内容 hash 判定未变的应被排除，避免把用户原有改动归因给 agent，S3）。
  * 返回已跟踪文件相对基线的全部变更。
  */
 export async function diffSinceBaseline(
   projectPath: string,
   baseRef: string | null,
+  excludeFiles?: ReadonlySet<string>,
 ): Promise<{ numstat: NumstatRow[]; changedLinesPerFile: Map<string, string[]> }> {
+  const skip = (f: string): boolean => (excludeFiles ? excludeFiles.has(f) : false);
   if (!baseRef || !(await gitRefExists(projectPath, baseRef))) {
     // 基线 ref 无效/缺失：退回当前 HEAD（仅跟踪工作树 + 已提交到 HEAD 的变化）
-    const n = await gitNumstat(projectPath, "HEAD");
-    const lines = await gitChangedLines(projectPath, "HEAD");
-    return { numstat: n, changedLinesPerFile: lines };
+    const allN = await gitNumstat(projectPath, "HEAD");
+    const n = allN.filter((r) => !skip(r.file));
+    const allLines = await gitChangedLines(projectPath, "HEAD");
+    for (const f of [...allLines.keys()]) if (skip(f)) allLines.delete(f);
+    return { numstat: n, changedLinesPerFile: allLines };
   }
   const headNow = (await gitOk(projectPath, ["rev-parse", "HEAD"])).stdout.trim();
   // 工作树中相对基线的变更 = (baseline→工作树)，含 commit 前移部分
@@ -164,9 +180,11 @@ export async function diffSinceBaseline(
 
   const byFile = new Map<string, NumstatRow>();
   for (const row of committed) {
+    if (skip(row.file)) continue;
     byFile.set(row.file, { ...row });
   }
   for (const row of worktree) {
+    if (skip(row.file)) continue;
     const prev = byFile.get(row.file);
     if (prev) {
       // 合并：同文件在基线→HEAD 与 HEAD→工作树都有改动
@@ -191,7 +209,7 @@ export async function diffSinceBaseline(
         cur = fh[1] ?? null;
         continue;
       }
-      if (line.startsWith("+") && !line.startsWith("+++") && cur) {
+      if (line.startsWith("+") && !line.startsWith("+++") && cur && !skip(cur)) {
         const arr = toMap.get(cur) ?? [];
         arr.push(line.slice(1));
         toMap.set(cur, arr);
