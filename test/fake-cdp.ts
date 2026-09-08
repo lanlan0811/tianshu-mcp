@@ -33,6 +33,12 @@ export interface FakeDomState {
   openDropdown: "project" | "model" | null;
   /** 当前面板模式（Work/Code/Design） */
   mode: string;
+  /**
+   * 发送后立刻追加的助手回复（同步、确定性）。
+   * 用字段而非定时器：轮询间隔（pollIntervalMs）可能小到 1ms 且 stableRounds 很小，
+   * 异步定时器会与「稳定兜底」抢跑，导致 CI 上偶发拿不到回复（实测 Windows Node 22 flake）。
+   */
+  autoReplyText?: string;
 }
 
 export function makeFakeState(over: Partial<FakeDomState> = {}): FakeDomState {
@@ -171,6 +177,10 @@ export class FakeCdpClient {
     this.state.sent = true;
     this.state.messages = `${this.state.inputText}`;
     this.state.inputText = "";
+    // 同步追加助手回复（确定性，避免定时器与稳定兜底抢跑）
+    if (this.state.autoReplyText) {
+      this.state.messages = `${this.state.messages}TraeWork${this.state.autoReplyText}由AI生成12:30`;
+    }
   }
 
   async pressEscape(): Promise<void> {

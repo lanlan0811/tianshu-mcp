@@ -277,6 +277,16 @@ export class TaskManager {
     this.abortControllers.set(meta.taskId, ac);
     this.logger.info(`任务 ${meta.taskId} 启动（agent=${meta.agentId}, project=${meta.projectPath}, roundsUsed=${meta.roundsUsed}）`);
 
+    // 消费 rework 指示：启动时原子取走并清空。
+    // 必须在启动时清空，而不是运行结束后的收尾里——终态快照先落盘，调用方看到
+    // failed 后可立即 rework_task 写入新的 reworkFeedback，而上一轮的收尾 delete
+    // 会把这条新反馈一起抹掉，导致返修轮拿不到指示（实测负载下偶发）。
+    const reworkFeedback = meta.reworkFeedback;
+    if (reworkFeedback) {
+      delete meta.reworkFeedback;
+      await this.store.writeSnapshot(meta);
+    }
+
     // 超时兜底（R2）：runChild 在 meta.taskTimeoutMs 处自行 kill 并返回 timeout → orchestrator 落 failed(timeout)。
     // 此 guard 只在非子进程阶段（resolve/编排卡死）长时间未返回时兜底，附一小段有文档说明的 kill grace。
     const KILL_GRACE_MS = 15_000;
@@ -304,14 +314,9 @@ export class TaskManager {
         },
         meta,
         ac.signal,
-        meta.reworkFeedback, // rework 只对下一轮生效
+        reworkFeedback, // 启动时已取走并清空（见上）
       );
       const result = await orch.run();
-      if (meta.reworkFeedback) {
-        // rework 指示已消费
-        delete meta.reworkFeedback;
-        await this.store.writeSnapshot(meta);
-      }
       // 防御：以持久化 meta 为准 —— orchestrator 返回 status 与持久化 status 不一致时告警。
       const persisted = (await this.store.readSnapshot(meta.taskId)) ?? meta;
       if (persisted.status !== result.status) {

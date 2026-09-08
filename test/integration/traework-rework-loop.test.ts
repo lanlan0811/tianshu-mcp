@@ -98,15 +98,9 @@ class ScriptedTraeworkAdapter extends TraeworkGuiAdapter {
 
     const state: FakeDomState = makeFakeState({
       projectItems: [{ name: path.basename(this.projectPath), subtitle: this.projectPath }],
+      // 同步自动回复，避免定时器与稳定兜底抢跑（CI flake）
+      autoReplyText: "已完成本轮任务",
     });
-    // 发送后自动产生完成标志（模拟 TraeWork 回复结束）
-    const timer = setInterval(() => {
-      if (state.sent && !state.messages.includes("由AI生成")) {
-        state.messages = `${state.messages}TraeWork已完成本轮任务由AI生成12:30`;
-        clearInterval(timer);
-      }
-    }, 2);
-    timer.unref?.();
 
     const deps: Partial<TraeworkRunDeps> = {
       createClient: () => new FakeCdpClient(9222, state) as never,

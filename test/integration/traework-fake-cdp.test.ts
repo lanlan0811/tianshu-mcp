@@ -88,14 +88,12 @@ beforeEach(async () => {
   tmpDir = await makeTmpRoot("traework-run");
 });
 
-/** 启动一个后台「自动回复」模拟：监听发送后追加完成标志 */
+/**
+ * 设置发送后立刻产生的助手回复（确定性）。
+ * 不使用定时器：轮询间隔小、stableRounds 低时，异步定时器会与稳定兜底抢跑。
+ */
 function autoReply(state: FakeDomState, reply: string): void {
-  const timer = setInterval(() => {
-    if (state.sent && !state.messages.includes("由AI生成")) {
-      state.messages = `${state.messages}TraeWork${reply}由AI生成12:30`;
-      clearInterval(timer);
-    }
-  }, 5);
+  state.autoReplyText = reply;
 }
 
 describe("runTraeworkTask 全链路（假 CDP）", () => {
