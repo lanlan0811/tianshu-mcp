@@ -29,7 +29,7 @@ TypeScript · Node.js ≥ 20 · `@modelcontextprotocol/sdk`（stdio）
 ```bash
 npm install
 npm run build        # → dist/
-npm test             # 53 项测试：单元 + stub-agent 三剧本集成 + 协议 + 取消/超时/基线/参数回归
+npm test             # 72 项测试：单元 + stub-agent 三剧本集成 + 协议 + 取消/超时/基线/参数/配置回归
 ```
 
 配置为天枢 MCP server（本地开发模式）：
@@ -76,7 +76,7 @@ run_task(projectPath=D:/xxx/my-app, task=「…任务书…」, agentId=codex, a
   - 8 工具、TaskManager 状态机/队列/并发闸/cancel(kill tree)/事件流落盘
   - 验收引擎（git 基线/diff、默认集推导、命令 runner、代码分析、report.md/json）
   - fix-loop 自动返修 + needs_attention；技能自检安装（已在本机真实 `~/.rivet/skills` 验证）
-  - stub-agent 三剧本（good/fix-on-first/never）集成测试 + 协议测试，**53/53 绿**（含 R1–R5 取消/超时/基线/参数回归）
+  - stub-agent 三剧本（good/fix-on-first/never）集成测试 + 协议测试，**72/72 绿**（含 R1–R5/S1–S6 取消/超时/基线/参数/配置回归）
 - **M2 — 真实 Codex CLI 冒烟 + rework 闭环** ✅（2026-09-07）
   - 真实 `codex exec` 跑通 `run_task → query_task → verify_task`（[m2-smoke-record.md](docs/m2-smoke-record.md)）
   - 真实 **失败→rework_task→再验收 succeeded** 闭环（[m2-rework-record.md](docs/m2-rework-record.md)，物证 `docs/m2-evidence/`）
@@ -94,18 +94,25 @@ run_task(projectPath=D:/xxx/my-app, task=「…任务书…」, agentId=codex, a
   - **npm 已发布**：`tianshu-mcp@0.1.1`（`npm view` 可查，`npx -y tianshu-mcp` 拉起 8 工具连通，见 [dod7-release-record.md](docs/dod7-release-record.md)）
   - GUI 聊天会话内实际调用工具（DoD #8 最后一环）需用户开天枢新会话（宿主连通与 8 工具注册已就位）
 
-## 验收整改（R1–R8，2026-09-07）
-
-按 [验收修复计划](.zcode/plans/tianshu-mcp-development-plan.md) 与 `.codex/plans/2026-09-07-acceptance-remediation-plan.md` 完成：
+## 验收整改（R1–R8，2026-09-07；S1–S6，2026-09-08）
 
 - **R1** ✅ 取消/中断状态机持久化：运行中取消 `cancel_requested → cancelled`（cancelReason/finishedAt/errorType 落盘）、重启可恢复、幂等、shutdown 有界等待。
 - **R2** ✅ 调用级 `taskTimeoutMs` 覆盖生效（adapter 不再用 profile 覆盖）、POSIX 进程组 SIGTERM→SIGKILL、Windows taskkill /T /F，kill-tree 单实现。
 - **R3** ✅ Git 基线参与差异计算：以 baseline.head 为边界，agent 提交不丢变更、脏工作区 hash 归因、porcelain 逐文件展开。
 - **R4** ✅ 参数语义：`get_task_report(round=0)` 合法、手动验收分配新轮次不覆盖、`extraChecks` 追加 + `checksMode=replace`、`optional` 不影响 verdict、`baselineRef` 校验。
-- **R5** ✅ 移除路径硬编码（`{LOCALAPPDATA}` 等占位符 + 平台标准候选），config/profile/projects mtime 热加载。
-- **R6** 🔄 CI 矩阵扩到 Windows/macOS/Linux × Node 20/22；Release 版本一致性校验；tarball 内容校验。
-- **R7** 🟡 天枢真实闭环：宿主连通（DoD #6）与技能安装已实测；GUI 会话内工具调用待用户开天枢新会话。
-- **R8** 🔄 文档同步 + 最终复验。
+- **R5** ✅ 移除路径硬编码（`{LOCALAPPDATA}` 等占位符 + 平台标准候选），config/profile/projects 热加载。
+- **R6** ✅ CI 矩阵 Windows/macOS/Linux × Node 20/22 全绿；Release 版本一致性校验；tarball 内容校验。
+- **R7** ✅ 真实 Tianshu serve 会话实测（技能加载 + MCP 工具 + stub 任务闭环）；npm v0.1.2 发布 + npx 拉起连通。
+- **R8** ✅ 文档同步 + 复验报告。
+
+二次整改（按 `.codex/plans/2026-09-08-second-remediation-plan.md`）：
+- **S1** ✅ 无理由取消稳定落 `cancelled`（新增 `cancelRequestedAt`/`abortSource` 独立字段，不依赖可选 reason）。
+- **S2** ✅ 普通超时统一落 `failed(timeout)` + 一次 `timeout_killed` 事件，顺序固定。
+- **S3** ✅ tracked 预脏净差异归因：staged/unstaged 未变文件不再误报为 agent 变更。
+- **S4** ✅ `verify_task(taskId)` 持久化更新原任务元数据（`reportRound`/`verificationSource`/`latestVerificationVerdict`，保留 agentId）；MCP 版本单一来源（build 注入，服务端实测 version=0.1.2）。
+- **S5** ✅ config/profiles/projects 热加载 last-known-good + 内容 sha256 失效检测（修复损坏 JSON 被当缺失重置的 bug）。
+- **S6** ✅ CI/Release npm ci 重试修正（成功即停/3 次上限/attempt 计数）；Vitest v3 升级（audit 0 漏洞）；纯文本状态标记（emoji 扫描测试）。
+- **S7/S8/S9** 真实完整证据与新版发布待最终闭环（详见 `.codex/review/`）。
 
 ## 推荐用法（给天枢的提示语）
 

@@ -29,7 +29,7 @@ Tianshu plays the role of the overall commander; this MCP server is the **schedu
 ```bash
 npm install
 npm run build        # → dist/
-npm test             # 53 tests: unit + stub-agent 3-playbook integration + protocol + cancel/timeout/baseline/params regression
+npm test             # 72 tests: unit + stub-agent 3-playbook integration + protocol + cancel/timeout/baseline/params/config regression
 ```
 
 Register as a Tianshu MCP server (local dev mode):
@@ -75,7 +75,7 @@ run_task(projectPath=D:/xxx/my-app, task=「…task brief…」, agentId=codex, 
   - 8 tools, TaskManager state machine / queue / concurrency gate / cancel (kill tree) / event-stream persistence
   - Acceptance engine (git baseline & diff, default-set derivation, command runner, code analysis, report.md/json)
   - fix-loop auto rework + needs_attention; skill self-install
-  - Stub-agent 3 playbooks (good / fix-on-first / never) integration tests + protocol tests — **53/53 green** (incl. R1–R5 cancel/timeout/baseline/params regressions)
+  - Stub-agent 3 playbooks (good / fix-on-first / never) integration tests + protocol tests — **72/72 green** (incl. R1–R5/S1–S6 cancel/timeout/baseline/params/config regressions)
 - **M2 — Real Codex CLI smoke + rework loop** ✅ (2026-09-07)
   - Real `codex exec` completed `run_task → query_task → verify_task` (see [m2-smoke-record.md](docs/m2-smoke-record.md))
   - Real **failure → rework_task → re-verify succeeded** loop ([m2-rework-record.md](docs/m2-rework-record.md), artifacts in `docs/m2-evidence/`)
@@ -86,18 +86,27 @@ run_task(projectPath=D:/xxx/my-app, task=「…task brief…」, agentId=codex, 
   - npm name `tianshu-mcp` published: `tianshu-mcp@0.1.1` (`npm view` resolves; `npx -y tianshu-mcp` raises and connects 8 tools, see [dod7-release-record.md](docs/dod7-release-record.md))
   - Real Tianshu-session skill-trigger validation (DoD #8) needs a GUI session (skill self-installed and ready)
 
-## Acceptance remediation (R1–R8, 2026-09-07)
+## Acceptance remediation (R1–R8, 2026-09-07; S1–S6, 2026-09-08)
 
-Per the acceptance-remediation plan, all P1/P2 findings are fixed with regression tests (total **53/53**):
+Per the acceptance-remediation plans, all P1/P2 findings are fixed with regression tests (total **72/72**):
 
 - **R1** ✅ cancel/interrupt state persistence (`cancel_requested → cancelled`, cancelReason/finishedAt/errorType, restart-recoverable, idempotent, bounded shutdown)
-- **R2** ✅ call-level `taskTimeoutMs` wins (adapter no longer overrides); POSIX process-group SIGTERM→SIGKILL with exit polling; Windows `taskkill /T /F`; single kill-tree impl + abort-race guard
-- **R3** ✅ git baseline participates in diff (baseline.head boundary; agent commits don't lose changes; dirty-worktree hash attribution; `--untracked-files=all`)
-- **R4** ✅ params: `round=0` valid; manual verify allocates next round (no overwrite); `extraChecks` append + `checksMode=replace`; `optional` doesn't fail verdict; `baselineRef` validated
-- **R5** ✅ hardcoded paths removed (`{LOCALAPPDATA}` placeholders + platform defaults); mtime+size hot reload for config/profile/projects
-- **R6** ✅ CI matrix win/mac/linux × Node 20/22 all green (run 25); Release version consistency (tag=package=tarball, v0.1.1 draft OK); tarball content check
-- **R7** ✅ real Tianshu loop: host connect (DoD #6) + skill load & MCP tool call + task loop (DoD #8) + npm publish & npx raise (DoD #7) all verified
-- **R8** 🔄 docs synced (ZH/EN + dev-plan checklist); see [remediation-recheck report](.codex/review/2026-09-07-remediation-recheck.md)
+- **R2** ✅ call-level `taskTimeoutMs` wins; POSIX process-group SIGTERM→SIGKILL; Windows `taskkill /T /F`; single kill-tree impl + abort-race guard
+- **R3** ✅ git baseline participates in diff (baseline.head boundary; agent commits don't lose changes; dirty-worktree hash attribution)
+- **R4** ✅ params: `round=0` valid; manual verify allocates next round; `extraChecks` append + `checksMode=replace`; `optional` semantics; `baselineRef` validated
+- **R5** ✅ hardcoded paths removed (`{LOCALAPPDATA}` placeholders); content-stamp hot reload for config/profile/projects
+- **R6** ✅ CI matrix win/mac/linux × Node 20/22 all green; Release version consistency; tarball content check
+- **R7** ✅ real Tianshu serve session (skill load + MCP tool call + stub task loop); npm v0.1.2 published + npx raise connect
+- **R8** ✅ docs synced (ZH/EN + dev-plan checklist); recheck report
+
+Second-round remediation (per `.codex/plans/2026-09-08-second-remediation-plan.md`):
+- **S1** ✅ no-reason cancel lands `cancelled` (independent `cancelRequestedAt`/`abortSource`, no reliance on optional reason)
+- **S2** ✅ normal timeout → `failed(timeout)` + exactly one `timeout_killed` event, fixed order
+- **S3** ✅ tracked pre-dirty net-diff attribution (unchanged staged/unstaged no longer reported as agent changes)
+- **S4** ✅ `verify_task(taskId)` persists real-task metadata (`reportRound`/`verificationSource`/`latestVerificationVerdict`, keeps agentId); single-source MCP version (build-injected, live-tested = 0.1.2)
+- **S5** ✅ config/profiles/projects last-known-good + sha256 invalidation (fixed corrupt-JSON-reset bug)
+- **S6** ✅ CI/Release npm ci retry corrected; Vitest v3 upgrade (audit 0); plain-text status markers (emoji scan test)
+- **S7/S8/S9** full real-loop evidence & new release pending final close-out (see `.codex/review/`)
 
 ## Recommended phrasing (for Tianshu)
 
