@@ -32,15 +32,15 @@
 | 项 | 状态 |
 |---|---|
 | 分支 | `master`（**只在此分支提交**，不建其他分支） |
-| 最新提交 | `d27555a fix: 修复 TraeWork 项目文件夹绑定根因（路径形式）+ v0.1.7` |
-| 版本 / 许可证 | `0.1.7` / Apache-2.0 |
-| 标签 | `v0.1.0` … `v0.1.7`（v0.1.2+ 均已推双仓） |
+| 最新提交 | `71f65a0 fix: 原子写并发缺陷（CI 偶发失败的真实根因）+ v0.1.8` |
+| 版本 / 许可证 | `0.1.8` / Apache-2.0 |
+| 标签 | `v0.1.0` … `v0.1.8`（v0.1.2+ 均已推双仓） |
 | 工作树 | 干净；`github/master` 与 `gitee/master` 均同步 |
-| 测试 | **178/178 通过**（27 个测试文件：单元 16 + 集成 10 + 协议 1） |
+| 测试 | **181/181 通过**（28 个测试文件：单元 17 + 集成 10 + 协议 1） |
 | 门禁 | lint 0 warning、typecheck clean、build 成功、`npm pack` 内容校验通过 |
 | CI | `CI` workflow：ubuntu/windows/macos × Node 20/22 + tarball 检查 = **7/7 全绿** |
-| npm | `tianshu-mcp@0.1.7` 已发布，`dist-tags.latest = 0.1.7` |
-| Release | GitHub Release `v0.1.7` 已发布（附 tarball）；Gitee Release `v0.1.7` 已创建（附 tarball） |
+| npm | `tianshu-mcp@0.1.8` 已发布，`dist-tags.latest = 0.1.8` |
+| Release | GitHub/Gitee Release `v0.1.8` 均已发布（附 tarball） |
 
 ### Agent 适配现状
 
@@ -63,6 +63,7 @@
 - **M5** 面板模式切换（Work/Code/Design）+ v0.1.5 发布 + README 重写/SVG 资产 — **167 测试**
 - **M6** 项目文件夹绑定修复（footer 确认弹窗 / 检测预算 / CJK 路径 WM_SETTEXT / Code→Work 兜底）+ v0.1.6 — **172 测试**
 - **M7** 绑定**根因**修复（规范化路径被选择器拒绝 → `toNativeWindowsPath`）+ 写入回读校验 / hwnd 贯穿 / 遗留对话框清理 + v0.1.7 — **178 测试**
+- **M8** 原子写并发缺陷修复（临时文件名唯一化 + rename 退避重试，CI windows/Node20 真根因）+ v0.1.8 — **181 测试**
 
 ### 实现期修复的两个既有缺陷（重要）
 
@@ -73,6 +74,9 @@
 2. **`projectBasename` 跨平台**：原用 `path.basename`（POSIX 不切反斜杠），Linux/macOS CI 必失败 → 改为显式按 `\` 与 `/` 切分。
 3. **项目文件夹绑定卡住**（M6，实战反馈）：三处叠加缺陷 —— footer 点击未确认弹窗、检测被 PowerShell 冷启动吃光预算、CJK 路径被控制台代码页破坏。详见 §8.1。
 4. **绑定仍失败的真根因**（M7）：MCP 传 `normPath()` 规范化路径（`d:/a/b`），**Windows 原生选择器不接受** → 必须 `toNativeWindowsPath()` 转 `D:\a\b`。详见 §8.1。
+5. **原子写并发缺陷**（M8，CI 偶发失败真根因）：`writeJsonAtomic`/`writeTextAtomic` 临时文件名
+   `<目标>.<pid>.tmp` 在并发下共用 → `ENOENT`（同进程）或 `EPERM`（Windows rename 争用）；
+   已改为随机后缀 + rename 退避重试。回归：`test/unit/atomic-write.test.ts`。
 
 ---
 
@@ -291,6 +295,7 @@ hwnd 贯穿传递（只操作探测到的那个窗口）、下拉未命中时先
 | `docs/agent-profiles.md` / `.en.md` | profile 字段说明（含 `driver`/`gui`） |
 | `docs/adapter-matrix.md` / `.en.md` | 各 agent 能力调研矩阵 |
 | `docs/acceptance-config.md` / `.en.md` | 项目级验收配置规范 |
+| `docs/release-v0.1.8.md` / `.en.md` | v0.1.8 发布说明（原子写并发缺陷修复） |
 | `docs/release-v0.1.7.md` / `.en.md` | v0.1.7 发布说明（绑定根因：原生路径形式） |
 | `docs/release-v0.1.6.md` / `.en.md` | v0.1.6 发布说明（项目文件夹绑定修复） |
 | `docs/release-v0.1.5.md` / `.en.md` | v0.1.5 发布说明与产物记录 |
