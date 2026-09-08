@@ -126,7 +126,10 @@ Built-in defaults live in `src/agents/builtin.ts`; the user data directory
         "windowMode": "reuse",       // reuse an existing instance; launch = always new
         "launchTimeoutMs": 60000,    // wait for CDP readiness
         "pollIntervalMs": 3000,      // reply polling interval
-        "stableRounds": 12,          // no-change rounds before falling back to "finished"
+        "stableRounds": 12,          // no-change rounds before the idle timer starts
+        "idleTimeoutMs": 600000,     // unchanged and no running signal before returning idle
+        "cdpSendTimeoutMs": 15000,   // timeout for one CDP command
+        "progressIntervalMs": 30000, // progress-event interval visible through query_task
         "modelSwitch": true,         // switch model when task specifies one
         "modeSwitch": true,          // switch panel mode (Work/Code/Design) when task specifies one
         "freshSession": true,        // new session per task
@@ -152,7 +155,8 @@ When a TraeWork UI upgrade breaks a selector, **no code change is needed** — o
 Available keys (see `src/agents/traework/cdp/selectors.ts`): `chatInput`, `newTask`, `taskListItem`,
 `taskListGroupName`, `modeTab`, `modelTrigger`, `modelTriggerValue`, `modelOption`, `modelList`,
 `modeSwitcher`, `projectButton`, `cascadeMenu`, `cascadeMenuItem`, `cascadeMenuItemTitle`,
-`cascadeMenuItemSubtitle`, `cascadeMenuGroupHeader`, `cascadeMenuFooter`, `messageContainer`, `toolCard`.
+`cascadeMenuItemSubtitle`, `cascadeMenuGroupHeader`, `cascadeMenuFooter`, `messageContainer`, `toolCard`,
+`sendButton`, `stopButton`, `taskTail`, `taskTailLoading`, `thinkingStream`.
 
 Each key has a primary selector plus fallback candidates tried in order.
 
@@ -176,6 +180,11 @@ Each key has a primary selector plus fallback candidates tried in order.
 | modelOption / modelList | `.core-model-select-model-item` / `-list` | Model items (virtual scroll) |
 | messageContainer | `.message-list-cache-container` | Message container (appears after sending) |
 | toolCard | `.core-toolcall-base-card,…` | Trae native tool cards |
+| sendButton | `.chat-input-v2-send-button` | Send-button container |
+| stopButton | `.chat-input-v2-send-button-stop-icon` | **Authoritative primary running signal**: stop state while generating |
+| taskTail | `.core-task-tail` | Task-tail container |
+| taskTailLoading | `.core-task-tail--loading` | **Authoritative secondary running signal**: in-flight bridge request |
+| thinkingStream | `.thinking-stream-content` | Diagnostic only; historical nodes may remain and never block completion |
 
 ---
 
@@ -205,9 +214,12 @@ user's own running TraeWork instance (data intact, restarted). They are now hard
 - **Window must stay visible**: sending relies on simulated input; a minimized/hidden window may fail.
 - **Single-session serialization**: TraeWork is a single-session UI; all tasks go through a serial queue,
   on top of the existing "per-project serial + global concurrency gate".
-- **Completion detection is heuristic**: the DOM completion mark ("由AI生成") is primary, with a stability
-  fallback (default ~36 s of no change) plus a task-level timeout. For long replies with pauses, tune
-  `gui.stableRounds`.
+- **Completion still depends on UI signals, but a short static period is no longer completion**: a visible stop button or
+  loading task tail always keeps polling. Without a running signal, the DOM completion mark ("由AI生成") is accepted.
+  `gui.stableRounds` only starts an idle timer; another `gui.idleTimeoutMs` (ten minutes by default) returns `idle` and
+  retains the instance. If all liveness selectors drift, behavior fails open to the completion mark plus idle timer.
+- **Abnormal endings retain the scene**: timeout, idle, cancellation, and CDP loss do not close the instance.
+  `query_task` metadata exposes `agentEndReason` / `keptInstance`; only `completion_mark` and `ask_user` release a newly launched instance.
 - **Model switching depends on the dropdown**: if the target is absent (locked entitlement/name mismatch),
   the task fails loudly rather than silently using the wrong model.
 - **UI upgrades drift**: selectors are centralized in `selectors.ts` and overridable via profile;
@@ -243,6 +255,9 @@ user's own running TraeWork instance (data intact, restarted). They are now hard
 | **Binding fails with `mode=Code`** | The "select folder" path is unreliable outside Work mode | `bindProject` **falls back to Work once**, then switches back to the target mode |
 | **Path written into the edit box, but confirm does not close the dialog** | The MCP passes a `normPath()`-normalized path (`d:/a/b` - lowercase drive, forward slashes), which the **native picker rejects** | Convert via `toNativeWindowsPath()` to `D:\a\b`; verify with `WM_GETTEXT` read-back and never click confirm on mismatch |
 | **A stale dialog from a previous failure gets written to** | `findFolderDialog()` returns true on *any* matching window | `closeStaleFolderDialogs()` runs before binding; the detected hwnd is passed into the write script so only that window is touched |
+| **Long thinking was declared complete after ~36 seconds** | The old stability fallback treated an unchanged DOM as completion and only checked the literal thinking placeholder | Stop button/task-tail loading now win; stable rounds start a ten-minute idle timer |
+| **Polling hung forever after TraeWork closed** | WebSocket loss never rejected pending calls and `send()` had no timeout | `onclose`/`onerror` reject all pending calls; commands default to a 15-second timeout |
+| **MCP timeout closed an instance that was still working** | `finally` always released instances launched by this module | Release only on real completion/ask_user; retain on idle, timeout, cancellation, and CDP loss with structured metadata |
 
 ---
 

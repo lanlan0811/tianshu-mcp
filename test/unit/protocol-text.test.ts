@@ -7,6 +7,8 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { MCP_SERVER_VERSION } from "../../src/version.generated.js";
 import pkg from "../../package.json" with { type: "json" };
+import { metaFromTask } from "../../src/mcp/formatter.js";
+import type { TaskMeta } from "../../src/tasks/task.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -38,5 +40,28 @@ describe("S6 MCP 版本单一来源", () => {
   it("version.generated.ts 与 package.json.version 一致", () => {
     expect(MCP_SERVER_VERSION).toBe(pkg.version);
     expect(MCP_SERVER_VERSION).toMatch(/^\d+\.\d+\.\d+/);
+  });
+});
+
+describe("TraeWork 结束元数据", () => {
+  it("metaFromTask 透传 agentEndReason / keptInstance", () => {
+    const task = {
+      taskId: "tsk_meta",
+      status: "failed",
+      projectPath: "d:/demo",
+      displayPath: "D:\\demo",
+      agentId: "traework",
+      task: "demo",
+      autoVerify: true,
+      autoFixRounds: 0,
+      taskTimeoutMs: 1_000,
+      round: 0,
+      roundsUsed: 0,
+      createdAt: "2026-09-09T00:00:00.000Z",
+      updatedAt: "2026-09-09T00:00:01.000Z",
+      agentEndReason: "timeout",
+      keptInstance: true,
+    } satisfies TaskMeta;
+    expect(metaFromTask(task)).toMatchObject({ agentEndReason: "timeout", keptInstance: true });
   });
 });

@@ -18,6 +18,32 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.1.9] — 2026-09-09
+
+### Fixed
+
+- Fixed premature TraeWork completion while the model was still thinking but the DOM stayed unchanged for about 36 seconds.
+  The stop button and loading task tail are now authoritative running signals and override completion marks; stable rounds now
+  start an idle timer, which defaults to ten minutes before returning `idle`.
+- Fixed permanently pending `Runtime.evaluate` calls after a CDP WebSocket disconnect. Close/error rejects all pending requests,
+  each CDP command has a 15-second default timeout, and task cancellation is observed within about one second.
+- Only `completion_mark` / `ask_user` release an instance launched by this module. Idle, timeout, cancellation, and CDP loss retain
+  it, with `agentEndReason` / `keptInstance` exposed in task metadata.
+- Fixed a shutdown race where an orchestrator still collecting its baseline could remain `queued` and be mislabeled as a user
+  cancellation. User cancellation is now determined only from structured cancellation intent.
+
+### Added
+
+- Polling emits a progress event visible through `query_task` every 30 seconds by default.
+- Added `gui.idleTimeoutMs`, `gui.cdpSendTimeoutMs`, `gui.progressIntervalMs`, and five overrideable liveness selectors.
+
+### Testing
+
+- Added liveness truth-table, CDP timeout/disconnect convergence, selector-expression, and fake-CDP instance-retention regressions.
+- Windows/macOS/Linux × Node 20/22 and tarball gates remain covered.
+
+---
+
 ## [0.1.8] — 2026-09-08
 
 ### Fixed
@@ -245,7 +271,8 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
-[Unreleased]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.8...HEAD
+[Unreleased]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.9...HEAD
+[0.1.9]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.5...v0.1.6

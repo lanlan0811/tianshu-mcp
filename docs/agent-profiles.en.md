@@ -32,6 +32,7 @@ built-in (`src/agents/builtin.ts`) → user `agent-profiles.json` overrides by `
         "cdpPort": 9222, "cdpPortAuto": true, "cdpPortRange": 20,
         "exeArgs": ["--remote-debugging-port=<port>"], "windowMode": "reuse",
         "launchTimeoutMs": 60000, "pollIntervalMs": 3000, "stableRounds": 12,
+        "idleTimeoutMs": 600000, "cdpSendTimeoutMs": 15000, "progressIntervalMs": 30000,
         "modelSwitch": true, "modeSwitch": true, "freshSession": true, "selectors": {}
       }
     }
@@ -47,6 +48,11 @@ built-in (`src/agents/builtin.ts`) → user `agent-profiles.json` overrides by `
 | `gui` | drives a desktop UI over CDP (currently only `traework`); no child process, and `run_task` may pass `model` to pick its model |
 
 > With `driver=gui`, `argsTemplate`/`promptMode` are unused. See [traework-cdp.en.md](traework-cdp.en.md) for the `gui` section and its safety invariants.
+
+TraeWork liveness fields: `stableRounds` only confirms that the DOM is stable; `idle` is returned only after another
+`idleTimeoutMs` without changes or authoritative running signals. `cdpSendTimeoutMs` bounds one CDP command, while
+`progressIntervalMs` controls progress events visible through `query_task`. Idle, timeout, cancellation, and CDP loss
+retain the instance and expose `agentEndReason` / `keptInstance` in metadata.
 
 ## Discovery semantics (R5)
 

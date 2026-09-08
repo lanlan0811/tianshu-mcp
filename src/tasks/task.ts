@@ -137,6 +137,10 @@ export interface TaskMeta {
   verificationSource?: "auto" | "manual";
   /** S4：最近一次手动验收结论（不改变 agent 任务终态时单独记录） */
   latestVerificationVerdict?: "passed" | "failed";
+  /** 最近一次 GUI agent 的结构化结束原因 */
+  agentEndReason?: string;
+  /** 最近一次 GUI agent 结束后是否保留实例 */
+  keptInstance?: boolean;
 }
 
 /** manager 记录任务所需最小信息（内存态），与 TaskMeta 解耦 */

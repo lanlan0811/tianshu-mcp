@@ -38,6 +38,7 @@
         "cdpPort": 9222, "cdpPortAuto": true, "cdpPortRange": 20,
         "exeArgs": ["--remote-debugging-port=<port>"], "windowMode": "reuse",
         "launchTimeoutMs": 60000, "pollIntervalMs": 3000, "stableRounds": 12,
+        "idleTimeoutMs": 600000, "cdpSendTimeoutMs": 15000, "progressIntervalMs": 30000,
         "modelSwitch": true, "modeSwitch": true, "freshSession": true, "selectors": {}
       }
     }
@@ -53,6 +54,10 @@
 | `gui` | 通过 CDP 驱动桌面 UI（当前仅 `traework`）；不 spawn 子进程，`run_task` 可传 `model` 指定其模型 |
 
 > `driver=gui` 时 `argsTemplate`/`promptMode` 不生效；`gui` 段字段含义与安全约束见 [traework-cdp.md](traework-cdp.md)。
+
+TraeWork 存活检测相关字段：`stableRounds` 仅确认 DOM 已稳定；随后还需持续 `idleTimeoutMs` 无变化且无运行信号才返回
+`idle`。`cdpSendTimeoutMs` 限制单次 CDP 命令等待，`progressIntervalMs` 控制 `query_task` 可见的进度事件频率。
+空闲、超时、取消与 CDP 断开会保留实例，并在 meta 中返回 `agentEndReason` / `keptInstance`。
 
 ### promptMode
 

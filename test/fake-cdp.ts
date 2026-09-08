@@ -41,6 +41,11 @@ export interface FakeDomState {
    * 异步定时器会与「稳定兜底」抢跑，导致 CI 上偶发拿不到回复（实测 Windows Node 22 flake）。
    */
   autoReplyText?: string;
+  /** 运行状态探针；stop/tail 是权威信号，thinking 仅诊断 */
+  liveness: { stopVisible: boolean; tailLoading: boolean; thinkingStream: boolean };
+  livenessSequence?: Array<{ stopVisible: boolean; tailLoading: boolean; thinkingStream: boolean }>;
+  /** 探针调用时可注入的错误（模拟 CDP 断开） */
+  livenessError?: Error;
 }
 
 export function makeFakeState(over: Partial<FakeDomState> = {}): FakeDomState {
@@ -58,6 +63,7 @@ export function makeFakeState(over: Partial<FakeDomState> = {}): FakeDomState {
     openDropdown: null,
     mode: "Work",
     pendingMode: null,
+    liveness: { stopVisible: false, tailLoading: false, thinkingStream: false },
     ...over,
   };
 }
@@ -73,6 +79,10 @@ export class FakeCdpClient {
   }
 
   get connected(): boolean {
+    return true;
+  }
+
+  get alive(): boolean {
     return true;
   }
 
@@ -146,6 +156,13 @@ export class FakeCdpClient {
       default:
         return "";
     }
+  }
+
+  async probeLiveness(): Promise<FakeDomState["liveness"]> {
+    if (this.state.livenessError) throw this.state.livenessError;
+    const next = this.state.livenessSequence?.shift();
+    if (next) this.state.liveness = next;
+    return { ...this.state.liveness };
   }
 
   async center(key: string): Promise<{ x: number; y: number } | null> {

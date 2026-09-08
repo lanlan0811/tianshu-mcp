@@ -19,6 +19,11 @@ describe("选择器表", () => {
       "cascadeMenuFooter",
       "messageContainer",
       "toolCard",
+      "sendButton",
+      "stopButton",
+      "taskTail",
+      "taskTailLoading",
+      "thinkingStream",
     ];
     for (const k of required) {
       expect(SELECTORS[k as keyof typeof SELECTORS], `缺少选择器: ${k}`).toBeDefined();

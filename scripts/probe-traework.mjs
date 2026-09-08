@@ -39,6 +39,8 @@ if (mode === "selectors") {
     const mark = exists ? "OK  " : "MISS";
     console.log(`  ${mark} ${key.padEnd(22)} verified=${spec.verified ? "Y" : "N"} ${exists ? JSON.stringify(text) : `(${resolveSelectors(key)[0]})`}`);
   }
+  const liveness = await cdp.probeLiveness();
+  console.log("[probe] 运行状态探针：", JSON.stringify(liveness));
   console.log("[probe] 任务列表：", (await listSessions(cdp)).slice(0, 10).join(" | ") || "(空)");
 }
 
@@ -81,7 +83,7 @@ if (mode === "send") {
   await typeAndSend(cdp, marker + text, { logger });
   console.log("[probe] 已发送，开始轮询…");
   const base = await cdp.text("messageContainer");
-  let state = { prev: "", stable: 0 };
+  let state = { prev: "", stable: 0, idleSince: 0 };
   const deadline = Date.now() + 180_000;
   for (;;) {
     if (Date.now() > deadline) {
@@ -90,8 +92,9 @@ if (mode === "send") {
     }
     await new Promise((r) => setTimeout(r, 3000));
     const current = await cdp.text("messageContainer");
-    const v = judgePoll(current, marker, base, state, 12);
-    if (v.kind === "finished" || v.kind === "ask_user") {
+    const liveness = await cdp.probeLiveness();
+    const v = judgePoll(current, marker, base, state, 12, { liveness, idleTimeoutMs: 10 * 60_000 });
+    if (v.kind === "finished" || v.kind === "ask_user" || v.kind === "idle") {
       const parsed = parseAdded(v.added);
       console.log(`[probe] 结束（${v.kind}），正文 ${parsed.content.length} 字符：`);
       console.log(parsed.content.slice(0, 2000));

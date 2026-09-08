@@ -111,6 +111,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=traework, task=「切换到 Code 模
 | [docs/adapter-matrix.md](docs/adapter-matrix.md) | 各 Agent 能力调研矩阵（Codex/Zcode/TraeWork/扩展位） |
 | [docs/traework-cdp.md](docs/traework-cdp.md) | TraeWork GUI 驱动（CDP）：原理、配置、模式切换、选择器、安全红线、踩坑记录、验证记录 |
 | [docs/acceptance-config.md](docs/acceptance-config.md) | 项目级 `.tianshu-mcp/acceptance.json` 验收配置规范 |
+| [docs/release-v0.1.9.md](docs/release-v0.1.9.md) | v0.1.9 发布说明（TraeWork 任务进行中检测与实例保留） |
 | [docs/release-v0.1.8.md](docs/release-v0.1.8.md) | v0.1.8 发布说明（原子写并发缺陷修复） |
 | [docs/release-v0.1.7.md](docs/release-v0.1.7.md) | v0.1.7 发布说明（绑定根因：原生路径） |
 | [docs/release-v0.1.6.md](docs/release-v0.1.6.md) | v0.1.6 发布说明（项目文件夹绑定修复） |

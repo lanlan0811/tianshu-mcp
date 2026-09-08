@@ -17,6 +17,31 @@
 
 ---
 
+## [0.1.9] — 2026-09-09
+
+### 修复
+
+- 修复 TraeWork 长时间思考期间 DOM 静止约 36 秒就被误判完成的问题：停止按钮与任务尾部 loading
+  成为权威运行信号，并优先于完成标志；稳定轮数只启动空闲计时，默认持续 10 分钟才返回 `idle`。
+- 修复 CDP WebSocket 断开后 `Runtime.evaluate` 永久挂起：连接关闭/错误会拒绝全部待处理请求，
+  单次 CDP 命令默认 15 秒超时，任务取消最多约 1 秒生效。
+- 仅 `completion_mark` / `ask_user` 会释放本模块启动的实例；空闲、超时、取消与 CDP 断开均保留实例，
+  并通过 `agentEndReason` / `keptInstance` 暴露原因。
+- 修复服务关闭恰逢 orchestrator 采集基线、任务状态仍为 `queued` 时被误记成用户取消的竞态；
+  用户取消现在只依据结构化取消意图判断。
+
+### 新增
+
+- 轮询期间默认每 30 秒写入可由 `query_task` 观察的进度事件。
+- 新增 `gui.idleTimeoutMs`、`gui.cdpSendTimeoutMs`、`gui.progressIntervalMs` 与 5 个可覆盖的存活探针选择器。
+
+### 测试
+
+- 新增存活真值表、CDP 命令超时/断线收敛、选择器表达式及假 CDP 实例保留等回归测试。
+- Windows/macOS/Linux × Node 20/22 与 tarball 门禁保持覆盖。
+
+---
+
 ## [0.1.8] — 2026-09-08
 
 ### 修复
@@ -218,7 +243,8 @@
 
 ---
 
-[未发布]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.8...HEAD
+[未发布]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.9...HEAD
+[0.1.9]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.5...v0.1.6

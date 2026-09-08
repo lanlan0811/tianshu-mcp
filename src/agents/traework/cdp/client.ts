@@ -18,6 +18,7 @@ interface CdpWebSocket {
   close(): void;
   onopen: (() => void) | null;
   onerror: ((ev: unknown) => void) | null;
+  onclose: ((ev: unknown) => void) | null;
   onmessage: ((ev: { data: unknown }) => void) | null;
 }
 
@@ -32,6 +33,28 @@ export interface CdpClientOptions {
   port: number;
   /** 页面查找超时（ms） */
   connectTimeoutMs?: number;
+  /** 单次 CDP 命令等待响应的超时（ms） */
+  sendTimeoutMs?: number;
+}
+
+export interface LivenessProbe {
+  stopVisible: boolean;
+  tailLoading: boolean;
+  thinkingStream: boolean;
+}
+
+export interface LivenessInterpretation {
+  running: boolean;
+  evidence: string;
+}
+
+/** 只有会可靠消失的停止按钮与 loading tail 才是权威运行信号。 */
+export function interpretLiveness(probe: LivenessProbe): LivenessInterpretation {
+  const evidence: string[] = [];
+  if (probe.stopVisible) evidence.push("stop_button");
+  if (probe.tailLoading) evidence.push("task_tail_loading");
+  if (probe.thinkingStream) evidence.push("thinking_stream(diagnostic)");
+  return { running: probe.stopVisible || probe.tailLoading, evidence: evidence.join(",") || "none" };
 }
 
 export class CdpUnavailableError extends Error {
@@ -41,19 +64,31 @@ export class CdpUnavailableError extends Error {
   }
 }
 
+export class CdpDisconnectedError extends CdpUnavailableError {
+  constructor(msg: string) {
+    super(`连接已断开: ${msg}`);
+    this.name = "CdpDisconnectedError";
+  }
+}
+
 /** 连接 TraeWork 页面的 CDP 客户端 */
 export class TraeworkCdpClient {
   readonly port: number;
   private ws: CdpWebSocket | null = null;
+  private isAlive = false;
   private msgId = 0;
-  private pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
+  private pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
 
   constructor(private readonly opts: CdpClientOptions) {
     this.port = opts.port;
   }
 
   get connected(): boolean {
-    return this.ws !== null;
+    return this.ws !== null && this.isAlive;
+  }
+
+  get alive(): boolean {
+    return this.isAlive;
   }
 
   /** 读取 CDP 页面目标列表（用于就绪探测与诊断） */
@@ -111,6 +146,7 @@ export class TraeworkCdpClient {
       const timer = setTimeout(() => reject(new CdpUnavailableError("CDP WebSocket 连接超时")), this.opts.connectTimeoutMs ?? 10_000);
       ws.onopen = () => {
         clearTimeout(timer);
+        this.isAlive = true;
         resolve();
       };
       ws.onerror = () => {
@@ -119,27 +155,60 @@ export class TraeworkCdpClient {
       };
     });
     ws.onmessage = (ev) => {
-      const msg = JSON.parse(String(ev.data)) as { id?: number; error?: unknown; result?: unknown };
-      if (msg.id && this.pending.has(msg.id)) {
-        const { resolve, reject } = this.pending.get(msg.id)!;
-        this.pending.delete(msg.id);
-        if (msg.error) reject(new Error(JSON.stringify(msg.error)));
-        else resolve(msg.result);
+      try {
+        const msg = JSON.parse(String(ev.data)) as { id?: number; error?: unknown; result?: unknown };
+        if (msg.id && this.pending.has(msg.id)) {
+          const pending = this.pending.get(msg.id)!;
+          this.pending.delete(msg.id);
+          clearTimeout(pending.timer);
+          if (msg.error) pending.reject(new Error(JSON.stringify(msg.error)));
+          else pending.resolve(msg.result);
+        }
+      } catch {
+        // 非法/无关事件不应击穿客户端；对应请求仍由 send 超时收敛。
       }
     };
+    ws.onclose = () => this.markDisconnected("WebSocket 已关闭");
+    ws.onerror = () => this.markDisconnected("WebSocket 错误");
     await this.send("Runtime.enable");
   }
 
   send(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
     return new Promise((resolve, reject) => {
-      if (!this.ws) {
-        reject(new CdpUnavailableError("CDP 未连接"));
+      if (!this.ws || !this.isAlive) {
+        reject(new CdpDisconnectedError("CDP 未连接或已关闭"));
         return;
       }
       const id = ++this.msgId;
-      this.pending.set(id, { resolve, reject });
-      this.ws.send(JSON.stringify({ id, method, params }));
+      const timeoutMs = this.opts.sendTimeoutMs ?? 15_000;
+      const timer = setTimeout(() => {
+        if (!this.pending.delete(id)) return;
+        reject(new CdpUnavailableError(`命令 ${method} 等待响应超时（${timeoutMs}ms）`));
+      }, timeoutMs);
+      this.pending.set(id, { resolve, reject, timer });
+      try {
+        this.ws.send(JSON.stringify({ id, method, params }));
+      } catch (e) {
+        this.pending.delete(id);
+        clearTimeout(timer);
+        reject(new CdpDisconnectedError(`命令 ${method} 发送失败：${e instanceof Error ? e.message : String(e)}`));
+      }
     });
+  }
+
+  private markDisconnected(reason: string): void {
+    if (!this.isAlive && this.pending.size === 0) {
+      this.ws = null;
+      return;
+    }
+    this.isAlive = false;
+    this.ws = null;
+    const error = new CdpDisconnectedError(reason);
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(error);
+    }
+    this.pending.clear();
   }
 
   /** 页面内执行表达式并取回值（异常返回 undefined，由调用方决定处理） */
@@ -170,6 +239,20 @@ export class TraeworkCdpClient {
   async text(key: SelectorKey, overrides?: SelectorOverrides): Promise<string> {
     const expr = `(function(){const cs=${candidateArrayExpr(key, overrides)};for(const c of cs){const e=document.querySelector(c);if(e){const r=e.getBoundingClientRect();if(r.width>0&&r.height>0)return (e.textContent||'').trim()}}return ''})()`;
     return this.evaluateString(expr);
+  }
+
+  /** 单次页面求值探测所有活跃信号，避免三次 CDP 往返产生观测竞态。 */
+  async probeLiveness(overrides?: SelectorOverrides): Promise<LivenessProbe> {
+    const stop = candidateArrayExpr("stopButton", overrides);
+    const tail = candidateArrayExpr("taskTailLoading", overrides);
+    const thinking = candidateArrayExpr("thinkingStream", overrides);
+    const expr = `(function(){const visible=(cs)=>{for(const c of cs){const e=document.querySelector(c);if(e){const r=e.getBoundingClientRect();if(r.width>0&&r.height>0)return true}}return false};return {stopVisible:visible(${stop}),tailLoading:visible(${tail}),thinkingStream:visible(${thinking})}})()`;
+    const value = await this.evaluate<Partial<LivenessProbe>>(expr);
+    return {
+      stopVisible: value?.stopVisible === true,
+      tailLoading: value?.tailLoading === true,
+      thinkingStream: value?.thinkingStream === true,
+    };
   }
 
   /** 读取某语义键第一个可见元素的中心坐标（坐标点击用） */
@@ -228,11 +311,13 @@ export class TraeworkCdpClient {
   }
 
   disconnect(): void {
+    const ws = this.ws;
+    if (!ws && !this.isAlive && this.pending.size === 0) return;
+    this.markDisconnected("客户端主动断开");
     try {
-      this.ws?.close();
+      ws?.close();
     } catch {
       /* 已断开 */
     }
-    this.ws = null;
   }
 }

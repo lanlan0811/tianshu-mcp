@@ -10,6 +10,7 @@ import fs from "node:fs";
 import { makeTmpRoot } from "../test-utils.js";
 import { FakeCdpClient, makeFakeState, extractMarker, type FakeDomState } from "../fake-cdp.js";
 import { runTraeworkTask, type TraeworkRunDeps } from "../../src/agents/traework/run.js";
+import { CdpDisconnectedError } from "../../src/agents/traework/cdp/client.js";
 import type { TaskContext, ResolvedAgent, AgentRunLogger } from "../../src/agents/adapter.js";
 
 const silentLogger: AgentRunLogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
@@ -292,6 +293,116 @@ describe("runTraeworkTask 全链路（假 CDP）", () => {
     });
     expect(r.ok).toBe(false);
     expect(r.timeout).toBe(true);
+  });
+
+  it("停止按钮可见时即使已有完成标志也不结束，信号消失后正常完成", async () => {
+    const state = makeFakeState({
+      projectItems: [{ name: "demo", subtitle: "" }],
+      livenessSequence: [
+        { stopVisible: true, tailLoading: false, thinkingStream: false },
+        { stopVisible: false, tailLoading: false, thinkingStream: false },
+      ],
+    });
+    autoReply(state, "回复已写完但仍在生成");
+    let probeCount = 0;
+    const client = new FakeCdpClient(9222, state);
+    const originalProbe = client.probeLiveness.bind(client);
+    client.probeLiveness = async () => {
+      probeCount += 1;
+      return originalProbe();
+    };
+    const r = await runTraeworkTask({
+      ctx: makeCtx({ taskDir: tmpDir }),
+      resolved: makeResolved(),
+      opts: { logger: silentLogger },
+      logFile: path.join(tmpDir, "agent-running-priority.log"),
+      startedAt: Date.now(),
+      logger: silentLogger,
+      deps: makeDeps(state, { createClient: () => client as never }),
+    });
+    expect(r.ok).toBe(true);
+    expect(r.endReason).toBe("completion_mark");
+    expect(probeCount).toBeGreaterThanOrEqual(2);
+  });
+
+  it("静态空闲结束：ok=false、保留实例且不调用 release", async () => {
+    const state = makeFakeState({ projectItems: [{ name: "demo", subtitle: "" }] });
+    let released = false;
+    const r = await runTraeworkTask({
+      ctx: makeCtx({ taskDir: tmpDir }),
+      resolved: makeResolved({}, { stableRounds: 1, idleTimeoutMs: 0 }),
+      opts: { logger: silentLogger },
+      logFile: path.join(tmpDir, "agent-idle.log"),
+      startedAt: Date.now(),
+      logger: silentLogger,
+      deps: makeDeps(state, {
+        probeReady: async () => null,
+        launch: () => ({ pid: 1234, port: 9222, exePath: "x.exe", commandLine: "x.exe --remote-debugging-port=9222" }),
+        release: () => {
+          released = true;
+          return { released: true, reason: "不应调用" };
+        },
+      }),
+    });
+    expect(r.ok).toBe(false);
+    expect(r.hardFailure).toBeUndefined();
+    expect(r.endReason).toBe("idle_no_completion");
+    expect(r.keptInstance).toBe(true);
+    expect(released).toBe(false);
+  });
+
+  it("超时保留新启动实例，不调用 release", async () => {
+    const state = makeFakeState({ projectItems: [{ name: "demo", subtitle: "" }] });
+    let released = false;
+    const r = await runTraeworkTask({
+      ctx: makeCtx({ taskDir: tmpDir, taskTimeoutMs: 30 }),
+      resolved: makeResolved({}, { stableRounds: 100_000, idleTimeoutMs: 60_000 }),
+      opts: { logger: silentLogger },
+      logFile: path.join(tmpDir, "agent-timeout-kept.log"),
+      startedAt: Date.now(),
+      logger: silentLogger,
+      deps: makeDeps(state, {
+        probeReady: async () => null,
+        launch: () => ({ pid: 2345, port: 9222, exePath: "x.exe", commandLine: "x.exe --remote-debugging-port=9222" }),
+        release: () => {
+          released = true;
+          return { released: true, reason: "不应调用" };
+        },
+      }),
+    });
+    expect(r.timeout).toBe(true);
+    expect(r.endReason).toBe("timeout");
+    expect(r.keptInstance).toBe(true);
+    expect(released).toBe(false);
+  });
+
+  it("CDP 断开 → hardFailure 且保留实例", async () => {
+    const state = makeFakeState({
+      projectItems: [{ name: "demo", subtitle: "" }],
+      livenessError: new CdpDisconnectedError("测试断开"),
+    });
+    let released = false;
+    const r = await runTraeworkTask({
+      ctx: makeCtx({ taskDir: tmpDir }),
+      resolved: makeResolved(),
+      opts: { logger: silentLogger },
+      logFile: path.join(tmpDir, "agent-cdp-lost.log"),
+      startedAt: Date.now(),
+      logger: silentLogger,
+      deps: makeDeps(state, {
+        probeReady: async () => null,
+        launch: () => ({ pid: 3456, port: 9222, exePath: "x.exe", commandLine: "x.exe --remote-debugging-port=9222" }),
+        release: () => {
+          released = true;
+          return { released: true, reason: "不应调用" };
+        },
+      }),
+    });
+    expect(r.ok).toBe(false);
+    expect(r.hardFailure).toBe(true);
+    expect(r.endReason).toBe("cdp_lost");
+    expect(r.keptInstance).toBe(true);
+    expect(released).toBe(false);
   });
 
   it("取消信号 → killed=true", async () => {

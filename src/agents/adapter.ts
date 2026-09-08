@@ -53,6 +53,10 @@ export interface AgentRunResult {
   durationMs: number;
   logFile: string;
   hardFailure?: boolean; // 基础设施/认证等错误，不进入验收/返修
+  /** GUI agent 的结构化结束原因（如 completion_mark / idle_no_completion / timeout） */
+  endReason?: string;
+  /** GUI 实例是否因任务未真正完成而被保留 */
+  keptInstance?: boolean;
 }
 
 /** parseExit: SpawnResult → AgentRunResult，按 agent 语义 */

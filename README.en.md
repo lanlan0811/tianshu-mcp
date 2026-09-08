@@ -112,6 +112,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=traework, task=「Switch to Code mod
 | [docs/adapter-matrix.en.md](docs/adapter-matrix.en.md) | Agent capability research matrix (Codex/Zcode/TraeWork/extension slots) |
 | [docs/traework-cdp.en.md](docs/traework-cdp.en.md) | TraeWork GUI driver (CDP): mechanism, config, mode switching, selectors, safety invariants, pitfalls, verification record |
 | [docs/acceptance-config.en.md](docs/acceptance-config.en.md) | Project-level `.tianshu-mcp/acceptance.json` acceptance config spec |
+| [docs/release-v0.1.9.en.md](docs/release-v0.1.9.en.md) | v0.1.9 release notes (TraeWork task liveness and instance retention) |
 | [docs/release-v0.1.8.en.md](docs/release-v0.1.8.en.md) | v0.1.8 release notes (atomic-write concurrency fix) |
 | [docs/release-v0.1.7.en.md](docs/release-v0.1.7.en.md) | v0.1.7 release notes (binding root cause: native path) |
 | [docs/release-v0.1.6.en.md](docs/release-v0.1.6.en.md) | v0.1.6 release notes (project-folder binding fix) |

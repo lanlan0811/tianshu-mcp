@@ -151,8 +151,14 @@ export const GuiProfileSchema = z.object({
   launchTimeoutMs: z.number().int().positive().default(60_000),
   /** 回复 DOM 轮询间隔（ms） */
   pollIntervalMs: z.number().int().positive().default(3_000),
-  /** 无完成标志时，连续多少次轮询无变化判定结束 */
+  /** 无完成标志时，连续多少次轮询无变化后开始计算空闲时长 */
   stableRounds: z.number().int().positive().default(12),
+  /** 静态且无运行信号持续多久后判定空闲结束（ms） */
+  idleTimeoutMs: z.number().int().nonnegative().default(10 * 60_000),
+  /** 单次 CDP 命令等待响应的超时（ms） */
+  cdpSendTimeoutMs: z.number().int().positive().default(15_000),
+  /** 轮询期间向任务事件流报告进度的间隔（ms） */
+  progressIntervalMs: z.number().int().positive().default(30_000),
   /** 是否按任务指定的 model 切换模型 */
   modelSwitch: z.boolean().default(true),
   /** 是否按任务指定的 mode 切换面板模式（Work/Code/Design） */

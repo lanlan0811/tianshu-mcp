@@ -30,6 +30,8 @@ export interface MetaBlockFields {
   reportRound?: number;
   verificationSource?: string;
   latestVerificationVerdict?: string;
+  agentEndReason?: string;
+  keptInstance?: boolean;
 }
 
 export type ToolResult = {
@@ -75,6 +77,8 @@ export function metaFromTask(meta: TaskMeta, extra?: Partial<MetaBlockFields>): 
     reportRound: meta.reportRound,
     verificationSource: meta.verificationSource,
     latestVerificationVerdict: meta.latestVerificationVerdict,
+    agentEndReason: meta.agentEndReason,
+    keptInstance: meta.keptInstance,
     ...extra,
   };
 }

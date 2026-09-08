@@ -75,19 +75,34 @@ export class TaskOrchestrator {
         const ctx = this.deps.buildCtx(meta, round, feedback);
         const runRes = await this.runAgentOnce(ctx, resolved);
         meta.logFile = runRes.logFile;
+        meta.agentEndReason = runRes.endReason;
+        meta.keptInstance = runRes.keptInstance;
+        if (runRes.endReason || runRes.keptInstance !== undefined) {
+          await store.appendEvent(
+            meta.taskId,
+            "note",
+            meta.status,
+            `agent 结束原因：${runRes.endReason ?? "unknown"}；实例${runRes.keptInstance ? "已保留" : "未保留"}`,
+            { agentEndReason: runRes.endReason, keptInstance: runRes.keptInstance },
+          );
+        }
 
         if (runRes.hardFailure) {
           return this.finish("failed", "spawn", `agent 基础设施失败：${runRes.error ?? "未知"}（日志 ${runRes.logFile}）`);
         }
         if (runRes.timeout) {
           // S2：统一超时终态 —— 落 failed(timeout) 并记录一次 timeout_killed
-          return this.timeoutTerminal(`任务超时（${meta.taskTimeoutMs}ms），进程树已终止。日志 ${runRes.logFile}`);
+          return this.timeoutTerminal(runRes.error ?? `任务超时（${meta.taskTimeoutMs}ms）。日志 ${runRes.logFile}`);
         }
         if (runRes.killed) {
           return this.abortTerminal();
         }
         if (!runRes.ok && !meta.autoVerify) {
-          return this.finish("failed", "agent_failed", `agent 执行失败（exit=${runRes.exitCode ?? "n/a"}）。日志 ${runRes.logFile}`);
+          return this.finish(
+            "failed",
+            "agent_failed",
+            runRes.error ?? `agent 执行失败（exit=${runRes.exitCode ?? "n/a"}）。日志 ${runRes.logFile}`,
+          );
         }
 
         // ---- 验收 ----
@@ -180,8 +195,9 @@ export class TaskOrchestrator {
     }
     this.done = true;
     const meta = this.meta;
-    // 用户取消判定：cancelRequestedAt 置位 或 显式 user abortSource 或 queued 阶段取消
-    const isCancelled = Boolean(meta.cancelRequestedAt) || meta.abortSource === "user" || meta.status === "queued";
+    // 用户取消只认结构化意图。排队中用户取消由 TaskManager.cancel 直接落终态，不会进入本分支；
+    // orchestrator 尚在采集基线时 status 仍可能是 queued，server shutdown 不得因此误记为用户取消。
+    const isCancelled = Boolean(meta.cancelRequestedAt) || meta.abortSource === "user";
     if (isCancelled) {
       meta.errorType = "cancelled";
       meta.abortSource = "user";

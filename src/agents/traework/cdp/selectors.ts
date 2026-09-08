@@ -37,7 +37,12 @@ export type SelectorKey =
   | "cascadeMenuGroupHeader"
   | "cascadeMenuFooter"
   | "messageContainer"
-  | "toolCard";
+  | "toolCard"
+  | "sendButton"
+  | "stopButton"
+  | "taskTail"
+  | "taskTailLoading"
+  | "thinkingStream";
 
 export const SELECTORS: Record<SelectorKey, SelectorSpec> = {
   chatInput: {
@@ -162,6 +167,36 @@ export const SELECTORS: Record<SelectorKey, SelectorSpec> = {
     fallbacks: ["[class*='toolcall']", "[class*='run-command']"],
     verified: true,
     note: "Trae 原生工具卡片；用于检测 agent 形态执行痕迹",
+  },
+  sendButton: {
+    primary: ".chat-input-v2-send-button",
+    fallbacks: ["[class*='send-button']"],
+    verified: true,
+    note: "发送按钮容器；用于定位生成期间出现的停止图标",
+  },
+  stopButton: {
+    primary: ".chat-input-v2-send-button-stop-icon",
+    fallbacks: ["[class*='send-button-stop-icon']", "[class*='stop-icon']"],
+    verified: true,
+    note: "发送按钮停止态；任务仍在生成的主运行信号",
+  },
+  taskTail: {
+    primary: ".core-task-tail",
+    fallbacks: ["[class*='core-task-tail']"],
+    verified: true,
+    note: "任务尾部容器；用于定位在途 bridge 请求状态",
+  },
+  taskTailLoading: {
+    primary: ".core-task-tail--loading",
+    fallbacks: ["[class*='task-tail--loading']"],
+    verified: true,
+    note: "在途 bridge 请求；任务仍在生成的次运行信号",
+  },
+  thinkingStream: {
+    primary: ".thinking-stream-content",
+    fallbacks: ["[class*='thinking-stream-content']"],
+    verified: true,
+    note: "思考流内容；仅用于诊断，历史节点可能残留，不作为运行阻塞依据",
   },
 };
 

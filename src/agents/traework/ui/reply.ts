@@ -6,6 +6,7 @@
  * 完成标志「由AI生成」只应作用于「当前消息段」——历史消息末尾的该标志
  * 不能触发本轮完成，否则正文刚生成就被提前截断。
  */
+import { interpretLiveness, type LivenessProbe } from "../cdp/client.js";
 
 /** 生成一次发送的唯一标记，用于从消息容器中切出本轮内容 */
 export function makeMarker(): string {
@@ -131,12 +132,21 @@ export interface CompletionState {
   prev: string;
   /** 连续无变化计数 */
   stable: number;
+  /** 达到稳定确认轮数的时间；0 表示尚未进入空闲计时 */
+  idleSince: number;
 }
 
 export type CompletionVerdict =
   | { kind: "finished"; added: string }
   | { kind: "ask_user"; added: string }
+  | { kind: "idle"; added: string }
   | { kind: "pending"; state: CompletionState };
+
+export interface JudgePollOptions {
+  liveness?: LivenessProbe;
+  now?: number;
+  idleTimeoutMs?: number;
+}
 
 /**
  * 判定一次轮询观测。
@@ -152,6 +162,7 @@ export function judgePoll(
   base: string,
   state: CompletionState,
   stableRounds: number,
+  opts: JudgePollOptions = {},
 ): CompletionVerdict {
   const hasMarker = current.includes(marker);
   let added = "";
@@ -162,24 +173,41 @@ export function judgePoll(
 
   const thinking = hasMarker && isThinking(added);
   const finished = hasMarker && hasCompletionMark(added);
+  const liveness = interpretLiveness(opts.liveness ?? { stopVisible: false, tailLoading: false, thinkingStream: false });
+  const now = opts.now ?? Date.now();
+  const idleTimeoutMs = opts.idleTimeoutMs ?? 10 * 60_000;
+
+  // 字面「思考中」优先，且清除可能从前一静态阶段留下的计时。
+  if (thinking) {
+    return { kind: "pending", state: { prev: current, stable: 0, idleSince: 0 } };
+  }
 
   // ask_user 挂起：立即结束（无完成标志、会话被阻塞）
-  if (hasMarker && !thinking && isAskUserPending(cutStale(added))) {
+  if (hasMarker && isAskUserPending(cutStale(added))) {
     return { kind: "ask_user", added: cutStale(added) };
   }
-  if (finished && !thinking) {
+
+  // 权威运行信号优先于完成标志；thinkingStream 仅诊断，不影响 running。
+  if (liveness.running) {
+    return { kind: "pending", state: { prev: current, stable: 0, idleSince: 0 } };
+  }
+
+  if (finished) {
     return { kind: "finished", added: cutAtCompletionMark(added) };
   }
 
-  // 稳定兜底
+  // 稳定确认后只开始空闲计时，不再直接等同于完成。
   let stable = state.stable;
+  let idleSince = state.idleSince;
   if (current === state.prev) {
-    if (hasMarker && !thinking && added) stable += 1;
+    if (hasMarker && added) stable += 1;
   } else {
     stable = 0;
+    idleSince = 0;
   }
-  if (stable >= stableRounds) {
-    return { kind: "finished", added: cutStale(added) };
+  if (stable >= stableRounds && idleSince === 0) idleSince = now;
+  if (idleSince > 0 && now - idleSince >= idleTimeoutMs) {
+    return { kind: "idle", added: cutStale(added) };
   }
-  return { kind: "pending", state: { prev: current, stable } };
+  return { kind: "pending", state: { prev: current, stable, idleSince } };
 }

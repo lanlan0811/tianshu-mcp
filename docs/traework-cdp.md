@@ -121,7 +121,10 @@ node scripts/probe-traework.mjs send "任务书"       # 端到端发一条并�
         "windowMode": "reuse",       // reuse=复用已有实例；launch=总是新起
         "launchTimeoutMs": 60000,    // 等待 CDP 就绪
         "pollIntervalMs": 3000,      // 回复轮询间隔
-        "stableRounds": 12,          // 无完成标志时，连续多少次无变化判定结束
+        "stableRounds": 12,          // 连续多少次无变化后开始空闲计时
+        "idleTimeoutMs": 600000,     // 静态且无运行信号持续多久后返回 idle
+        "cdpSendTimeoutMs": 15000,   // 单次 CDP 命令超时
+        "progressIntervalMs": 30000, // query_task 可见的进度事件间隔
         "modelSwitch": true,         // 是否按任务 model 切模型
         "modeSwitch": true,          // 是否按任务 mode 切面板模式（Work/Code/Design）
         "freshSession": true,        // 每任务新建会话
@@ -146,7 +149,8 @@ UI 升级导致选择器失效时，**无需改代码**——在 `gui.selectors`
 可用语义键（见 `src/agents/traework/cdp/selectors.ts`）：`chatInput`、`newTask`、`taskListItem`、
 `taskListGroupName`、`modeTab`、`modelTrigger`、`modelTriggerValue`、`modelOption`、`modelList`、
 `modeSwitcher`、`projectButton`、`cascadeMenu`、`cascadeMenuItem`、`cascadeMenuItemTitle`、
-`cascadeMenuItemSubtitle`、`cascadeMenuGroupHeader`、`cascadeMenuFooter`、`messageContainer`、`toolCard`。
+`cascadeMenuItemSubtitle`、`cascadeMenuGroupHeader`、`cascadeMenuFooter`、`messageContainer`、`toolCard`、
+`sendButton`、`stopButton`、`taskTail`、`taskTailLoading`、`thinkingStream`。
 
 每个键都有「主选择器 + 回退候选」，主选择器未命中会按顺序尝试回退。
 
@@ -170,6 +174,11 @@ UI 升级导致选择器失效时，**无需改代码**——在 `gui.selectors`
 | modelOption / modelList | `.core-model-select-model-item` / `-list` | 模型项（虚拟滚动） |
 | messageContainer | `.message-list-cache-container` | 消息容器（发消息后出现） |
 | toolCard | `.core-toolcall-base-card,…` | Trae 原生工具卡片 |
+| sendButton | `.chat-input-v2-send-button` | 发送按钮容器 |
+| stopButton | `.chat-input-v2-send-button-stop-icon` | **权威主运行信号**：生成期间的停止按钮 |
+| taskTail | `.core-task-tail` | 任务尾部容器 |
+| taskTailLoading | `.core-task-tail--loading` | **权威次运行信号**：在途 bridge 请求 |
+| thinkingStream | `.thinking-stream-content` | 仅诊断；历史消息可能残留，不阻塞结束 |
 
 ---
 
@@ -195,8 +204,11 @@ UI 升级导致选择器失效时，**无需改代码**——在 `gui.selectors`
 
 - **窗口必须可见**：发送依赖模拟输入，最小化/隐藏窗口时可能失败。
 - **单会话串行**：TraeWork 是单会话 UI，所有任务经串行队列；沿用「每项目串行 + 全局并发闸」。
-- **完成判定为启发式**：以 DOM 完成标志「由AI生成」为主，叠加稳定兜底（默认 36s 无变化）与任务级超时。
-  长回复有分段停顿时，兜底阈值可通过 `gui.stableRounds` 调整。
+- **完成判定仍依赖 UI 信号，但不再把短暂静态当完成**：停止按钮或 loading task tail 存在时一律继续等待；
+  无运行信号时才接受 DOM 完成标志「由AI生成」。稳定 `gui.stableRounds` 轮只启动空闲计时，继续静态
+  `gui.idleTimeoutMs`（默认 10 分钟）才返回 `idle`，并保留实例。选择器全部漂移时失败开放到该完成标志与空闲计时。
+- **异常结束保留现场**：任务超时、空闲、取消或 CDP 断开不会关闭实例；`query_task` 的 meta 可查看
+  `agentEndReason` / `keptInstance`。只有 `completion_mark` 与 `ask_user` 会释放本模块新启动的实例。
 - **模型切换依赖下拉**：目标不在下拉（未解锁权益/名称不符）时明确失败，不会静默用错模型。
 - **UI 升级会漂移**：选择器集中在 `selectors.ts`，可经 profile 覆盖；`scripts/probe-traework.mjs` 用于诊断。
 - **macOS 未验证**：CDP 机制平台无关，但可执行探测与原生对话框驱动（AppleScript 路线）尚未在 macOS 实测。
@@ -228,6 +240,9 @@ UI 升级导致选择器失效时，**无需改代码**——在 `gui.selectors`
 | **`mode=Code` 时绑定失败** | 非 Work 模式下「选择文件夹」链路不稳定 | `bindProject` 失败后**回落 Work 重试一次**，成功再切回目标模式 |
 | **路径写进编辑框了，但点确认后对话框不关** | MCP 传的是 `normPath()` 规范化路径（`d:/a/b` 小写盘符 + 正斜杠），**原生选择器不接受**该形式 | 写入前用 `toNativeWindowsPath()` 转成 `D:\a\b`；写入后用 `WM_GETTEXT` 回读校验，失败不点确认 |
 | **上次失败的对话框残留，新任务写到旧窗口上** | `findFolderDialog()` 只要发现任意匹配窗口就返回 true | 绑定前 `closeStaleFolderDialogs()` 先关闭遗留对话框；探测到的 hwnd 贯穿传给写入脚本，只操作同一窗口 |
+| **长时间思考时约 36 秒被误判完成** | 旧稳定兜底把 DOM 静态直接当完成，且只检查字面「思考中」 | 停止按钮/task-tail loading 优先；稳定轮数改为启动 10 分钟空闲计时 |
+| **TraeWork 关闭后轮询永久挂住** | WebSocket 断开未拒绝 pending，`send()` 也没有超时 | `onclose`/`onerror` 收敛全部 pending；单次命令默认 15 秒超时 |
+| **MCP 超时后关闭仍在工作的实例** | `finally` 无条件释放本模块启动的实例 | 仅真正完成/ask_user 释放；空闲、超时、取消、CDP 断开均保留并写结构化 meta |
 
 ---
 

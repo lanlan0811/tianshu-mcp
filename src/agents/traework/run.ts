@@ -12,7 +12,7 @@ import path from "node:path";
 import { mkdirp } from "../../util/fs.js";
 import type { AgentRunLogger, AgentRunOptions, AgentRunResult, ResolvedAgent, TaskContext } from "../adapter.js";
 import type { GuiProfile } from "../../config/schema.js";
-import { TraeworkCdpClient } from "./cdp/client.js";
+import { CdpDisconnectedError, CdpUnavailableError, interpretLiveness, TraeworkCdpClient } from "./cdp/client.js";
 import {
   launchInstance,
   probeReady,
@@ -50,7 +50,7 @@ export interface RunTraeworkArgs {
 
 /** 可注入依赖（生产用真实实现；集成测试注入假 CDP） */
 export interface TraeworkRunDeps {
-  createClient: (port: number) => TraeworkCdpClient;
+  createClient: (port: number, sendTimeoutMs: number) => TraeworkCdpClient;
   probeReady: (port: number) => Promise<ReadyInstance | null>;
   launch: (opts: LaunchOptions) => SpawnedInstance;
   waitReady: (port: number, timeoutMs: number, logger: AgentRunLogger) => Promise<ReadyInstance>;
@@ -59,7 +59,7 @@ export interface TraeworkRunDeps {
 }
 
 const DEFAULT_DEPS: TraeworkRunDeps = {
-  createClient: (port) => new TraeworkCdpClient({ port }),
+  createClient: (port, sendTimeoutMs) => new TraeworkCdpClient({ port, sendTimeoutMs }),
   probeReady,
   launch: launchInstance,
   waitReady,
@@ -69,6 +69,41 @@ const DEFAULT_DEPS: TraeworkRunDeps = {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+class PollGuardError extends Error {
+  constructor(readonly reason: "aborted" | "timeout") {
+    super(reason);
+  }
+}
+
+/** 让等待/CDP 观测与取消、任务截止时间竞争；最长 1s 即响应取消。 */
+async function guardPoll<T>(work: Promise<T>, signal: AbortSignal | undefined, deadline: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
+  const guard = new Promise<never>((_resolve, reject) => {
+    const check = (): void => {
+      if (signal?.aborted) {
+        reject(new PollGuardError("aborted"));
+        return;
+      }
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        reject(new PollGuardError("timeout"));
+        return;
+      }
+      timer = setTimeout(check, Math.min(1_000, remaining));
+    };
+    onAbort = () => reject(new PollGuardError("aborted"));
+    signal?.addEventListener("abort", onAbort, { once: true });
+    check();
+  });
+  try {
+    return await Promise.race([work, guard]);
+  } finally {
+    if (timer) clearTimeout(timer);
+    if (onAbort) signal?.removeEventListener("abort", onAbort);
+  }
 }
 
 /**
@@ -110,6 +145,9 @@ function guiOf(resolved: ResolvedAgent): GuiProfile {
     launchTimeoutMs: g?.launchTimeoutMs ?? 60_000,
     pollIntervalMs: g?.pollIntervalMs ?? 3_000,
     stableRounds: g?.stableRounds ?? 12,
+    idleTimeoutMs: g?.idleTimeoutMs ?? 10 * 60_000,
+    cdpSendTimeoutMs: g?.cdpSendTimeoutMs ?? 15_000,
+    progressIntervalMs: g?.progressIntervalMs ?? 30_000,
     modelSwitch: g?.modelSwitch ?? true,
     modeSwitch: g?.modeSwitch ?? true,
     freshSession: g?.freshSession ?? true,
@@ -175,6 +213,8 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
   const deps: TraeworkRunDeps = { ...DEFAULT_DEPS, ...args.deps };
   const gui = guiOf(resolved);
   const { logger, close: closeLog } = makeFileLogger(logFile, args.logger);
+  let endReason: string | undefined;
+  let keptInstance = false;
   const fail = (error: string, extra: Partial<AgentRunResult> = {}): AgentRunResult => ({
     ok: false,
     exitCode: null,
@@ -183,20 +223,29 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
     error,
     durationMs: Date.now() - startedAt,
     logFile,
+    endReason,
+    keptInstance,
     ...extra,
   });
+  const stop = (reason: string, error: string, extra: Partial<AgentRunResult> = {}): AgentRunResult => {
+    endReason = reason;
+    keptInstance = true;
+    return fail(error, extra);
+  };
 
   await mkdirp(path.dirname(logFile));
 
   let spawned: SpawnedInstance | null = null;
   let cdp: TraeworkCdpClient | null = null;
+  let activePort: number | null = null;
   try {
     // ---- 1. 确保实例可用（复用优先，绝不误杀用户实例）----
     const port = await deps.resolvePort(gui, logger);
+    activePort = port;
     let ready = await deps.probeReady(port);
     if (!ready) {
       if (!resolved.command) {
-        return fail(`未找到 TraeWork 可执行文件（profile.executableDiscovery 未探测到）。请在 agent-profiles.json 配置 gui.exePath`, {
+        return stop("setup_failed", `未找到 TraeWork 可执行文件（profile.executableDiscovery 未探测到）。请在 agent-profiles.json 配置 gui.exePath`, {
           hardFailure: true,
         });
       }
@@ -207,7 +256,7 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
       logger.info(`[traework] 复用已就绪实例（端口 ${port}，${ready.title ?? "page"}）`);
     }
 
-    cdp = deps.createClient(port);
+    cdp = deps.createClient(port, gui.cdpSendTimeoutMs);
     await cdp.connect();
     logger.info(`[traework] CDP 已连接（端口 ${port}）`);
 
@@ -233,14 +282,14 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
       logger.info(`[traework] 目标模式 ${target.mode}（来源：${target.source}），切换中…`);
       const modeOk = await ensureMode(cdp, target.mode, { selectors: gui.selectors, logger });
       if (!modeOk) {
-        return fail(`模式切换失败：无法切换到 ${target.mode} 模式（当前面板可能不可用）`, { hardFailure: true });
+        return stop("setup_failed", `模式切换失败：无法切换到 ${target.mode} 模式（当前面板可能不可用）`, { hardFailure: true });
       }
     }
 
     // ---- 4. 在目标模式下绑定项目文件夹 ----
     const bound = await bindProject(cdp, ctx.projectPath, { selectors: gui.selectors, logger, mode: target.mode });
     if (!bound.bound) {
-      return fail(`项目文件夹绑定失败（${bound.method}）：${bound.message}`, { hardFailure: true });
+      return stop("setup_failed", `项目文件夹绑定失败（${bound.method}）：${bound.message}`, { hardFailure: true });
     }
     logger.info(`[traework] 项目已绑定（模式 ${target.mode}）：${bound.message}`);
 
@@ -248,10 +297,10 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
     const afterMode = await readMode(cdp, gui.selectors);
     const afterBound = await readBoundProject(cdp, gui.selectors);
     if (afterMode && afterMode.toLowerCase() !== target.mode.toLowerCase()) {
-      return fail(`绑定项目后面板模式变为 ${afterMode}（期望 ${target.mode}），已中止以免在错误模式下开发`, { hardFailure: true });
+      return stop("setup_failed", `绑定项目后面板模式变为 ${afterMode}（期望 ${target.mode}），已中止以免在错误模式下开发`, { hardFailure: true });
     }
     if (!afterBound || !matchProjectItem({ name: afterBound, subtitle: "" }, ctx.projectPath)) {
-      return fail(`项目绑定校验失败（输入栏：${afterBound || "空"}，期望 ${projectBasename(ctx.projectPath)}）`, { hardFailure: true });
+      return stop("setup_failed", `项目绑定校验失败（输入栏：${afterBound || "空"}，期望 ${projectBasename(ctx.projectPath)}）`, { hardFailure: true });
     }
 
     // ---- 5. 切模型（用户指定时）----
@@ -264,7 +313,7 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
             : sw.reason === "not_found"
               ? `下拉中未找到模型「${ctx.model}」${sw.available?.length ? `（可用：${sw.available.join("、")}）` : ""}`
               : `模型切换后验证不一致（${sw.model}）`;
-        return fail(`模型切换失败：${detail}`, { hardFailure: true });
+        return stop("setup_failed", `模型切换失败：${detail}`, { hardFailure: true });
       }
     } else if (ctx.model) {
       logger.info(`[traework] profile.gui.modelSwitch=false，忽略指定模型「${ctx.model}」`);
@@ -277,31 +326,87 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
 
     // ---- 7. 轮询到完成 ----
     const base = await cdp.text("messageContainer", gui.selectors);
-    let state: CompletionState = { prev: "", stable: 0 };
+    let state: CompletionState = { prev: "", stable: 0, idleSince: 0 };
     const deadline = Date.now() + (ctx.taskTimeoutMs > 0 ? ctx.taskTimeoutMs : 30 * 60_000);
     let replyText = "";
+    let lastProgressAt = Date.now();
+    let runningSince = 0;
+    let runningWarned = false;
 
     for (;;) {
-      if (opts.signal?.aborted) {
-        return fail("已取消", { killed: true });
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await guardPoll(sleep(gui.pollIntervalMs), opts.signal, deadline);
+      } catch (e) {
+        if (e instanceof PollGuardError && e.reason === "aborted") return stop("aborted", "已取消", { killed: true });
+        if (e instanceof PollGuardError && e.reason === "timeout") {
+          return stop("timeout", `等待 TraeWork 开发完成超时（${Math.round((ctx.taskTimeoutMs || 0) / 1000)}s）`, { timeout: true });
+        }
+        throw e;
       }
-      if (Date.now() > deadline) {
-        return fail(`等待 TraeWork 开发完成超时（${Math.round((ctx.taskTimeoutMs || 0) / 1000)}s）`, { timeout: true });
+
+      let current: string;
+      let liveness;
+      try {
+        // 单轮 DOM 文本与运行探针并行，并与 abort/deadline 竞争。
+        // eslint-disable-next-line no-await-in-loop
+        [current, liveness] = await guardPoll(
+          Promise.all([cdp.text("messageContainer", gui.selectors), cdp.probeLiveness(gui.selectors)]),
+          opts.signal,
+          deadline,
+        );
+      } catch (e) {
+        if (e instanceof PollGuardError && e.reason === "aborted") return stop("aborted", "已取消", { killed: true });
+        if (e instanceof PollGuardError && e.reason === "timeout") {
+          return stop("timeout", `等待 TraeWork 开发完成超时（${Math.round((ctx.taskTimeoutMs || 0) / 1000)}s）`, { timeout: true });
+        }
+        throw e;
       }
-      // eslint-disable-next-line no-await-in-loop
-      await sleep(gui.pollIntervalMs);
-      // eslint-disable-next-line no-await-in-loop
-      const current = await cdp.text("messageContainer", gui.selectors);
-      const verdict = judgePoll(current, marker, base, state, gui.stableRounds);
+
+      const live = interpretLiveness(liveness);
+      const now = Date.now();
+      if (live.running) {
+        if (runningSince === 0) runningSince = now;
+        if (!runningWarned && now - runningSince >= gui.idleTimeoutMs) {
+          logger.warn(`[traework] 运行信号已持续 ${Math.round((now - runningSince) / 1000)}s（${live.evidence}），仅记录诊断，继续等待`);
+          runningWarned = true;
+        }
+      } else {
+        runningSince = 0;
+        runningWarned = false;
+      }
+
+      if (now - lastProgressAt >= gui.progressIntervalMs) {
+        const note = live.running
+          ? `TraeWork 仍在生成（运行信号：${live.evidence}）`
+          : `TraeWork 等待完成（稳定轮数 ${state.stable}/${gui.stableRounds}；诊断：${live.evidence}）`;
+        logger.info(`[traework] ${note}`);
+        // 进度事件写入失败不能中断任务。
+        // eslint-disable-next-line no-await-in-loop
+        await Promise.resolve(opts.onProgress?.(note)).catch((e: unknown) => logger.warn(`[traework] 写入进度事件失败：${e instanceof Error ? e.message : String(e)}`));
+        lastProgressAt = now;
+      }
+
+      const verdict = judgePoll(current, marker, base, state, gui.stableRounds, {
+        liveness,
+        now,
+        idleTimeoutMs: gui.idleTimeoutMs,
+      });
       if (verdict.kind === "finished") {
+        endReason = "completion_mark";
         replyText = verdict.added;
         break;
       }
       if (verdict.kind === "ask_user") {
+        endReason = "ask_user";
         logger.warn("[traework] 模型发起原生提问（ask_user），会话被阻塞，按本轮结束处理");
         replyText = verdict.added;
         await cdp.pressEscape().catch(() => undefined);
         break;
+      }
+      if (verdict.kind === "idle") {
+        logger.warn(`[traework] 无完成标志且无运行信号，静态持续 ${gui.idleTimeoutMs}ms，本轮按 idle 结束并保留实例`);
+        return stop("idle_no_completion", "TraeWork 长时间静态且未出现完成标志；已保留实例供继续检查");
       }
       state = verdict.state;
     }
@@ -320,13 +425,24 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
       killed: false,
       durationMs: Date.now() - startedAt,
       logFile,
+      endReason,
+      keptInstance: false,
     };
+  } catch (e) {
+    if (e instanceof CdpDisconnectedError || e instanceof CdpUnavailableError) {
+      const msg = e instanceof Error ? e.message : String(e);
+      logger.error(`[traework] CDP 连接失效：${msg}`);
+      return stop("cdp_lost", msg, { hardFailure: true });
+    }
+    throw e;
   } finally {
     cdp?.disconnect();
-    // 只释放本模块创建的实例；用户已有实例永不终止
-    if (spawned) {
+    // 只在本轮真正完成/ask_user 时释放本模块创建的实例；其余结果保留现场。
+    if (spawned && (endReason === "completion_mark" || endReason === "ask_user")) {
       const r = deps.release(spawned, logger);
       logger.info(`[traework] 实例释放：${r.reason}`);
+    } else if (keptInstance) {
+      logger.info(`[traework] 保留实例（endReason=${endReason ?? "unknown"}，pid=${spawned?.pid ?? "existing"}，port=${activePort ?? "unknown"}）`);
     }
     await closeLog();
   }

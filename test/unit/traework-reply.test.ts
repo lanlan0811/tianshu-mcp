@@ -89,43 +89,73 @@ describe("parseAdded 文本清理", () => {
 
 describe("judgePoll 轮询状态机", () => {
   const marker = "【tsabc123】";
+  const initial = { prev: "", stable: 0, idleSince: 0 };
+  const notRunning = { stopVisible: false, tailLoading: false, thinkingStream: false };
 
   it("出现完成标志即结束", () => {
-    const v = judgePoll(`前缀${marker}回复内容由AI生成12:30`, marker, "", { prev: "", stable: 0 }, 12);
+    const v = judgePoll(`前缀${marker}回复内容由AI生成12:30`, marker, "", initial, 12);
     expect(v.kind).toBe("finished");
     if (v.kind === "finished") expect(v.added).toBe("回复内容");
   });
 
   it("思考中不判完成", () => {
-    const v = judgePoll(`${marker}回复由AI生成思考中`, marker, "", { prev: "", stable: 0 }, 12);
+    const v = judgePoll(`${marker}回复由AI生成思考中`, marker, "", initial, 12);
     expect(v.kind).toBe("pending");
   });
 
   it("ask_user 挂起立即结束", () => {
-    const v = judgePoll(`${marker}正在向用户提问：选 A 还是 B`, marker, "", { prev: "", stable: 0 }, 12);
+    const v = judgePoll(`${marker}正在向用户提问：选 A 还是 B`, marker, "", initial, 12);
     expect(v.kind).toBe("ask_user");
   });
 
-  it("无完成标志时按稳定轮数兜底", () => {
+  it("运行信号优先：即使有完成标志仍 pending", () => {
+    const v = judgePoll(`${marker}回复由AI生成12:30`, marker, "", initial, 2, {
+      liveness: { ...notRunning, stopVisible: true },
+    });
+    expect(v.kind).toBe("pending");
+  });
+
+  it("达到稳定轮数但未到 idleTimeoutMs 仍 pending，到时返回 idle", () => {
     const text = `${marker}一直没完成的正文`;
-    let state = { prev: "", stable: 0 };
-    let verdict = judgePoll(text, marker, "", state, 3);
-    // stableRounds=3 需要连续 3 次「与前次相同」的观测，即首轮之后再来 3 轮
-    for (let i = 0; i < 10 && verdict.kind === "pending"; i++) {
-      state = verdict.state;
-      verdict = judgePoll(text, marker, "", state, 3);
-    }
-    expect(verdict.kind).toBe("finished");
+    const first = judgePoll(text, marker, "", initial, 2, { now: 1_000, idleTimeoutMs: 5_000 });
+    expect(first.kind).toBe("pending");
+    if (first.kind !== "pending") return;
+    const second = judgePoll(text, marker, "", first.state, 2, { now: 2_000, idleTimeoutMs: 5_000 });
+    expect(second.kind).toBe("pending");
+    if (second.kind !== "pending") return;
+    const threshold = judgePoll(text, marker, "", second.state, 2, { now: 3_000, idleTimeoutMs: 5_000 });
+    expect(threshold.kind).toBe("pending");
+    if (threshold.kind !== "pending") return;
+    expect(threshold.state.idleSince).toBe(3_000);
+    const idle = judgePoll(text, marker, "", threshold.state, 2, { now: 8_000, idleTimeoutMs: 5_000 });
+    expect(idle.kind).toBe("idle");
   });
 
   it("内容持续变化则稳定计数归零", () => {
-    const v1 = judgePoll(`${marker}内容1`, marker, "", { prev: "", stable: 5 }, 3);
+    const v1 = judgePoll(`${marker}内容1`, marker, "", { prev: "", stable: 5, idleSince: 123 }, 3);
     expect(v1.kind).toBe("pending");
-    if (v1.kind === "pending") expect(v1.state.stable).toBe(0);
+    if (v1.kind === "pending") expect(v1.state).toEqual({ prev: `${marker}内容1`, stable: 0, idleSince: 0 });
+  });
+
+  it("运行信号清零稳定轮数与空闲计时", () => {
+    const v = judgePoll(`${marker}静态`, marker, "", { prev: `${marker}静态`, stable: 9, idleSince: 100 }, 3, {
+      liveness: { ...notRunning, tailLoading: true },
+      now: 10_000,
+      idleTimeoutMs: 1,
+    });
+    expect(v.kind).toBe("pending");
+    if (v.kind === "pending") expect(v.state).toEqual({ prev: `${marker}静态`, stable: 0, idleSince: 0 });
+  });
+
+  it("thinkingStream 只作诊断，不阻塞完成", () => {
+    const v = judgePoll(`${marker}已完成由AI生成`, marker, "", initial, 2, {
+      liveness: { ...notRunning, thinkingStream: true },
+    });
+    expect(v.kind).toBe("finished");
   });
 
   it("未出现标记时保持 pending", () => {
-    const v = judgePoll("完全无关的内容", marker, "", { prev: "", stable: 0 }, 2);
+    const v = judgePoll("完全无关的内容", marker, "", initial, 2);
     expect(v.kind).toBe("pending");
   });
 });

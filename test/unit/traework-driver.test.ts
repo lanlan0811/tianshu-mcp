@@ -31,6 +31,9 @@ describe("AgentProfileSchema driver/gui 字段", () => {
     expect(p.gui?.cdpPortAuto).toBe(true);
     expect(p.gui?.windowMode).toBe("reuse");
     expect(p.gui?.stableRounds).toBe(12);
+    expect(p.gui?.idleTimeoutMs).toBe(10 * 60_000);
+    expect(p.gui?.cdpSendTimeoutMs).toBe(15_000);
+    expect(p.gui?.progressIntervalMs).toBe(30_000);
     expect(p.gui?.freshSession).toBe(true);
     expect(p.gui?.exeArgs).toEqual(["--remote-debugging-port=<port>"]);
   });
