@@ -2,6 +2,8 @@
 
 `tianshu-mcp` is a standard **MCP stdio server** (TypeScript + official `@modelcontextprotocol/sdk`). Register it in Tianshu as a normal MCP server and its 8 tools (`mcp__tianshu-mcp__*`) become available to drive external AI-Agents through the "dispatch → accept → rework → re-accept" loop.
 
+> Official Tianshu repository: [github.com/huiliyi37/Tianshu-harness](https://github.com/huiliyi37/Tianshu-harness) (a harness-engineering terminal coding-agent runtime, TUI × GUI).
+
 ## 0. Prereqs
 
 - Node.js ≥ 20.

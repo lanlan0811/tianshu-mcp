@@ -12,6 +12,8 @@
 
 Registered by Tianshu as a standard MCP server, it dispatches external AI-Agents (Codex CLI; TraeWork/TRAE SOLO CN driven through its desktop UI over CDP) to drive the closed loop of **project development → acceptance → failure rework → re-acceptance** (horizontally extensible).
 
+> Official Tianshu repository: [github.com/huiliyi37/Tianshu-harness](https://github.com/huiliyi37/Tianshu-harness) — a harness-engineering terminal coding-agent runtime (TUI × GUI); this MCP plugs into it as an MCP server.
+
 <br/>
 
 [![CI](https://github.com/lanlan0811/tianshu-mcp/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/lanlan0811/tianshu-mcp/actions/workflows/ci.yml)

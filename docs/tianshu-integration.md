@@ -2,6 +2,8 @@
 
 本 MCP server（`tianshu-mcp`）是标准 **MCP stdio server**（TypeScript + 官方 `@modelcontextprotocol/sdk`）。天枢把它当作普通 MCP server 接入后，会话里会出现 8 个工具（`mcp__tianshu-mcp__*`），由天枢调度去驱动外部 AI-Agent 完成「派活 → 验收 → 返修 → 再验收」闭环。
 
+> 天枢官方仓库：[github.com/huiliyi37/Tianshu-harness](https://github.com/huiliyi37/Tianshu-harness)（基于 harness 工程的终端编程智能体运行时，TUI × GUI）。
+
 ## 0. 前置
 
 - Node.js ≥ 20（天枢会用自带的 node 执行，亦可）。
