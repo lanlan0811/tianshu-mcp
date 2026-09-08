@@ -20,6 +20,8 @@ export interface MetaBlockFields {
   message: string;
   errorType?: string;
   cancelReason?: string;
+  cancelRequestedAt?: string;
+  abortSource?: string;
   finishedAt?: string;
   reportRound?: number;
   verificationSource?: string;
@@ -61,6 +63,8 @@ export function metaFromTask(meta: TaskMeta, extra?: Partial<MetaBlockFields>): 
     message: meta.lastMessage ?? "",
     errorType: meta.errorType ?? undefined,
     cancelReason: meta.cancelReason,
+    cancelRequestedAt: meta.cancelRequestedAt,
+    abortSource: meta.abortSource,
     finishedAt: meta.finishedAt,
     reportRound: meta.reportRound,
     verificationSource: meta.verificationSource,

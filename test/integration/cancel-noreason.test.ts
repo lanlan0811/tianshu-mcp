@@ -59,6 +59,9 @@ describe("S1 无理由取消 → cancelled", () => {
     const final = await waitForTerminal(ts.client, taskId, 15_000);
     expect(final.status).toBe("cancelled");
     expect(final.errorType).toBe("cancelled");
+    // query meta 也透传取消来源字段（formatter 已补）
+    expect(final.cancelRequestedAt).toBeTruthy();
+    expect(final.abortSource).toBe("user");
     const snap = snapshot(taskId);
     expect(snap.cancelRequestedAt).toBeTruthy();
     expect(snap.abortSource).toBe("user");
