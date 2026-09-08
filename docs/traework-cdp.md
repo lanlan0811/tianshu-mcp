@@ -226,6 +226,8 @@ UI 升级导致选择器失效时，**无需改代码**——在 `gui.selectors`
 | **确认按钮点不动 / 点到了文件列表项** | `AutomationId="1"` 不唯一——文件列表行也用 0/1/2…；确认按钮是 Pane 且无 InvokePattern | 用 **AutomationId=1 且 ControlType=Pane** 组合定位，再取矩形坐标点击 |
 | **PowerShell 输出中文变乱码** | 控制台代码页不是 UTF-8 | 脚本内**只用 ASCII 输出**，Node 侧 `localizeDialogMessage()` 映射回中文 |
 | **`mode=Code` 时绑定失败** | 非 Work 模式下「选择文件夹」链路不稳定 | `bindProject` 失败后**回落 Work 重试一次**，成功再切回目标模式 |
+| **路径写进编辑框了，但点确认后对话框不关** | MCP 传的是 `normPath()` 规范化路径（`d:/a/b` 小写盘符 + 正斜杠），**原生选择器不接受**该形式 | 写入前用 `toNativeWindowsPath()` 转成 `D:\a\b`；写入后用 `WM_GETTEXT` 回读校验，失败不点确认 |
+| **上次失败的对话框残留，新任务写到旧窗口上** | `findFolderDialog()` 只要发现任意匹配窗口就返回 true | 绑定前 `closeStaleFolderDialogs()` 先关闭遗留对话框；探测到的 hwnd 贯穿传给写入脚本，只操作同一窗口 |
 
 ---
 

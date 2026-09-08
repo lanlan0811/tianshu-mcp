@@ -17,6 +17,28 @@
 
 ---
 
+## [0.1.7] — 2026-09-08
+
+### 修复
+
+- **项目文件夹绑定仍然失败**（v0.1.6 未根治；实战反馈：原生对话框出现但编辑框为空就点了确认）：
+  - **根因**：MCP 内部传入 `normPath()` 规范化路径（小写盘符 + 正斜杠，如 `d:/Trae项目/AI游戏/象棋`），
+    而 **Windows 原生文件夹选择器不接受该形式**——实测同样回读一致，但点击确认时对话框不关闭。
+    修复：写入前用新增的 `toNativeWindowsPath()` 转成 `D:`。
+  - 写入后用 `WM_GETTEXT` **回读校验**；不一致则重新定位并重试（最多 3 次）；仍不一致**不点确认**并明确报错。
+  - footer 点击后探测到的 **hwnd 贯穿传给写入脚本**，只操作该窗口；点击后复查「该 hwnd 是否消失」。
+  - 绑定前**自动关闭遗留对话框**（上次失败残留），避免写到旧窗口上。
+  - 确认按钮增加「矩形位于对话框下半部」校验，排除同名 Pane 误命中。
+  - 对话框脚本全过程输出（HWND/READBACK）写入任务日志，便于排障。
+
+### 测试
+
+- 测试总数 **172 → 178**（单测含路径规范化；集成含遗留对话框清理）。
+- 真机验证：新中文项目 `D:\Trae项目\AI游戏\象棋`（不在下拉）走原生对话框全链路通过；
+  `五子棋` 与 ASCII 项目 `ts-bind-test` 回归通过。
+
+---
+
 ## [0.1.6] — 2026-09-08
 
 ### 修复
@@ -181,7 +203,8 @@
 
 ---
 
-[未发布]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.6...HEAD
+[未发布]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.7...HEAD
+[0.1.7]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.3...v0.1.4

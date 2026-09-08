@@ -10,7 +10,12 @@
 import type { TraeworkCdpClient } from "../cdp/client.js";
 import type { AgentRunLogger } from "../../adapter.js";
 import type { SelectorOverrides } from "../cdp/selectors.js";
-import { findFolderDialog, pickFolderViaNativeDialog } from "../computeruse/dialog.js";
+import {
+  closeStaleFolderDialogs,
+  findFolderDialog,
+  pickFolderViaNativeDialog,
+  type FolderDialogInfo,
+} from "../computeruse/dialog.js";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -297,12 +302,13 @@ async function openProjectDropdown(
  *
  * 实测踩坑（2026-09-08）：`element.click()` 对某些 DirectUI 按钮不会真正触发原生
  * 弹窗（点击「成功」但对话框没出现），旧实现只看点击返回值就返回 true，导致下游
- * 「等待原生对话框超时」这一误导性错误。现在**点击后必须确认原生对话框真的出现**。
+ * 「等待原生对话框超时」这一误导性错误。现在**点击后必须确认原生对话框真的出现**，
+ * 并把该对话框的 hwnd 返回给调用方，保证后续写入操作的是同一个窗口。
  */
 async function clickDropdownFooter(
   cdp: TraeworkCdpClient,
   opts: { selectors?: SelectorOverrides; logger: AgentRunLogger },
-): Promise<boolean> {
+): Promise<{ clicked: boolean; hwnd: number }> {
   const { logger } = opts;
 
   // 1) 先按语义键点击（cascadeFooterButton 等）
@@ -325,7 +331,7 @@ async function clickDropdownFooter(
 
   if (!byKey && !byText) {
     logger.warn("[traework] 未找到下拉底部「选择文件夹」按钮（选择器与文本兜底均未命中）");
-    return false;
+    return { clicked: false, hwnd: 0 };
   }
 
   // 3) 关键：确认原生对话框真的被唤起（避免「点了但没弹」被当成成功）
@@ -340,20 +346,20 @@ async function clickDropdownFooter(
       })()`)
       .catch(() => "");
     logger.warn(`[traework] 已点击「选择文件夹」但原生对话框未出现（点击=${byKey ? "选择器" : "文本"}）；下拉 DOM 快照: ${snapshot || "n/a"}`);
-    return false;
+    return { clicked: false, hwnd: 0 };
   }
-  logger.info("[traework] 原生「选择文件夹」对话框已弹出");
-  return true;
+  logger.info(`[traework] 原生「选择文件夹」对话框已弹出（hwnd=${appeared.hwnd}）`);
+  return { clicked: true, hwnd: appeared.hwnd };
 }
 
 /** 点击 footer 后等待原生对话框出现（脚本内轮询，单次 PowerShell 调用） */
-async function waitDialogAppeared(timeoutMs = 20_000): Promise<boolean> {
+async function waitDialogAppeared(timeoutMs = 20_000): Promise<FolderDialogInfo | null> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     // eslint-disable-next-line no-await-in-loop
     const d = await findFolderDialog();
-    if (d.found) return true;
-    if (Date.now() >= deadline) return false;
+    if (d.found && d.hwnd > 0) return { hwnd: d.hwnd, windowTitle: d.windowTitle, processName: d.processName };
+    if (Date.now() >= deadline) return null;
     // eslint-disable-next-line no-await-in-loop
     await sleep(1_500);
   }
@@ -455,10 +461,14 @@ async function bindProjectOnce(
 
   // 未命中 → 底部「选择文件夹」→ 原生对话框
   logger.info(`[traework] 下拉未命中项目「${projectBasename(projectPath)}」，改走原生选择文件夹对话框`);
-  if (!(await clickDropdownFooter(cdp, opts))) {
+  // 仅在真正要弹原生对话框时才清理遗留窗口（避免下拉命中路径上多一次 PowerShell 启动开销）
+  await closeStaleFolderDialogs(logger).catch(() => 0);
+  const footer = await clickDropdownFooter(cdp, opts);
+  if (!footer.clicked) {
     return { bound: false, method: "failed", message: "下拉未命中且底部「选择文件夹」未成功唤起原生对话框" };
   }
-  const picked = await pickFolderViaNativeDialog(projectPath, { logger });
+  // 把刚弹出的对话框 hwnd 传下去，保证写入的是同一个窗口（避免写到遗留对话框）
+  const picked = await pickFolderViaNativeDialog(projectPath, { logger, hwnd: footer.hwnd });
   if (!picked.ok) {
     return { bound: false, method: "native-dialog", message: picked.message };
   }

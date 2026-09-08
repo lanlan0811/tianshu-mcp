@@ -18,6 +18,31 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.1.7] — 2026-09-08
+
+### Fixed
+
+- **Project-folder binding still failed** (v0.1.6 did not fully resolve it; field report: the native dialog
+  appeared but the edit box was empty and confirm was clicked anyway):
+  - **Root cause**: the MCP passes a `normPath()`-normalized path (lowercase drive + forward slashes, e.g.
+    `d:/Trae项目/AI游戏/象棋`), which the **native Windows picker rejects** — measured: read-back matched, yet the dialog
+    stayed open after confirm. Fix: convert via the new `toNativeWindowsPath()` to `D:\a\b`.
+  - `WM_GETTEXT` **read-back verification** after writing; on mismatch re-locate and retry (up to 3 times);
+    if it still mismatches, **never click confirm** and fail loudly.
+  - The hwnd detected after the footer click is **passed into the write script**; after clicking, success
+    requires that hwnd to be gone.
+  - **Auto-close stale dialogs** (left over from a previous failure) before binding.
+  - Confirm button now also requires its rect to be in the lower half of the dialog.
+  - The dialog script's full trace (HWND/READBACK) is written to the task log.
+
+### Testing
+
+- Total tests **172 → 178** (unit incl. path normalization; integration incl. stale-dialog cleanup).
+- Machine-verified: a new Chinese project `D:\Trae项目\AI游戏\象棋` (absent from the dropdown)
+  passed end-to-end through the native dialog; `五子棋` and the ASCII project `ts-bind-test` regressed green.
+
+---
+
 ## [0.1.6] — 2026-09-08
 
 ### Fixed
@@ -204,7 +229,8 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
-[Unreleased]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.6...HEAD
+[Unreleased]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.7...HEAD
+[0.1.7]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.3...v0.1.4

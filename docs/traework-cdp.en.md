@@ -241,6 +241,8 @@ user's own running TraeWork instance (data intact, restarted). They are now hard
 | **Confirm button not clickable / clicked a file row** | `AutomationId="1"` is not unique — list rows also use 0/1/2…; the confirm control is a Pane with no InvokePattern | Locate by **AutomationId=1 AND ControlType=Pane**, then click its bounding rect |
 | **PowerShell output garbled for Chinese** | Console code page is not UTF-8 | Emit **ASCII-only** from the script and map back to Chinese via `localizeDialogMessage()` |
 | **Binding fails with `mode=Code`** | The "select folder" path is unreliable outside Work mode | `bindProject` **falls back to Work once**, then switches back to the target mode |
+| **Path written into the edit box, but confirm does not close the dialog** | The MCP passes a `normPath()`-normalized path (`d:/a/b` - lowercase drive, forward slashes), which the **native picker rejects** | Convert via `toNativeWindowsPath()` to `D:\a\b`; verify with `WM_GETTEXT` read-back and never click confirm on mismatch |
+| **A stale dialog from a previous failure gets written to** | `findFolderDialog()` returns true on *any* matching window | `closeStaleFolderDialogs()` runs before binding; the detected hwnd is passed into the write script so only that window is touched |
 
 ---
 

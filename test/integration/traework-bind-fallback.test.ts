@@ -92,9 +92,11 @@ describe("bindProject 的 Code→Work 兜底", () => {
   it("下拉未命中且原生对话框未弹出 → 明确失败，且错误信息含两种模式的失败原因", async () => {
     // 桩化 dialog 模块：findFolderDialog 恒为「未出现」，pickFolderViaNativeDialog 走真实逻辑
     vi.doMock("../../src/agents/traework/computeruse/dialog.js", () => ({
-      findFolderDialog: async () => ({ found: false, windowTitle: "", processName: "" }),
+      findFolderDialog: async () => ({ found: false, windowTitle: "", processName: "", hwnd: 0 }),
+      closeStaleFolderDialogs: async () => 0,
       pickFolderViaNativeDialog: async () => ({ ok: false, message: "未检测到原生「选择文件夹」对话框（TraeWork 未弹出或已关闭；请检查下拉底部按钮是否被点到）" }),
       localizeDialogMessage: (m: string) => m,
+      toNativeWindowsPath: (p: string) => p,
     }));
 
     const { runTraeworkTask: run } = await import("../../src/agents/traework/run.js");
@@ -116,11 +118,41 @@ describe("bindProject 的 Code→Work 兜底", () => {
     expect(r.error).toContain("Work");
   });
 
-  it("Work 模式兜底不适用于 Work 目标（不重复尝试）", async () => {
+  it("仅在下拉未命中、真正要走原生对话框时才清理遗留对话框", async () => {
+    const closeCalls: number[] = [];
     vi.doMock("../../src/agents/traework/computeruse/dialog.js", () => ({
-      findFolderDialog: async () => ({ found: false, windowTitle: "", processName: "" }),
+      findFolderDialog: async () => ({ found: false, windowTitle: "", processName: "", hwnd: 0 }),
+      closeStaleFolderDialogs: async () => {
+        closeCalls.push(Date.now());
+        return 0;
+      },
       pickFolderViaNativeDialog: async () => ({ ok: false, message: "未检测到原生对话框" }),
       localizeDialogMessage: (m: string) => m,
+      toNativeWindowsPath: (p: string) => p,
+    }));
+    const { runTraeworkTask: run } = await import("../../src/agents/traework/run.js");
+    // 下拉能展开但**不含目标项目** → 未命中 → 应触发清理
+    const state = makeFakeState({ projectItems: [{ name: "other-project", subtitle: "" }] });
+    const r = await run({
+      ctx: makeCtx({ taskDir: tmpDir, mode: "Work" }),
+      resolved: makeResolved(),
+      opts: { logger: silentLogger },
+      logFile: path.join(tmpDir, "agent-2.log"),
+      startedAt: Date.now(),
+      logger: silentLogger,
+      deps: makeDeps(state, () => false),
+    });
+    expect(r.ok).toBe(false);
+    expect(closeCalls.length).toBe(1);
+  });
+
+  it("Work 模式兜底不适用于 Work 目标（不重复尝试）", async () => {
+    vi.doMock("../../src/agents/traework/computeruse/dialog.js", () => ({
+      findFolderDialog: async () => ({ found: false, windowTitle: "", processName: "", hwnd: 0 }),
+      closeStaleFolderDialogs: async () => 0,
+      pickFolderViaNativeDialog: async () => ({ ok: false, message: "未检测到原生对话框" }),
+      localizeDialogMessage: (m: string) => m,
+      toNativeWindowsPath: (p: string) => p,
     }));
     const { runTraeworkTask: run } = await import("../../src/agents/traework/run.js");
     const state = makeFakeState({ projectItems: [] });
