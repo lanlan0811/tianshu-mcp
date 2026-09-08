@@ -17,6 +17,21 @@
 
 ---
 
+## [0.1.8] — 2026-09-08
+
+### 修复
+
+- **原子写并发缺陷**（CI 偶发失败的真实根因）：`writeJsonAtomic`/`writeTextAtomic` 的临时文件名
+  为 `<目标>.<pid>.tmp`，同进程并发写同一目标时共用同一临时文件——先完成者 rename 走后，
+  后完成者抛 `ENOENT`；Windows 上并发 rename 还会抛 `EPERM`。表现为 `rework_task` 偶发返回
+  `undefined` meta（CI windows/Node20 命中）。修复：临时文件名加随机后缀 + rename 瞬时错误退避重试。
+
+### 测试
+
+- 新增 `test/unit/atomic-write.test.ts`（3 项：并发 JSON/文本写全部成功、不残留临时文件）。
+
+---
+
 ## [0.1.7] — 2026-09-08
 
 ### 修复
@@ -33,7 +48,7 @@
 
 ### 测试
 
-- 测试总数 **172 → 178**（单测含路径规范化；集成含遗留对话框清理）。
+- 测试总数 **172 → 181**（单测含路径规范化、原子写并发安全；集成含遗留对话框清理）。
 - 真机验证：新中文项目 `D:\Trae项目\AI游戏\象棋`（不在下拉）走原生对话框全链路通过；
   `五子棋` 与 ASCII 项目 `ts-bind-test` 回归通过。
 
@@ -203,7 +218,8 @@
 
 ---
 
-[未发布]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.7...HEAD
+[未发布]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.4...v0.1.5

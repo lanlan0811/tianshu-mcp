@@ -48,7 +48,7 @@
 ```bash
 npm install
 npm run build        # → dist/
-npm test             # 178 项测试：单元 + stub-agent 三剧本集成 + 协议 + TraeWork 假 CDP + 取消/超时/基线/参数/配置回归
+npm test             # 181 项测试：单元 + stub-agent 三剧本集成 + 协议 + TraeWork 假 CDP + 取消/超时/基线/参数/配置回归
 ```
 
 ### 在天枢里添加（推荐）
@@ -111,6 +111,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=traework, task=「切换到 Code 模
 | [docs/adapter-matrix.md](docs/adapter-matrix.md) | 各 Agent 能力调研矩阵（Codex/Zcode/TraeWork/扩展位） |
 | [docs/traework-cdp.md](docs/traework-cdp.md) | TraeWork GUI 驱动（CDP）：原理、配置、模式切换、选择器、安全红线、踩坑记录、验证记录 |
 | [docs/acceptance-config.md](docs/acceptance-config.md) | 项目级 `.tianshu-mcp/acceptance.json` 验收配置规范 |
+| [docs/release-v0.1.8.md](docs/release-v0.1.8.md) | v0.1.8 发布说明（原子写并发缺陷修复） |
 | [docs/release-v0.1.7.md](docs/release-v0.1.7.md) | v0.1.7 发布说明（绑定根因：原生路径） |
 | [docs/release-v0.1.6.md](docs/release-v0.1.6.md) | v0.1.6 发布说明（项目文件夹绑定修复） |
 | [docs/release-v0.1.5.md](docs/release-v0.1.5.md) | v0.1.5 发布说明（模式切换、README/图标、发布产物） |

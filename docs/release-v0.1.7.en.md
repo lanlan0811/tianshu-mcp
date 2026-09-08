@@ -70,7 +70,7 @@ had no effect.
 | Fixed | confirm button must be in the lower half of the dialog |
 | Added | full dialog-script trace written to the task log |
 | Docs | `docs/traework-cdp.md` / `.en.md`: 2 new pitfall entries |
-| Tests | 172 → **178** (8 unit tests incl. path normalization; 3 integration tests incl. stale-dialog cleanup) |
+| Tests | 172 → **181** (8 unit tests incl. path normalization; 3 integration tests incl. stale-dialog cleanup) |
 
 ## Known limitations
 

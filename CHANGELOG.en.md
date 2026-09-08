@@ -18,6 +18,22 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.1.8] — 2026-09-08
+
+### Fixed
+
+- **Atomic-write concurrency defect** (the real cause of intermittent CI failures): the temp filename in
+  `writeJsonAtomic`/`writeTextAtomic` was `<target>.<pid>.tmp`, so concurrent writes to the same target in one
+  process shared one temp file - the first to finish renames it away and the next throws `ENOENT`; on Windows a
+  concurrent rename can also throw `EPERM`. Symptom: `rework_task` intermittently returned an `undefined` meta
+  (hit on CI windows/Node 20). Fixed by a random temp suffix plus backoff-retry on transient rename errors.
+
+### Testing
+
+- New `test/unit/atomic-write.test.ts` (3 cases: concurrent JSON/text writes all succeed, no leftover temp files).
+
+---
+
 ## [0.1.7] — 2026-09-08
 
 ### Fixed
@@ -37,7 +53,7 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ### Testing
 
-- Total tests **172 → 178** (unit incl. path normalization; integration incl. stale-dialog cleanup).
+- Total tests **172 → 181** (unit incl. path normalization and atomic-write concurrency; integration incl. stale-dialog cleanup).
 - Machine-verified: a new Chinese project `D:\Trae项目\AI游戏\象棋` (absent from the dropdown)
   passed end-to-end through the native dialog; `五子棋` and the ASCII project `ts-bind-test` regressed green.
 
@@ -229,7 +245,8 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
-[Unreleased]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.7...HEAD
+[Unreleased]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.4...v0.1.5
