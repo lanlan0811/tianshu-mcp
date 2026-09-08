@@ -128,14 +128,20 @@ describe("S1 无理由取消 → cancelled", () => {
     });
     const taskId = (parseMeta(text).meta!.taskId as string) ?? "";
     await new Promise((r) => setTimeout(r, 1000)); // 进入 running
-    // 模拟 server 关闭：直接调用 assembly.close()（会 shutdownInterrupt）
+    const home = ts.home;
     await ts.assembly.close();
-    const snap = snapshot(taskId);
+    // 轮询快照直到进入 interrupted（orchestrator 完成 kill 需要一点时间）
+    let snap: Record<string, unknown> = {};
+    const deadline = Date.now() + 8000;
+    for (;;) {
+      snap = snapshot(taskId);
+      if (snap.status === "interrupted" || Date.now() > deadline) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
     expect(snap.status).toBe("interrupted");
     expect(snap.abortSource).toBe("shutdown");
     expect(snap.errorType).toBe("interrupted");
-    // 重新用同一 home 起 server，query 仍为 interrupted
-    const home = ts.home;
+    // 无论断言是否通过都重建 server，避免级联 Not connected
     ts = await startTestServer({ home });
     const q = await callTool(ts.client, "query_task", { taskId });
     expect(parseMeta(q.text).meta?.status).toBe("interrupted");
