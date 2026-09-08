@@ -101,6 +101,8 @@ export interface TaskMeta {
   agentId: string;
   task: string;
   context?: string;
+  /** GUI 类 agent（traework）使用的模型名；CLI 类忽略 */
+  model?: string;
   autoVerify: boolean;
   autoFixRounds: number;
   taskTimeoutMs: number;

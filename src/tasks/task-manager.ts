@@ -24,6 +24,8 @@ export interface NewTaskInput {
   agentId: string;
   task: string;
   context?: string;
+  /** GUI 类 agent（traework）使用的模型名；CLI 类忽略 */
+  model?: string;
   autoVerify: boolean;
   autoFixRounds: number;
   taskTimeoutMs: number;
@@ -100,6 +102,7 @@ export class TaskManager {
       agentId: input.agentId,
       task: input.task,
       context: input.context,
+      model: input.model,
       autoVerify: input.autoVerify,
       autoFixRounds: input.autoFixRounds,
       taskTimeoutMs: input.taskTimeoutMs,

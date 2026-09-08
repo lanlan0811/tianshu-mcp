@@ -20,6 +20,7 @@ export function makeBuildCtx(services: AppServices) {
     agentId: meta.agentId,
     task: meta.task,
     context: meta.context,
+    model: meta.model,
     round,
     feedback,
     taskDir: services.store.dir(meta.taskId),

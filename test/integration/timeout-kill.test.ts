@@ -57,8 +57,16 @@ describe("R2 调用级超时覆盖", () => {
     expect(elapsed).toBeLessThan(15_000); // 远超 800ms 则说明没按调用超时生效
 
     // S2：断言 timeout_killed 事件存在且只出现一次，顺序为 failed → timeout_killed
-    const evtFile = fs.readFileSync(path.join(ts.home, "tasks", taskId, "task.jsonl"), "utf8");
-    const lines = evtFile.trim().split("\n");
+    // 注意：终态 status 先于 timeout_killed 事件落盘（编排里先 updateStatus 再 appendEvent），
+    // 因此 waitForTerminal 返回后事件可能尚未写入 → 轮询等待事件出现，避免负载下的假失败。
+    const evtPath = path.join(ts.home, "tasks", taskId, "task.jsonl");
+    const readLines = (): string[] => fs.readFileSync(evtPath, "utf8").trim().split("\n");
+    const evtDeadline = Date.now() + 5_000;
+    let lines = readLines();
+    while (!lines.some((l) => l.includes('"timeout_killed"')) && Date.now() < evtDeadline) {
+      await sleep(50);
+      lines = readLines();
+    }
     const killed = lines.filter((l) => l.includes('"timeout_killed"'));
     expect(killed.length).toBe(1);
     const iFailed = lines.findIndex((l) => l.includes('"failed"'));

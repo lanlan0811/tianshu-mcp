@@ -7,6 +7,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import type { AgentAdapter, ResolvedAgent, AgentRunResult, TaskContext } from "./adapter.js";
 import { CliAdapter } from "./cli.js";
+import { TraeworkGuiAdapter } from "./traework/adapter.js";
 import type { AgentProfile } from "../config/schema.js";
 import type { SpawnResult } from "./spawn.js";
 import { Logger } from "../util/log.js";
@@ -20,9 +21,25 @@ export class AgentAdapterRegistry {
     private readonly loadProfiles: () => Promise<Record<string, AgentProfile>>,
     private readonly logger: Logger,
   ) {
-    // 默认：所有 profile 都用通用 CLI adapter（按 profile.promptMode 传递 prompt）
+    // 默认：所有 profile 都用通用 CLI adapter（按 profile.promptMode 传递 prompt）。
+    // driver=gui 的 profile 会在 resolve() 时替换为 GUI adapter（见 ensureAdapterFor）。
     for (const id of ["codex", "zcode", "traework", "stub"]) {
       this.adapters.set(id, new CliAdapter(id));
+    }
+  }
+
+  /**
+   * 按 profile.driver 选择 adapter 实现。
+   * spawn → CliAdapter（子进程）；gui → TraeworkGuiAdapter（CDP 驱动桌面 UI）。
+   * 仅在实现类型变化时重建，避免每轮 resolve 都换实例；自定义 agentId 也会按需创建。
+   */
+  private ensureAdapterFor(agentId: string, profile: AgentProfile): void {
+    const wantGui = profile.driver === "gui";
+    const current = this.adapters.get(agentId);
+    if (wantGui) {
+      if (!(current instanceof TraeworkGuiAdapter)) this.adapters.set(agentId, new TraeworkGuiAdapter(agentId));
+    } else if (current instanceof TraeworkGuiAdapter || !current) {
+      this.adapters.set(agentId, new CliAdapter(agentId));
     }
   }
 
@@ -57,6 +74,8 @@ export class AgentAdapterRegistry {
     }
     const cached = this.resolveCache.get(agentId);
     if (cache && cached && cached.profile === profile) return cached;
+    // driver 决定执行面实现（spawn/gui）——在解析前对齐 adapter 类型
+    this.ensureAdapterFor(agentId, profile);
     const resolved = this.resolveProfile(agentId, profile);
     if (resolved.ok) this.resolveCache.set(agentId, resolved);
     return resolved;

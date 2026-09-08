@@ -8,6 +8,7 @@ export const BUILTIN_PROFILES: Record<string, AgentProfile> = {
   codex: {
     displayName: "Codex (OpenAI 桌面端 CLI)",
     type: "cli",
+    driver: "spawn",
     status: "ready",
     command: null,
     argsTemplate: ["exec", "<prompt:arg>", "--skip-git-repo-check", "--sandbox", "workspace-write"],
@@ -27,6 +28,7 @@ export const BUILTIN_PROFILES: Record<string, AgentProfile> = {
   zcode: {
     displayName: "Zcode (ZCode 桌面)",
     type: "cli",
+    driver: "spawn",
     status: "unsupported",
     command: null,
     argsTemplate: [],
@@ -41,7 +43,8 @@ export const BUILTIN_PROFILES: Record<string, AgentProfile> = {
   traework: {
     displayName: "TraeWork (TRAE SOLO CN)",
     type: "cli",
-    status: "unsupported",
+    driver: "gui",
+    status: "ready",
     command: null,
     argsTemplate: [],
     promptMode: "arg",
@@ -49,8 +52,35 @@ export const BUILTIN_PROFILES: Record<string, AgentProfile> = {
     env: {},
     timeoutMs: 30 * 60_000,
     killTree: "taskkill",
-    authNote: "",
-    note: "T1 实测（2026-09-07）：本机 D:/TRAE Work CN = TRAE SOLO CN v1.107.1，仅有 VS Code 家族 CLI（open/serve-web/扩展管理），无 codex 风格无头 agent-exec，builtin-mcp 为 MCP 客户端扩展。无可编程无头驱动接口 → unsupported（详见 docs/adapter-matrix.md §T1）。若 Trae 未来提供 headless agent CLI 可重评",
+    authNote: "复用 TraeWork 桌面端登录态；窗口需保持可见（发送依赖模拟输入）",
+    executableDiscovery: {
+      dirs: [
+        "D:/TRAE Work CN",
+        "{ProgramFiles}/TRAE WORK CN",
+        "{ProgramFiles(x86)}/TRAE WORK CN",
+        "{LOCALAPPDATA}/Programs/TRAE WORK CN",
+        "{LOCALAPPDATA}/TRAE WORK CN",
+        "{APPDATA}/TRAE SOLO CN",
+        "/Applications/TraeWork.app/Contents/MacOS",
+        "/Applications/Trae CN.app/Contents/MacOS",
+      ],
+      fileNames: ["TRAE SOLO CN.exe", "TraeWork", "TraeWork CN", "Trae CN"],
+      fallbackCommand: undefined,
+    },
+    gui: {
+      cdpPort: 9222,
+      cdpPortAuto: true,
+      cdpPortRange: 20,
+      exeArgs: ["--remote-debugging-port=<port>"],
+      windowMode: "reuse",
+      launchTimeoutMs: 60_000,
+      pollIntervalMs: 3_000,
+      stableRounds: 12,
+      modelSwitch: true,
+      freshSession: true,
+      selectors: {},
+    },
+    note: "GUI 驱动（CDP）：T1 旧结论（无头 CLI 不存在）成立，但实测 --remote-debugging-port 可驱动聊天 UI（v1.107.1 已验证连接与关键选择器）。详见 docs/traework-cdp.md",
   },
 };
 

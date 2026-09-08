@@ -12,6 +12,11 @@ export const RunTaskParamsSchema = z.object({
   projectPath: AbsPath,
   task: z.string().min(1, "task 任务书不能为空"),
   agentId: z.string().min(1).optional(),
+  /**
+   * 目标 agent 使用的模型（GUI 类 agent 如 traework 用；CLI 类 agent 忽略）。
+   * 例：GLM-5.3 / DeepSeek-V4-Flash。未传时沿用 agent 侧当前选择。
+   */
+  model: z.string().min(1).optional(),
   autoVerify: z.boolean().optional(),
   autoFixRounds: z.number().int().min(0).max(10).optional(),
   context: z.string().optional(),
@@ -114,10 +119,47 @@ export const ExecutableDiscoverySchema = z.object({
   fallbackCommand: z.string().optional(),
 });
 
+/**
+ * GUI 驱动配置（driver="gui" 的 agent 使用，如 traework）。
+ * 所有字段均可由数据目录 agent-profiles.json 覆盖，代码只给默认值与探测规则。
+ */
+export const GuiProfileSchema = z.object({
+  /** CDP 调试端口（--remote-debugging-port） */
+  cdpPort: z.number().int().positive().default(9222),
+  /** 端口被占用时自动向后避让，直到找到可用端口 */
+  cdpPortAuto: z.boolean().default(true),
+  /** 自动避让时最多尝试的端口数 */
+  cdpPortRange: z.number().int().positive().max(200).default(20),
+  /** 可执行文件绝对路径；缺省用 executableDiscovery 探测 */
+  exePath: z.string().optional(),
+  /** 启动参数模板，<port> 会被替换为实际端口 */
+  exeArgs: z.array(z.string()).default(["--remote-debugging-port=<port>"]),
+  /** 已有可用实例时复用，否则启动新实例 */
+  windowMode: z.enum(["reuse", "launch"]).default("reuse"),
+  /** 等待 CDP 就绪的超时（ms） */
+  launchTimeoutMs: z.number().int().positive().default(60_000),
+  /** 回复 DOM 轮询间隔（ms） */
+  pollIntervalMs: z.number().int().positive().default(3_000),
+  /** 无完成标志时，连续多少次轮询无变化判定结束 */
+  stableRounds: z.number().int().positive().default(12),
+  /** 是否按任务指定的 model 切换模型 */
+  modelSwitch: z.boolean().default(true),
+  /** 每任务是否新建会话（点「新建任务」） */
+  freshSession: z.boolean().default(true),
+  /** 选择器覆盖（语义键 → 选择器），用于 UI 升级漂移时热修复 */
+  selectors: z.record(z.string(), z.string()).default({}),
+});
+export type GuiProfile = z.infer<typeof GuiProfileSchema>;
+
 export const AgentProfileSchema = z.object({
   id: z.string().min(1).optional(), // 仅内置 profiles 使用；数据目录 profiles 以键名为准
   displayName: z.string().default(""),
   type: z.enum(["cli"]).default("cli"),
+  /**
+   * 执行面：spawn=外部 CLI 子进程（默认）；gui=桌面 UI 自动化（CDP）。
+   * 决定 registry 构造哪个 adapter、orchestrator 走哪条执行路径。
+   */
+  driver: z.enum(["spawn", "gui"]).default("spawn"),
   status: z.enum(["ready", "research", "unsupported"]).default("ready"),
   command: z.string().nullable().optional(),
   argsTemplate: z.array(z.string()).default([]),
@@ -128,6 +170,7 @@ export const AgentProfileSchema = z.object({
   killTree: z.enum(["taskkill", "group"]).default("taskkill"),
   authNote: z.string().default(""),
   executableDiscovery: ExecutableDiscoverySchema.optional(),
+  gui: GuiProfileSchema.optional(),
   note: z.string().optional(),
 });
 export type AgentProfile = z.infer<typeof AgentProfileSchema>;

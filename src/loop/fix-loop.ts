@@ -13,6 +13,7 @@ import { runChild } from "../agents/spawn.js";
 import { captureBaseline, type Baseline } from "../verify/git-baseline.js";
 import { AcceptanceEngine, type VerifyRequest } from "../verify/acceptance.js";
 import { summarizeReport } from "../verify/report.js";
+import { writeRepairPlan } from "./repair-plan.js";
 import type { TaskMeta } from "../tasks/task.js";
 import { TaskStore } from "../tasks/task-store.js";
 import type { DataHome } from "../config/store.js";
@@ -109,7 +110,21 @@ export class TaskOrchestrator {
         if (maxRounds > round) {
           await store.updateStatus(meta, "fixing", `第 ${round} 轮验收失败，进入第 ${round + 1} 轮返修`);
           round += 1;
-          feedback = buildFixFeedback(meta.task, verdict.summary, verdict.mdPath);
+          // 决策 17：验收不通过时先写修复计划文件，再把文件名写进返修消息
+          const plan = await writeRepairPlan({
+            taskId: meta.taskId,
+            round: round - 1,
+            projectPath: meta.projectPath,
+            displayPath: meta.displayPath,
+            taskText: meta.task,
+            report: verdict.report,
+            taskDir: store.dir(meta.taskId),
+            logger,
+          }).catch((e: unknown) => {
+            logger.warn(`[repair-plan] 生成失败（降级为纯摘要反馈）：${e instanceof Error ? e.message : String(e)}`);
+            return null;
+          });
+          feedback = buildFixFeedback(meta.task, verdict.summary, verdict.mdPath, plan?.fileName);
           continue;
         }
         if (maxRounds === 0) {
@@ -196,9 +211,19 @@ export class TaskOrchestrator {
   }
 
   private async runAgentOnce(ctx: TaskContext, resolved: ResolvedAgent) {
-    await this.deps.registry.prepareInvocation(ctx.agentId, ctx, resolved);
     const adapter = this.deps.registry.getAdapter(ctx.agentId);
     if (!adapter) throw new Error(`agent '${ctx.agentId}' 无 adapter`);
+
+    // GUI 类 adapter（traework）自带执行面：不 spawn 子进程，直接驱动桌面 UI。
+    if (typeof adapter.run === "function") {
+      return adapter.run(ctx, resolved, {
+        signal: this.signal,
+        logger: this.deps.logger,
+        onProgress: (note) => this.deps.store.appendEvent(ctx.taskId, "note", this.meta.status, note).then(() => undefined),
+      });
+    }
+
+    await this.deps.registry.prepareInvocation(ctx.agentId, ctx, resolved);
     const inv = adapter.buildInvocation(ctx, resolved);
     const res = await runChild(
       { ...inv.spec, logFile: inv.logFile, timeoutMs: inv.timeoutMs },
@@ -231,6 +256,7 @@ export class TaskOrchestrator {
     return {
       passed,
       summary,
+      report,
       mdPath: report.files.md,
       jsonPath: report.files.json,
       // meta.changedFiles = 已跟踪变更 + 未跟踪新增（相对基线被 agent 触碰的全部文件）
@@ -240,15 +266,19 @@ export class TaskOrchestrator {
   }
 }
 
-function buildFixFeedback(taskText: string, verifySummary: string, reportMd: string): string {
-  return [
+function buildFixFeedback(taskText: string, verifySummary: string, reportMd: string, planFileName?: string): string {
+  const lines = [
     "【上一轮验收失败反馈 —— 请针对下列失败项定向修复，不要大范围重构】",
     "",
-    verifySummary,
-    "",
-    `完整验收报告：${reportMd}`,
-    "修复完成后正常结束进程即可。",
-  ].join("\n");
+  ];
+  if (planFileName) {
+    lines.push(
+      `修复计划文档：\`.tianshu-mcp/${planFileName}\`（项目根目录下；请先读取该文件，按其中的失败项与修复要求逐条处理）`,
+      "",
+    );
+  }
+  lines.push(verifySummary, "", `完整验收报告：${reportMd}`, "修复完成后正常结束本轮即可。");
+  return lines.join("\n");
 }
 
 /** 读取最近一轮 report.json / md 摘要（rework / query 用） */

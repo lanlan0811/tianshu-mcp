@@ -15,7 +15,7 @@ import type { AgentProfile } from "../../src/config/schema.js";
 const silentLogger = new Logger(null, "error");
 
 const STUB: AgentProfile = {
-  displayName: "stub", type: "cli", status: "ready", command: "node", argsTemplate: ["-v"], promptMode: "arg", cwd: "task", env: {}, timeoutMs: 1000, killTree: "taskkill", authNote: "",
+  displayName: "stub", type: "cli", driver: "spawn", status: "ready", command: "node", argsTemplate: ["-v"], promptMode: "arg", cwd: "task", env: {}, timeoutMs: 1000, killTree: "taskkill", authNote: "",
 };
 
 async function mkHome(): Promise<string> {

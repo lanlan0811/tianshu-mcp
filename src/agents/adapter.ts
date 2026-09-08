@@ -30,6 +30,8 @@ export interface TaskContext {
   taskDir: string;
   workDir: string;
   taskTimeoutMs: number;
+  /** GUI 类 agent（traework）使用的模型名；CLI 类忽略 */
+  model?: string;
 }
 
 export interface SpawnInvocation {
@@ -62,6 +64,22 @@ export type ParseExitFn = (res: {
   logFile: string;
 }) => AgentRunResult;
 
+/** GUI 类 adapter 的自定义执行面选项 */
+export interface AgentRunOptions {
+  signal?: AbortSignal;
+  logger: AgentRunLogger;
+  /** 进度回报（写入任务事件流，供 query_task 观察） */
+  onProgress?: (note: string) => void | Promise<void>;
+}
+
+/** 只依赖用到的最小日志接口，避免 adapter 层与 Logger 实现耦合 */
+export interface AgentRunLogger {
+  info(msg: string): void;
+  warn(msg: string): void;
+  error(msg: string): void;
+  debug(msg: string): void;
+}
+
 export interface AgentAdapter {
   id: string;
   /** 构造一次调用（命令/参数/工作目录/env/prompt 传递） */
@@ -76,4 +94,9 @@ export interface AgentAdapter {
     durationMs: number;
     logFile: string;
   }): AgentRunResult;
+  /**
+   * 可选：自定义执行面。存在时 TaskOrchestrator 不再 spawn 子进程，
+   * 而是调用它（GUI 类 adapter 如 traework 实现；CLI 类不实现，走原 spawn 路径）。
+   */
+  run?(ctx: TaskContext, resolved: ResolvedAgent, opts: AgentRunOptions): Promise<AgentRunResult>;
 }
