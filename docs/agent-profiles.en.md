@@ -14,6 +14,7 @@ built-in (`src/agents/builtin.ts`) → user `agent-profiles.json` overrides by `
     "<agentId>": {
       "displayName": "…",
       "type": "cli",                 // only cli today
+      "driver": "spawn",             // spawn = external child process (default); gui = desktop UI automation
       "status": "ready",             // ready | research | unsupported
       "command": null,               // absolute path; null + discovery = auto-probe
       "argsTemplate": ["exec", "<prompt:arg>"],
@@ -26,11 +27,26 @@ built-in (`src/agents/builtin.ts`) → user `agent-profiles.json` overrides by `
         "dirs": ["{LOCALAPPDATA}/OpenAI/Codex/bin"],   // env placeholders, no hardcoded users
         "fileNames": ["codex.exe", "codex"],
         "fallbackCommand": "codex"
+      },
+      "gui": {                       // only for driver="gui" (e.g. traework)
+        "cdpPort": 9222, "cdpPortAuto": true, "cdpPortRange": 20,
+        "exeArgs": ["--remote-debugging-port=<port>"], "windowMode": "reuse",
+        "launchTimeoutMs": 60000, "pollIntervalMs": 3000, "stableRounds": 12,
+        "modelSwitch": true, "freshSession": true, "selectors": {}
       }
     }
   }
 }
 ```
+
+## driver (execution surface)
+
+| value | meaning |
+|---|---|
+| `spawn` (default) | launches an external CLI child process (`argsTemplate` + `promptMode`); success is decided by exit code |
+| `gui` | drives a desktop UI over CDP (currently only `traework`); no child process, and `run_task` may pass `model` to pick its model |
+
+> With `driver=gui`, `argsTemplate`/`promptMode` are unused. See [traework-cdp.en.md](traework-cdp.en.md) for the `gui` section and its safety invariants.
 
 ## Discovery semantics (R5)
 
@@ -52,7 +68,9 @@ built-in (`src/agents/builtin.ts`) → user `agent-profiles.json` overrides by `
 
 ## Status semantics
 
-`ready` = command/discovery usable; `research` = probe attempted, placeholder if not found; `unsupported` = explicitly not drivable headlessly (e.g. ZCode, TRAE SOLO CN).
+`ready` = command/discovery usable; `research` = probe attempted, placeholder if not found; `unsupported` = explicitly not drivable (e.g. ZCode).
+
+> `traework` moved from `unsupported` to `ready` + `driver=gui` on 2026-09-08 (CDP-driven desktop UI; see [traework-cdp.en.md](traework-cdp.en.md)).
 
 ## Real-machine sample
 

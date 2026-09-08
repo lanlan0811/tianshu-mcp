@@ -19,6 +19,7 @@
     "<agentId>": {
       "displayName": "Codex (OpenAI 桌面端 CLI)",   // 展示名
       "type": "cli",                                  // 目前仅 cli
+      "driver": "spawn",                              // spawn=外部子进程（默认）；gui=桌面 UI 自动化
       "status": "ready",                              // ready | research | unsupported
       "command": null,                                // 可执行；null + discovery 则自动探测
       "argsTemplate": ["exec", "<prompt:arg>", "--skip-git-repo-check"],
@@ -32,11 +33,26 @@
         "dirs": ["C:/Users/<你>/AppData/Local/OpenAI/Codex/bin"],
         "fileNames": ["codex.exe", "codex"],          // 无 fileNames 则目录不扫描
         "fallbackCommand": "codex"                    // 最后回退：PATH 查找
+      },
+      "gui": {                                        // 仅 driver="gui" 使用（如 traework）
+        "cdpPort": 9222, "cdpPortAuto": true, "cdpPortRange": 20,
+        "exeArgs": ["--remote-debugging-port=<port>"], "windowMode": "reuse",
+        "launchTimeoutMs": 60000, "pollIntervalMs": 3000, "stableRounds": 12,
+        "modelSwitch": true, "freshSession": true, "selectors": {}
       }
     }
   }
 }
 ```
+
+### driver（执行面）
+
+| 值 | 说明 |
+|---|---|
+| `spawn`（默认） | 拉起外部 CLI 子进程（`argsTemplate` + `promptMode`），结果按退出码判定 |
+| `gui` | 通过 CDP 驱动桌面 UI（当前仅 `traework`）；不 spawn 子进程，`run_task` 可传 `model` 指定其模型 |
+
+> `driver=gui` 时 `argsTemplate`/`promptMode` 不生效；`gui` 段字段含义与安全约束见 [traework-cdp.md](traework-cdp.md)。
 
 ### promptMode
 
@@ -89,11 +105,14 @@
 | status | 含义 | run_task 行为 |
 |---|---|---|
 | `ready` | 已配 command / discovery 可解析 | 可跑 |
-| `research` | 调研占位（zcode/traework） | resolve 不 ok → run_task 立即失败并给原因 |
+| `research` | 调研占位（zcode） | resolve 不 ok → run_task 立即失败并给原因 |
 | `unsupported` | 明确不支持（见 adapter-matrix.md） | 同上 |
+
+> `traework` 已于 2026-09-08 由 `unsupported` 改为 `ready` + `driver=gui`（CDP 驱动桌面 UI，见 [traework-cdp.md](traework-cdp.md)）。
 
 ## 常见问题
 
-- **探测到错误文件**：检查 `fileNames` 只写可执行名；zcode 无头入口在 M2 调研前不自动探测（避免把 `db.sqlite` 之类误判为 CLI）。
+- **探测到错误文件**：检查 `fileNames` 只写可执行名；zcode 无头入口调研结论为不可用，不自动探测（避免把 `db.sqlite` 之类误判为 CLI）。
 - **profile 改动不生效**：server 每次 resolve 会重读 profiles 文件并缓存结果；`get_profiles` 会触发一次新探测。改完 profile 建议重启 server。
 - **env 有敏感值**：仅本机可见，不会写入 task.jsonl/日志；属于自担风险字段。
+- **driver=gui 的 agent 找不到可执行**：`get_profiles` 会显示探测结果；可在 profile 里直接配 `gui.exePath` 指定绝对路径。

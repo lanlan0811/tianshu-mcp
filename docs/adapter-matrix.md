@@ -10,7 +10,7 @@
 |---|---|---|---|---|---|---|
 | **Codex**（OpenAI 桌面端） | 本地 CLI `codex.exe` | ✅ **已冒烟通过**（2026-09-07 run_task→verify_task，见 [m2-smoke-record.md](m2-smoke-record.md)） | `executableDiscovery` → `.../Codex/bin/<hash>/codex.exe`（实测 v0.153.4） | 复用 `~/.codex`（auth.json），与桌面端同账号 | cwd 内读写文件；stdout 流式 | `codex exec "<prompt>" --sandbox workspace-write`（勿与 --approve-for-me 同用） |
 | **Zcode**（ZCode 桌面） | Electron 桌面应用（`D:\Z-Code\ZCode\ZCode.exe`）；无随包无头 CLI | ❌ **unsupported（无无头 agent-exec 接口）** | 数据目录 `.zcode/cli` 非入口（会话数据）；打包 tools 仅 cua-helper/ripgrep/ugrep | 复用本机登录态 | — | 桌面会话/agent 由应用自身驱动；tianshu-mcp 无法无头 spawn（见 Z1） |
-| **TraeWork / TRAE SOLO CN** | 桌面 IDE（v1.107.1 实测） | ❌ **unsupported**（无无头可编程驱动接口，见 T1） | 有 VS Code 家族 CLI（`bin/trae-solo-cn.cmd` → open/serve-web/扩展管理），**无 agent-exec** | — | — | `byted-solo.builtin-mcp` 是 MCP 客户端扩展，非被驱动接口 |
+| **TraeWork / TRAE SOLO CN** | 桌面 IDE（v1.107.1）+ **CDP GUI 驱动** | ✅ **已接入并真机验证**（2026-09-08；见 T1 更正与 [traework-cdp.md](traework-cdp.md)） | 无头 CLI 不存在；以 `--remote-debugging-port` 驱动聊天 UI | 复用 TraeWork 桌面端登录态（本 MCP 不读取凭证） | 从 DOM 提取回复；项目文件由 TraeWork 自身写入 | `byted-solo.builtin-mcp` 是 MCP 客户端扩展，非被驱动接口 |
 | **stub**（测试用） | 本地脚本 | ✅ 内置测试 | 测试注入 profile | 无 | — | 仅 M1 集成测试使用 |
 
 状态图例：✅ 可接入（已实现/已冒烟）｜🔍 调研中｜⬜ 规划/占位｜❌ 已证伪不支持
@@ -48,9 +48,11 @@
 }
 ```
 
-## T1 — TraeWork / TRAE SOLO CN 可编程接口（2026-09-07 实测，已定论）
+## T1 — TraeWork / TRAE SOLO CN 驱动接口（2026-09-07 初判 unsupported → 2026-09-08 更正为已接入）
 
-**结论：`unsupported`——本机安装的 Trae 产品（TRAE SOLO CN v1.107.1）无 codex 风格的无头可编程 agent 驱动接口。**
+**最终结论：`ready`（driver=gui）——无头 CLI 确实不存在，但 CDP 驱动桌面 UI 可行，已实现并真机验证。**
+
+### T1.1 初判（2026-09-07）：无头 CLI 不存在（该部分结论成立）
 
 实测证据（安装目录 `D:\TRAE Work CN`，即 TRAE SOLO CN）：
 
@@ -62,9 +64,24 @@
 - 扩展含 `byted-solo.builtin-mcp`（MCP **客户端**扩展，供 IDE 内接 MCP server）与 `cloudide.icube-agent-shell-exec`；这些是 IDE 侧能力，不是可供本 MCP server 外部调用的无头接口。
 - `%PATH%` 无 trae；无 `--headless`/远程 agent API。
 
-因此：TRAE SOLO CN（TraeWork 系）当前**不能被 tianshu-mcp 作为外部 agent 无头驱动**。已在内置 profile 标 `status: "unsupported"`。若 Trae 未来提供 headless agent CLI / 官方远程接口，可重跑本调研并实现 adapter（R14：不 pty 硬接、不 GUI 自动化默认实施）。
+**该结论只覆盖「无头 CLI」这一条路线**，当时据此把 profile 标为 `status: "unsupported"`。
 
-> 更正记录：早前版本基于 `%APPDATA%` 误判「本机未安装 Trae」；本次在 `D:/` 发现真实安装并完成定论。
+### T1.2 更正（2026-09-08）：CDP GUI 驱动可行并已接入
+
+复核发现 TraeWork 支持 `--remote-debugging-port`（Electron/VS Code 家族），且同目录项目
+`oh-dsh-trae-api` 已用该机制跑通「驱动聊天 UI → 提取回复」。据此新增 GUI 驱动路线：
+
+- 连接：`TRAE SOLO CN.exe --remote-debugging-port=<port>` → `GET /json` 取页面 WS（页面为 `solo-lite.html`）。
+- 已实测选择器：聊天输入框、新建任务、任务列表（`.taskText` / `.task-list-group-name`）、
+  模式切换器、模型下拉、项目文件夹下拉（`cascadeMenu` + `cascadeMenuItemWithSubtitle` + `cascadeFooterButton`）。
+- 项目登记：下拉未命中时经 Windows 原生对话框写入路径，实测成功登记项目目录。
+- 端到端：`run_task(agentId="traework", model="GLM-5.3", autoVerify=true)` 驱动 TraeWork 创建文件并验收通过。
+
+**为什么不走 HTTP**：LLM/agent 请求在 TTNet 层 TDE 加密，无法在客户端外构造；CDP 驱动完整客户端是唯一可行路径。
+实现与踩坑记录见 [traework-cdp.md](traework-cdp.md)。
+
+> 更正记录：早前版本基于 `%APPDATA%` 误判「本机未安装 Trae」；随后在 `D:/` 发现真实安装并定论「无无头 CLI」；
+> 本次进一步确证 GUI 路线可行，profile 已改为 `status: "ready"` + `driver: "gui"`。
 
 ## Z1 — Zcode headless 入口（2026-09-07 实测，已定论）
 

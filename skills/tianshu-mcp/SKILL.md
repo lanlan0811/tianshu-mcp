@@ -16,8 +16,8 @@ triggers: '开发|编码|写代码|改代码|实现功能|加功能|修复|重�
 ## 1. 选 agent
 
 - `codex`：Codex 桌面端自带 CLI（通用编码，默认，推荐先试）。
-- `zcode`：本机 Zcode CLI（headless 入口调研完成后才列）。
-- `traework`：仅当 adapter-matrix 调研结论为可用时才列。
+- `zcode`：本机 Zcode CLI（无头入口调研结论为不可用，当前不可选）。
+- `traework`：TraeWork（TRAE SOLO CN）桌面端，**GUI 驱动**（CDP）。适合需要 TraeWork 原生能力/Work 模式的任务；要求 TraeWork 已登录、窗口可见。可用 `model` 参数指定模型（如 `GLM-5.3`）。
 - 不确定时问用户，或读项目 `projects.json` 的 `defaultAgentId`。用 `get_profiles` 看当前实际可用性（会做可执行探测）。
 
 ## 2. 派活：run_task
@@ -27,6 +27,7 @@ triggers: '开发|编码|写代码|改代码|实现功能|加功能|修复|重�
 - `projectPath`：**必须**是项目绝对路径（如 `D:\repo\my-app`）。
 - `task`：自然语言任务书。要写清 **目标 / 验收要点 / 约束 / 相关文件 / 上下文**，模板见 usage-examples.md。
 - `agentId`：默认取项目 default 或 codex。
+- `model`：可选，仅 GUI 类 agent（`traework`）生效，用于指定 TraeWork 使用的模型（如 `GLM-5.3`）；CLI 类 agent 忽略。
 - `autoVerify: true`：跑完自动验收（命令检查 + 代码分析）。
 - `autoFixRounds: N`：>0 才开启失败自动返修（默认建议 2；不传 = 0 保守模式）。
 - `taskTimeoutMs`：任务级超时，缺省 30 分钟，长任务可调大。

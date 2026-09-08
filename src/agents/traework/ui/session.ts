@@ -7,7 +7,6 @@
  *   3. 在下拉里按 basename / 绝对路径匹配已有项目 → 命中直接选择
  *   4. 未命中 → 点下拉底部「选择文件夹」→ 走受限 computer-use 驱动原生对话框（图3）
  */
-import path from "node:path";
 import type { TraeworkCdpClient } from "../cdp/client.js";
 import type { AgentRunLogger } from "../../adapter.js";
 import type { SelectorOverrides } from "../cdp/selectors.js";
@@ -36,10 +35,16 @@ export function normComparePath(p: string): string {
     .toLowerCase();
 }
 
-/** 项目名（basename）——决策 9：任务文件夹名称取 projectPath 的 basename */
+/**
+ * 项目名（basename）——决策 9：任务文件夹名称取 projectPath 的 basename。
+ * 不能用 `path.basename`：它是平台相关的（POSIX 下不把 `\` 当分隔符），
+ * 而项目路径可能来自 Windows（含反斜杠）却在 Linux/macOS 上被处理（CI/跨平台）。
+ * 这里显式同时按 `\` 与 `/` 切分。
+ */
 export function projectBasename(projectPath: string): string {
-  const norm = projectPath.replace(/[\\/]+$/, "");
-  return path.basename(norm);
+  const trimmed = projectPath.replace(/[\\/]+$/, "");
+  const idx = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+  return idx === -1 ? trimmed : trimmed.slice(idx + 1);
 }
 
 /**
