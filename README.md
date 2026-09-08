@@ -163,6 +163,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=traework, task=「切换到 Code 模
 
 | 文档 | 内容 |
 |---|---|
+| [HANDOFF.md](HANDOFF.md) | 项目交接文档：当前状态快照、架构导览、硬性红线、已知限制、接手建议 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本变更日志（v0.1.0 → v0.1.5） |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 开发环境、工程规范、提交与发布流程、如何新增 agent |
 | [SECURITY.md](SECURITY.md) | 安全模型（凭证零管理/命令白名单/进程与桌面自动化边界）与私密报告渠道 |
