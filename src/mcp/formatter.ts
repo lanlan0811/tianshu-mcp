@@ -21,6 +21,9 @@ export interface MetaBlockFields {
   errorType?: string;
   cancelReason?: string;
   finishedAt?: string;
+  reportRound?: number;
+  verificationSource?: string;
+  latestVerificationVerdict?: string;
 }
 
 export type ToolResult = {
@@ -59,6 +62,9 @@ export function metaFromTask(meta: TaskMeta, extra?: Partial<MetaBlockFields>): 
     errorType: meta.errorType ?? undefined,
     cancelReason: meta.cancelReason,
     finishedAt: meta.finishedAt,
+    reportRound: meta.reportRound,
+    verificationSource: meta.verificationSource,
+    latestVerificationVerdict: meta.latestVerificationVerdict,
     ...extra,
   };
 }

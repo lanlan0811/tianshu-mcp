@@ -16,6 +16,7 @@ import { TOOL_DEFS } from "./mcp/tools.js";
 import type { Logger } from "./util/log.js";
 import { Logger as LoggerCtor } from "./util/log.js";
 import { skillSelfInstall } from "./util/skill-install.js";
+import { MCP_SERVER_VERSION } from "./version.generated.js";
 
 export interface ServerAssembly {
   server: McpServer;
@@ -56,7 +57,7 @@ export async function buildServer(opts: { home?: string; logger?: Logger; skipSk
   });
 
   const server = new McpServer(
-    { name: "tianshu-mcp", version: "0.1.0" },
+    { name: "tianshu-mcp", version: MCP_SERVER_VERSION },
     {
       capabilities: { tools: {} },
       instructions:

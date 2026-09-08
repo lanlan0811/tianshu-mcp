@@ -24,14 +24,14 @@ export function reportToMd(report: VerifyReport): string {
   L.push(`- 项目: ${report.projectPath}`);
   L.push(`- 开始: ${report.startedAt}`);
   L.push(`- 结束: ${report.finishedAt}`);
-  L.push(`- 结论: **${report.verdict === "passed" ? "通过 ✅" : "失败 ❌"}**`);
+  L.push(`- 结论: **[${report.verdict === "passed" ? "PASS" : "FAIL"}]**`);
   L.push("", "## 自动命令检查", "");
   if (report.checks.length === 0) L.push("（无可运行的检查项）", "");
   for (const c of report.checks) {
     const mark = c.skipped ? "SKIP" : c.passed ? "PASS" : "FAIL";
     L.push(`- [${mark}] ${c.name} — \`${c.cmd}\`${c.durationMs >= 0 ? ` (${c.durationMs}ms)` : ""}${c.skipped && c.reason ? ` — ${c.reason}` : ""}`);
     if (!c.passed && !c.skipped) {
-      if (c.timeout) L.push(`  - ⚠️ 超时（${c.durationMs}ms）`);
+      if (c.timeout) L.push(`  - [WARN] 超时（${c.durationMs}ms）`);
       L.push(`  - 退出码: ${c.exitCode ?? "n/a"}`);
       if (c.outputTail) {
         L.push("  - 输出尾部:", "", "    ```");
@@ -60,10 +60,10 @@ export function reportToMd(report: VerifyReport): string {
     if (sig.consoleDebug) L.push(`- console.log/debugger 命中 ${sig.consoleDebug} 处`);
     if (sig.commentedBlock) L.push(`- 被注释掉的整块代码 ${sig.commentedBlock} 处`);
     if (sig.secretLike) L.push(`- 疑似密钥/令牌形态 ${sig.secretLike} 处`);
-    for (const f of a.bigFileChanges) L.push(`- ⚠️ 超大单文件改动: ${f}`);
-    for (const w of a.warnings) L.push(`- ⚠️ ${w}`);
+    for (const f of a.bigFileChanges) L.push(`- [WARN] 超大单文件改动: ${f}`);
+    for (const w of a.warnings) L.push(`- [WARN] ${w}`);
   }
-  for (const n of a.notes) L.push(`- 💡 ${n}`);
+  for (const n of a.notes) L.push(`- [INFO] ${n}`);
   L.push("", "---", "", report.message, "");
   return L.join("\n");
 }
@@ -75,8 +75,8 @@ export function summarizeReport(report: VerifyReport): string {
   const skip = report.checks.filter((c) => c.skipped).length;
   const head =
     report.passed
-      ? `✅ 验收通过（第 ${report.round} 轮）：${passCount}/${report.checks.length} 项命令检查通过${skip ? `，${skip} 项跳过` : ""}。`
-      : `❌ 验收失败（第 ${report.round} 轮）：${fail.length} 项检查未通过${skip ? `，${skip} 项跳过` : ""}。`;
+      ? `[PASS] 验收通过（第 ${report.round} 轮）：${passCount}/${report.checks.length} 项命令检查通过${skip ? `，${skip} 项跳过` : ""}。`
+      : `[FAIL] 验收失败（第 ${report.round} 轮）：${fail.length} 项检查未通过${skip ? `，${skip} 项跳过` : ""}。`;
   const lines = [head, ""];
   for (const c of report.checks) {
     const st = c.skipped ? "SKIP" : c.passed ? "PASS" : "FAIL";

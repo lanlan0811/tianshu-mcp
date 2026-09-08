@@ -166,9 +166,9 @@ function describeStatus(meta: TaskMeta): string {
     running: "运行中（agent 正在开发）",
     verify_start: "验收中（自动命令检查 + 代码分析）",
     fixing: "返修中（上一轮验收失败，agent 正在按反馈修改）",
-    succeeded: "✅ 任务成功",
-    failed: "❌ 任务失败",
-    needs_attention: "⚠️ 需要人工介入（自动返修轮次已用尽或可修性存疑）",
+    succeeded: "[PASS] 任务成功",
+    failed: "[FAIL] 任务失败",
+    needs_attention: "[WARN] 需要人工介入（自动返修轮次已用尽或可修性存疑）",
     cancelled: "已取消",
     interrupted: "已中断（server 重启/退出）",
   };
@@ -288,8 +288,9 @@ function verifyTaskHandler(ctx: AppContext): Handler {
     // round 分配：手动验收写入任务目录时不能覆盖已有 report-0.*，分配下一可用轮次
     const round = await nextReportRound(store, taskId);
 
+    const verifyTaskId = taskId ?? `vfy_${Date.now()}`;
     const req = {
-      taskId: taskId ?? `vfy_${Date.now()}`,
+      taskId: verifyTaskId,
       projectPath,
       displayPath,
       taskText,
@@ -304,31 +305,56 @@ function verifyTaskHandler(ctx: AppContext): Handler {
     };
     const { report, passed } = await engine.runVerify(req);
     const head = passed
-      ? `✅ 验收通过（手动验收）：${report.checks.filter((c) => c.passed).length}/${report.checks.length} 项命令检查通过。`
-      : `❌ 验收失败（手动验收）：${report.checks.filter((c) => !c.passed && !c.skipped).length} 项检查未通过。`;
+      ? `[PASS] 手动验收通过（reportRound ${round}）：${report.checks.filter((c) => c.passed).length}/${report.checks.length} 项检查通过。`
+      : `[FAIL] 手动验收失败（reportRound ${round}）：${report.checks.filter((c) => !c.passed && !c.skipped).length} 项检查未通过。`;
     const changed = report.analysis.changedFiles.length + report.analysis.untrackedFiles.length;
-    const meta: TaskMeta = {
-      taskId: req.taskId,
-      status: passed ? "succeeded" : "failed",
-      projectPath,
-      displayPath,
-      agentId: "manual-verify",
-      task: taskText ?? "(手动验收)",
-      autoVerify: true,
-      autoFixRounds: 0,
-      taskTimeoutMs: 0,
-      round: 0,
-      roundsUsed: 0,
-      createdAt: report.startedAt,
-      updatedAt: report.finishedAt,
-      lastMessage: head,
-      changedFiles: [...report.analysis.changedFiles, ...report.analysis.untrackedFiles],
-      diffstat: `+${report.analysis.diffstat.totalAdd} -${report.analysis.diffstat.totalDel}`,
-      reportMd: report.files.md,
-      reportJson: report.files.json,
-    };
-    const detailLines = [`${head}`, `变更 ${changed} 个文件，diffstat ${meta.diffstat}。`, `报告：${report.files.md}`, `JSON：${report.files.json}`];
-    return formatToolResult(detailLines.join("\n"), metaFromTask(meta));
+    const diffstat = `+${report.analysis.diffstat.totalAdd} -${report.analysis.diffstat.totalDel}`;
+
+    // S4：taskId 模式下更新并持久化原任务元数据（保留原 agentId，不改任务终态；新增单独验收结论字段）。
+    let resultMeta: TaskMeta;
+    if (taskId) {
+      const real = await manager.getMeta(taskId);
+      if (!real) return errorResult(`任务不存在: ${taskId}`);
+      real.reportRound = round;
+      real.verificationSource = "manual";
+      real.latestVerificationVerdict = passed ? "passed" : "failed";
+      real.reportMd = report.files.md;
+      real.reportJson = report.files.json;
+      real.lastMessage = head;
+      real.changedFiles = [...report.analysis.changedFiles, ...report.analysis.untrackedFiles];
+      real.diffstat = diffstat;
+      real.updatedAt = report.finishedAt;
+      await manager.persistMetaUpdate(real);
+      resultMeta = real;
+    } else {
+      // 独立 projectPath 验收：创建并持久化独立 vfy 记录
+      resultMeta = {
+        taskId: verifyTaskId,
+        status: passed ? "succeeded" : "failed",
+        projectPath,
+        displayPath,
+        agentId: "manual-verify",
+        task: taskText ?? "(手动验收)",
+        autoVerify: true,
+        autoFixRounds: 0,
+        taskTimeoutMs: 0,
+        round: 0,
+        roundsUsed: 0,
+        reportRound: round,
+        verificationSource: "manual",
+        latestVerificationVerdict: passed ? "passed" : "failed",
+        createdAt: report.startedAt,
+        updatedAt: report.finishedAt,
+        lastMessage: head,
+        changedFiles: [...report.analysis.changedFiles, ...report.analysis.untrackedFiles],
+        diffstat,
+        reportMd: report.files.md,
+        reportJson: report.files.json,
+      };
+      await manager.persistMetaUpdate(resultMeta);
+    }
+    const detailLines = [`${head}`, `变更 ${changed} 个文件，diffstat ${resultMeta.diffstat}。`, `报告：${report.files.md}`, `JSON：${report.files.json}`];
+    return formatToolResult(detailLines.join("\n"), metaFromTask(resultMeta));
   };
 }
 
@@ -358,7 +384,7 @@ function getProfilesHandler(ctx: AppContext): Handler {
     const rows: string[] = [];
     for (const id of ids) {
       const r = await registry.resolve(id, true);
-      const mark = r.ok ? "✅ 可用" : "❌ 不可用";
+      const mark = r.ok ? "[PASS] 可用" : "[FAIL] 不可用";
       rows.push(`${mark}\t${id}\t${r.displayName}\t${r.message}${r.discovered ? ` [探测来源: ${r.discovered.source}]` : ""}`);
     }
     const head = "Agent 适配与可执行探测结果（列: 可用 / agentId / 名称 / 说明）";

@@ -72,6 +72,12 @@ export class TaskManager {
     return this.tasks.get(taskId) ?? (await this.store.readSnapshot(taskId));
   }
 
+  /** S4：外部对终态任务元数据的更新（如手动 verify 更新报告指针/轮次）——写快照并同步内存 map */
+  async persistMetaUpdate(meta: TaskMeta): Promise<void> {
+    this.tasks.set(meta.taskId, meta);
+    await this.store.writeSnapshot(meta);
+  }
+
   async listTasks(filter?: { projectPath?: string; status?: string; limit?: number }): Promise<TaskMeta[]> {
     let metas = await this.store.listTaskSnapshots();
     if (filter?.projectPath) {

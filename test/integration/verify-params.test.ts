@@ -58,12 +58,12 @@ describe("R4 get_task_report round 语义", () => {
   }, 60_000);
 });
 
-describe("R4 手动 verify_task 轮次分配", () => {
-  it("verify_task(taskId) 不覆盖 report-0，写入下一可用轮次", async () => {
+describe("R4/S4 手动 verify_task 轮次与元数据", () => {
+  it("verify_task(taskId) 写 report-1，返回 reportRound=1，query 指向 report-1，agentId 保留", async () => {
     const proj = await makeGitProject("good");
     tempDirs.push(proj);
     await writePlaybook(proj, { playbook: "good" });
-    // 先跑一次任务产生 report-0
+    // 先跑一次任务产生 report-0（autoVerify succeeded）
     const { text } = await callTool(ts.client, "run_task", {
       projectPath: proj,
       agentId: "stub",
@@ -75,11 +75,27 @@ describe("R4 手动 verify_task 轮次分配", () => {
     const dir = path.join(ts.home, "tasks", taskId);
     expect(fs.existsSync(path.join(dir, "report-0.md"))).toBe(true);
 
-    // 手动 verify_task(taskId)
-    await callTool(ts.client, "verify_task", { taskId });
-    // report-0 仍存在且 report-1 被创建（未被覆盖）
+    // 手动 verify_task(taskId) —— S4：返回 meta.reportRound=1 且不覆盖 report-0
+    const v = await callTool(ts.client, "verify_task", { taskId });
+    const vMeta = parseMeta(v.text).meta;
+    expect(vMeta?.reportRound).toBe(1);
+    expect(vMeta?.verificationSource).toBe("manual");
+    expect(vMeta?.agentId).toBe("stub"); // 保留原 agentId，不得改成 manual-verify
     expect(fs.existsSync(path.join(dir, "report-0.md"))).toBe(true);
     expect(fs.existsSync(path.join(dir, "report-1.md"))).toBe(true);
+
+    // S4：后续 query_task 指向 report-1，lastMessage/diffstat 与手动验收一致
+    const q = await callTool(ts.client, "query_task", { taskId });
+    const qMeta = parseMeta(q.text).meta;
+    expect(qMeta?.reportRound).toBe(1);
+    expect((qMeta?.reportFiles as { md?: string } | undefined)?.md).toContain("report-1.md");
+    expect(qMeta?.message).toContain("[PASS] 手动验收");
+
+    // get_task_report() 缺省返回 report-1；round=0 返回 report-0
+    const r0 = await callTool(ts.client, "get_task_report", { taskId, round: 0 });
+    expect(r0.text).toContain("第 0 轮");
+    const rLatest = await callTool(ts.client, "get_task_report", { taskId });
+    expect(rLatest.text).toContain("第 1 轮");
   }, 60_000);
 });
 

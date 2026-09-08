@@ -5,6 +5,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { startTestServer, callTool, parseMeta, rmrf, type TestServer } from "../test-utils.js";
 import { TOOL_DEFS } from "../../src/mcp/tools.js";
+import pkg from "../../package.json" with { type: "json" };
 
 let ts: TestServer;
 
@@ -14,6 +15,40 @@ beforeAll(async () => {
 afterAll(async () => {
   await ts?.close();
   if (ts) await rmrf(ts.home);
+});
+
+describe("服务版本", () => {
+  it("MCP serverInfo.version 等于 package.json.version（单一版本源，S4）", async () => {
+    const info = ts.client.getServerVersion()!;
+    expect(info.name).toBe("tianshu-mcp");
+    expect(info.version).toBe(pkg.version);
+  });
+});
+
+describe("工具 annotations（S4/S6：直接断言真实 tools/list）", () => {
+  it("read 类工具 readOnlyHint=true，write 类 false；cancel/rework destructiveHint=true", async () => {
+    const tools = await ts.client.listTools();
+    const byName = new Map(tools.tools.map((t) => [t.name, t]));
+    // 读类
+    for (const name of ["query_task", "list_tasks", "get_task_report", "get_profiles"]) {
+      expect(byName.get(name)?.annotations?.readOnlyHint, `${name} readOnly`).toBe(true);
+    }
+    // 写类
+    for (const name of ["run_task", "cancel_task", "rework_task", "verify_task"]) {
+      const ann = byName.get(name)?.annotations;
+      if (name === "verify_task") {
+        expect(ann?.readOnlyHint).toBe(true); // read 能力
+      } else {
+        expect(ann?.readOnlyHint).toBe(false);
+      }
+    }
+    // destructive
+    expect(byName.get("cancel_task")?.annotations?.destructiveHint).toBe(true);
+    expect(byName.get("rework_task")?.annotations?.destructiveHint).toBe(true);
+    // openWorld：仅 run_task
+    expect(byName.get("run_task")?.annotations?.openWorldHint).toBe(true);
+    expect(byName.get("query_task")?.annotations?.openWorldHint).toBe(false);
+  });
 });
 
 describe("工具面", () => {

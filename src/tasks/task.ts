@@ -125,6 +125,12 @@ export interface TaskMeta {
   abortSource?: "user" | "shutdown" | "timeout" | "internal";
   /** rework_task 注入的追加指示（仅作用于下一轮 agent） */
   reworkFeedback?: string;
+  /** S4：最近一次验收的报告轮次（0-based，reportRound）——区别于 agent roundsUsed */
+  reportRound?: number;
+  /** S4：最近一次验收来源：run_task 自动 / verify_task 手动；不覆盖 agentId */
+  verificationSource?: "auto" | "manual";
+  /** S4：最近一次手动验收结论（不改变 agent 任务终态时单独记录） */
+  latestVerificationVerdict?: "passed" | "failed";
 }
 
 /** manager 记录任务所需最小信息（内存态），与 TaskMeta 解耦 */
