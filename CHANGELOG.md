@@ -17,6 +17,39 @@
 
 ---
 
+## [0.1.6] — 2026-09-08
+
+### 修复
+
+- **项目文件夹绑定卡住 / 报「等待原生对话框超时」**（实战反馈，非适配器损坏）：
+  - `clickDropdownFooter` 旧实现只看 `element.click()` 的返回值就当点击成功，但该按钮点击后
+    原生弹窗可能并未出现 → 现在**点击后必须确认对话框真的出现**，否则记录下拉 DOM 快照并明确失败。
+  - 原生对话框探测在 Node 侧每 800ms 轮询一次，而 PowerShell 冷启动约 4.5–6s，
+    15s 预算只够约 2 次探测 → 改为**单次 PowerShell 调用内轮询**（脚本内 400ms 间隔），预算提到 30s。
+  - **中文路径被破坏**（实测 `D:\Trae项目\ts-bind-test` 被写成 `D:Traes-bind-test`）：
+    SendKeys/剪贴板受控制台代码页影响 → 改用 Win32 **`WM_SETTEXT`** 直接写入编辑框，CJK 路径完全可靠。
+  - **确认按钮点到了文件列表项**：`AutomationId="1"` 不唯一（列表行也用 0/1/2…）→ 改为
+    **AutomationId=1 且 ControlType=Pane** 组合定位后再按矩形坐标点击。
+  - PowerShell 输出中文乱码 → 脚本内**只用 ASCII 输出**，Node 侧 `localizeDialogMessage()` 映射回中文。
+
+### 新增
+
+- **非 Work 模式的绑定兜底**：在 Code/Design 模式绑定失败时自动**回落 Work 重试一次**，
+  成功后再切回目标模式并复核项目仍在；两次都失败才报错，错误信息包含两种模式各自的原因。
+- 真机验证：对**不在下拉列表**的新项目（`D:\Trae项目\ts-bind-test`）执行
+  `run_task(agentId=traework, mode=Code)` 全链路通过——原生对话框写入路径 → 点击确认 →
+  项目进入 TraeWork 列表（`solo-lite.local-project-folders` 22→23 条）→ 发送任务 → 自动验收 `succeeded`。
+
+### 变更
+
+- `docs/traework-cdp.md` / `.en.md`：踩坑表新增 7 条；补充「下拉项 ≠ 项目 map」的事实与兜底说明。
+
+### 测试
+
+- 测试总数 **167 → 172**（新增对话框消息映射/平台分支单测 + Code→Work 兜底集成测试）。
+
+---
+
 ## [0.1.5] — 2026-09-08
 
 ### 新增
@@ -148,7 +181,8 @@
 
 ---
 
-[未发布]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.5...HEAD
+[未发布]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.6...HEAD
+[0.1.6]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.2...v0.1.3

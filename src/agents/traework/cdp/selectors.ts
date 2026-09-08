@@ -145,11 +145,11 @@ export const SELECTORS: Record<SelectorKey, SelectorSpec> = {
     note: "分组标题（如「最近」）",
   },
   cascadeMenuFooter: {
-    // 实机 1.107.1：底部「选择文件夹」是 BUTTON.cascadeFooterButton-ISVymP
+    // 实机 1.107.1：底部「选择文件夹」是 BUTTON.cascadeFooterButton-ISVymP（内层 DIV.cascadeFooter-gPXKNi）
     primary: '[class*="cascadeFooterButton"]',
-    fallbacks: ['[class*="cascadeFooter"]', '[class*="cascadeMenuFooter"]'],
+    fallbacks: ['[class*="cascadeFooter"]', '[class*="cascadeMenuFooter"]', '[class*="footer"] [class*="utton"]'],
     verified: true,
-    note: "下拉底部「选择文件夹」按钮（点击后弹 Windows 原生对话框）",
+    note: "下拉底部「选择文件夹」按钮（点击后弹 Windows 原生对话框）；注意 click() 可能不触发原生弹窗，需确认对话框真的出现",
   },
   messageContainer: {
     primary: ".message-list-cache-container",

@@ -72,8 +72,16 @@ Execution sequence (mapping the 8 requested steps):
 > **each keep an independent project binding** — switching modes replaces the input bar's project with
 > whatever that mode last used. So the mode must be switched first, then the project bound inside it.
 >
+> **Fallback for non-Work modes**: if binding fails in the target mode (Code/Design), the driver
+> **falls back to Work once**, then switches back to the target mode and re-verifies the project is still
+> bound. Only if both attempts fail does it report an error (including the reason from each mode).
+>
 > **Mode resolution priority**: explicit `mode` parameter > task text > `Work`.
 > Text detection accepts mixed Chinese/English phrasing ("switch to Code mode", "use design mode", "工作模式", "代码模式", "设计模式", …).
+>
+> **The dropdown's 11 entries ≠ the 22-entry project map**: dropdown rows come from TraeWork's
+> server-side project list, whereas `solo-lite.local-project-folders` is only a local path-backfill cache.
+> "Present in the map" does not mean the dropdown will match; a miss still goes through the native dialog.
 
 Real-machine probe (diagnostics; TraeWork must be running):
 
@@ -227,6 +235,12 @@ user's own running TraeWork instance (data intact, restarted). They are now hard
 | New instance: no elements found | CDP port ready before DOM rendered | `waitForUi()` waits for the chat input (up to 60 s) |
 | Bound project still re-selected | The placeholder class disappears once bound | `readBoundProject()` reads the input-bar text and reuses it |
 | Killed the user's TraeWork | `taskkill /T` killed the process tree, hitting the user instance | See §6: reuse-first + command-line check + no `/T` |
+| **Clicked "选择文件夹" but got "waiting for native dialog timed out"** | `element.click()` returned true yet the native popup never appeared; old code trusted the click result | After clicking, **confirm the dialog actually appeared** (`findFolderDialog()`); otherwise log a dropdown DOM snapshot and fail loudly |
+| **Dialog detection "timed out" although the dialog was open** | PowerShell cold start is ~4.5–6 s; old code polled from Node every 800 ms, so a 15 s budget allowed only ~2 probes | Poll **inside a single PowerShell call** (400 ms interval) and raise the budget to 30 s |
+| **CJK path became `D:Traes-bind-test`** | SendKeys/clipboard are mangled by the console code page (CJK and backslashes dropped) | Write the path via Win32 **`WM_SETTEXT`** (handle from UIA) — fully reliable for CJK |
+| **Confirm button not clickable / clicked a file row** | `AutomationId="1"` is not unique — list rows also use 0/1/2…; the confirm control is a Pane with no InvokePattern | Locate by **AutomationId=1 AND ControlType=Pane**, then click its bounding rect |
+| **PowerShell output garbled for Chinese** | Console code page is not UTF-8 | Emit **ASCII-only** from the script and map back to Chinese via `localizeDialogMessage()` |
+| **Binding fails with `mode=Code`** | The "select folder" path is unreliable outside Work mode | `bindProject` **falls back to Work once**, then switches back to the target mode |
 
 ---
 

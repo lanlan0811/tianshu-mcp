@@ -18,6 +18,42 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.1.6] — 2026-09-08
+
+### Fixed
+
+- **Project-folder binding got stuck / reported "waiting for native dialog timed out"** (field report; the adapter was not broken):
+  - `clickDropdownFooter` used to trust `element.click()`'s return value, but the native popup may never
+    appear → it now **confirms the dialog actually appeared**, otherwise it logs a dropdown DOM snapshot and fails loudly.
+  - Dialog detection polled from Node every 800 ms while PowerShell cold start is ~4.5–6 s, so a 15 s budget
+    allowed only ~2 probes → now it polls **inside a single PowerShell call** (400 ms interval) with a 30 s budget.
+  - **CJK paths were corrupted** (measured: `D:\Trae项目\ts-bind-test` became `D:Traes-bind-test`):
+    SendKeys/clipboard are mangled by the console code page → the path is now written via Win32
+    **`WM_SETTEXT`**, which is fully reliable for CJK.
+  - **The confirm click hit a file-list row**: `AutomationId="1"` is not unique (rows also use 0/1/2…) →
+    now located by **AutomationId=1 AND ControlType=Pane**, then clicked by bounding rect.
+  - PowerShell output was garbled for Chinese → the script now emits **ASCII-only** and Node maps it back
+    via `localizeDialogMessage()`.
+
+### Added
+
+- **Non-Work binding fallback**: when binding fails in Code/Design, the driver **falls back to Work once**,
+  switches back to the target mode, and re-verifies the project is still bound; only if both attempts fail
+  does it report an error including the reason from each mode.
+- Machine-verified: for a project **absent from the dropdown** (`D:\Trae项目\ts-bind-test`),
+  `run_task(agentId=traework, mode=Code)` passed end-to-end — native dialog wrote the path → confirm clicked →
+  project entered TraeWork's list (`solo-lite.local-project-folders` 22→23) → task sent → auto-verification `succeeded`.
+
+### Changed
+
+- `docs/traework-cdp.md` / `.en.md`: 7 new pitfall entries; added the "dropdown entries ≠ project map" fact and the fallback note.
+
+### Testing
+
+- Total tests **167 → 172** (new dialog message-mapping/platform-branch unit tests + Code→Work fallback integration test).
+
+---
+
 ## [0.1.5] — 2026-09-08
 
 ### Added
@@ -168,7 +204,8 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
-[Unreleased]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.6...HEAD
+[0.1.6]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.2...v0.1.3

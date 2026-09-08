@@ -10,7 +10,7 @@
 import type { TraeworkCdpClient } from "../cdp/client.js";
 import type { AgentRunLogger } from "../../adapter.js";
 import type { SelectorOverrides } from "../cdp/selectors.js";
-import { pickFolderViaNativeDialog } from "../computeruse/dialog.js";
+import { findFolderDialog, pickFolderViaNativeDialog } from "../computeruse/dialog.js";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -292,25 +292,71 @@ async function openProjectDropdown(
   return (await cdp.exists("cascadeMenu", opts.selectors)) || (await readProjectItems(cdp, opts.selectors)).length > 0;
 }
 
-/** 点下拉底部「选择文件夹」→ 原生对话框 */
+/**
+ * 点下拉底部「选择文件夹」→ 唤起原生对话框。
+ *
+ * 实测踩坑（2026-09-08）：`element.click()` 对某些 DirectUI 按钮不会真正触发原生
+ * 弹窗（点击「成功」但对话框没出现），旧实现只看点击返回值就返回 true，导致下游
+ * 「等待原生对话框超时」这一误导性错误。现在**点击后必须确认原生对话框真的出现**。
+ */
 async function clickDropdownFooter(
   cdp: TraeworkCdpClient,
   opts: { selectors?: SelectorOverrides; logger: AgentRunLogger },
 ): Promise<boolean> {
-  // 底部按钮可能是「选择文件夹」文本；先按选择器，再按文本兜底
-  if (await cdp.click("cascadeMenuFooter", opts.selectors)) {
-    await sleep(1200);
-    return true;
+  const { logger } = opts;
+
+  // 1) 先按语义键点击（cascadeFooterButton 等）
+  const byKey = await cdp.click("cascadeMenuFooter", opts.selectors);
+  // 2) 文本兜底：扩大到 role=button 与 footer 容器内的可点击元素
+  const byText = byKey
+    ? false
+    : await cdp.evaluate<boolean>(`(function(){
+        const inFooter = [...document.querySelectorAll('[class*="cascadeFooter"] *, [class*="cascadeMenu"] *')];
+        const pool = inFooter.length ? inFooter : [...document.querySelectorAll('button,[role="button"],div,span,a')];
+        const btn = pool.find(e => {
+          const t = (e.textContent || '').trim();
+          const r = e.getBoundingClientRect();
+          return t === '选择文件夹' && r.width > 0 && r.height > 0;
+        });
+        if (!btn) return false;
+        btn.click();
+        return true;
+      })()`);
+
+  if (!byKey && !byText) {
+    logger.warn("[traework] 未找到下拉底部「选择文件夹」按钮（选择器与文本兜底均未命中）");
+    return false;
   }
-  const clicked = await cdp.evaluate<boolean>(`(function(){
-    const all = [...document.querySelectorAll('button,div,span,a')];
-    const btn = all.find(e => (e.textContent || '').trim() === '选择文件夹' && e.getBoundingClientRect().width > 0);
-    if (!btn) return false;
-    btn.click();
-    return true;
-  })()`);
-  if (clicked) await sleep(1200);
-  return clicked === true;
+
+  // 3) 关键：确认原生对话框真的被唤起（避免「点了但没弹」被当成成功）
+  const appeared = await waitDialogAppeared();
+  if (!appeared) {
+    // 记录当前下拉 DOM 快照，便于诊断选择器漂移
+    const snapshot = await cdp
+      .evaluateString(`(function(){
+        const nodes = [...document.querySelectorAll('[class*="cascade"]')].slice(0, 12)
+          .map(e => String(e.className).slice(0, 80) + ' | ' + (e.textContent || '').trim().slice(0, 30));
+        return JSON.stringify(nodes);
+      })()`)
+      .catch(() => "");
+    logger.warn(`[traework] 已点击「选择文件夹」但原生对话框未出现（点击=${byKey ? "选择器" : "文本"}）；下拉 DOM 快照: ${snapshot || "n/a"}`);
+    return false;
+  }
+  logger.info("[traework] 原生「选择文件夹」对话框已弹出");
+  return true;
+}
+
+/** 点击 footer 后等待原生对话框出现（脚本内轮询，单次 PowerShell 调用） */
+async function waitDialogAppeared(timeoutMs = 20_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    // eslint-disable-next-line no-await-in-loop
+    const d = await findFolderDialog();
+    if (d.found) return true;
+    if (Date.now() >= deadline) return false;
+    // eslint-disable-next-line no-await-in-loop
+    await sleep(1_500);
+  }
 }
 
 export interface BindProjectResult {
@@ -329,12 +375,51 @@ export async function bindProject(
   opts: { selectors?: SelectorOverrides; logger: AgentRunLogger; mode?: TraeworkMode },
 ): Promise<BindProjectResult> {
   const { selectors, logger } = opts;
-
-  // 实测（1.107.1）：「选择文件夹」按钮只在 Work 模式出现，先确保模式正确
   const wantMode = opts.mode ?? "Work";
-  const modeOk = await ensureMode(cdp, wantMode, { selectors, logger });
+
+  const first = await bindProjectOnce(cdp, projectPath, { selectors, logger, mode: wantMode });
+  if (first.bound || wantMode === "Work") return first;
+
+  // 兜底（实测 2026-09-08）：「选择文件夹」相关 UI 在非 Work 模式下可能不出现/不稳定
+  // （失败任务 mode=Code 时下拉底部按钮点击后原生对话框未弹出）。回落 Work 完成绑定，
+  // 再切回目标模式；仅重试一次，避免无限循环。
+  logger.warn(`[traework] 在 ${wantMode} 模式绑定失败（${first.message}），回落 Work 模式重试一次`);
+  const inWork = await bindProjectOnce(cdp, projectPath, { selectors, logger, mode: "Work" });
+  if (!inWork.bound) {
+    // 把两次失败信息都带出来，便于定位
+    return {
+      bound: false,
+      method: inWork.method,
+      message: `${wantMode} 模式失败（${first.message}）；Work 模式亦失败（${inWork.message}）`,
+    };
+  }
+  // 切回目标模式
+  const backOk = await ensureMode(cdp, wantMode, { selectors, logger });
+  if (!backOk) {
+    logger.warn(`[traework] Work 模式绑定成功，但切回 ${wantMode} 模式失败`);
+  }
+  const stillBound = await readBoundProject(cdp, selectors);
+  if (!stillBound || !matchProjectItem({ name: stillBound, subtitle: "" }, projectPath)) {
+    return {
+      bound: false,
+      method: "failed",
+      message: `Work 模式绑定成功但切回 ${wantMode} 后项目丢失（当前：${stillBound || "空"}）`,
+    };
+  }
+  return { bound: true, method: inWork.method, message: `${inWork.message}（经 Work 模式兜底，已切回 ${wantMode}）` };
+}
+
+/** 单次绑定尝试（在指定模式下） */
+async function bindProjectOnce(
+  cdp: TraeworkCdpClient,
+  projectPath: string,
+  opts: { selectors?: SelectorOverrides; logger: AgentRunLogger; mode: TraeworkMode },
+): Promise<BindProjectResult> {
+  const { selectors, logger } = opts;
+
+  const modeOk = await ensureMode(cdp, opts.mode, { selectors, logger });
   if (!modeOk) {
-    logger.warn(`[traework] 未能确认处于 ${wantMode} 模式，仍尝试绑定项目（fail-open）`);
+    logger.warn(`[traework] 未能确认处于 ${opts.mode} 模式，仍尝试绑定项目（fail-open）`);
   }
 
   // 已绑定且就是目标项目 → 直接返回（避免多余操作）
@@ -371,7 +456,7 @@ export async function bindProject(
   // 未命中 → 底部「选择文件夹」→ 原生对话框
   logger.info(`[traework] 下拉未命中项目「${projectBasename(projectPath)}」，改走原生选择文件夹对话框`);
   if (!(await clickDropdownFooter(cdp, opts))) {
-    return { bound: false, method: "failed", message: "下拉未命中且找不到底部「选择文件夹」按钮" };
+    return { bound: false, method: "failed", message: "下拉未命中且底部「选择文件夹」未成功唤起原生对话框" };
   }
   const picked = await pickFolderViaNativeDialog(projectPath, { logger });
   if (!picked.ok) {

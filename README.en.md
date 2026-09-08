@@ -48,7 +48,7 @@ Tianshu plays the role of the overall commander; this MCP server is the **schedu
 ```bash
 npm install
 npm run build        # → dist/
-npm test             # 167 tests: unit + stub-agent 3-playbook integration + protocol + TraeWork fake-CDP + cancel/timeout/baseline/params/config regression
+npm test             # 172 tests: unit + stub-agent 3-playbook integration + protocol + TraeWork fake-CDP + cancel/timeout/baseline/params/config regression
 ```
 
 ### Add it in Tianshu (recommended)
@@ -112,6 +112,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=traework, task=「Switch to Code mod
 | [docs/adapter-matrix.en.md](docs/adapter-matrix.en.md) | Agent capability research matrix (Codex/Zcode/TraeWork/extension slots) |
 | [docs/traework-cdp.en.md](docs/traework-cdp.en.md) | TraeWork GUI driver (CDP): mechanism, config, mode switching, selectors, safety invariants, pitfalls, verification record |
 | [docs/acceptance-config.en.md](docs/acceptance-config.en.md) | Project-level `.tianshu-mcp/acceptance.json` acceptance config spec |
+| [docs/release-v0.1.6.en.md](docs/release-v0.1.6.en.md) | v0.1.6 release notes (project-folder binding fix) |
 | [docs/release-v0.1.5.en.md](docs/release-v0.1.5.en.md) | v0.1.5 release notes (mode switching, README/icon, release artifacts) |
 
 > Chinese documentation: see [README.md](README.md).
@@ -147,6 +148,10 @@ run_task(projectPath=D:/xxx/my-app, agentId=traework, task=「Switch to Code mod
   - `run_task` gained `mode` (Work/Code/Design), explicit parameter plus task-text fallback; all three modes **machine-verified end-to-end**
   - Key finding: the three modes keep independent project bindings → order is new session → switch mode → bind project inside that mode
   - README rewritten (bilingual + stack badges + dedicated SVG icon/banner); tests 153 → **167**
+
+- **M6 — Project-folder binding fix + v0.1.6** ✅ (2026-09-08, see [release-v0.1.6.en.md](docs/release-v0.1.6.en.md))
+  - Fixed three stacked defects: footer click never verified the popup, detection budget eaten by PowerShell cold start, CJK paths destroyed by the console code page
+  - Added a Work fallback for non-Work binding; machine-verified "new project absent from the dropdown + mode=Code" end-to-end; tests 167 → **172**
 
 ## Recommended phrasing (for Tianshu)
 

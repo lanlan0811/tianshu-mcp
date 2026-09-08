@@ -48,7 +48,7 @@
 ```bash
 npm install
 npm run build        # → dist/
-npm test             # 167 项测试：单元 + stub-agent 三剧本集成 + 协议 + TraeWork 假 CDP + 取消/超时/基线/参数/配置回归
+npm test             # 172 项测试：单元 + stub-agent 三剧本集成 + 协议 + TraeWork 假 CDP + 取消/超时/基线/参数/配置回归
 ```
 
 ### 在天枢里添加（推荐）
@@ -111,6 +111,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=traework, task=「切换到 Code 模
 | [docs/adapter-matrix.md](docs/adapter-matrix.md) | 各 Agent 能力调研矩阵（Codex/Zcode/TraeWork/扩展位） |
 | [docs/traework-cdp.md](docs/traework-cdp.md) | TraeWork GUI 驱动（CDP）：原理、配置、模式切换、选择器、安全红线、踩坑记录、验证记录 |
 | [docs/acceptance-config.md](docs/acceptance-config.md) | 项目级 `.tianshu-mcp/acceptance.json` 验收配置规范 |
+| [docs/release-v0.1.6.md](docs/release-v0.1.6.md) | v0.1.6 发布说明（项目文件夹绑定修复） |
 | [docs/release-v0.1.5.md](docs/release-v0.1.5.md) | v0.1.5 发布说明（模式切换、README/图标、发布产物） |
 | [docs/npm-publish-guide.md](docs/npm-publish-guide.md) | npm 发布步骤与凭证说明 |
 | [docs/m2-smoke-record.md](docs/m2-smoke-record.md) | M2 真实 codex 冒烟记录（run_task→verify_task 通过 + 缺陷修复） |
@@ -152,6 +153,10 @@ run_task(projectPath=D:/xxx/my-app, agentId=traework, task=「切换到 Code 模
   - `run_task` 新增 `mode`（Work/Code/Design），显式参数 + 任务书文本兜底；三种模式**真机端到端验证通过**
   - 实测关键点：三种模式各自维护独立项目绑定 → 顺序改为「新建会话 → 切模式 → 在目标模式绑定项目」
   - README 重写（中英双语 + 技术栈勋章 + 专属 SVG 图标/横幅）；测试 153 → **167**
+
+- **M6 — 项目文件夹绑定修复 + v0.1.6** ✅（2026-09-08，见 [release-v0.1.6.md](docs/release-v0.1.6.md)）
+  - 修复三处叠加缺陷：footer 点击未确认弹窗、检测被 PowerShell 冷启动吃光预算、CJK 路径被控制台代码页破坏
+  - 新增非 Work 模式绑定回落 Work 重试；真机验证「不在下拉的新项目 + mode=Code」全链路通过；测试 167 → **172**
 
 ## 推荐用法（给天枢的提示语）
 
