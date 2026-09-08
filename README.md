@@ -30,7 +30,7 @@ TypeScript · Node.js ≥ 20 · `@modelcontextprotocol/sdk`（stdio）
 ```bash
 npm install
 npm run build        # → dist/
-npm test             # 150 项测试：单元 + stub-agent 三剧本集成 + 协议 + TraeWork 假 CDP + 取消/超时/基线/参数/配置回归
+npm test             # 153 项测试：单元 + stub-agent 三剧本集成 + 协议 + TraeWork 假 CDP + 取消/超时/基线/参数/配置回归
 ```
 
 配置为天枢 MCP server（本地开发模式）：
@@ -99,7 +99,7 @@ run_task(projectPath=D:/xxx/my-app, task=「…任务书…」, agentId=codex, a
   - 结论更正：无头 CLI 确实不存在，但 `--remote-debugging-port` 可驱动聊天 UI；`traework` 改为 `driver=gui` / `status=ready`
   - 能力：启动/复用实例 → 新建会话 → 绑定项目文件夹（下拉命中优先，未命中走受限 computer-use 原生对话框）→ 可选指定模型 → 任务书回读校验后发送 → 轮询到完成 → 自动验收 → 失败生成修复计划并同会话返修
   - 安全：默认复用用户实例、绝不按进程树强杀、终止前核对命令行；computer-use 仅允许 TraeWork 文件夹对话框
-  - 真机验证：`run_task(agentId=traework, model=GLM-5.3, autoVerify=true)` 驱动 TraeWork 创建文件并验收通过；测试 72 → **150**
+  - 真机验证：`run_task(agentId=traework, model=GLM-5.3, autoVerify=true)` 驱动 TraeWork 创建文件并验收通过；测试 72 → **153**；CI 7/7 全绿（ubuntu/macos/windows × Node 20/22）
 
 ## 验收整改（R1–R8，2026-09-07；S1–S6，2026-09-08）
 

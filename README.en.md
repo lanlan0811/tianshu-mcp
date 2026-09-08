@@ -30,7 +30,7 @@ Tianshu plays the role of the overall commander; this MCP server is the **schedu
 ```bash
 npm install
 npm run build        # → dist/
-npm test             # 150 tests: unit + stub-agent 3-playbook integration + protocol + TraeWork fake-CDP + cancel/timeout/baseline/params/config regression
+npm test             # 153 tests: unit + stub-agent 3-playbook integration + protocol + TraeWork fake-CDP + cancel/timeout/baseline/params/config regression
 ```
 
 Register as a Tianshu MCP server (local dev mode):
@@ -91,7 +91,7 @@ run_task(projectPath=D:/xxx/my-app, task=「…task brief…」, agentId=codex, 
   - Correction: no headless CLI exists, but `--remote-debugging-port` can drive the chat UI; `traework` is now `driver=gui` / `status=ready`
   - Capabilities: launch/reuse instance → new session → bind project folder (dropdown first, restricted computer-use native dialog as fallback) → optional model selection → read-back-verified send → poll to completion → auto-verify → repair-plan file + same-session rework on failure
   - Safety: reuse the user's instance by default, never kill a process tree, verify the command line before terminating; computer-use is limited to TraeWork's folder picker
-  - Machine-verified: `run_task(agentId=traework, model=GLM-5.3, autoVerify=true)` drove TraeWork to create a file and passed acceptance; tests 72 → **150**
+  - Machine-verified: `run_task(agentId=traework, model=GLM-5.3, autoVerify=true)` drove TraeWork to create a file and passed acceptance; tests 72 → **153**; CI 7/7 green (ubuntu/macos/windows × Node 20/22)
 
 ## Acceptance remediation (R1–R8, 2026-09-07; S1–S6, 2026-09-08)
 

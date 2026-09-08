@@ -235,7 +235,20 @@ src/agents/traework/
 | 项目绑定 | ✅ 未命中下拉时经原生对话框成功登记 `D:\Trae项目\ts-e2e-smoke`（`state.vscdb` 条目 18→19） |
 | 模型切换 | ✅ 切换到 `GLM-5.3` 并严格验证 |
 | **端到端** | ✅ `run_task(agentId=traework, model=GLM-5.3, autoVerify=true)` 驱动 TraeWork 创建 `result.txt`，自动验收通过（`succeeded`，changedFiles `result.txt`） |
-| 单测/集成 | ✅ 150/150 通过（新增 78 项） |
+| 单测/集成 | ✅ 153/153 通过（新增 81 项，含返修闭环与竞态回归） |
 | lint / typecheck / build | ✅ 全绿 |
+| **CI（GitHub Actions）** | ✅ **7/7 全绿** —— ubuntu/macos/windows × Node 20/22 + npm tarball 检查（run 34222781967，commit `e8c59cc`） |
+
+### 10.1 实现期修复的两个既有缺陷
+
+1. **rework 反馈竞态（预存 bug，负载下偶发、CI Windows/Node22 命中）**
+   - 现象：`rework_task(feedback)` 后返修轮拿不到 feedback，任务卡在 failed。
+   - 根因：终态快照先落盘，调用方看到 failed 后立即写入 `reworkFeedback`；而上一轮
+     `startTask` 的**收尾**会 `delete meta.reworkFeedback`，把刚写入的新反馈一起抹掉。
+   - 修复：改为在 `startTask` **启动时**原子取走并清空 feedback，不再在收尾 delete。
+   - 回归：`test/integration/rework-feedback-race.test.ts`（连续 3 轮「失败→立即 rework」）。
+2. **`projectBasename` 跨平台（Linux/macOS CI 失败）**
+   - 现象：Linux/macOS 上 `path.basename("D:\\a\\b")` 返回整串（POSIX 不把 `\` 当分隔符）。
+   - 修复：显式按 `\` 与 `/` 切分。
 
 > 真机测试需 TraeWork 运行，**不入 CI**（见 `docs/acceptance-config.md` 的测试分层说明）。

@@ -251,8 +251,22 @@ src/agents/traework/
 | Project binding | ✅ When not in the dropdown, the native dialog registered `D:\Trae项目\ts-e2e-smoke` (`state.vscdb` entries 18→19) |
 | Model switch | ✅ Switched to `GLM-5.3` with strict verification |
 | **End-to-end** | ✅ `run_task(agentId=traework, model=GLM-5.3, autoVerify=true)` drove TraeWork to create `result.txt`; auto-verification passed (`succeeded`, changedFiles `result.txt`) |
-| Unit/integration | ✅ 150/150 passed (78 new) |
+| Unit/integration | ✅ 153/153 passed (81 new, including the rework loop and race regression) |
 | lint / typecheck / build | ✅ all clean |
+| **CI (GitHub Actions)** | ✅ **7/7 green** — ubuntu/macos/windows × Node 20/22 + npm tarball check (run 34222781967, commit `e8c59cc`) |
+
+### 10.1 Two pre-existing defects fixed during implementation
+
+1. **Rework feedback race (pre-existing; intermittent under load, hit on CI Windows/Node 22)**
+   - Symptom: after `rework_task(feedback)`, the rework round received no feedback and stayed `failed`.
+   - Root cause: the terminal snapshot is written first, so the caller can immediately set
+     `reworkFeedback`; the *previous* run's post-processing then did `delete meta.reworkFeedback`,
+     erasing the freshly written feedback.
+   - Fix: consume and clear the feedback atomically when `startTask` begins; no longer delete in post-processing.
+   - Regression: `test/integration/rework-feedback-race.test.ts` (three consecutive failure→immediate-rework rounds).
+2. **`projectBasename` cross-platform (failed on Linux/macOS CI)**
+   - Symptom: on Linux/macOS, `path.basename("D:\\a\\b")` returns the whole string (POSIX does not treat `\` as a separator).
+   - Fix: split explicitly on both `\` and `/`.
 
 > Real-machine tests require a running TraeWork and are **not part of CI** (see the test layering in
 > `docs/acceptance-config.md`).
