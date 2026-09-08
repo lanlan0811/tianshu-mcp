@@ -8,9 +8,28 @@
 - `npm install && npm run build` → `dist/` (local mode) or publish to use npx.
 - Data dir defaults to `~/.tianshu-mcp` (override `TIANSHU_MCP_HOME`).
 
-## 1. Config (two modes in config.json `mcp.servers`)
+## 1. Config (UI dialog / config.json)
 
-### Mode A — local dev (recommended first)
+Tianshu stores MCP servers under `mcp.servers` in its data-dir `config.json`.
+
+### Option 0 — add via the Tianshu UI (easiest)
+
+In Tianshu go to **Settings → MCP Servers → Add** and fill in (transport: `stdio (local process)`):
+
+| Field | npm distribution (recommended) | Local dev |
+|---|---|---|
+| Server ID | `tianshu-mcp` | `tianshu-mcp` |
+| Transport | `stdio (local process)` | `stdio (local process)` |
+| Command | `npx` | `node` |
+| Arguments (space-separated) | `-y tianshu-mcp` | `<absolute-repo-path>/dist/index.js` |
+
+- The Server ID becomes the tool prefix: `tianshu-mcp` → `mcp__tianshu-mcp__run_task` and 7 others.
+- Arguments are space-separated with **no quotes**; for local dev replace `<absolute-repo-path>` with a real path.
+- The dialog has no env-var field; to set `TIANSHU_MCP_HOME`, use the config.json option below.
+
+### Option 1 — config.json (supports env vars)
+
+#### Mode A — local dev (recommended first)
 
 ```jsonc
 {
@@ -27,7 +46,7 @@
 }
 ```
 
-### Mode B — npm distribution
+#### Mode B — npm distribution
 
 ```jsonc
 { "tianshu-mcp": { "command": "npx", "args": ["-y", "tianshu-mcp"] } }

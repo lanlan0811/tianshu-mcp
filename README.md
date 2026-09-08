@@ -49,6 +49,24 @@ npm run build        # → dist/
 npm test             # 167 项测试：单元 + stub-agent 三剧本集成 + 协议 + TraeWork 假 CDP + 取消/超时/基线/参数/配置回归
 ```
 
+### 在天枢里添加（推荐）
+
+天枢「设置 → MCP 服务器 → 添加」，按下面填写即可（传输方式选 `stdio（本地进程）`）：
+
+| 字段 | npm 分发（推荐） | 本地开发 |
+|---|---|---|
+| 服务器 ID | `tianshu-mcp` | `tianshu-mcp` |
+| 传输方式 | `stdio（本地进程）` | `stdio（本地进程）` |
+| 命令 | `npx` | `node` |
+| 参数（空格分隔） | `-y tianshu-mcp` | `<仓库绝对路径>/dist/index.js` |
+
+> - 服务器 ID 即工具前缀：填 `tianshu-mcp` 后工具名为 `mcp__tianshu-mcp__run_task` 等 8 个。
+> - 参数按空格分隔填写，**不要加引号**；本地开发模式请把 `<仓库绝对路径>` 换成真实绝对路径（如 `D:/Trae项目/tianshu-mcp/dist/index.js`）。
+> - 界面未提供环境变量输入框；如需自定义数据目录，改用下面的 `config.json` 方式设置 `TIANSHU_MCP_HOME`。
+> - 添加后连接成功即完成；新开会话即可看到 8 个工具。
+
+### 或改 config.json（可配环境变量）
+
 配置为天枢 MCP server（本地开发模式）：
 
 ```jsonc

@@ -49,6 +49,25 @@ npm run build        # → dist/
 npm test             # 167 tests: unit + stub-agent 3-playbook integration + protocol + TraeWork fake-CDP + cancel/timeout/baseline/params/config regression
 ```
 
+### Add it in Tianshu (recommended)
+
+In Tianshu go to **Settings → MCP Servers → Add** and fill in the fields below
+(transport: `stdio (local process)`):
+
+| Field | npm distribution (recommended) | Local dev |
+|---|---|---|
+| Server ID | `tianshu-mcp` | `tianshu-mcp` |
+| Transport | `stdio (local process)` | `stdio (local process)` |
+| Command | `npx` | `node` |
+| Arguments (space-separated) | `-y tianshu-mcp` | `<absolute-repo-path>/dist/index.js` |
+
+> - The server ID becomes the tool prefix: with `tianshu-mcp` the tools are `mcp__tianshu-mcp__run_task` and 7 others.
+> - Arguments are space-separated, **no quotes**; for local dev replace `<absolute-repo-path>` with a real path (e.g. `D:/TraeProject/tianshu-mcp/dist/index.js`).
+> - The dialog has no env-var field; to customize the data directory, use the `config.json` method below and set `TIANSHU_MCP_HOME`.
+> - Once the server connects, open a new session and the 8 tools appear.
+
+### Or edit config.json (supports env vars)
+
 Register as a Tianshu MCP server (local dev mode):
 
 ```jsonc

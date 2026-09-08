@@ -8,11 +8,28 @@
 - 先 `npm install && npm run build` 生成 `dist/`（本地开发模式），或发布后走 npx。
 - 数据目录默认 `~/.tianshu-mcp`（env `TIANSHU_MCP_HOME` 可覆盖）；首次启动自动创建。
 
-## 1. 接入配置（config.json 两种模式）
+## 1. 接入配置（界面添加 / config.json）
 
 天枢的 MCP server 配置在数据目录 `config.json` 顶层 `mcp.servers`。
 
-### 模式 A：本地开发（推荐先验证）
+### 方式 0：天枢界面添加（最省事）
+
+天枢「设置 → MCP 服务器 → 添加」，按下面填写（传输方式选 `stdio（本地进程）`）：
+
+| 字段 | npm 分发（推荐） | 本地开发 |
+|---|---|---|
+| 服务器 ID | `tianshu-mcp` | `tianshu-mcp` |
+| 传输方式 | `stdio（本地进程）` | `stdio（本地进程）` |
+| 命令 | `npx` | `node` |
+| 参数（空格分隔） | `-y tianshu-mcp` | `<仓库绝对路径>/dist/index.js` |
+
+- 服务器 ID 决定工具前缀：填 `tianshu-mcp` → 工具名 `mcp__tianshu-mcp__run_task` 等 8 个。
+- 参数按空格分隔，不要加引号；本地开发需把 `<仓库绝对路径>` 换成真实绝对路径。
+- 界面没有环境变量输入框；需要自定义数据目录（`TIANSHU_MCP_HOME`）时用下面的 `config.json` 方式。
+
+### 方式 1：config.json（可配环境变量）
+
+#### 模式 A：本地开发（推荐先验证）
 
 ```jsonc
 {
