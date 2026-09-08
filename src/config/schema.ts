@@ -148,6 +148,10 @@ export const ProjectRecordSchema = z.object({
 });
 export type ProjectRecord = z.infer<typeof ProjectRecordSchema>;
 
+/** projects.json 整体文件 schema（S5：不再用对象强制类型转换） */
+export const ProjectsFileSchema = z.record(z.string().min(1), ProjectRecordSchema);
+export type ProjectsFile = z.infer<typeof ProjectsFileSchema>;
+
 /* ---------------- 项目内 .tianshu-mcp/acceptance.json ---------------- */
 
 export const AcceptanceConfigSchema = z.object({
