@@ -33,6 +33,8 @@ export interface FakeDomState {
   openDropdown: "project" | "model" | null;
   /** 当前面板模式（Work/Code/Design） */
   mode: string;
+  /** ensureMode 查找表达式解析出的待切换模式（clickAt 时应用） */
+  pendingMode: "Work" | "Code" | "Design" | null;
   /**
    * 发送后立刻追加的助手回复（同步、确定性）。
    * 用字段而非定时器：轮询间隔（pollIntervalMs）可能小到 1ms 且 stableRounds 很小，
@@ -55,6 +57,7 @@ export function makeFakeState(over: Partial<FakeDomState> = {}): FakeDomState {
     nativeDialogCalls: 0,
     openDropdown: null,
     mode: "Work",
+    pendingMode: null,
     ...over,
   };
 }
@@ -95,8 +98,10 @@ export class FakeCdpClient {
     if (expression.includes("mode-switcher-btn") && expression.includes("tabActive")) {
       return this.state.mode;
     }
-    // 模式分段查找（切换用）
+    // 模式分段查找（切换用）：从表达式中解析请求的模式名，记录待应用
     if (expression.includes("mode-switcher-btn") && expression.includes("getBoundingClientRect")) {
+      const m = expression.match(/===\s*"(Work|Code|Design)"/);
+      this.state.pendingMode = (m?.[1] as FakeDomState["pendingMode"]) ?? null;
       return JSON.stringify({ x: 300, y: 300 });
     }
     // 项目下拉项读取
@@ -189,9 +194,11 @@ export class FakeCdpClient {
 
   async clickAt(x: number, y: number): Promise<void> {
     this.state.clicked.push(`at(${x},${y})`);
-    // 模式分段（x=300）
+    // 模式分段（x=300）：应用 pendingMode（由 ensureMode 的查找表达式记录），
+    // 不再硬编码 "Work"——否则请求 Code/Design 会被误判为「切换后验证不一致」。
     if (x === 300) {
-      this.state.mode = "Work";
+      this.state.mode = this.state.pendingMode ?? "Work";
+      this.state.pendingMode = null;
       return;
     }
     // 模型触发器（x=200）

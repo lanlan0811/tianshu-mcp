@@ -23,7 +23,16 @@ import {
   type ReadyInstance,
   type SpawnedInstance,
 } from "./launcher.js";
-import { bindProject, startNewSession } from "./ui/session.js";
+import {
+  bindProject,
+  ensureMode,
+  matchProjectItem,
+  projectBasename,
+  readBoundProject,
+  readMode,
+  resolveMode,
+  startNewSession,
+} from "./ui/session.js";
 import { buildPromptText, typeAndSend } from "./ui/composer.js";
 import { selectModel } from "./ui/model.js";
 import { judgePoll, makeMarker, parseAdded, type CompletionState } from "./ui/reply.js";
@@ -102,6 +111,7 @@ function guiOf(resolved: ResolvedAgent): GuiProfile {
     pollIntervalMs: g?.pollIntervalMs ?? 3_000,
     stableRounds: g?.stableRounds ?? 12,
     modelSwitch: g?.modelSwitch ?? true,
+    modeSwitch: g?.modeSwitch ?? true,
     freshSession: g?.freshSession ?? true,
     selectors: g?.selectors ?? {},
   };
@@ -211,14 +221,40 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
       if (!ok) logger.warn("[traework] 未能新建会话，将在当前会话继续（fail-open）");
     }
 
-    // ---- 3. 绑定项目文件夹 ----
-    const bound = await bindProject(cdp, ctx.projectPath, { selectors: gui.selectors, logger });
+    // ---- 3. 确定并切换面板模式（用户指定 / 任务书识别）----
+    // 实测（2026-09-08）：TraeWork 的 Work/Code/Design **各自维护独立的项目绑定**，
+    // 切换模式会把输入栏的项目换成该模式上次使用的项目。因此顺序必须是
+    // 「新建会话 → 切到目标模式 → 在目标模式里绑定项目」。
+    const target = gui.modeSwitch ? resolveMode(ctx.mode, ctx.task) : { mode: "Work" as const, source: "default" as const };
+    if (!gui.modeSwitch && ctx.mode) {
+      logger.info(`[traework] profile.gui.modeSwitch=false，忽略指定模式「${ctx.mode}」`);
+    }
+    if (target.mode !== "Work" || (gui.modeSwitch && ctx.mode)) {
+      logger.info(`[traework] 目标模式 ${target.mode}（来源：${target.source}），切换中…`);
+      const modeOk = await ensureMode(cdp, target.mode, { selectors: gui.selectors, logger });
+      if (!modeOk) {
+        return fail(`模式切换失败：无法切换到 ${target.mode} 模式（当前面板可能不可用）`, { hardFailure: true });
+      }
+    }
+
+    // ---- 4. 在目标模式下绑定项目文件夹 ----
+    const bound = await bindProject(cdp, ctx.projectPath, { selectors: gui.selectors, logger, mode: target.mode });
     if (!bound.bound) {
       return fail(`项目文件夹绑定失败（${bound.method}）：${bound.message}`, { hardFailure: true });
     }
-    logger.info(`[traework] 项目已绑定：${bound.message}`);
+    logger.info(`[traework] 项目已绑定（模式 ${target.mode}）：${bound.message}`);
 
-    // ---- 4. 切模型（用户指定时）----
+    // 复核：绑定后模式与项目都应就位
+    const afterMode = await readMode(cdp, gui.selectors);
+    const afterBound = await readBoundProject(cdp, gui.selectors);
+    if (afterMode && afterMode.toLowerCase() !== target.mode.toLowerCase()) {
+      return fail(`绑定项目后面板模式变为 ${afterMode}（期望 ${target.mode}），已中止以免在错误模式下开发`, { hardFailure: true });
+    }
+    if (!afterBound || !matchProjectItem({ name: afterBound, subtitle: "" }, ctx.projectPath)) {
+      return fail(`项目绑定校验失败（输入栏：${afterBound || "空"}，期望 ${projectBasename(ctx.projectPath)}）`, { hardFailure: true });
+    }
+
+    // ---- 5. 切模型（用户指定时）----
     if (ctx.model && gui.modelSwitch) {
       const sw = await selectModel(cdp, ctx.model, { selectors: gui.selectors, logger });
       if (!sw.ok) {
@@ -234,12 +270,12 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
       logger.info(`[traework] profile.gui.modelSwitch=false，忽略指定模型「${ctx.model}」`);
     }
 
-    // ---- 5. 写入任务书并发送 ----
+    // ---- 6. 写入任务书并发送 ----
     const promptText = buildPromptText(ctx.task, ctx.context, ctx.feedback);
     const marker = makeMarker();
     await typeAndSend(cdp, marker + promptText, { selectors: gui.selectors, logger });
 
-    // ---- 6. 轮询到完成 ----
+    // ---- 7. 轮询到完成 ----
     const base = await cdp.text("messageContainer", gui.selectors);
     let state: CompletionState = { prev: "", stable: 0 };
     const deadline = Date.now() + (ctx.taskTimeoutMs > 0 ? ctx.taskTimeoutMs : 30 * 60_000);

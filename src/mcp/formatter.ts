@@ -11,6 +11,10 @@ export interface MetaBlockFields {
   status?: string;
   agentId?: string;
   projectPath?: string;
+  /** GUI 类 agent 使用的模型（traework） */
+  model?: string;
+  /** GUI 类 agent 使用的面板模式（traework：Work/Code/Design） */
+  mode?: string;
   round?: number;
   checks?: { name: string; passed: boolean; durationMs: number }[];
   changedFiles?: string[];
@@ -55,6 +59,8 @@ export function metaFromTask(meta: TaskMeta, extra?: Partial<MetaBlockFields>): 
     status: meta.status,
     agentId: meta.agentId,
     projectPath: meta.projectPath,
+    model: meta.model,
+    mode: meta.mode,
     round: meta.roundsUsed,
     changedFiles: meta.changedFiles,
     diffstat: meta.diffstat,

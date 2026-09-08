@@ -8,6 +8,11 @@ import { z } from "zod";
 
 const AbsPath = z.string().min(1, "projectPath 不能为空");
 
+/** TraeWork 面板模式（Work=自带 agent 循环；Code=纯编码；Design=设计） */
+export const TraeworkModeSchema = z.enum(["Work", "Code", "Design"]);
+/** TraeWork 面板模式类型（单一真源，供 adapter/task/ui 共用） */
+export type TraeworkMode = z.infer<typeof TraeworkModeSchema>;
+
 export const RunTaskParamsSchema = z.object({
   projectPath: AbsPath,
   task: z.string().min(1, "task 任务书不能为空"),
@@ -17,6 +22,12 @@ export const RunTaskParamsSchema = z.object({
    * 例：GLM-5.3 / DeepSeek-V4-Flash。未传时沿用 agent 侧当前选择。
    */
   model: z.string().min(1).optional(),
+  /**
+   * TraeWork 面板模式（仅 GUI 类 agent traework 生效）。
+   * 未传时从任务书文本识别「切换 Work/Code/Design 模式」，仍识别不到则保持 Work。
+   * 项目文件夹绑定固定发生在 Work 模式，随后再切到目标模式。
+   */
+  mode: TraeworkModeSchema.optional(),
   autoVerify: z.boolean().optional(),
   autoFixRounds: z.number().int().min(0).max(10).optional(),
   context: z.string().optional(),
@@ -144,6 +155,8 @@ export const GuiProfileSchema = z.object({
   stableRounds: z.number().int().positive().default(12),
   /** 是否按任务指定的 model 切换模型 */
   modelSwitch: z.boolean().default(true),
+  /** 是否按任务指定的 mode 切换面板模式（Work/Code/Design） */
+  modeSwitch: z.boolean().default(true),
   /** 每任务是否新建会话（点「新建任务」） */
   freshSession: z.boolean().default(true),
   /** 选择器覆盖（语义键 → 选择器），用于 UI 升级漂移时热修复 */

@@ -46,6 +46,7 @@ run_task({
   "agentId": "traework",
   "task": "Implement the home page per plan.md and the .design system",
   "model": "GLM-5.3",                          // optional: pick the TraeWork model
+  "mode": "Code",                              // optional: Work | Code | Design
   "autoVerify": true,
   "autoFixRounds": 2,
   "taskTimeoutMs": 1800000
@@ -55,22 +56,30 @@ run_task({
 Execution sequence (mapping the 8 requested steps):
 
 1. **Detect/launch** TraeWork (reuse a port-ready instance, else launch with the port)
-2. **New session** (click "新建任务"; one clean session per task)
-3. **Bind project folder**: switch to Work mode → click "选择文件夹（可选）" → match by project
-   name/path in the dropdown; if not found, click the footer "选择文件夹" → drive the native Windows
-   dialog through the restricted computer-use path
-4. **(Optional) Switch model**: strictly verified; mismatch fails loudly instead of silently using the wrong model
-5. **Type the task** (with read-back verification) → **press Enter** → poll the DOM until the completion mark appears
-6. **Automatic verification**: command checks (typecheck/lint/test/build, skipped if absent) + code analysis
+2. **Wait for the UI** (chat input present — the CDP port can be ready before the DOM is)
+3. **New session** (click "新建任务"; one clean session per task)
+4. **Resolve and switch panel mode**: explicit `mode` parameter > task-text detection ("switch to Code mode", …) > keep `Work`; a failed switch fails loudly
+5. **Bind the project folder inside the target mode**: click "选择文件夹（可选）" → match by project name/path in the dropdown; if not found, click the footer "选择文件夹" → drive the native Windows dialog through the restricted computer-use path; re-verify both mode and project afterwards
+6. **(Optional) Switch model**: strictly verified; mismatch fails loudly instead of silently using the wrong model
+7. **Type the task** (with read-back verification) → **press Enter** → poll the DOM until the completion mark appears
+8. **Automatic verification**: command checks (typecheck/lint/test/build, skipped if absent) + code analysis
    (relative to the pre-work git baseline)
-7. **On verification failure**: generate a repair-plan file `rework-<taskId>-r<N>.md` and reference its
+9. **On verification failure**: generate a repair-plan file `rework-<taskId>-r<N>.md` and reference its
    filename in the rework message within the same session
-8. **Re-verify** until it passes or rounds are exhausted (`needs_attention`)
+10. **Re-verify** until it passes or rounds are exhausted (`needs_attention`)
+
+> **Why does step 4 come before binding?** Measured (2026-09-08): TraeWork's Work/Code/Design modes
+> **each keep an independent project binding** — switching modes replaces the input bar's project with
+> whatever that mode last used. So the mode must be switched first, then the project bound inside it.
+>
+> **Mode resolution priority**: explicit `mode` parameter > task text > `Work`.
+> Text detection accepts mixed Chinese/English phrasing ("switch to Code mode", "use design mode", "工作模式", "代码模式", "设计模式", …).
 
 Real-machine probe (diagnostics; TraeWork must be running):
 
 ```bash
 node scripts/probe-traework.mjs selectors          # check selector hits
+node scripts/probe-traework.mjs mode Code          # switch panel mode (Work|Code|Design)
 node scripts/probe-traework.mjs project <abs-path> # new session + bind project
 node scripts/probe-traework.mjs send "task"        # end-to-end send and fetch reply
 ```
@@ -111,6 +120,7 @@ Built-in defaults live in `src/agents/builtin.ts`; the user data directory
         "pollIntervalMs": 3000,      // reply polling interval
         "stableRounds": 12,          // no-change rounds before falling back to "finished"
         "modelSwitch": true,         // switch model when task specifies one
+        "modeSwitch": true,          // switch panel mode (Work/Code/Design) when task specifies one
         "freshSession": true,        // new session per task
         "selectors": {}              // selector overrides (hot-fix for UI drift)
       }

@@ -2,6 +2,8 @@
  * Task 类型 / 状态枚举 / 状态机迁移表。
  * 状态机见开发计划 §6：queued → running → … → succeeded/failed/cancelled/interrupted。
  */
+import type { TraeworkMode } from "../config/schema.js";
+
 export const TASK_STATUSES = [
   "queued",
   "running",
@@ -103,6 +105,8 @@ export interface TaskMeta {
   context?: string;
   /** GUI 类 agent（traework）使用的模型名；CLI 类忽略 */
   model?: string;
+  /** GUI 类 agent（traework）使用的面板模式（Work/Code/Design）；CLI 类忽略 */
+  mode?: TraeworkMode;
   autoVerify: boolean;
   autoFixRounds: number;
   taskTimeoutMs: number;

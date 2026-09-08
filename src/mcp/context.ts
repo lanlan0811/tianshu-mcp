@@ -21,6 +21,7 @@ export function makeBuildCtx(services: AppServices) {
     task: meta.task,
     context: meta.context,
     model: meta.model,
+    mode: meta.mode,
     round,
     feedback,
     taskDir: services.store.dir(meta.taskId),

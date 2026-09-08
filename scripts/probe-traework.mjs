@@ -12,7 +12,7 @@
  */
 import { TraeworkCdpClient } from "../dist/agents/traework/cdp/client.js";
 import { SELECTORS, resolveSelectors } from "../dist/agents/traework/cdp/selectors.js";
-import { startNewSession, bindProject, listSessions, readProjectItems } from "../dist/agents/traework/ui/session.js";
+import { startNewSession, bindProject, listSessions, readProjectItems, readMode, ensureMode } from "../dist/agents/traework/ui/session.js";
 import { typeAndSend } from "../dist/agents/traework/ui/composer.js";
 import { judgePoll, makeMarker, parseAdded } from "../dist/agents/traework/ui/reply.js";
 
@@ -54,6 +54,20 @@ if (mode === "project") {
   console.log(`[probe] 下拉项目 ${items.length} 项：`, items.map((i) => i.name).join("、") || "(空)");
   const r = await bindProject(cdp, target, { logger });
   console.log("[probe] 绑定结果：", JSON.stringify(r));
+}
+
+if (mode === "mode") {
+  const target = process.argv[3];
+  console.log("[probe] 当前模式:", (await readMode(cdp)) || "(读不到)");
+  if (!target) {
+    console.log("[probe] 用法: node scripts/probe-traework.mjs mode <Work|Code|Design>");
+  } else if (!["Work", "Code", "Design"].includes(target)) {
+    console.error("[probe] 模式必须是 Work | Code | Design");
+    process.exit(1);
+  } else {
+    const ok = await ensureMode(cdp, target, { logger });
+    console.log(`[probe] 切换到 ${target} 结果:`, ok, "| 当前:", (await readMode(cdp)) || "(读不到)");
+  }
 }
 
 if (mode === "send") {

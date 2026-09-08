@@ -76,6 +76,47 @@ export async function startNewSession(
   return true;
 }
 
+/** TraeWork 面板模式（类型真源在 config/schema.ts） */
+export type { TraeworkMode } from "../../../config/schema.js";
+import type { TraeworkMode } from "../../../config/schema.js";
+
+/**
+ * 从任务书文本识别面板模式（自然语言兜底，决策：显式参数 > 文本 > 默认 Work）。
+ * 支持中英混写，例如：
+ *   「切换到 Code 模式」「用 Work 模式做」「设计模式下…」「工作模式」「代码模式」「设计模式」
+ * 未命中返回 undefined（调用方保持默认）。
+ */
+export function detectModeFromText(text: string): TraeworkMode | undefined {
+  if (!text) return undefined;
+  const t = text.toLowerCase();
+  // 英文模式名（允许中间有空格/连字符，如 "code mode" / "code-mode"）
+  if (/\bcode\b/.test(t) && /(mode|模式)/.test(t)) return "Code";
+  if (/\bdesign\b/.test(t) && /(mode|模式)/.test(t)) return "Design";
+  if (/\bwork\b/.test(t) && /(mode|模式)/.test(t)) return "Work";
+  // 中文别名
+  if (/代码模式|编码模式|编程模式/.test(t)) return "Code";
+  if (/设计模式/.test(t)) return "Design";
+  if (/工作模式/.test(t)) return "Work";
+  return undefined;
+}
+
+export interface ResolvedMode {
+  mode: TraeworkMode;
+  /** param=显式参数；text=任务书识别；default=保持 Work */
+  source: "param" | "text" | "default";
+}
+
+/**
+ * 解析本次任务的目标面板模式：显式参数优先，其次任务书文本，最后默认 Work。
+ * 注意：项目文件夹绑定始终在 Work 模式完成，切到目标模式发生在绑定之后（见 run.ts）。
+ */
+export function resolveMode(explicit: TraeworkMode | undefined, taskText: string): ResolvedMode {
+  if (explicit) return { mode: explicit, source: "param" };
+  const fromText = detectModeFromText(taskText);
+  if (fromText) return { mode: fromText, source: "text" };
+  return { mode: "Work", source: "default" };
+}
+
 /** 读取当前面板模式（Work / Code / Design） */
 export async function readMode(cdp: TraeworkCdpClient, selectors?: SelectorOverrides): Promise<string> {
   const raw = await cdp.evaluateString(`(function(){
@@ -95,7 +136,7 @@ export async function readMode(cdp: TraeworkCdpClient, selectors?: SelectorOverr
  */
 export async function ensureMode(
   cdp: TraeworkCdpClient,
-  mode: "Work" | "Code" | "Design",
+  mode: TraeworkMode,
   opts: { selectors?: SelectorOverrides; logger: AgentRunLogger },
 ): Promise<boolean> {
   const cur = await readMode(cdp, opts.selectors);
@@ -285,7 +326,7 @@ export interface BindProjectResult {
 export async function bindProject(
   cdp: TraeworkCdpClient,
   projectPath: string,
-  opts: { selectors?: SelectorOverrides; logger: AgentRunLogger; mode?: "Work" | "Code" | "Design" },
+  opts: { selectors?: SelectorOverrides; logger: AgentRunLogger; mode?: TraeworkMode },
 ): Promise<BindProjectResult> {
   const { selectors, logger } = opts;
 

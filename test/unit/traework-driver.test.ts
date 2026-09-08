@@ -44,7 +44,7 @@ describe("AgentProfileSchema driver/gui 字段", () => {
   });
 });
 
-describe("RunTaskParamsSchema model 字段", () => {
+describe("RunTaskParamsSchema model / mode 字段", () => {
   it("model 可选且可为空", () => {
     const r = RunTaskParamsSchema.parse({ projectPath: "/tmp", task: "t" });
     expect(r.model).toBeUndefined();
@@ -52,6 +52,20 @@ describe("RunTaskParamsSchema model 字段", () => {
   it("model 透传", () => {
     const r = RunTaskParamsSchema.parse({ projectPath: "/tmp", task: "t", model: "GLM-5.3" });
     expect(r.model).toBe("GLM-5.3");
+  });
+  it("mode 可选，合法值透传", () => {
+    expect(RunTaskParamsSchema.parse({ projectPath: "/tmp", task: "t" }).mode).toBeUndefined();
+    for (const m of ["Work", "Code", "Design"] as const) {
+      expect(RunTaskParamsSchema.parse({ projectPath: "/tmp", task: "t", mode: m }).mode).toBe(m);
+    }
+  });
+  it("mode 非法值被拒绝", () => {
+    expect(() => RunTaskParamsSchema.parse({ projectPath: "/tmp", task: "t", mode: "Agent" })).toThrow();
+    expect(() => RunTaskParamsSchema.parse({ projectPath: "/tmp", task: "t", mode: "work" })).toThrow();
+  });
+  it("gui.modeSwitch 默认 true，可覆盖", () => {
+    expect(profile({ driver: "gui", gui: {} }).gui?.modeSwitch).toBe(true);
+    expect(profile({ driver: "gui", gui: { modeSwitch: false } }).gui?.modeSwitch).toBe(false);
   });
 });
 

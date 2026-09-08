@@ -77,6 +77,7 @@ export const BUILTIN_PROFILES: Record<string, AgentProfile> = {
       pollIntervalMs: 3_000,
       stableRounds: 12,
       modelSwitch: true,
+      modeSwitch: true,
       freshSession: true,
       selectors: {},
     },

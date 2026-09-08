@@ -4,7 +4,7 @@
  * parseExit 判定结果。新增 agent = 新 profile +（如需）子类 adapter。
  */
 import type { SpawnSpec } from "./spawn.js";
-import type { AgentProfile } from "../config/schema.js";
+import type { AgentProfile, TraeworkMode } from "../config/schema.js";
 
 export interface ResolvedAgent {
   id: string;
@@ -32,6 +32,8 @@ export interface TaskContext {
   taskTimeoutMs: number;
   /** GUI 类 agent（traework）使用的模型名；CLI 类忽略 */
   model?: string;
+  /** GUI 类 agent（traework）使用的面板模式；CLI 类忽略 */
+  mode?: TraeworkMode;
 }
 
 export interface SpawnInvocation {

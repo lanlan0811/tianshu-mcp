@@ -32,7 +32,7 @@ built-in (`src/agents/builtin.ts`) → user `agent-profiles.json` overrides by `
         "cdpPort": 9222, "cdpPortAuto": true, "cdpPortRange": 20,
         "exeArgs": ["--remote-debugging-port=<port>"], "windowMode": "reuse",
         "launchTimeoutMs": 60000, "pollIntervalMs": 3000, "stableRounds": 12,
-        "modelSwitch": true, "freshSession": true, "selectors": {}
+        "modelSwitch": true, "modeSwitch": true, "freshSession": true, "selectors": {}
       }
     }
   }

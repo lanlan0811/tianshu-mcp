@@ -141,6 +141,83 @@ describe("runTraeworkTask 全链路（假 CDP）", () => {
     expect(extractMarker(state.messages)).not.toBe("");
   });
 
+  it("模式切换：mode=Code 生效，且项目绑定仍保留", async () => {
+    const state = makeFakeState({ projectItems: [{ name: "demo", subtitle: "" }] });
+    autoReply(state, "ok");
+    await runTraeworkTask({
+      ctx: makeCtx({ taskDir: tmpDir, mode: "Code" }),
+      resolved: makeResolved(),
+      opts: { logger: silentLogger },
+      logFile: path.join(tmpDir, "agent-mode-code.log"),
+      startedAt: Date.now(),
+      logger: silentLogger,
+      deps: makeDeps(state),
+    });
+    expect(state.mode).toBe("Code");
+    expect(state.boundProject).toBe("demo");
+    expect(state.sent).toBe(true);
+  });
+
+  it("模式切换：mode=Design 生效", async () => {
+    const state = makeFakeState({ projectItems: [{ name: "demo", subtitle: "" }] });
+    autoReply(state, "ok");
+    await runTraeworkTask({
+      ctx: makeCtx({ taskDir: tmpDir, mode: "Design" }),
+      resolved: makeResolved(),
+      opts: { logger: silentLogger },
+      logFile: path.join(tmpDir, "agent-mode-design.log"),
+      startedAt: Date.now(),
+      logger: silentLogger,
+      deps: makeDeps(state),
+    });
+    expect(state.mode).toBe("Design");
+  });
+
+  it("模式切换：任务书文本兜底识别（无 mode 参数）", async () => {
+    const state = makeFakeState({ projectItems: [{ name: "demo", subtitle: "" }] });
+    autoReply(state, "ok");
+    await runTraeworkTask({
+      ctx: makeCtx({ taskDir: tmpDir, task: "请切换到 Code 模式，实现登录接口" }),
+      resolved: makeResolved(),
+      opts: { logger: silentLogger },
+      logFile: path.join(tmpDir, "agent-mode-text.log"),
+      startedAt: Date.now(),
+      logger: silentLogger,
+      deps: makeDeps(state),
+    });
+    expect(state.mode).toBe("Code");
+  });
+
+  it("mode 缺省且任务书未提模式 → 保持 Work", async () => {
+    const state = makeFakeState({ projectItems: [{ name: "demo", subtitle: "" }] });
+    autoReply(state, "ok");
+    await runTraeworkTask({
+      ctx: makeCtx({ taskDir: tmpDir, task: "实现登录接口" }),
+      resolved: makeResolved(),
+      opts: { logger: silentLogger },
+      logFile: path.join(tmpDir, "agent-mode-default.log"),
+      startedAt: Date.now(),
+      logger: silentLogger,
+      deps: makeDeps(state),
+    });
+    expect(state.mode).toBe("Work");
+  });
+
+  it("modeSwitch=false 时忽略指定模式", async () => {
+    const state = makeFakeState({ projectItems: [{ name: "demo", subtitle: "" }] });
+    autoReply(state, "ok");
+    await runTraeworkTask({
+      ctx: makeCtx({ taskDir: tmpDir, mode: "Code" }),
+      resolved: makeResolved({}, { modeSwitch: false }),
+      opts: { logger: silentLogger },
+      logFile: path.join(tmpDir, "agent-mode-off.log"),
+      startedAt: Date.now(),
+      logger: silentLogger,
+      deps: makeDeps(state),
+    });
+    expect(state.mode).toBe("Work");
+  });
+
   it("指定模型时切换并严格验证", async () => {
     const state = makeFakeState({ projectItems: [{ name: "demo", subtitle: "" }], models: ["GLM-5.3", "DeepSeek-V4-Flash"] });
     autoReply(state, "ok");

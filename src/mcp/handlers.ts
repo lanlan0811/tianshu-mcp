@@ -109,6 +109,7 @@ function runTaskHandler(ctx: AppContext, defaults: Defaults): Handler {
       task: args.task,
       context: args.context,
       model: args.model,
+      mode: args.mode,
       autoVerify: args.autoVerify ?? defaults.defaultAutoVerify,
       autoFixRounds: args.autoFixRounds ?? defaults.defaultAutoFixRounds,
       taskTimeoutMs,

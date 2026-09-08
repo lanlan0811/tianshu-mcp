@@ -9,6 +9,7 @@
  */
 import { TaskStore } from "./task-store.js";
 import { type TaskMeta, ACTIVE_STATUSES, isTerminal } from "./task.js";
+import type { TraeworkMode } from "../config/schema.js";
 import { TaskOrchestrator } from "../loop/fix-loop.js";
 import { genTaskId, nowIso } from "../util/id.js";
 import type { DataHome } from "../config/store.js";
@@ -26,6 +27,8 @@ export interface NewTaskInput {
   context?: string;
   /** GUI 类 agent（traework）使用的模型名；CLI 类忽略 */
   model?: string;
+  /** GUI 类 agent（traework）使用的面板模式；CLI 类忽略 */
+  mode?: TraeworkMode;
   autoVerify: boolean;
   autoFixRounds: number;
   taskTimeoutMs: number;
@@ -103,6 +106,7 @@ export class TaskManager {
       task: input.task,
       context: input.context,
       model: input.model,
+      mode: input.mode,
       autoVerify: input.autoVerify,
       autoFixRounds: input.autoFixRounds,
       taskTimeoutMs: input.taskTimeoutMs,

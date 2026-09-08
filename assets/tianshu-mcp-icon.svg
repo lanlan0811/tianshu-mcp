@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="tianshu-mcp app icon">
+  <title>tianshu-mcp</title>
+  <desc>天枢（北斗七星之首）作为编排中枢，向三个外部 AI-Agent 分派任务并回收验收结果。</desc>
+  <defs>
+    <linearGradient id="tsBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1b2545"/>
+      <stop offset="55%" stop-color="#141a33"/>
+      <stop offset="100%" stop-color="#0b0f1f"/>
+    </linearGradient>
+    <linearGradient id="tsStar" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffe9a8"/>
+      <stop offset="100%" stop-color="#f5b942"/>
+    </linearGradient>
+    <linearGradient id="tsEdge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#5eead4"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+    <radialGradient id="tsGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#7dd3fc" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#7dd3fc" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- 背景 -->
+  <rect x="0" y="0" width="256" height="256" rx="56" fill="url(#tsBg)"/>
+  <rect x="1.5" y="1.5" width="253" height="253" rx="54.5" fill="none" stroke="#2b3a63" stroke-width="3"/>
+
+  <!-- 中枢光晕 -->
+  <circle cx="128" cy="128" r="86" fill="url(#tsGlow)"/>
+
+  <!-- 编排连线：中枢 → 三个 agent 节点 -->
+  <g stroke="url(#tsEdge)" stroke-width="5" stroke-linecap="round" fill="none" opacity="0.92">
+    <path d="M128 128 L128 44"/>
+    <path d="M128 128 L196 172"/>
+    <path d="M128 128 L60 172"/>
+  </g>
+  <g stroke="#5eead4" stroke-width="3" stroke-linecap="round" opacity="0.5">
+    <path d="M128 128 L128 44" stroke-dasharray="2 12"/>
+    <path d="M128 128 L196 172" stroke-dasharray="2 12"/>
+    <path d="M128 128 L60 172" stroke-dasharray="2 12"/>
+  </g>
+
+  <!-- 三个外部 agent 节点 -->
+  <g fill="#0f172e" stroke="url(#tsEdge)" stroke-width="4">
+    <circle cx="128" cy="44" r="20"/>
+    <circle cx="196" cy="172" r="20"/>
+    <circle cx="60" cy="172" r="20"/>
+  </g>
+  <g fill="#7dd3fc">
+    <circle cx="128" cy="44" r="6"/>
+    <circle cx="196" cy="172" r="6"/>
+    <circle cx="60" cy="172" r="6"/>
+  </g>
+
+  <!-- 天枢：中枢星（北斗星意象，四芒 + 实心核） -->
+  <g transform="translate(128 128)">
+    <path d="M0 -40 L9 -9 L40 0 L9 9 L0 40 L-9 9 L-40 0 L-9 -9 Z" fill="url(#tsStar)"/>
+    <circle cx="0" cy="0" r="13" fill="#fff7db"/>
+    <circle cx="0" cy="0" r="13" fill="none" stroke="#f5b942" stroke-width="2.5"/>
+  </g>
+</svg>
