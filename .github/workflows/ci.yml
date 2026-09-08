@@ -23,14 +23,19 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-      - name: Install dependencies (3 attempts for transient network failures)
+      - name: Install dependencies (up to 3 attempts)
         shell: bash
         run: |
           for i in 1 2 3; do
-            npm ci && break
-            echo "npm ci attempt $i failed, retrying..."; sleep 5
+            echo "attempt $i/3: npm ci"
+            if npm ci; then
+              echo "npm ci succeeded on attempt $i/3"
+              exit 0
+            fi
+            if [ "$i" -lt 3 ]; then echo "npm ci attempt $i/3 failed, retrying in 5s..."; sleep 5; fi
           done
-          npm ci || { echo "npm ci failed after 3 attempts"; exit 1; }
+          echo "npm ci failed after 3 attempts"
+          exit 1
       - name: Typecheck
         run: npx tsc --noEmit -p tsconfig.json
       - name: Lint
@@ -73,14 +78,16 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Install dependencies (3 attempts)
+      - name: Install dependencies (up to 3 attempts)
         shell: bash
         run: |
           for i in 1 2 3; do
-            npm ci && break
-            echo "npm ci attempt $i failed, retrying..."; sleep 5
+            echo "attempt $i/3: npm ci"
+            if npm ci; then echo "npm ci succeeded on attempt $i/3"; exit 0; fi
+            if [ "$i" -lt 3 ]; then echo "npm ci attempt $i/3 failed, retrying in 5s..."; sleep 5; fi
           done
-          npm ci || { echo "npm ci failed after 3 attempts"; exit 1; }
+          echo "npm ci failed after 3 attempts"
+          exit 1
       - name: Build
         run: npm run build
       - name: Pack to temp and assert required contents

@@ -48,7 +48,8 @@
     "prettier": "^3.4.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "vite": "^6.4.3",
+    "vitest": "^3.2.7"
   },
   "keywords": [
     "mcp",

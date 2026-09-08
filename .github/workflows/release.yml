@@ -28,14 +28,15 @@ jobs:
           cache: npm
           registry-url: "https://registry.npmjs.org"
 
-      - name: Install dependencies (3 attempts)
+      - name: Install & verify (up to 3 attempts)
         shell: bash
         run: |
           for i in 1 2 3; do
-            npm ci && break
-            echo "npm ci attempt $i failed, retrying..."; sleep 5
+            echo "attempt $i/3: npm ci"
+            if npm ci; then echo "npm ci succeeded on attempt $i/3"; break; fi
+            if [ "$i" -lt 3 ]; then echo "npm ci attempt $i/3 failed, retrying in 5s..."; sleep 5; fi
+            if [ "$i" -eq 3 ]; then echo "npm ci failed after 3 attempts"; exit 1; fi
           done
-          npm ci || { echo "npm ci failed after 3 attempts"; exit 1; }
           npm run typecheck
           npm test
           npm run build
