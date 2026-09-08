@@ -152,6 +152,18 @@ run_task(projectPath=D:/xxx/my-app, agentId=traework, task=「Switch to Code mod
 
 > "In project D:\xxx, use traework with mode=Code to implement 『task』; it switches to Code mode first, then binds the project, sends the task, auto-verifies, and on failure generates a repair plan and reworks."
 
+## Contributing
+
+| Document | Content |
+|---|---|
+| [CHANGELOG.en.md](CHANGELOG.en.md) | Version history (v0.1.0 → v0.1.5) |
+| [CONTRIBUTING.en.md](CONTRIBUTING.en.md) | Dev setup, conventions, commit/release flow, adding an agent |
+| [SECURITY.en.md](SECURITY.en.md) | Security model (zero credentials / command whitelist / process & desktop-automation boundaries) and private reporting |
+| [CODE_OF_CONDUCT.en.md](CODE_OF_CONDUCT.en.md) | Contributor Code of Conduct |
+| [LICENSE](LICENSE) | Apache License 2.0 |
+
+> Chinese counterparts: see [README.md](README.md).
+
 ## License
 
 [Apache-2.0](LICENSE)

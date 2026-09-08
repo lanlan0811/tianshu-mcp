@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 安全漏洞报告（私密）/ Report a security vulnerability (private)
+    url: https://github.com/lanlan0811/tianshu-mcp/security/advisories/new
+    about: 请勿公开提交安全漏洞；请使用私密通道。 / Do not report security issues publicly; use the private channel.
+  - name: 天枢接入文档 / Tianshu integration guide
+    url: https://github.com/lanlan0811/tianshu-mcp/blob/master/docs/tianshu-integration.md
+    about: 接入配置、冒烟步骤与常见问题 / Setup, smoke steps and FAQ.

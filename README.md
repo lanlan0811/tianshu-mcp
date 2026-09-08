@@ -157,6 +157,18 @@ run_task(projectPath=D:/xxx/my-app, agentId=traework, task=「切换到 Code 模
 
 > "在项目 D:\xxx 用 traework、mode=Code 实现『任务』；它会先切到 Code 模式再绑定项目，然后发任务、自动验收，失败自动生成修复计划并返修。"
 
+## 开源协作
+
+| 文档 | 内容 |
+|---|---|
+| [CHANGELOG.md](CHANGELOG.md) | 版本变更日志（v0.1.0 → v0.1.5） |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | 开发环境、工程规范、提交与发布流程、如何新增 agent |
+| [SECURITY.md](SECURITY.md) | 安全模型（凭证零管理/命令白名单/进程与桌面自动化边界）与私密报告渠道 |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | 贡献者行为准则 |
+| [LICENSE](LICENSE) | Apache License 2.0 |
+
+> 英文版对应文档见 [README.en.md](README.en.md)。
+
 ## 许可
 
 [Apache-2.0](LICENSE)

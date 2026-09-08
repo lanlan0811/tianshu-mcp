@@ -21,6 +21,8 @@
     "assets",
     "README.md",
     "README.en.md",
+    "CHANGELOG.md",
+    "CHANGELOG.en.md",
     "LICENSE"
   ],
   "main": "dist/index.js",
