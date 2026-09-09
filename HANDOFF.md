@@ -1,6 +1,6 @@
 # HANDOFF.md — 项目交接说明
 
-> 交接快照：**2026-09-08**（v0.1.5 已发布）。本文写给**接手本仓库的人**：先读「交接快照」了解当前状态，再按「从零搭环境」上手。
+> 交接快照：**2026-09-09**（v0.1.9 已发布）。本文写给**接手本仓库的人**：先读「交接快照」了解当前状态，再按「从零搭环境」上手。
 > 工作区规则见 `AGENTS.md`（gitignore 中，仅本地），安装/用法见 `README.md`，本文不重复，只做导览与状态记录。
 
 ---
@@ -15,7 +15,7 @@
 
 - **天枢官方仓库**：<https://github.com/huiliyi37/Tianshu-harness>（基于 harness 工程的终端编程智能体运行时，TUI × GUI；Apache-2.0）
 - **本仓库**：`github.com/lanlan0811/tianshu-mcp`（主）｜`gitee.com/lan0811/tianshu-mcp`（镜像）
-- **npm**：`tianshu-mcp`（当前 `0.1.5`）
+- **npm**：`tianshu-mcp`（当前 `0.1.9`）
 
 ### 为什么是这样设计的（硬约束）
 
@@ -32,15 +32,15 @@
 | 项 | 状态 |
 |---|---|
 | 分支 | `master`（**只在此分支提交**，不建其他分支） |
-| 最新提交 | `71f65a0 fix: 原子写并发缺陷（CI 偶发失败的真实根因）+ v0.1.8` |
-| 版本 / 许可证 | `0.1.8` / Apache-2.0 |
-| 标签 | `v0.1.0` … `v0.1.8`（v0.1.2+ 均已推双仓） |
+| 发布提交 | `dc471d2 修复 TraeWork 任务进行中检测并发布 v0.1.9` |
+| 版本 / 许可证 | `0.1.9` / Apache-2.0 |
+| 标签 | `v0.1.0` … `v0.1.9`（v0.1.2+ 均已推双仓） |
 | 工作树 | 干净；`github/master` 与 `gitee/master` 均同步 |
-| 测试 | **181/181 通过**（28 个测试文件：单元 17 + 集成 10 + 协议 1） |
+| 测试 | **196/196 通过**（30 个测试文件：单元 19 + 集成 10 + 协议 1） |
 | 门禁 | lint 0 warning、typecheck clean、build 成功、`npm pack` 内容校验通过 |
 | CI | `CI` workflow：ubuntu/windows/macos × Node 20/22 + tarball 检查 = **7/7 全绿** |
-| npm | `tianshu-mcp@0.1.8` 已发布，`dist-tags.latest = 0.1.8` |
-| Release | GitHub/Gitee Release `v0.1.8` 均已发布（附 tarball） |
+| npm | `tianshu-mcp@0.1.9` 已发布，`dist-tags.latest = 0.1.9` |
+| Release | GitHub/Gitee Release `v0.1.9` 均已发布（附 `tianshu-mcp-0.1.9.tgz`） |
 
 ### Agent 适配现状
 
@@ -64,8 +64,9 @@
 - **M6** 项目文件夹绑定修复（footer 确认弹窗 / 检测预算 / CJK 路径 WM_SETTEXT / Code→Work 兜底）+ v0.1.6 — **172 测试**
 - **M7** 绑定**根因**修复（规范化路径被选择器拒绝 → `toNativeWindowsPath`）+ 写入回读校验 / hwnd 贯穿 / 遗留对话框清理 + v0.1.7 — **178 测试**
 - **M8** 原子写并发缺陷修复（临时文件名唯一化 + rename 退避重试，CI windows/Node20 真根因）+ v0.1.8 — **181 测试**
+- **M9** TraeWork 任务进行中检测（权威运行信号 + 空闲计时 + CDP 断线收敛 + 异常保留实例）+ v0.1.9 — **196 测试**
 
-### 实现期修复的两个既有缺陷（重要）
+### 实现期修复记录（重要）
 
 1. **rework 反馈竞态**（`TaskManager`，负载下偶发）
    - 现象：`rework_task(feedback)` 后返修轮拿不到 feedback，卡在 `failed`。
@@ -77,6 +78,8 @@
 5. **原子写并发缺陷**（M8，CI 偶发失败真根因）：`writeJsonAtomic`/`writeTextAtomic` 临时文件名
    `<目标>.<pid>.tmp` 在并发下共用 → `ENOENT`（同进程）或 `EPERM`（Windows rename 争用）；
    已改为随机后缀 + rename 退避重试。回归：`test/unit/atomic-write.test.ts`。
+6. **长思考被提前判完成**（M9）：稳定 36 秒不再等同完成；停止按钮与 loading task tail 优先于完成标志，
+   静态确认后再等待默认 10 分钟才返回 `idle`。异常结束保留实例，详见 §8.2。
 
 ---
 
@@ -118,7 +121,7 @@ src/
 | driver | 执行方式 | 结果判定 |
 |---|---|---|
 | `spawn`（默认） | 拉起外部 CLI 子进程 | 退出码 |
-| `gui` | CDP 驱动桌面 UI，**不 spawn** | DOM 完成标志 + 稳定兜底 + 超时 |
+| `gui` | CDP 驱动桌面 UI，**不 spawn** | 运行信号优先 → DOM 完成标志 → 稳定确认后的空闲计时 → 任务超时 |
 
 `TaskOrchestrator.runAgentOnce` 的分支逻辑：`adapter.run` 存在 → 调用它；否则走 `runChild`。**这是唯一需要理解的双路径接缝。**
 
@@ -154,7 +157,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 167 项
+npm test             # 196 项
 ```
 
 日常循环（改 `src/` 后）：
@@ -204,7 +207,10 @@ node scripts/probe-traework.mjs send "任务书"       # 端到端发一条并�
 
 - **TraeWork 窗口必须可见**：发送依赖模拟输入。
 - **单会话串行**：TraeWork 是单会话 UI，所有任务经串行队列。
-- **完成判定是启发式**：DOM 完成标志「由AI生成」为主 + 稳定兜底（默认约 36s）+ 任务级超时；可调 `gui.stableRounds`。
+- **完成判定依赖 UI 信号**：停止按钮 / loading task tail 存在时不结束；无运行信号才接受「由AI生成」。
+  `stableRounds` 只启动 `idleTimeoutMs`（默认 10 分钟）空闲计时，不再把约 36 秒静态直接当完成。
+- **异常结束保留实例**：`idle_no_completion` / `timeout` / `aborted` / `cdp_lost` 均不关闭现场；
+  `query_task` meta 查看 `agentEndReason` / `keptInstance`。
 - **UI 升级会漂移**：选择器集中在 `src/agents/traework/cdp/selectors.ts`，可经 profile `gui.selectors` 覆盖；用探针诊断。
 - **macOS 未验证**：CDP 机制平台无关，但可执行探测与原生对话框驱动（AppleScript 路线）未实测；当前 macOS 分支 fail-closed。
 - **`mode` 仅 GUI 类 agent 生效**：CLI 类（codex）忽略该参数。
@@ -272,6 +278,45 @@ hwnd 贯穿传递（只操作探测到的那个窗口）、下拉未命中时先
 
 ---
 
+## 8.2 TraeWork 任务进行中检测（M9 / v0.1.9）
+
+### 信号优先级与选择理由
+
+1. 字面「思考中」先保持 `pending`；原生 `ask_user` 仍立即结束本轮。
+2. `.chat-input-v2-send-button-stop-icon`（主）与 `.core-task-tail--loading`（次）是权威运行信号：
+   任一可见时，即使 DOM 已有完成标志也必须继续等待，并清零稳定轮数/空闲计时。
+3. `.thinking-stream-content` 与工具卡片只作诊断。它们会残留在历史消息，若作为阻塞条件会永久不结束。
+4. 无运行信号时才接受「由AI生成」完成标志；无完成标志则在 `stableRounds` 轮静态确认后，继续静态
+   `idleTimeoutMs`（默认 600000ms）才返回 `idle_no_completion`。
+
+所有信号通过 `selectors.ts` 的主选择器、回退与 profile 覆盖解析。若 UI 升级导致全部新选择器未命中，
+探针按 `running=false` **失败开放**，退回完成标志 + 空闲计时，避免选择器漂移造成永久卡死。
+
+### CDP 与实例保留策略
+
+- CDP WebSocket `close` / `error` 会拒绝全部 pending；单次 `send()` 默认 15000ms 超时。
+- 轮询观测与 abort、任务 deadline 竞争，取消最多约 1 秒生效；默认每 30000ms 发一条 `note` 进度事件。
+- 只有 `completion_mark` / `ask_user` 会释放本模块启动的实例。
+- `idle_no_completion` / `timeout` / `aborted` / `cdp_lost` 均保留实例，结果与任务 meta 写入
+  `agentEndReason` / `keptInstance`。超时文案不再错误声称「进程树已终止」。
+
+### 2026-09-09 真机与发布物证
+
+| 项 | 结果 |
+|---|---|
+| 活跃 DOM 探针 | `stopButton=true`、`taskTailLoading=true`，空闲后均恢复 false；thinking stream 仅诊断 |
+| 长任务 | `tsk_20260909073026_79600a` 持续生成约 92 秒；30 秒进度记录 stop，60 秒记录 stop+tail；最终 `completion_mark`，验收 2/2 通过 |
+| 极短超时 | `tsk_20260909073242_f81f0f`：`timeout=true`、`agentEndReason=timeout`、`keptInstance=true`；PID 16264 命令行与 9222 端口复核仍存活 |
+| 正常短任务 | `tsk_20260909073328_dd4dc8`：`completion_mark`，验收 2/2 通过 |
+| 本地门禁 | `typecheck`、`lint`、`build`、`pack:check` 全绿；30 文件 **196/196** 测试通过 |
+| GitHub CI | run `34292477632`：ubuntu/windows/macos × Node 20/22 + tarball，共 **7/7** 全绿 |
+| Release / npm | GitHub 与 Gitee `v0.1.9` 均正式发布并附 tarball；npm `tianshu-mcp@0.1.9`，`latest=0.1.9` |
+
+真机使用的独立项目、任务日志与报告均在仓库忽略目录 `.tianshu-mcp/` 下，不进入发布产物；验证实例在
+完成存活确认后按「PID + 可执行名 + 调试端口」核对，并以非树式方式安全关闭。
+
+---
+
 ## 9. 凭证与安全红线
 
 - 仓库内**不含任何 token**；`~/.npmrc`、`~/.git-credentials`、`GITEE_ACCESS_TOKEN` 均为本机凭证，勿入库。
@@ -286,7 +331,7 @@ hwnd 贯穿传递（只操作探测到的那个窗口）、下拉未命中时先
 | 文档 | 内容 |
 |---|---|
 | `README.md` / `README.en.md` | 项目总览、快速开始（含天枢界面配置）、文档索引 |
-| `CHANGELOG.md` / `.en.md` | 版本历史 v0.1.0 → v0.1.5 |
+| `CHANGELOG.md` / `.en.md` | 版本历史 v0.1.0 → v0.1.9 |
 | `CONTRIBUTING.md` / `.en.md` | 开发环境、门禁、规范、提交/发布流程、如何新增 agent |
 | `SECURITY.md` / `.en.md` | 安全模型与漏洞报告 |
 | `CODE_OF_CONDUCT.md` / `.en.md` | 行为准则 |
@@ -295,6 +340,7 @@ hwnd 贯穿传递（只操作探测到的那个窗口）、下拉未命中时先
 | `docs/agent-profiles.md` / `.en.md` | profile 字段说明（含 `driver`/`gui`） |
 | `docs/adapter-matrix.md` / `.en.md` | 各 agent 能力调研矩阵 |
 | `docs/acceptance-config.md` / `.en.md` | 项目级验收配置规范 |
+| `docs/release-v0.1.9.md` / `.en.md` | v0.1.9 发布说明（任务进行中检测与实例保留） |
 | `docs/release-v0.1.8.md` / `.en.md` | v0.1.8 发布说明（原子写并发缺陷修复） |
 | `docs/release-v0.1.7.md` / `.en.md` | v0.1.7 发布说明（绑定根因：原生路径形式） |
 | `docs/release-v0.1.6.md` / `.en.md` | v0.1.6 发布说明（项目文件夹绑定修复） |
