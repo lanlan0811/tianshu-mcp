@@ -45,10 +45,33 @@ Tianshu plays the role of the overall commander; this MCP server is the **schedu
 
 ## Quick start
 
+### Prerequisites
+
+| Item | Requirement |
+|---|---|
+| Node.js | ≥ 20 (CI covers 20 / 22) |
+| Package manager | npm (the repo ships a `package-lock.json`) |
+| OS | Windows / macOS / Linux (verified by the three-platform CI matrix) |
+| Git | Optional; acceptance baseline analysis is more complete inside a git repository |
+
+The data directory defaults to `~/.tianshu-mcp` and can be overridden with the `TIANSHU_MCP_HOME` environment variable; it is created automatically on first start.
+
+### Build from source
+
 ```bash
-npm install
-npm run build        # → dist/
-npm test             # 181 tests: unit + stub-agent 3-playbook integration + protocol + TraeWork fake-CDP + cancel/timeout/baseline/params/config regression
+git clone https://github.com/lanlan0811/tianshu-mcp.git
+cd tianshu-mcp
+npm ci
+npm run build        # sync-version + tsc → dist/
+npm test             # 196 tests across 30 files (19 unit + 10 integration + 1 protocol)
+```
+
+### Install the npm package
+
+```bash
+npx -y tianshu-mcp            # run without installing
+# or
+npm install -g tianshu-mcp
 ```
 
 ### Add it in Tianshu (recommended)
@@ -103,6 +126,21 @@ run_task(projectPath=D:/xxx/my-app, agentId=traework, task=「Switch to Code mod
 > `mode` accepts `Work` / `Code` / `Design`; when omitted it is detected from the task text (e.g. "switch to Code mode"), otherwise `Work` is kept.
 > TraeWork's three modes **each keep an independent project binding**, so the order is: new session → switch to target mode → bind the project inside that mode.
 
+## Tool surface (8 tools)
+
+| Tool | Capability / approval | Purpose |
+|---|---|---|
+| `run_task` | write + approval | Dispatch work (optional auto-verify / auto-rework); returns `taskId` asynchronously |
+| `query_task` | read | Poll status / progress / log tail |
+| `list_tasks` | read | Filtered history of tasks |
+| `get_task_report` | read | Full text of a verification round's report (`report.md`) |
+| `cancel_task` | write + approval | Cancel a running task (kill process tree) |
+| `verify_task` | read | Run one verification pass on a task/project path (no source changes) |
+| `rework_task` | write + approval | Manual rework (feed the failure report back to the same agent) |
+| `get_profiles` | read | Inspect agent adapters and executable discovery results |
+
+> Every result is "human-readable text + a `---tianshu-mcp-meta---` JSON block" so the host can extract it with a regex.
+
 ## Documentation
 
 | Doc | Content |
@@ -117,21 +155,28 @@ run_task(projectPath=D:/xxx/my-app, agentId=traework, task=「Switch to Code mod
 | [docs/release-v0.1.7.en.md](docs/release-v0.1.7.en.md) | v0.1.7 release notes (binding root cause: native path) |
 | [docs/release-v0.1.6.en.md](docs/release-v0.1.6.en.md) | v0.1.6 release notes (project-folder binding fix) |
 | [docs/release-v0.1.5.en.md](docs/release-v0.1.5.en.md) | v0.1.5 release notes (mode switching, README/icon, release artifacts) |
+| [skills/tianshu-mcp/SKILL.md](skills/tianshu-mcp/SKILL.md) | Skill that teaches Tianshu how to orchestrate this MCP (with usage examples) |
 
 > Chinese documentation: see [README.md](README.md).
+> Some milestone/evidence records are **Chinese-only** (no English translation yet): [HANDOFF.md](HANDOFF.md),
+> [docs/npm-publish-guide.md](docs/npm-publish-guide.md), [docs/m2-smoke-record.md](docs/m2-smoke-record.md),
+> [docs/m2-rework-record.md](docs/m2-rework-record.md), [docs/host-integration-record.md](docs/host-integration-record.md),
+> [docs/dod7-release-record.md](docs/dod7-release-record.md), [docs/dod8-session-record.md](docs/dod8-session-record.md),
+> [docs/s7-session-recheck.md](docs/s7-session-recheck.md).
 
 ## Milestone status
 
 - **M1 — Core engine + stub-agent end-to-end** ✅
   - 8 tools, TaskManager state machine / queue / concurrency gate / cancel (kill tree) / event-stream persistence
   - Acceptance engine (git baseline & diff, default-set derivation, command runner, code analysis, report.md/json)
-  - fix-loop auto rework + needs_attention; skill self-install
-  - Stub-agent 3 playbooks (good / fix-on-first / never) integration tests + protocol tests — **72/72 green** (incl. R1–R5/S1–S6 cancel/timeout/baseline/params/config regressions)
+  - fix-loop auto rework + needs_attention; skill self-install (verified on this machine's real `~/.rivet/skills`)
+  - Stub-agent 3 playbooks (good / fix-on-first / never) integration tests + protocol tests
 - **M2 — Real Codex CLI smoke + rework loop** ✅ (2026-09-07)
   - Real `codex exec` completed `run_task → query_task → verify_task`
   - Real **failure → rework_task → re-verify succeeded** loop, with artifacts
   - Fixed 3 real bugs the smoke exposed (Windows npm shim / spawn log race crash / codex flag conflict) + regression tests
   - Zcode headless entry (Z1) verified: ZCode desktop ships no headless CLI → unsupported
+- **R1–R8 / S1–S6 — two acceptance hardening rounds** ✅ (cancel / timeout / baseline attribution / parameter semantics / hot reload / CI hardening) — **72 tests**
 - **Engineering / CI** ✅
   - GitHub Actions: `CI` (ubuntu/windows/macos × Node 20/22 + tarball check, **7/7 green**) and `Release` (tag-triggered) both green
   - Skill self-install verified idempotent on this machine's real `~/.rivet/skills/tianshu-mcp`
@@ -142,19 +187,37 @@ run_task(projectPath=D:/xxx/my-app, agentId=traework, task=「Switch to Code mod
 - **M3 — TraeWork research + full delivery** ✅ (2026-09-07, **npm published**)
   - T1 settled: local TRAE SOLO CN v1.107.1 verified to have **no headless programmable agent interface** (VS Code-family CLI only)
   - npm published from `tianshu-mcp@0.1.1` (`npx -y tianshu-mcp` raises and connects 8 tools)
-- **M4 — TraeWork GUI driver (CDP)** ✅ (2026-09-08, see [traework-cdp.en.md](docs/traework-cdp.en.md))
+- **M4 — TraeWork GUI driver (CDP)** ✅ (2026-09-08, see [traework-cdp.en.md](docs/traework-cdp.en.md)) — **153 tests**
   - Correction: no headless CLI exists, but `--remote-debugging-port` can drive the chat UI; `traework` is now `driver=gui` / `status=ready`
   - Capabilities: launch/reuse instance → new session → bind project folder (dropdown first, restricted computer-use native dialog as fallback) → optional model selection → read-back-verified send → poll to completion → auto-verify → repair-plan file + same-session rework on failure
   - Safety: reuse the user's instance by default, never kill a process tree, verify the command line before terminating; computer-use is limited to TraeWork's folder picker
   - Machine-verified: `run_task(agentId=traework, model=GLM-5.3, autoVerify=true)` drove TraeWork to create a file and passed acceptance
-- **M5 — Mode switching + v0.1.5 release** ✅ (2026-09-08, see [release-v0.1.5.en.md](docs/release-v0.1.5.en.md))
+- **M5 — Mode switching + v0.1.5 release** ✅ (2026-09-08, see [release-v0.1.5.en.md](docs/release-v0.1.5.en.md)) — **167 tests**
   - `run_task` gained `mode` (Work/Code/Design), explicit parameter plus task-text fallback; all three modes **machine-verified end-to-end**
   - Key finding: the three modes keep independent project bindings → order is new session → switch mode → bind project inside that mode
-  - README rewritten (bilingual + stack badges + dedicated SVG icon/banner); tests 153 → **167**
-
-- **M6 — Project-folder binding fix + v0.1.6** ✅ (2026-09-08, see [release-v0.1.6.en.md](docs/release-v0.1.6.en.md))
+  - README rewritten (bilingual + stack badges + dedicated SVG icon/banner)
+- **M6 — Project-folder binding fix + v0.1.6** ✅ (2026-09-08, see [release-v0.1.6.en.md](docs/release-v0.1.6.en.md)) — **172 tests**
   - Fixed three stacked defects: footer click never verified the popup, detection budget eaten by PowerShell cold start, CJK paths destroyed by the console code page
-  - Added a Work fallback for non-Work binding; machine-verified "new project absent from the dropdown + mode=Code" end-to-end; tests 167 → **172**
+  - Added a Work fallback for non-Work binding; machine-verified "new project absent from the dropdown + mode=Code" end-to-end
+- **M7 — Binding root-cause fix + v0.1.7** ✅ (2026-09-08, see [release-v0.1.7.en.md](docs/release-v0.1.7.en.md)) — **178 tests**
+  - Root cause: MCP passed a normalized path (`d:/a/b`) that the Windows native picker rejects → switched to `toNativeWindowsPath()` (`D:\a\b`)
+  - Supporting fixes: `WM_GETTEXT` read-back verification after writing, hwnd threaded through the flow, stale-dialog cleanup
+- **M8 — Atomic-write concurrency fix + v0.1.8** ✅ (2026-09-08, see [release-v0.1.8.en.md](docs/release-v0.1.8.en.md)) — **181 tests**
+  - `writeJsonAtomic` / `writeTextAtomic` shared a temp filename under concurrency → randomized suffix + rename back-off retry (the real root cause of flaky CI windows/Node20 failures)
+- **M9 — TraeWork task liveness detection + v0.1.9** ✅ (2026-09-09, see [release-v0.1.9.en.md](docs/release-v0.1.9.en.md)) — **196 tests**
+  - The stop button / loading task tail became authoritative running signals that outrank the completion mark; stable rounds only start the idle timer (default 10 minutes) before returning `idle`
+  - CDP disconnects reject all pending requests + a 15s per-command timeout; abnormal endings (idle/timeout/aborted/cdp_lost) keep the instance and record `agentEndReason` / `keptInstance`
+
+## Agent support status
+
+| agentId | driver | status | Notes |
+|---|---|---|---|
+| `codex` | `spawn` | **ready** | Reuses `~/.codex` login state; `codex exec` headless; passed real M2 smoke |
+| `zcode` | `spawn` | **unsupported** | ZCode desktop ships no headless CLI (Z1 conclusion) |
+| `traework` | **`gui`** | **ready** | CDP-driven TRAE SOLO CN desktop UI; all three panel modes machine-verified |
+| `stub` | `spawn` | tests only | `test/stub-agent/stub-agent.mjs` with 3 playbooks (good/fix-on-first/never) |
+
+> Adding an agent usually needs only a profile — see [docs/agent-profiles.en.md](docs/agent-profiles.en.md) and [CONTRIBUTING.en.md](CONTRIBUTING.en.md).
 
 ## Recommended phrasing (for Tianshu)
 
@@ -166,14 +229,58 @@ run_task(projectPath=D:/xxx/my-app, agentId=traework, task=「Switch to Code mod
 
 | Document | Content |
 |---|---|
-| [CHANGELOG.en.md](CHANGELOG.en.md) | Version history (v0.1.0 → v0.1.5) |
+| [CHANGELOG.en.md](CHANGELOG.en.md) | Version history (v0.1.0 → v0.1.9) |
 | [CONTRIBUTING.en.md](CONTRIBUTING.en.md) | Dev setup, conventions, commit/release flow, adding an agent |
 | [SECURITY.en.md](SECURITY.en.md) | Security model (zero credentials / command whitelist / process & desktop-automation boundaries) and private reporting |
 | [CODE_OF_CONDUCT.en.md](CODE_OF_CONDUCT.en.md) | Contributor Code of Conduct |
-| [LICENSE](LICENSE) | Apache License 2.0 |
+| [LICENSE](LICENSE) | Apache License 2.0 (detailed explanation below) |
 
-> Chinese counterparts: see [README.md](README.md).
+- **Primary repository**: <https://github.com/lanlan0811/tianshu-mcp> (GitHub)
+- **Mirror repository**: <https://gitee.com/lan0811/tianshu-mcp> (Gitee)
+- **Feedback**: bugs / feature requests via the repo Issue templates; report security vulnerabilities privately per [SECURITY.en.md](SECURITY.en.md) — **do not** open a public issue.
+
+> Chinese counterparts: see [README.md](README.md). The handoff document [HANDOFF.md](HANDOFF.md) is Chinese-only.
 
 ## License
 
-[Apache-2.0](LICENSE)
+This project is released under the **Apache License 2.0**; the full legal text is in [LICENSE](LICENSE). Copyright belongs to the tianshu-mcp contributors (Copyright 2026 tianshu-mcp contributors).
+
+### Rights granted to you
+
+- **Commercial use**: use it in commercial products and services;
+- **Modification**: modify the source freely;
+- **Distribution**: redistribute the original or modified versions;
+- **Private use**: use it privately inside your organization;
+- **Patent use**: contributors grant you a license to any patents covered by their contributions (subject to the termination clause below).
+
+### Obligations you must meet
+
+1. **Keep the notices**: when distributing, include the full LICENSE text and retain its copyright, license, and disclaimer notices;
+2. **Mark modifications**: if you modify files, carry a prominent "modified" notice in the changed files;
+3. **Preserve NOTICE**: if the original work includes a NOTICE file, retain its contents when distributing (this project currently has **no** NOTICE file);
+4. **No additional restrictions**: you may not impose further restrictions on the rights granted by this license.
+
+### Not granted / termination
+
+- **Trademarks**: this license does **not** grant any right to use trademarks, trade names, or service marks;
+- **Patent termination**: if you institute patent litigation against this project or its contributors (including cross-claims and counter-claims), your patent grant under this license **terminates automatically**.
+
+### Disclaimer
+
+The software is provided **"AS IS"**, without warranties or conditions of any kind, either express or implied, including but not limited to the implied warranties of merchantability, fitness for a particular purpose, and non-infringement. In no event shall the authors or copyright holders be liable for any claim, damages, or other liability arising from, out of, or in connection with the software or the use or other dealings in the software, whether in an action of contract, tort, or otherwise.
+
+### Third-party dependency licenses
+
+Runtime dependencies are all **MIT**-licensed and compatible with Apache-2.0:
+
+| Dependency | License | Purpose |
+|---|---|---|
+| [`@modelcontextprotocol/sdk`](https://github.com/modelcontextprotocol/sdk) | MIT | MCP protocol implementation |
+| [`zod`](https://github.com/colinhacks/zod) | MIT | External input validation |
+| [`cross-spawn`](https://github.com/moxystudio/node-cross-spawn) | MIT | Cross-platform child processes |
+
+Development dependencies (TypeScript, ESLint, Prettier, Vitest, Vite, tsx, etc.) follow their own open-source licenses and are not distributed with the npm package.
+
+### Relationship to the security boundary
+
+This MCP **never stores, reads, or forwards** any AI-Agent API key or login state (see [SECURITY.en.md](SECURITY.en.md)). The license terms do not change this design boundary.
