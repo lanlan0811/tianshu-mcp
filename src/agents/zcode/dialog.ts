@@ -27,6 +27,7 @@ do {
   if(-not $window){Start-Sleep -Milliseconds 200}
 } while(-not $window -and (Get-Date) -lt $deadline)
 if(-not $window){throw '未发现 ZCode 新建的文件夹对话框'}
+$targetHandle=[string]$window.Current.NativeWindowHandle
 $edits=$window.FindAll([System.Windows.Automation.TreeScope]::Descendants,(New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::Edit)))
 $edit=$null
 foreach($e in $edits){if($e.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern,[ref]$null)){$edit=$e;break}}
@@ -34,7 +35,16 @@ if(-not $edit){[System.Windows.Forms.SendKeys]::SendWait('%d');Start-Sleep -Mill
 $pattern=$edit.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
 $pattern.SetValue($env:TIANSHU_ZCODE_FOLDER)
 if([IO.Path]::GetFullPath($pattern.Current.Value).TrimEnd('\') -ne [IO.Path]::GetFullPath($env:TIANSHU_ZCODE_FOLDER).TrimEnd('\')){throw '文件夹路径回读不一致'}
-[System.Windows.Forms.SendKeys]::SendWait('{ENTER}')`;
+[System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+$closeDeadline=(Get-Date).AddSeconds(5)
+do {
+  Start-Sleep -Milliseconds 200
+  $stillOpen=$false
+  $root=[System.Windows.Automation.AutomationElement]::RootElement
+  $wins=$root.FindAll([System.Windows.Automation.TreeScope]::Children,[System.Windows.Automation.Condition]::TrueCondition)
+  foreach($w in $wins){if([string]$w.Current.NativeWindowHandle -eq $targetHandle){$stillOpen=$true;break}}
+} while($stillOpen -and (Get-Date) -lt $closeDeadline)
+if($stillOpen){throw 'ZCode 文件夹对话框提交后仍未关闭'}`;
 
 export async function listOwnedDialogs(pids: number[]): Promise<string[]> {
   if (process.platform === "darwin") {
@@ -113,8 +123,33 @@ tell application "System Events"
     keystroke targetFolder
     key code 36
     delay 0.5
-    if exists button "Choose" of sheet 1 of window 1 then click button "Choose" of sheet 1 of window 1
-    if exists button "Open" of sheet 1 of window 1 then click button "Open" of sheet 1 of window 1
+    set targetSheet to sheet 1 of window 1
+    set submitted to false
+    set defaultButtons to every button of targetSheet whose subrole is "AXDefaultButton"
+    if (count of defaultButtons) is 1 then
+      click item 1 of defaultButtons
+      set submitted to true
+    end if
+    if submitted is false then
+      repeat with buttonName in {"Choose", "Open", "选择", "打开"}
+        if exists button buttonName of targetSheet then
+          click button buttonName of targetSheet
+          set submitted to true
+          exit repeat
+        end if
+      end repeat
+    end if
+    if submitted is false then error "ZCODE_FOLDER_CONFIRM_BUTTON_NOT_FOUND"
+    set closeDeadline to (current date) + 5
+    repeat
+      set total to 0
+      repeat with w in windows
+        set total to total + (count of sheets of w)
+      end repeat
+      if total is less than or equal to baselineCount then exit repeat
+      if (current date) > closeDeadline then error "ZCODE_FOLDER_SHEET_STILL_OPEN"
+      delay 0.2
+    end repeat
   end tell
 end tell
 end run`;

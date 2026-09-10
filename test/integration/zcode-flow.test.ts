@@ -176,6 +176,24 @@ class AmbiguousSessionZcode extends FakeZcode {
   }
 }
 
+class MissingProjectZcode extends FakeZcode {
+  folderSelected = false;
+  chooseFolderClicked = false;
+  override async click(key: string) {
+    if (key === "chooseFolder") {
+      this.chooseFolderClicked = true;
+      return true;
+    }
+    return super.click(key);
+  }
+  override async projects() {
+    return [];
+  }
+  override async boundProjectPath() {
+    return this.folderSelected ? super.boundProjectPath() : "";
+  }
+}
+
 function ctx(projectPath: string): TaskContext {
   return {
     taskId: "tsk_zcode",
@@ -219,6 +237,34 @@ describe("ZCode 假 CDP 单轮", () => {
     expect(fake.model).toBe("deepseek-flash");
     expect(fake.permission).toBe("完全访问");
     expect(result.session?.id).toBe("session-1");
+  });
+  it("目标项目不存在时只操作新出现的 ZCode 文件夹对话框并回读绑定路径", async () => {
+    const project = await makeTmpRoot("zcode-folder-import");
+    cleanup.push(project);
+    const fake = new MissingProjectZcode(project);
+    let selectedPath = "";
+    let baseline: string[] = [];
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: {
+        ...depsFor(fake),
+        listDialogs: async () => ["existing-dialog"],
+        selectFolder: async (folder, _pids, before) => {
+          selectedPath = folder;
+          baseline = before;
+          fake.folderSelected = true;
+          return { ok: true, message: "selected" };
+        },
+      },
+    });
+    expect(result.ok).toBe(true);
+    expect(fake.chooseFolderClicked).toBe(true);
+    expect(selectedPath).toBe(project);
+    expect(baseline).toEqual(["existing-dialog"]);
+    expect(fake.sent).toBe(1);
   });
   it("供应商不存在时不发送", async () => {
     const project = await makeTmpRoot("zcode-provider");
