@@ -12,6 +12,7 @@ import {
   type CancelTaskParams,
   type VerifyTaskParams,
   type ReworkTaskParams,
+  type ContinueTaskParams,
 } from "../config/schema.js";
 import { toAcceptanceDef, type DataHome } from "../config/store.js";
 import type { TaskManager } from "../tasks/task-manager.js";
@@ -20,11 +21,24 @@ import type { AgentAdapterRegistry } from "../agents/registry.js";
 import type { TaskStore } from "../tasks/task-store.js";
 import type { TaskMeta } from "../tasks/task.js";
 import type { Logger } from "../util/log.js";
-import { formatToolResult, errorResult, metaFromTask, readLogTail, textResult, type ToolResult } from "./formatter.js";
-import { captureBaseline, gitRefExists, type Baseline as BaselineT } from "../verify/git-baseline.js";
+import {
+  formatToolResult,
+  errorResult,
+  metaFromTask,
+  readLogTail,
+  textResult,
+  type ToolResult,
+} from "./formatter.js";
+import {
+  captureBaseline,
+  gitRefExists,
+  type Baseline as BaselineT,
+} from "../verify/git-baseline.js";
 import { readTextSafe, readJsonSafe } from "../util/fs.js";
 import { readLatestReportSummary } from "../loop/fix-loop.js";
 import { readDirSafe } from "../util/fs.js";
+import { parseZcodeModel } from "../agents/zcode/model.js";
+import { validateTaskReferences } from "../agents/zcode/references.js";
 
 /** 任务目录里下一可用 report round（避免手动验收覆盖已有 report-0/1…） */
 async function nextReportRound(store: TaskStore, taskId: string | undefined): Promise<number> {
@@ -63,6 +77,7 @@ export function makeHandlers(ctx: AppContext, defaults: Defaults) {
     cancel_task: cancelTaskHandler(ctx),
     verify_task: verifyTaskHandler(ctx),
     rework_task: reworkTaskHandler(ctx),
+    continue_task: continueTaskHandler(ctx),
     get_profiles: getProfilesHandler(ctx),
   };
 }
@@ -94,14 +109,20 @@ function runTaskHandler(ctx: AppContext, defaults: Defaults): Handler {
         message: resolved.message,
       });
     }
+    if (finalAgentId === "zcode") {
+      if (args.mode !== undefined) return errorResult("ZCode 不支持 mode 参数；请移除 mode 后重试");
+      try {
+        parseZcodeModel(args.model);
+        validateTaskReferences(args.task, args.context, norm);
+      } catch (e) {
+        return errorResult(e instanceof Error ? e.message : String(e));
+      }
+    }
 
     const cfg = await dataHome.loadConfig();
     // 有效任务超时（R2）：调用参数 > profile > server 默认值，在提交时固化
     const taskTimeoutMs =
-      args.taskTimeoutMs ??
-      resolved.profile.timeoutMs ??
-      cfg.defaultTaskTimeoutMs ??
-      30 * 60_000;
+      args.taskTimeoutMs ?? resolved.profile.timeoutMs ?? cfg.defaultTaskTimeoutMs ?? 30 * 60_000;
     const meta = await manager.submit({
       projectPath: norm,
       displayPath: dir.raw,
@@ -111,7 +132,10 @@ function runTaskHandler(ctx: AppContext, defaults: Defaults): Handler {
       model: args.model,
       mode: args.mode,
       autoVerify: args.autoVerify ?? defaults.defaultAutoVerify,
-      autoFixRounds: args.autoFixRounds ?? defaults.defaultAutoFixRounds,
+      autoFixRounds:
+        args.autoFixRounds ??
+        resolved.profile.gui?.defaultAutoFixRounds ??
+        defaults.defaultAutoFixRounds,
       taskTimeoutMs,
     });
     logger.info(`run_task 已提交 ${meta.taskId} (agent=${finalAgentId}, project=${norm})`);
@@ -139,7 +163,9 @@ function queryTaskHandler(ctx: AppContext): Handler {
     let logTail = "";
     const logFile =
       meta.logFile ??
-      (meta.roundsUsed > 0 ? store.agentLogPath(meta.taskId, Math.max(0, meta.roundsUsed - 1)) : undefined);
+      (meta.roundsUsed > 0
+        ? store.agentLogPath(meta.taskId, Math.max(0, meta.roundsUsed - 1))
+        : undefined);
     if (logFile) {
       if (await existsFile(logFile)) logTail = await readLogTail(logFile, tailLines);
     }
@@ -147,7 +173,9 @@ function queryTaskHandler(ctx: AppContext): Handler {
     const lines = [
       statusLine,
       meta.lastMessage ? `最近消息: ${meta.lastMessage}` : "",
-      logTail ? `--- agent 日志尾部（${logTail.split("\n").length} 行）---\n${logTail}` : "（暂无 agent 日志）",
+      logTail
+        ? `--- agent 日志尾部（${logTail.split("\n").length} 行）---\n${logTail}`
+        : "（暂无 agent 日志）",
     ].filter((s) => s !== "");
     return formatToolResult(lines.join("\n"), metaFromTask(meta));
   };
@@ -171,6 +199,7 @@ function describeStatus(meta: TaskMeta): string {
     succeeded: "[PASS] 任务成功",
     failed: "[FAIL] 任务失败",
     needs_attention: "[WARN] 需要人工介入（自动返修轮次已用尽或可修性存疑）",
+    needs_user: "等待用户处理（可用 continue_task 恢复原 ZCode 会话）",
     cancelled: "已取消",
     interrupted: "已中断（server 重启/退出）",
   };
@@ -186,17 +215,24 @@ function listTasksHandler(ctx: AppContext): Handler {
       const norm = normPath(args.projectPath);
       projectPath = norm;
     }
-    const list = await manager.listTasks({ projectPath, status: args.status, limit: args.limit ?? 50 });
+    const list = await manager.listTasks({
+      projectPath,
+      status: args.status,
+      limit: args.limit ?? 50,
+    });
     if (list.length === 0) {
       return formatToolResult("没有符合条件的任务。", { ok: true, message: "空列表" });
     }
     const lines = list.map((m) => {
       return `${m.taskId}\t${m.status.padEnd(15)}\t${(m.agentId ?? "").padEnd(8)}\t${m.projectPath}\t${m.task.slice(0, 60)}`;
     });
-    return formatToolResult(`任务列表（${list.length} 条，列: taskId / status / agent / project / 任务摘要）\n${lines.join("\n")}`, {
-      ok: true,
-      message: `共 ${list.length} 条`,
-    });
+    return formatToolResult(
+      `任务列表（${list.length} 条，列: taskId / status / agent / project / 任务摘要）\n${lines.join("\n")}`,
+      {
+        ok: true,
+        message: `共 ${list.length} 条`,
+      },
+    );
   };
 }
 
@@ -210,7 +246,8 @@ function getReportHandler(ctx: AppContext): Handler {
     let round = args.round;
     if (round === undefined) {
       const latest = await readLatestReportSummary(store, args.taskId);
-      if (!latest) return errorResult(`任务 ${args.taskId} 还没有验收报告（可能未启用验收或尚未验收）。`);
+      if (!latest)
+        return errorResult(`任务 ${args.taskId} 还没有验收报告（可能未启用验收或尚未验收）。`);
       round = latest.round;
     }
     const mdPath = store.reportMdPath(args.taskId, round);
@@ -251,7 +288,9 @@ function verifyTaskHandler(ctx: AppContext): Handler {
       // baselineRef：Git ref（任务 ID 不适用独立路径）
       if (args.baselineRef) {
         if (!(await gitRefExists(projectPath, args.baselineRef))) {
-          return errorResult(`baselineRef '${args.baselineRef}' 不是有效 Git ref（项目 ${projectPath}）。`);
+          return errorResult(
+            `baselineRef '${args.baselineRef}' 不是有效 Git ref（项目 ${projectPath}）。`,
+          );
         }
         baseline = { ...(await captureBaseline(projectPath)), head: args.baselineRef };
       } else {
@@ -267,13 +306,20 @@ function verifyTaskHandler(ctx: AppContext): Handler {
       const savedBaseline = await readJsonSafe<BaselineT>(store.baselinePath(taskId));
       if (args.baselineRef && args.baselineRef !== "task") {
         if (!(await gitRefExists(projectPath, args.baselineRef))) {
-          return errorResult(`baselineRef '${args.baselineRef}' 不是有效 Git ref（项目 ${projectPath}）。`);
+          return errorResult(
+            `baselineRef '${args.baselineRef}' 不是有效 Git ref（项目 ${projectPath}）。`,
+          );
         }
-        baseline = { ...(savedBaseline ?? (await captureBaseline(projectPath))), head: args.baselineRef };
+        baseline = {
+          ...(savedBaseline ?? (await captureBaseline(projectPath))),
+          head: args.baselineRef,
+        };
       } else {
         baseline = savedBaseline ?? (await captureBaseline(projectPath));
         if (!savedBaseline) {
-          return errorResult(`任务 ${taskId} 没有保存的动工前基线（任务可能在改造前创建）。请用 projectPath 单独验收，或传 baselineRef=git ref。`);
+          return errorResult(
+            `任务 ${taskId} 没有保存的动工前基线（任务可能在改造前创建）。请用 projectPath 单独验收，或传 baselineRef=git ref。`,
+          );
         }
       }
     } else {
@@ -284,7 +330,11 @@ function verifyTaskHandler(ctx: AppContext): Handler {
     const proj = await dataHome.projectByPath(projectPath);
     const projectVerify = proj.record?.verify?.map((v) => {
       const cmd = Array.isArray(v.cmd) ? [...v.cmd] : v.cmd;
-      return { name: v.name, cmd: Array.isArray(cmd) ? cmd : [cmd], displayCmd: Array.isArray(cmd) ? cmd.join(" ") : cmd };
+      return {
+        name: v.name,
+        cmd: Array.isArray(cmd) ? cmd : [cmd],
+        displayCmd: Array.isArray(cmd) ? cmd.join(" ") : cmd,
+      };
     });
 
     // round 分配：手动验收写入任务目录时不能覆盖已有 report-0.*，分配下一可用轮次
@@ -355,7 +405,12 @@ function verifyTaskHandler(ctx: AppContext): Handler {
       };
       await manager.persistMetaUpdate(resultMeta);
     }
-    const detailLines = [`${head}`, `变更 ${changed} 个文件，diffstat ${resultMeta.diffstat}。`, `报告：${report.files.md}`, `JSON：${report.files.json}`];
+    const detailLines = [
+      `${head}`,
+      `变更 ${changed} 个文件，diffstat ${resultMeta.diffstat}。`,
+      `报告：${report.files.md}`,
+      `JSON：${report.files.json}`,
+    ];
     return formatToolResult(detailLines.join("\n"), metaFromTask(resultMeta));
   };
 }
@@ -379,6 +434,18 @@ function reworkTaskHandler(ctx: AppContext): Handler {
   };
 }
 
+function continueTaskHandler(ctx: AppContext): Handler {
+  return async (rawArgs) => {
+    const args = rawArgs as ContinueTaskParams;
+    const res = await ctx.manager.continueTask(args.taskId, args.message);
+    if (!res.found || !res.meta) return errorResult(res.reason ?? `无法继续任务 ${args.taskId}`);
+    return formatToolResult(
+      `任务 ${args.taskId} 已恢复并重新入队；将严格复用原 ZCode 会话与项目。`,
+      metaFromTask(res.meta),
+    );
+  };
+}
+
 function getProfilesHandler(ctx: AppContext): Handler {
   const { registry } = ctx;
   return async () => {
@@ -387,7 +454,9 @@ function getProfilesHandler(ctx: AppContext): Handler {
     for (const id of ids) {
       const r = await registry.resolve(id, true);
       const mark = r.ok ? "[PASS] 可用" : "[FAIL] 不可用";
-      rows.push(`${mark}\t${id}\t${r.displayName}\t${r.message}${r.discovered ? ` [探测来源: ${r.discovered.source}]` : ""}`);
+      rows.push(
+        `${mark}\t${id}\t${r.displayName}\t${r.message}${r.discovered ? ` [探测来源: ${r.discovered.source}]` : ""}`,
+      );
     }
     const head = "Agent 适配与可执行探测结果（列: 可用 / agentId / 名称 / 说明）";
     return formatToolResult(`${head}\n${rows.join("\n")}`, {

@@ -99,6 +99,12 @@ export const ReworkTaskParamsSchema = z.object({
 });
 export type ReworkTaskParams = z.infer<typeof ReworkTaskParamsSchema>;
 
+export const ContinueTaskParamsSchema = z.object({
+  taskId: z.string().min(1),
+  message: z.string().min(1, "message 不能为空"),
+});
+export type ContinueTaskParams = z.infer<typeof ContinueTaskParamsSchema>;
+
 /* ---------------- server 配置 config.json ---------------- */
 
 export const ServerConfigSchema = z.object({
@@ -107,8 +113,16 @@ export const ServerConfigSchema = z.object({
       maxRunning: z.number().int().min(1).max(32).default(2),
     })
     .default({}),
-  defaultTaskTimeoutMs: z.number().int().positive().default(30 * 60_000),
-  verifyCommandTimeoutMs: z.number().int().positive().default(5 * 60_000),
+  defaultTaskTimeoutMs: z
+    .number()
+    .int()
+    .positive()
+    .default(30 * 60_000),
+  verifyCommandTimeoutMs: z
+    .number()
+    .int()
+    .positive()
+    .default(5 * 60_000),
   skills: z
     .object({
       autoInstall: z.boolean().default(true),
@@ -128,6 +142,10 @@ export const ExecutableDiscoverySchema = z.object({
   fileNames: z.array(z.string()).default([]),
   /** PATH 中查找的回退命令名 */
   fallbackCommand: z.string().optional(),
+  /** Windows 固定盘搜索顺序；仅盘符偏好，不是安装绝对路径。 */
+  preferredDrives: z.array(z.string().regex(/^[A-Za-z]:$/)).default([]),
+  /** 相对固定盘根目录的候选可执行路径。 */
+  relativePaths: z.array(z.string()).default([]),
 });
 
 /**
@@ -154,7 +172,11 @@ export const GuiProfileSchema = z.object({
   /** 无完成标志时，连续多少次轮询无变化后开始计算空闲时长 */
   stableRounds: z.number().int().positive().default(12),
   /** 静态且无运行信号持续多久后判定空闲结束（ms） */
-  idleTimeoutMs: z.number().int().nonnegative().default(10 * 60_000),
+  idleTimeoutMs: z
+    .number()
+    .int()
+    .nonnegative()
+    .default(10 * 60_000),
   /** 单次 CDP 命令等待响应的超时（ms） */
   cdpSendTimeoutMs: z.number().int().positive().default(15_000),
   /** 轮询期间向任务事件流报告进度的间隔（ms） */
@@ -167,6 +189,12 @@ export const GuiProfileSchema = z.object({
   freshSession: z.boolean().default(true),
   /** 选择器覆盖（语义键 → 选择器），用于 UI 升级漂移时热修复 */
   selectors: z.record(z.string(), z.string()).default({}),
+  /** ZCode 必须显式传入 provider/model。 */
+  modelRequired: z.boolean().default(false),
+  /** GUI agent 发送前必须确认的权限模式。 */
+  defaultPermissionMode: z.string().optional(),
+  /** agent 级自动返修默认轮数。 */
+  defaultAutoFixRounds: z.number().int().min(0).max(10).optional(),
 });
 export type GuiProfile = z.infer<typeof GuiProfileSchema>;
 
@@ -179,13 +207,19 @@ export const AgentProfileSchema = z.object({
    * 决定 registry 构造哪个 adapter、orchestrator 走哪条执行路径。
    */
   driver: z.enum(["spawn", "gui"]).default("spawn"),
+  /** GUI adapter 显式判别；旧 profile 缺省时保持 TraeWork 兼容行为。 */
+  adapter: z.enum(["traework-gui", "zcode-gui"]).optional(),
   status: z.enum(["ready", "research", "unsupported"]).default("ready"),
   command: z.string().nullable().optional(),
   argsTemplate: z.array(z.string()).default([]),
   promptMode: z.enum(["arg", "stdin", "file"]).default("arg"),
   cwd: z.enum(["task", "home"]).default("task"),
   env: z.record(z.string(), z.string()).default({}),
-  timeoutMs: z.number().int().positive().default(30 * 60_000),
+  timeoutMs: z
+    .number()
+    .int()
+    .positive()
+    .default(30 * 60_000),
   killTree: z.enum(["taskkill", "group"]).default("taskkill"),
   authNote: z.string().default(""),
   executableDiscovery: ExecutableDiscoverySchema.optional(),

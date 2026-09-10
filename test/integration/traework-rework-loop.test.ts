@@ -51,7 +51,11 @@ async function makeProject(): Promise<string> {
   );
   fs.writeFileSync(
     path.join(dir, ".tianshu-mcp", "acceptance.json"),
-    JSON.stringify({ checks: [{ name: "done-marker", cmd: ["node", "check.mjs"], timeoutMs: 20000 }] }, null, 2),
+    JSON.stringify(
+      { checks: [{ name: "done-marker", cmd: ["node", "check.mjs"], timeoutMs: 20000 }] },
+      null,
+      2,
+    ),
     "utf8",
   );
   fs.writeFileSync(path.join(dir, "README.md"), "# demo\n", "utf8");
@@ -88,7 +92,11 @@ class ScriptedTraeworkAdapter extends TraeworkGuiAdapter {
     super("traework");
   }
 
-  override async run(ctx: TaskContext, resolved: ResolvedAgent, opts: Parameters<NonNullable<TraeworkGuiAdapter["run"]>>[2]): Promise<AgentRunResult> {
+  override async run(
+    ctx: TaskContext,
+    resolved: ResolvedAgent,
+    opts: Parameters<NonNullable<TraeworkGuiAdapter["run"]>>[2],
+  ): Promise<AgentRunResult> {
     this.rounds.push({ round: ctx.round, feedback: ctx.feedback });
 
     // 剧本：第一轮故意不满足验收；返修轮才写正确产物
@@ -141,7 +149,14 @@ async function makeHarness(projectPath: string): Promise<Harness> {
   const store = new TaskStore(home, silentLogger);
   const registry = new AgentAdapterRegistry(() => dataHome.loadProfiles(), silentLogger);
   const engine = new AcceptanceEngine(store, silentLogger);
-  const manager = new TaskManager(store, dataHome, registry, engine, silentLogger, makeBuildCtx({ store, dataHome }));
+  const manager = new TaskManager(
+    store,
+    dataHome,
+    registry,
+    engine,
+    silentLogger,
+    makeBuildCtx({ store, dataHome }),
+  );
   await manager.initialize(2);
 
   // 注册受控 adapter（是 TraeworkGuiAdapter 子类，registry.ensureAdapterFor 不会覆盖）
@@ -156,7 +171,11 @@ async function waitTerminal(manager: TaskManager, taskId: string, timeoutMs = 30
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const meta = await manager.getMeta(taskId);
-    if (meta && ["succeeded", "failed", "needs_attention", "cancelled", "interrupted"].includes(meta.status)) return meta;
+    if (
+      meta &&
+      ["succeeded", "failed", "needs_attention", "cancelled", "interrupted"].includes(meta.status)
+    )
+      return meta;
     if (Date.now() > deadline) throw new Error(`等待任务终态超时；最近状态=${meta?.status}`);
     await new Promise((r) => setTimeout(r, 100));
   }
@@ -194,12 +213,11 @@ describe("TraeWork 返修闭环（假 CDP + 真实编排层）", () => {
     expect(second.feedback).toContain(`rework-${meta.taskId}-r0.md`);
     expect(second.feedback).toContain("定向修复");
 
-    // 修复计划文件：任务目录 + 项目 .tianshu-mcp 两处都应有
+    // 修复计划文件只落任务目录，避免污染项目工作区
     const fileName = `rework-${meta.taskId}-r0.md`;
     const inTaskDir = path.join(h.store.dir(meta.taskId), fileName);
-    const inProject = path.join(projectPath, ".tianshu-mcp", fileName);
     expect(fs.existsSync(inTaskDir)).toBe(true);
-    expect(fs.existsSync(inProject)).toBe(true);
+    expect(fs.existsSync(path.join(projectPath, ".tianshu-mcp", fileName))).toBe(false);
     const planText = fs.readFileSync(inTaskDir, "utf8");
     expect(planText).toContain("修复计划");
     expect(planText).toContain("done-marker"); // 失败项被写入计划
@@ -208,13 +226,21 @@ describe("TraeWork 返修闭环（假 CDP + 真实编排层）", () => {
     // 两轮验收报告都落盘（round 0 失败、round 1 通过）
     expect(fs.existsSync(h.store.reportJsonPath(meta.taskId, 0))).toBe(true);
     expect(fs.existsSync(h.store.reportJsonPath(meta.taskId, 1))).toBe(true);
-    const r0 = JSON.parse(fs.readFileSync(h.store.reportJsonPath(meta.taskId, 0), "utf8")) as { passed: boolean };
-    const r1 = JSON.parse(fs.readFileSync(h.store.reportJsonPath(meta.taskId, 1), "utf8")) as { passed: boolean };
+    const r0 = JSON.parse(fs.readFileSync(h.store.reportJsonPath(meta.taskId, 0), "utf8")) as {
+      passed: boolean;
+    };
+    const r1 = JSON.parse(fs.readFileSync(h.store.reportJsonPath(meta.taskId, 1), "utf8")) as {
+      passed: boolean;
+    };
     expect(r0.passed).toBe(false);
     expect(r1.passed).toBe(true);
 
     // 事件流：经历 fixing（自动返修）后成功
-    const events = fs.readFileSync(h.store.jsonlPath(meta.taskId), "utf8").trim().split("\n").map((l) => JSON.parse(l) as { event: string });
+    const events = fs
+      .readFileSync(h.store.jsonlPath(meta.taskId), "utf8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l) as { event: string });
     const names = events.map((e) => e.event);
     expect(names).toContain("fix_start");
     expect(names).toContain("succeeded");

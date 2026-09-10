@@ -4,7 +4,12 @@ import path from "node:path";
 import { normPath, projectHash } from "../../src/util/path.js";
 import { genTaskId } from "../../src/util/id.js";
 import { splitCmd } from "../../src/config/store.js";
-import { TRANSITIONS, isTerminal, TERMINAL_STATUSES, ACTIVE_STATUSES } from "../../src/tasks/task.js";
+import {
+  TRANSITIONS,
+  isTerminal,
+  TERMINAL_STATUSES,
+  ACTIVE_STATUSES,
+} from "../../src/tasks/task.js";
 
 describe("路径规范化", () => {
   it("盘符小写 + 正斜杠（目录名保留大小写）", () => {
@@ -35,7 +40,7 @@ describe("任务 id", () => {
 
 describe("命令分词（非 shell）", () => {
   it("引号与空白", () => {
-    expect(splitCmd('git diff --check')).toEqual(["git", "diff", "--check"]);
+    expect(splitCmd("git diff --check")).toEqual(["git", "diff", "--check"]);
     expect(splitCmd('node "my script.js" arg')).toEqual(["node", "my script.js", "arg"]);
     expect(splitCmd("npm run 'a b'")).toEqual(["npm", "run", "a b"]);
   });
@@ -46,9 +51,12 @@ describe("状态机迁移表", () => {
     expect(TRANSITIONS.queued).toContain("running");
     expect(TRANSITIONS.verify_start).toContain("succeeded");
     expect(TRANSITIONS.verify_start).toContain("fixing");
+    expect(TRANSITIONS.running).toContain("needs_user");
+    expect(TRANSITIONS.needs_user).toContain("queued");
     expect(isTerminal("succeeded")).toBe(true);
     expect(isTerminal("running")).toBe(false);
     expect(TERMINAL_STATUSES).toHaveLength(5);
     expect(ACTIVE_STATUSES).toContain("queued");
+    expect(ACTIVE_STATUSES).not.toContain("needs_user");
   });
 });

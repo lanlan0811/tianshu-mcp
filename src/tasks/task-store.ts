@@ -13,7 +13,16 @@ import {
   ACTIVE_STATUSES,
   type VerifyReport,
 } from "./task.js";
-import { appendLine, exists, mkdirp, readDirSafe, readJsonSafe, readTextSafe, writeJsonAtomic, writeTextAtomic } from "../util/fs.js";
+import {
+  appendLine,
+  exists,
+  mkdirp,
+  readDirSafe,
+  readJsonSafe,
+  readTextSafe,
+  writeJsonAtomic,
+  writeTextAtomic,
+} from "../util/fs.js";
 import { nowIso } from "../util/id.js";
 import { Logger } from "../util/log.js";
 import { reportToJsonable, reportToMd } from "../verify/report.js";
@@ -26,6 +35,7 @@ const STATUS_EVENT_MAP: Record<TaskStatus, TaskEventName> = {
   succeeded: "succeeded",
   failed: "failed",
   needs_attention: "needs_attention",
+  needs_user: "needs_user",
   cancelled: "cancelled",
   interrupted: "interrupted",
 };
@@ -68,7 +78,13 @@ export class TaskStore {
   }
 
   /* ---------- 事件流 ---------- */
-  async appendEvent(taskId: string, event: TaskEventName, state: TaskStatus, detail?: string, data?: TaskEvent["data"]): Promise<void> {
+  async appendEvent(
+    taskId: string,
+    event: TaskEventName,
+    state: TaskStatus,
+    detail?: string,
+    data?: TaskEvent["data"],
+  ): Promise<void> {
     const ev: TaskEvent = { ts: nowIso(), event, state, detail, data };
     await mkdirp(this.dir(taskId));
     await appendLine(this.jsonlPath(taskId), JSON.stringify(ev));
@@ -99,7 +115,12 @@ export class TaskStore {
     return readJsonSafe<TaskMeta>(this.snapshotPath(taskId));
   }
 
-  async updateStatus(meta: TaskMeta, status: TaskStatus, detail?: string, eventName?: TaskEvent["event"]): Promise<void> {
+  async updateStatus(
+    meta: TaskMeta,
+    status: TaskStatus,
+    detail?: string,
+    eventName?: TaskEvent["event"],
+  ): Promise<void> {
     const prev = meta.status;
     meta.status = status;
     meta.updatedAt = nowIso();
@@ -122,7 +143,12 @@ export class TaskStore {
     meta.cancelRequestedAt = nowIso();
     meta.abortSource = "user";
     meta.updatedAt = meta.cancelRequestedAt;
-    await this.appendEvent(meta.taskId, "cancel_requested", meta.status, reason ? `收到取消请求：${reason}` : "收到取消请求（无 reason）");
+    await this.appendEvent(
+      meta.taskId,
+      "cancel_requested",
+      meta.status,
+      reason ? `收到取消请求：${reason}` : "收到取消请求（无 reason）",
+    );
     await this.writeSnapshot(meta);
   }
 

@@ -12,6 +12,7 @@ export const TASK_STATUSES = [
   "succeeded",
   "failed",
   "needs_attention",
+  "needs_user",
   "cancelled",
   "interrupted",
 ] as const;
@@ -24,7 +25,12 @@ export const TERMINAL_STATUSES: readonly TaskStatus[] = [
   "cancelled",
   "interrupted",
 ];
-export const ACTIVE_STATUSES: readonly TaskStatus[] = ["queued", "running", "verify_start", "fixing"];
+export const ACTIVE_STATUSES: readonly TaskStatus[] = [
+  "queued",
+  "running",
+  "verify_start",
+  "fixing",
+];
 
 export type TaskEventName =
   | "created"
@@ -37,6 +43,8 @@ export type TaskEventName =
   | "succeeded"
   | "failed"
   | "needs_attention"
+  | "needs_user"
+  | "continued"
   | "cancel_requested"
   | "cancelled"
   | "interrupted"
@@ -72,7 +80,11 @@ export interface CheckResult {
 export interface AnalysisResult {
   changedFiles: string[];
   untrackedFiles: string[];
-  diffstat: { totalAdd: number; totalDel: number; perFile: { file: string; add: number; del: number; binary?: boolean }[] };
+  diffstat: {
+    totalAdd: number;
+    totalDel: number;
+    perFile: { file: string; add: number; del: number; binary?: boolean }[];
+  };
   signals: { todo: number; consoleDebug: number; commentedBlock: number; secretLike: number };
   bigFileChanges: string[];
   warnings: string[];
@@ -112,7 +124,16 @@ export interface TaskMeta {
   taskTimeoutMs: number;
   round: number;
   roundsUsed: number;
-  errorType?: "timeout" | "spawn" | "agent_failed" | "verify_failed" | "cancelled" | "interrupted" | "agent_unresolved" | "internal" | null;
+  errorType?:
+    | "timeout"
+    | "spawn"
+    | "agent_failed"
+    | "verify_failed"
+    | "cancelled"
+    | "interrupted"
+    | "agent_unresolved"
+    | "internal"
+    | null;
   createdAt: string;
   updatedAt: string;
   startedAt?: string;
@@ -141,6 +162,19 @@ export interface TaskMeta {
   agentEndReason?: string;
   /** 最近一次 GUI agent 结束后是否保留实例 */
   keptInstance?: boolean;
+  needsUserKind?:
+    "agent_question" | "close_existing_instance" | "login_required" | "system_permission";
+  pendingQuestion?: string;
+  zcodeSessionId?: string;
+  zcodeSessionTitle?: string;
+  boundProjectPath?: string;
+  modelProvider?: string;
+  permissionMode?: string;
+  lastRunSignal?: string;
+  progressSummary?: string;
+  /** continue_task 待消费的数据，重启后保留。 */
+  continueMessage?: string;
+  continueSendMessage?: boolean;
 }
 
 /** manager 记录任务所需最小信息（内存态），与 TaskMeta 解耦 */
@@ -152,12 +186,22 @@ export interface TaskRecord {
 /** 状态机合法迁移（用于单测 + 断言保护） */
 export const TRANSITIONS: Record<TaskStatus, readonly TaskStatus[]> = {
   queued: ["running", "cancelled", "interrupted"],
-  running: ["verify_start", "fixing", "succeeded", "failed", "needs_attention", "cancelled", "interrupted"],
+  running: [
+    "verify_start",
+    "fixing",
+    "succeeded",
+    "failed",
+    "needs_attention",
+    "needs_user",
+    "cancelled",
+    "interrupted",
+  ],
   verify_start: ["succeeded", "failed", "needs_attention", "fixing", "cancelled", "interrupted"],
   fixing: ["running", "cancelled", "interrupted"],
   succeeded: [],
   failed: [],
   needs_attention: [],
+  needs_user: ["queued"],
   cancelled: [],
   interrupted: [],
 };

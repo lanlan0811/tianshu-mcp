@@ -6,7 +6,14 @@
  *
  * 并发闸/队列由 TaskManager 负责；这里只负责单任务推进（支持 AbortSignal 中止）。
  */
-import { readTextSafe, exists, readDirSafe, mkdirp, writeJsonAtomic, readJsonSafe } from "../util/fs.js";
+import {
+  readTextSafe,
+  exists,
+  readDirSafe,
+  mkdirp,
+  writeJsonAtomic,
+  readJsonSafe,
+} from "../util/fs.js";
 import type { TaskContext, ResolvedAgent } from "../agents/adapter.js";
 import { AgentAdapterRegistry } from "../agents/registry.js";
 import { runChild } from "../agents/spawn.js";
@@ -55,14 +62,19 @@ export class TaskOrchestrator {
       // ---- 解析 agent（spawn/认证等基础设施错误不再重试）----
       const resolved = await this.deps.registry.resolve(meta.agentId, true);
       if (!resolved.ok) {
-        return this.finish("failed", "agent_unresolved", `agent '${meta.agentId}' 不可用：${resolved.message}`);
+        return this.finish(
+          "failed",
+          "agent_unresolved",
+          `agent '${meta.agentId}' 不可用：${resolved.message}`,
+        );
       }
 
       // ---- 采集 git 基线（动工前，R12）----
       await store.appendEvent(meta.taskId, "note", meta.status, "采集 git 基线…");
-      const baseline = await captureBaseline(meta.projectPath);
       await mkdirp(store.dir(meta.taskId));
-      await writeJsonAtomic(store.baselinePath(meta.taskId), baseline);
+      const savedBaseline = await readJsonSafe<Baseline>(store.baselinePath(meta.taskId));
+      const baseline = savedBaseline ?? (await captureBaseline(meta.projectPath));
+      if (!savedBaseline) await writeJsonAtomic(store.baselinePath(meta.taskId), baseline);
 
       // ---- 返修循环 ----
       let round = meta.roundsUsed;
@@ -73,10 +85,23 @@ export class TaskOrchestrator {
         if (this.aborted()) return this.abortTerminal();
         await store.updateStatus(meta, "running", `第 ${round} 轮 agent 执行`, "started");
         const ctx = this.deps.buildCtx(meta, round, feedback);
+        if (meta.continueMessage !== undefined) {
+          delete meta.continueMessage;
+          delete meta.continueSendMessage;
+          await store.writeSnapshot(meta);
+        }
         const runRes = await this.runAgentOnce(ctx, resolved);
         meta.logFile = runRes.logFile;
         meta.agentEndReason = runRes.endReason;
         meta.keptInstance = runRes.keptInstance;
+        meta.progressSummary = runRes.progressSummary;
+        if (runRes.session) {
+          meta.zcodeSessionId = runRes.session.id ?? meta.zcodeSessionId;
+          meta.zcodeSessionTitle = runRes.session.title ?? meta.zcodeSessionTitle;
+          meta.boundProjectPath = runRes.session.boundProjectPath ?? meta.boundProjectPath;
+          meta.modelProvider = runRes.session.provider ?? meta.modelProvider;
+          meta.permissionMode = runRes.session.permissionMode ?? meta.permissionMode;
+        }
         if (runRes.endReason || runRes.keptInstance !== undefined) {
           await store.appendEvent(
             meta.taskId,
@@ -87,12 +112,36 @@ export class TaskOrchestrator {
           );
         }
 
+        if (runRes.needsUserKind) {
+          meta.needsUserKind = runRes.needsUserKind;
+          meta.pendingQuestion = runRes.pendingQuestion;
+          meta.lastMessage = runRes.pendingQuestion ?? "ZCode 需要用户处理后继续";
+          await store.updateStatus(meta, "needs_user", meta.lastMessage, "needs_user");
+          return { status: "needs_user", meta, summary: meta.lastMessage };
+        }
+        if (
+          meta.agentId === "zcode" &&
+          ["idle_timeout", "task_timeout", "cdp_disconnected"].includes(runRes.endReason ?? "")
+        ) {
+          const message = runRes.error ?? `ZCode 执行中止：${runRes.endReason}`;
+          meta.lastMessage = message;
+          meta.errorType = runRes.endReason === "task_timeout" ? "timeout" : "agent_failed";
+          await store.updateStatus(meta, "needs_attention", message);
+          return { status: "needs_attention", meta, summary: message };
+        }
+
         if (runRes.hardFailure) {
-          return this.finish("failed", "spawn", `agent 基础设施失败：${runRes.error ?? "未知"}（日志 ${runRes.logFile}）`);
+          return this.finish(
+            "failed",
+            "spawn",
+            `agent 基础设施失败：${runRes.error ?? "未知"}（日志 ${runRes.logFile}）`,
+          );
         }
         if (runRes.timeout) {
           // S2：统一超时终态 —— 落 failed(timeout) 并记录一次 timeout_killed
-          return this.timeoutTerminal(runRes.error ?? `任务超时（${meta.taskTimeoutMs}ms）。日志 ${runRes.logFile}`);
+          return this.timeoutTerminal(
+            runRes.error ?? `任务超时（${meta.taskTimeoutMs}ms）。日志 ${runRes.logFile}`,
+          );
         }
         if (runRes.killed) {
           return this.abortTerminal();
@@ -101,13 +150,18 @@ export class TaskOrchestrator {
           return this.finish(
             "failed",
             "agent_failed",
-            runRes.error ?? `agent 执行失败（exit=${runRes.exitCode ?? "n/a"}）。日志 ${runRes.logFile}`,
+            runRes.error ??
+              `agent 执行失败（exit=${runRes.exitCode ?? "n/a"}）。日志 ${runRes.logFile}`,
           );
         }
 
         // ---- 验收 ----
         if (!meta.autoVerify) {
-          return this.finish("succeeded", null, `任务完成：agent 退出码 0（耗时 ${runRes.durationMs}ms，未启用验收）。日志 ${runRes.logFile}`);
+          return this.finish(
+            "succeeded",
+            null,
+            `任务完成：agent 退出码 0（耗时 ${runRes.durationMs}ms，未启用验收）。日志 ${runRes.logFile}`,
+          );
         }
 
         await store.updateStatus(meta, "verify_start", `第 ${round} 轮验收开始`);
@@ -123,7 +177,11 @@ export class TaskOrchestrator {
           return this.finish("succeeded", null, verdict.summary);
         }
         if (maxRounds > round) {
-          await store.updateStatus(meta, "fixing", `第 ${round} 轮验收失败，进入第 ${round + 1} 轮返修`);
+          await store.updateStatus(
+            meta,
+            "fixing",
+            `第 ${round} 轮验收失败，进入第 ${round + 1} 轮返修`,
+          );
           round += 1;
           // 决策 17：验收不通过时先写修复计划文件，再把文件名写进返修消息
           const plan = await writeRepairPlan({
@@ -135,17 +193,13 @@ export class TaskOrchestrator {
             report: verdict.report,
             taskDir: store.dir(meta.taskId),
             logger,
-          }).catch((e: unknown) => {
-            logger.warn(`[repair-plan] 生成失败（降级为纯摘要反馈）：${e instanceof Error ? e.message : String(e)}`);
-            return null;
           });
-          feedback = buildFixFeedback(meta.task, verdict.summary, verdict.mdPath, plan?.fileName);
+          feedback = buildFixFeedback(meta.task, verdict.summary, verdict.mdPath, plan.taskPath);
           continue;
         }
         if (maxRounds === 0) {
           // 未开启自动返修：验收失败 → failed，天枢可手动 rework_task 或 verify_task 复查
-          const msg =
-            `验收失败（第 ${round} 轮）。未开启自动返修。可用 rework_task(${meta.taskId}, feedback=失败摘要) 手动续修，或 get_task_report 查看报告后裁决。`;
+          const msg = `验收失败（第 ${round} 轮）。未开启自动返修。可用 rework_task(${meta.taskId}, feedback=失败摘要) 手动续修，或 get_task_report 查看报告后裁决。`;
           return this.finish("failed", "verify_failed", `${msg}\n\n${verdict.summary}`);
         }
         // 自动返修轮次用尽 → needs_attention（待天枢裁决）
@@ -170,7 +224,8 @@ export class TaskOrchestrator {
    * 普通 runRes.timeout 与 abort guard 超时共用此路径，保证事件不重复、顺序固定。
    */
   private async timeoutTerminal(reason: string): Promise<OrchestrateResult> {
-    if (this.done) return { status: this.meta.status, meta: this.meta, reason: this.meta.lastMessage };
+    if (this.done)
+      return { status: this.meta.status, meta: this.meta, reason: this.meta.lastMessage };
     this.done = true;
     const meta = this.meta;
     meta.errorType = "timeout";
@@ -178,7 +233,9 @@ export class TaskOrchestrator {
     meta.lastMessage = reason;
     // 事件顺序固定：先 failed 落盘（含 finishedAt），再记 timeout_killed
     await this.deps.store.updateStatus(meta, "failed", reason);
-    await this.deps.store.appendEvent(meta.taskId, "timeout_killed", "failed", reason).catch(() => {});
+    await this.deps.store
+      .appendEvent(meta.taskId, "timeout_killed", "failed", reason)
+      .catch(() => {});
     return { status: "failed", meta, reason, summary: reason };
   }
 
@@ -189,7 +246,8 @@ export class TaskOrchestrator {
    * - 超时 → failed(timeout) + timeout_killed（委托 timeoutTerminal）
    */
   private async abortTerminal(): Promise<OrchestrateResult> {
-    if (this.done) return { status: this.meta.status, meta: this.meta, reason: this.meta.lastMessage };
+    if (this.done)
+      return { status: this.meta.status, meta: this.meta, reason: this.meta.lastMessage };
     if (this.meta.abortSource === "timeout") {
       return this.timeoutTerminal(this.meta.lastMessage || "任务超时，进程树已终止。");
     }
@@ -235,7 +293,10 @@ export class TaskOrchestrator {
       return adapter.run(ctx, resolved, {
         signal: this.signal,
         logger: this.deps.logger,
-        onProgress: (note) => this.deps.store.appendEvent(ctx.taskId, "note", this.meta.status, note).then(() => undefined),
+        onProgress: (note) =>
+          this.deps.store
+            .appendEvent(ctx.taskId, "note", this.meta.status, note)
+            .then(() => undefined),
       });
     }
 
@@ -253,7 +314,11 @@ export class TaskOrchestrator {
     const proj = await this.deps.dataHome.projectByPath(meta.projectPath);
     const projectVerify = proj.record?.verify?.map((v) => {
       const cmd = Array.isArray(v.cmd) ? [...v.cmd] : v.cmd;
-      return { name: v.name, cmd: Array.isArray(cmd) ? cmd : [cmd], displayCmd: Array.isArray(cmd) ? cmd.join(" ") : cmd };
+      return {
+        name: v.name,
+        cmd: Array.isArray(cmd) ? cmd : [cmd],
+        displayCmd: Array.isArray(cmd) ? cmd.join(" ") : cmd,
+      };
     });
     const req: VerifyRequest = {
       taskId: meta.taskId,
@@ -282,16 +347,15 @@ export class TaskOrchestrator {
   }
 }
 
-function buildFixFeedback(taskText: string, verifySummary: string, reportMd: string, planFileName?: string): string {
-  const lines = [
-    "【上一轮验收失败反馈 —— 请针对下列失败项定向修复，不要大范围重构】",
-    "",
-  ];
-  if (planFileName) {
-    lines.push(
-      `修复计划文档：\`.tianshu-mcp/${planFileName}\`（项目根目录下；请先读取该文件，按其中的失败项与修复要求逐条处理）`,
-      "",
-    );
+function buildFixFeedback(
+  taskText: string,
+  verifySummary: string,
+  reportMd: string,
+  planPath?: string,
+): string {
+  const lines = ["【上一轮验收失败反馈 —— 请针对下列失败项定向修复，不要大范围重构】", ""];
+  if (planPath) {
+    lines.push(`修复计划文档：\`${planPath}\`（MCP 任务数据目录绝对路径；请先读取并逐条处理）`, "");
   }
   lines.push(verifySummary, "", `完整验收报告：${reportMd}`, "修复完成后正常结束本轮即可。");
   return lines.join("\n");

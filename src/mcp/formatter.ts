@@ -32,6 +32,13 @@ export interface MetaBlockFields {
   latestVerificationVerdict?: string;
   agentEndReason?: string;
   keptInstance?: boolean;
+  needsUserKind?: string;
+  pendingQuestion?: string;
+  zcodeSessionId?: string;
+  boundProjectPath?: string;
+  modelProvider?: string;
+  permissionMode?: string;
+  progressSummary?: string;
 }
 
 export type ToolResult = {
@@ -66,7 +73,8 @@ export function metaFromTask(meta: TaskMeta, extra?: Partial<MetaBlockFields>): 
     round: meta.roundsUsed,
     changedFiles: meta.changedFiles,
     diffstat: meta.diffstat,
-    reportFiles: meta.reportMd || meta.reportJson ? { md: meta.reportMd, json: meta.reportJson } : undefined,
+    reportFiles:
+      meta.reportMd || meta.reportJson ? { md: meta.reportMd, json: meta.reportJson } : undefined,
     logFile: meta.logFile,
     message: meta.lastMessage ?? "",
     errorType: meta.errorType ?? undefined,
@@ -79,6 +87,13 @@ export function metaFromTask(meta: TaskMeta, extra?: Partial<MetaBlockFields>): 
     latestVerificationVerdict: meta.latestVerificationVerdict,
     agentEndReason: meta.agentEndReason,
     keptInstance: meta.keptInstance,
+    needsUserKind: meta.needsUserKind,
+    pendingQuestion: meta.pendingQuestion,
+    zcodeSessionId: meta.zcodeSessionId,
+    boundProjectPath: meta.boundProjectPath,
+    modelProvider: meta.modelProvider,
+    permissionMode: meta.permissionMode,
+    progressSummary: meta.progressSummary,
     ...extra,
   };
 }

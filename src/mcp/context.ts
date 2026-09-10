@@ -27,5 +27,19 @@ export function makeBuildCtx(services: AppServices) {
     taskDir: services.store.dir(meta.taskId),
     workDir: meta.projectPath,
     taskTimeoutMs: meta.taskTimeoutMs,
+    resume:
+      meta.agentId === "zcode" && (meta.continueMessage !== undefined || round > 0)
+        ? {
+            kind: meta.continueMessage !== undefined ? "continue" : "rework",
+            message: meta.continueMessage,
+            sendMessage: meta.continueSendMessage ?? round > 0,
+            sessionId: meta.zcodeSessionId,
+            sessionTitle: meta.zcodeSessionTitle,
+            boundProjectPath: meta.boundProjectPath,
+            provider: meta.modelProvider,
+            model: meta.model,
+            permissionMode: meta.permissionMode,
+          }
+        : undefined,
   });
 }

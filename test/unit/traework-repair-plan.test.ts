@@ -20,9 +20,35 @@ function report(over: Partial<VerifyReport> = {}): VerifyReport {
     passed: false,
     verdict: "failed",
     checks: [
-      { name: "typecheck", cmd: "npm run typecheck", passed: false, durationMs: 1200, exitCode: 2, outputTail: "src/a.ts(3,5): error TS2322", timeout: false },
-      { name: "lint", cmd: "npm run lint", passed: true, durationMs: 800, exitCode: 0, outputTail: "ok", timeout: false },
-      { name: "test", cmd: "npm run test", passed: false, durationMs: 300, exitCode: null, outputTail: "", timeout: false, skipped: true, reason: "脚本不存在" },
+      {
+        name: "typecheck",
+        cmd: "npm run typecheck",
+        passed: false,
+        durationMs: 1200,
+        exitCode: 2,
+        outputTail: "src/a.ts(3,5): error TS2322",
+        timeout: false,
+      },
+      {
+        name: "lint",
+        cmd: "npm run lint",
+        passed: true,
+        durationMs: 800,
+        exitCode: 0,
+        outputTail: "ok",
+        timeout: false,
+      },
+      {
+        name: "test",
+        cmd: "npm run test",
+        passed: false,
+        durationMs: 300,
+        exitCode: null,
+        outputTail: "",
+        timeout: false,
+        skipped: true,
+        reason: "脚本不存在",
+      },
     ],
     analysis: {
       changedFiles: ["src/a.ts"],
@@ -82,13 +108,28 @@ describe("renderRepairPlan", () => {
   });
 
   it("无失败项时说明可能来自代码分析", () => {
-    const md = renderRepairPlan({ ...baseInput(), report: report({ checks: [{ name: "lint", cmd: "x", passed: true, durationMs: 1, exitCode: 0, outputTail: "", timeout: false }] }) });
+    const md = renderRepairPlan({
+      ...baseInput(),
+      report: report({
+        checks: [
+          {
+            name: "lint",
+            cmd: "x",
+            passed: true,
+            durationMs: 1,
+            exitCode: 0,
+            outputTail: "",
+            timeout: false,
+          },
+        ],
+      }),
+    });
     expect(md).toContain("无硬失败项");
   });
 });
 
 describe("writeRepairPlan", () => {
-  it("写入任务目录与项目 .tianshu-mcp 目录", async () => {
+  it("只写入任务目录，不污染项目 .tianshu-mcp", async () => {
     const root = await makeTmpRoot("repair");
     const taskDir = path.join(root, "tasks", "tsk_test");
     const projectDir = path.join(root, "proj");
@@ -101,19 +142,22 @@ describe("writeRepairPlan", () => {
     });
     expect(r.fileName).toBe("rework-tsk_test-r0.md");
     expect(fs.existsSync(r.taskPath)).toBe(true);
-    expect(r.projectPath).toBeDefined();
-    expect(fs.existsSync(r.projectPath!)).toBe(true);
+    expect(fs.existsSync(path.join(projectDir, ".tianshu-mcp", r.fileName))).toBe(false);
     expect(fs.readFileSync(r.taskPath, "utf8")).toContain("修复计划");
   });
 
-  it("项目目录不可写时仍落任务目录（不抛错）", async () => {
+  it("项目目录不可写时不影响任务目录计划", async () => {
     const root = await makeTmpRoot("repair2");
     const taskDir = path.join(root, "tasks", "tsk_test");
     // projectPath 指向一个文件（不可作为目录写入）
     const bogus = path.join(root, "afile");
     fs.writeFileSync(bogus, "x");
-    const r = await writeRepairPlan({ ...baseInput(), projectPath: bogus, taskDir, logger: silentLogger });
+    const r = await writeRepairPlan({
+      ...baseInput(),
+      projectPath: bogus,
+      taskDir,
+      logger: silentLogger,
+    });
     expect(fs.existsSync(r.taskPath)).toBe(true);
-    expect(r.projectPath).toBeUndefined();
   });
 });

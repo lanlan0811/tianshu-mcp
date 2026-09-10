@@ -1,6 +1,6 @@
 /**
  * 协议级测试：官方 SDK client 连接 in-memory transport 后的 server。
- * 断言 8 个工具可见、调用返回格式（文本 + meta 块 / 参数校验错误）。
+ * 断言 9 个工具可见、调用返回格式（文本 + meta 块 / 参数校验错误）。
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { startTestServer, callTool, parseMeta, rmrf, type TestServer } from "../test-utils.js";
@@ -34,7 +34,7 @@ describe("工具 annotations（S4/S6：直接断言真实 tools/list）", () => 
       expect(byName.get(name)?.annotations?.readOnlyHint, `${name} readOnly`).toBe(true);
     }
     // 写类
-    for (const name of ["run_task", "cancel_task", "rework_task", "verify_task"]) {
+    for (const name of ["run_task", "cancel_task", "rework_task", "continue_task", "verify_task"]) {
       const ann = byName.get(name)?.annotations;
       if (name === "verify_task") {
         expect(ann?.readOnlyHint).toBe(true); // read 能力
@@ -52,10 +52,20 @@ describe("工具 annotations（S4/S6：直接断言真实 tools/list）", () => 
 });
 
 describe("工具面", () => {
-  it("注册 8 个工具且名称与能力标注符合开发计划 §5", async () => {
+  it("注册 9 个工具且名称与能力标注符合 ZCode 计划", async () => {
     const tools = await ts.client.listTools();
     const names = tools.tools.map((t) => t.name).sort();
-    expect(names).toEqual(["cancel_task", "get_profiles", "get_task_report", "list_tasks", "query_task", "rework_task", "run_task", "verify_task"]);
+    expect(names).toEqual([
+      "cancel_task",
+      "continue_task",
+      "get_profiles",
+      "get_task_report",
+      "list_tasks",
+      "query_task",
+      "rework_task",
+      "run_task",
+      "verify_task",
+    ]);
     // 每个工具在 TOOL_DEFS 有声明
     for (const t of tools.tools) {
       const def = TOOL_DEFS.find((d) => d.name === t.name);
@@ -63,6 +73,12 @@ describe("工具面", () => {
       expect(def!.inputSchema).toBeDefined();
       expect(["read", "write", "execute", "network"]).toContain(def!.capability);
     }
+  });
+
+  it("continue_task 是需审批的写工具", () => {
+    const def = TOOL_DEFS.find((d) => d.name === "continue_task");
+    expect(def?.capability).toBe("write");
+    expect(def?.requireApproval).toBe(true);
   });
 
   it("get_profiles 返回文本 + 可解析 meta 块", async () => {

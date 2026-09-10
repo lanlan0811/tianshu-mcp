@@ -34,6 +34,18 @@ export interface TaskContext {
   model?: string;
   /** GUI 类 agent（traework）使用的面板模式；CLI 类忽略 */
   mode?: TraeworkMode;
+  /** needs_user / 返修时恢复原 GUI 会话。 */
+  resume?: {
+    kind: "continue" | "rework";
+    message?: string;
+    sendMessage: boolean;
+    sessionId?: string;
+    sessionTitle?: string;
+    boundProjectPath?: string;
+    provider?: string;
+    model?: string;
+    permissionMode?: string;
+  };
 }
 
 export interface SpawnInvocation {
@@ -57,6 +69,18 @@ export interface AgentRunResult {
   endReason?: string;
   /** GUI 实例是否因任务未真正完成而被保留 */
   keptInstance?: boolean;
+  needsUserKind?:
+    "agent_question" | "close_existing_instance" | "login_required" | "system_permission";
+  pendingQuestion?: string;
+  session?: {
+    id?: string;
+    title?: string;
+    boundProjectPath?: string;
+    provider?: string;
+    model?: string;
+    permissionMode?: string;
+  };
+  progressSummary?: string;
 }
 
 /** parseExit: SpawnResult → AgentRunResult，按 agent 语义 */

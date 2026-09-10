@@ -83,7 +83,11 @@ export class TaskManager {
     await this.store.writeSnapshot(meta);
   }
 
-  async listTasks(filter?: { projectPath?: string; status?: string; limit?: number }): Promise<TaskMeta[]> {
+  async listTasks(filter?: {
+    projectPath?: string;
+    status?: string;
+    limit?: number;
+  }): Promise<TaskMeta[]> {
     let metas = await this.store.listTaskSnapshots();
     if (filter?.projectPath) {
       const norm = normPath(filter.projectPath);
@@ -127,21 +131,69 @@ export class TaskManager {
    * rework_task：对终态任务（failed/needs_attention/甚至 succeeded）手动续跑。
    * 复用原 agent/项目/验收设置与轮次记账，feedback 作用于下一轮 agent。
    */
-  async rework(taskId: string, feedback?: string): Promise<{ found: boolean; reason?: string; meta?: TaskMeta }> {
+  async rework(
+    taskId: string,
+    feedback?: string,
+  ): Promise<{ found: boolean; reason?: string; meta?: TaskMeta }> {
     const meta = (await this.getMeta(taskId)) ?? undefined;
     if (!meta) return { found: false, reason: `任务不存在: ${taskId}` };
     if (!isTerminal(meta.status)) {
       return { found: false, reason: `任务仍在进行中（status=${meta.status}），无法 rework` };
+    }
+    if (meta.agentId === "zcode" && !meta.zcodeSessionId && !meta.zcodeSessionTitle) {
+      return { found: false, reason: "ZCode 原会话定位信息缺失，拒绝创建新任务冒充续修" };
     }
     meta.status = "queued";
     meta.updatedAt = nowIso();
     meta.finishedAt = undefined;
     meta.reworkFeedback = feedback?.trim() || undefined;
     if (meta.reworkFeedback) {
-      await this.store.appendEvent(meta.taskId, "note", "queued", `rework 请求，追加指示: ${meta.reworkFeedback.slice(0, 200)}`);
+      await this.store.appendEvent(
+        meta.taskId,
+        "note",
+        "queued",
+        `rework 请求，追加指示: ${meta.reworkFeedback.slice(0, 200)}`,
+      );
     } else {
       await this.store.appendEvent(meta.taskId, "note", "queued", "rework 请求（无追加指示）");
     }
+    await this.store.writeSnapshot(meta);
+    this.tasks.set(taskId, meta);
+    this.enqueue(meta);
+    return { found: true, meta };
+  }
+
+  /** 仅恢复 needs_user；原任务/基线/会话配置全部复用。 */
+  async continueTask(
+    taskId: string,
+    message: string,
+  ): Promise<{ found: boolean; reason?: string; meta?: TaskMeta }> {
+    const meta = (await this.getMeta(taskId)) ?? undefined;
+    if (!meta) return { found: false, reason: `任务不存在: ${taskId}` };
+    if (meta.status !== "needs_user")
+      return { found: false, reason: `任务状态为 ${meta.status}，只允许恢复 needs_user` };
+    if (meta.agentId !== "zcode")
+      return { found: false, reason: "continue_task 当前只用于 ZCode needs_user 会话" };
+    if (
+      meta.needsUserKind === "agent_question" &&
+      !meta.zcodeSessionId &&
+      !meta.zcodeSessionTitle
+    ) {
+      return { found: false, reason: "原 ZCode 会话定位信息丢失，拒绝打开最近会话" };
+    }
+    meta.continueMessage = message.trim();
+    meta.continueSendMessage = meta.needsUserKind === "agent_question";
+    meta.status = "queued";
+    meta.updatedAt = nowIso();
+    meta.finishedAt = undefined;
+    await this.store.appendEvent(
+      meta.taskId,
+      "continued",
+      "queued",
+      `恢复 needs_user（${meta.needsUserKind ?? "unknown"}）`,
+    );
+    delete meta.pendingQuestion;
+    delete meta.needsUserKind;
     await this.store.writeSnapshot(meta);
     this.tasks.set(taskId, meta);
     this.enqueue(meta);
@@ -167,7 +219,12 @@ export class TaskManager {
       meta.updatedAt = meta.cancelRequestedAt;
       meta.lastMessage = reason ? `已取消（排队中）：${reason}` : "已取消（排队中）";
       // 追加 cancel_requested 事件后再落 cancelled，保证事件流完整
-      await this.store.appendEvent(meta.taskId, "cancel_requested", "queued", reason ? `收到取消请求：${reason}` : "收到取消请求（无 reason）");
+      await this.store.appendEvent(
+        meta.taskId,
+        "cancel_requested",
+        "queued",
+        reason ? `收到取消请求：${reason}` : "收到取消请求（无 reason）",
+      );
       await this.store.updateStatus(meta, "cancelled", meta.lastMessage);
       return { found: true };
     }
@@ -279,7 +336,9 @@ export class TaskManager {
     this.runningCount++;
     const ac = new AbortController();
     this.abortControllers.set(meta.taskId, ac);
-    this.logger.info(`任务 ${meta.taskId} 启动（agent=${meta.agentId}, project=${meta.projectPath}, roundsUsed=${meta.roundsUsed}）`);
+    this.logger.info(
+      `任务 ${meta.taskId} 启动（agent=${meta.agentId}, project=${meta.projectPath}, roundsUsed=${meta.roundsUsed}）`,
+    );
 
     // 消费 rework 指示：启动时原子取走并清空。
     // 必须在启动时清空，而不是运行结束后的收尾里——终态快照先落盘，调用方看到
@@ -297,7 +356,9 @@ export class TaskManager {
     const guard = setTimeout(() => {
       const m = this.tasks.get(meta.taskId);
       if (m && ACTIVE_STATUSES.includes(m.status)) {
-        this.logger.warn(`任务 ${meta.taskId} 超过任务级超时兜底（${meta.taskTimeoutMs}+${KILL_GRACE_MS}ms），标记 timeout 并 abort`);
+        this.logger.warn(
+          `任务 ${meta.taskId} 超过任务级超时兜底（${meta.taskTimeoutMs}+${KILL_GRACE_MS}ms），标记 timeout 并 abort`,
+        );
         m.errorType = "timeout";
         m.abortSource = "timeout";
         m.lastMessage = `任务超时兜底触发（${meta.taskTimeoutMs}ms + ${KILL_GRACE_MS}ms grace）。`;

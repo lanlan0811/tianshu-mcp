@@ -12,6 +12,7 @@ import {
   CancelTaskParamsSchema,
   VerifyTaskParamsSchema,
   ReworkTaskParamsSchema,
+  ContinueTaskParamsSchema,
 } from "../config/schema.js";
 
 export interface ToolDef {
@@ -24,6 +25,14 @@ export interface ToolDef {
 
 export const TOOL_DEFS: ToolDef[] = [
   {
+    name: "continue_task",
+    description:
+      "恢复处于 needs_user 的 ZCode 任务。agent_question 时 message 会发往原会话；关闭旧实例、登录或系统权限场景中 message 仅作为已处理确认。",
+    inputSchema: ContinueTaskParamsSchema,
+    capability: "write",
+    requireApproval: true,
+  },
+  {
     name: "run_task",
     description:
       "派活：启动一次外部 AI-Agent（codex CLI；traework 为 GUI 驱动）开发任务，可带自动验收与失败自动返修。返回 taskId，立即返回；用 query_task 轮询。projectPath 必须是存在的项目绝对路径；task 是给 agent 的自然语言任务书。可选 model（traework 用，如 GLM-5.3）与 mode（traework 面板模式 Work/Code/Design；缺省从任务书文本识别，识别不到则 Work）。",
@@ -33,7 +42,8 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "query_task",
-    description: "查询任务状态 / 进度 / 最近日志尾部（默认 agent.log 末 40 行）。返回任务 meta 与日志片段。",
+    description:
+      "查询任务状态 / 进度 / 最近日志尾部（默认 agent.log 末 40 行）。返回任务 meta 与日志片段。",
     inputSchema: QueryTaskParamsSchema,
     capability: "read",
     requireApproval: false,

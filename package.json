@@ -19,6 +19,7 @@
     "dist",
     "skills",
     "assets",
+    "scripts/probe-zcode.mjs",
     "README.md",
     "README.en.md",
     "CHANGELOG.md",
