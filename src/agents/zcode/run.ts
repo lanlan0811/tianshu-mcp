@@ -165,6 +165,8 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
         },
       });
 
+    const sessionsBefore = ctx.resume ? [] : await cdp.sessions();
+
     if (ctx.resume?.sendMessage || ctx.resume?.sessionId || ctx.resume?.sessionTitle) {
       if (!ctx.resume.sessionId && !ctx.resume.sessionTitle)
         return result({
@@ -185,7 +187,9 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
         endReason: "setup_failed",
       });
     await deps.sleep(500);
-    const activeSession = await cdp.session();
+    const activeSession = ctx.resume
+      ? { id: ctx.resume.sessionId, title: ctx.resume.sessionTitle }
+      : await cdp.session();
 
     if (!(await cdp.click("projectTrigger")))
       return result({
@@ -303,7 +307,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
         endReason: "permission_unknown",
       });
 
-    const session = await cdp.session();
+    let session = activeSession;
     const message = prompt(ctx, refs);
     {
       if (ctx.resume?.kind === "continue" && !ctx.resume.sendMessage) {
@@ -353,6 +357,29 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
           endReason: "send_unknown",
         });
       }
+      if (!ctx.resume) {
+        const previousIds = new Set(sessionsBefore.map((item) => item.id));
+        let added: Awaited<ReturnType<ZcodeCdpClient["sessions"]>> = [];
+        for (let i = 0; i < 20; i++) {
+          // eslint-disable-next-line no-await-in-loop
+          const current = await cdp.sessions();
+          added = current.filter((item) => !previousIds.has(item.id));
+          if (added.length === 1) break;
+          // eslint-disable-next-line no-await-in-loop
+          await deps.sleep(250);
+        }
+        if (added.length === 1) session = added[0]!;
+        else {
+          const current = await cdp.session();
+          if (current.id) session = current;
+        }
+      }
+      if (!session.id)
+        return result({
+          hardFailure: true,
+          error: "任务已发送，但无法唯一取得 ZCode 新会话 ID；已保留现场且不会重复发送",
+          endReason: "session_lost",
+        });
     }
 
     const deadline = started + ctx.taskTimeoutMs;

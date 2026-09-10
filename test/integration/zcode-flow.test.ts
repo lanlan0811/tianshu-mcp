@@ -101,7 +101,10 @@ class FakeZcode {
     return { display: this.model, internal: this.model };
   }
   async session() {
-    return { id: "session-1", title: "任务一" };
+    return this.sent ? { id: "session-1", title: "任务一" } : {};
+  }
+  async sessions() {
+    return this.sent ? [{ id: "session-1", title: "任务一" }] : [];
   }
   async selectSession() {
     return true;
@@ -156,6 +159,20 @@ class NoEvidenceZcode extends FakeZcode {
       inputEnabled: true,
       sendEnabled: true,
     };
+  }
+}
+
+class AmbiguousSessionZcode extends FakeZcode {
+  override async session() {
+    return {};
+  }
+  override async sessions() {
+    return this.sent
+      ? [
+          { id: "session-a", title: "任务 A" },
+          { id: "session-b", title: "任务 B" },
+        ]
+      : [];
   }
 }
 
@@ -231,6 +248,22 @@ describe("ZCode 假 CDP 单轮", () => {
     });
     expect(result.endReason).toBe("send_unknown");
     expect(result.error).toMatch(/用户消息=false.*输入状态变化=false.*运行信号=false/);
+    expect(fake.sent).toBe(1);
+  });
+  it("任务已发送但新会话无法唯一识别时保留现场且不重复发送", async () => {
+    const project = await makeTmpRoot("zcode-session-ambiguous");
+    cleanup.push(project);
+    const fake = new AmbiguousSessionZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.endReason).toBe("session_lost");
+    expect(result.error).toMatch(/无法唯一取得 ZCode 新会话 ID/);
+    expect(result.keptInstance).toBe(true);
     expect(fake.sent).toBe(1);
   });
   it("模型提问返回 needs_user 和原会话", async () => {

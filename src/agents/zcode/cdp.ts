@@ -9,6 +9,11 @@ import type { ZcodeProjectItem } from "./project.js";
 
 export { CdpDisconnectedError, CdpUnavailableError };
 
+export interface ZcodeSessionItem {
+  id: string;
+  title?: string;
+}
+
 export class ZcodeCdpClient {
   private readonly inner: TraeworkCdpClient;
   constructor(
@@ -111,13 +116,21 @@ export class ZcodeCdpClient {
   }
   async session(): Promise<{ id?: string; title?: string }> {
     return this.evaluate(
-      `(function(){const active=document.querySelector('[data-session-id][aria-current=true],[data-session-id].active');return {id:active?.getAttribute('data-session-id')||history.state?.sessionId||undefined,title:(active?.textContent||document.title||'').trim()||undefined}})()`,
+      `(function(){const idOf=e=>{if(!e)return undefined;const explicit=e.getAttribute('data-session-id');if(explicit)return explicit;const testid=e.getAttribute('data-testid')||'';return testid.startsWith('task-item-')?testid.slice('task-item-'.length):undefined};const selectors=['[data-session-id][aria-current=true]','[data-session-id][aria-selected=true]','[data-testid^="task-item-"][aria-current=true]','[data-testid^="task-item-"][aria-selected=true]','[data-testid^="task-item-"][data-state=active]','[data-testid^="task-item-"][data-state=selected]'];let active=null;for(const s of selectors){active=document.querySelector(s);if(active)break}const id=idOf(active)||history.state?.sessionId||history.state?.taskId||undefined;return {id,title:(active?.getAttribute('title')||active?.textContent||'').trim().slice(0,240)||undefined}})()`,
+    );
+  }
+  async sessions(): Promise<ZcodeSessionItem[]> {
+    return this.evaluate(
+      `(function(){const out=[],seen=new Set();for(const e of document.querySelectorAll('[data-session-id],[data-testid^="task-item-"]')){const testid=e.getAttribute('data-testid')||'';const id=e.getAttribute('data-session-id')||(testid.startsWith('task-item-')?testid.slice('task-item-'.length):'');if(!id||seen.has(id))continue;seen.add(id);const title=(e.getAttribute('title')||e.querySelector('[data-testid*="title"],[title]')?.getAttribute('title')||e.textContent||'').trim().slice(0,240)||undefined;out.push({id,title})}return out})()`,
     );
   }
   async selectSession(id?: string, title?: string): Promise<boolean> {
-    return this.evaluate(
-      `(function(){const nodes=[...document.querySelectorAll('[data-session-id],[data-testid*=task-item],[class*=task-item]')];const byId=${JSON.stringify(id ?? "")};const byTitle=${JSON.stringify(title ?? "")};const found=nodes.filter(e=>(byId&&e.getAttribute('data-session-id')===byId)||(!byId&&byTitle&&(e.textContent||'').trim()===byTitle));if(found.length!==1)return false;found[0].click();return true})()`,
+    const point = await this.evaluate<{ x: number; y: number } | null>(
+      `(function(){const nodes=[...document.querySelectorAll('[data-session-id],[data-testid^="task-item-"],[class*=task-item]')];const byId=${JSON.stringify(id ?? "")};const byTitle=${JSON.stringify(title ?? "")};const idOf=e=>{const explicit=e.getAttribute('data-session-id');if(explicit)return explicit;const testid=e.getAttribute('data-testid')||'';return testid.startsWith('task-item-')?testid.slice('task-item-'.length):''};const found=nodes.filter(e=>(byId&&idOf(e)===byId)||(!byId&&byTitle&&(e.getAttribute('title')||e.textContent||'').trim()===byTitle));if(found.length!==1)return null;found[0].scrollIntoView({block:'center'});const r=found[0].getBoundingClientRect();return r.width&&r.height?{x:r.left+r.width/2,y:r.top+r.height/2}:null})()`,
     );
+    if (!point) return false;
+    await this.clickAt(point.x, point.y);
+    return true;
   }
   async inputText(): Promise<string> {
     return this.text("chatInput");
