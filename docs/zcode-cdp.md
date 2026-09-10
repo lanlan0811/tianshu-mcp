@@ -15,6 +15,19 @@ ZCode 已从无头 CLI 占位升级为独立的 `zcode-gui` adapter。它通过 
 
 `D:\Z-Code\ZCode\ZCode.exe` 只是当前 Windows 验收样本，由“D 盘优先 + 相对路径模板”发现，不是业务硬编码。运行 `node scripts/probe-zcode.mjs all` 可只读查看安装、版本、进程和 CDP 目标。
 
+## 诊断与真机冒烟
+
+`probe-zcode.mjs` 支持 `install`、`process`、`cdp`、`selectors`、`ui`、`projects`、`models`、`permission`、`liveness` 和 `session`。`models` 与 `permission` 会短暂打开对应菜单、读取稳定显示名和内部 ID，再关闭菜单；探针不会发送消息或改动账户、凭证与安全设置。
+
+仓库维护者可在明确同意把测试提示词发给 ZCode 后运行显式真机冒烟：
+
+```powershell
+npm run build
+npm run smoke:zcode -- --confirm-send --model DeepSeek/deepseek-flash --project D:\repo\app --task "只检查 package.json，不修改文件，并回复检查结果"
+```
+
+`--confirm-send`、`--model` 和 `--task` 均为必填；缺少任一参数时脚本不会发送。脚本使用隔离的 MCP 数据目录，输出任务 ID、状态变化与证据目录，并保留 ZCode 窗口。
+
 ## CDP 与实例保护
 
 - 只连接 `127.0.0.1`，同时核验 CDP 页面具有 ZCode 产品标识，并核验 ZCode 根进程命令行中的调试端口。
@@ -57,7 +70,7 @@ continue_task(taskId=tsk_..., message=选择 PostgreSQL)
 
 项目优先按规范化绝对路径匹配。Windows 比较大小写不敏感并统一斜杠；macOS 保留平台路径语义。只有 basename 同名但无可核验路径时会停止，不会猜选。
 
-找不到项目时，adapter 记录已有原生对话框，再点击 ZCode 的“选择文件夹”。Windows 只处理新出现且进程属于 ZCode 的 `#32770` 窗口，通过 UI Automation 设置并回读路径；macOS 只操作 ZCode 的 sheet/window，通过 `osascript` argv 传入路径。提交后仍需从 ZCode 回读完整项目路径。
+找不到项目时，adapter 记录已有原生对话框，再点击 ZCode 的“选择文件夹”。Windows 只处理新出现且进程属于 ZCode 的 `#32770` 窗口，通过 UI Automation 设置并回读路径；macOS 只操作 ZCode 的 sheet/window，通过 `osascript` argv 传入路径，并优先使用与本地化无关的默认按钮语义。两端都会确认刚提交的面板已经关闭，随后仍需从 ZCode 回读完整项目路径。
 
 ## 运行、验收与返修
 
@@ -77,7 +90,7 @@ continue_task(taskId=tsk_..., message=选择 PostgreSQL)
 
 | 平台 | 已验证 | 未完成 |
 |---|---|---|
-| Windows 10 x64 | 自动发现 `D:\Z-Code\ZCode\ZCode.exe`、版本 `3.11.2.6792`、检测到既有无 CDP 实例且不终止 | 用户关闭旧实例后的项目绑定、模型、真实开发、提问继续、返修闭环 |
+| Windows 10 x64 | 自动发现 `D:\Z-Code\ZCode\ZCode.exe`、版本 `3.11.2.6792`、既有无 CDP 实例保护、CDP 启动、`tianshu-mcp` 完整路径回读、`DeepSeek/deepseek-flash` 显示值和内部 ID 回读、“完全访问”回读 | 真实提示词发送、文件开发、提问继续、新项目导入和返修闭环 |
 | macOS | 跨平台实现与 CI 单元/假 CDP 路径 | 真实设备安装、Accessibility、完整端到端证据 |
 
 在两端完整证据补齐之前，内置 profile 必须保持 `research`。

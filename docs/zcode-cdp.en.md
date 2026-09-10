@@ -15,6 +15,19 @@ ZCode now has a dedicated `zcode-gui` adapter instead of a headless-CLI placehol
 
 `D:\Z-Code\ZCode\ZCode.exe` is a Windows acceptance sample discovered from a configurable drive preference and relative template, not a business-code constant. Run `node scripts/probe-zcode.mjs all` for read-only installation, version, process, and CDP diagnostics.
 
+## Diagnostics and hardware smoke test
+
+`probe-zcode.mjs` supports `install`, `process`, `cdp`, `selectors`, `ui`, `projects`, `models`, `permission`, `liveness`, and `session`. The model and permission commands briefly open their menus, read stable display names and internal IDs, then close them. The probe sends no messages and changes no account, credential, or security settings.
+
+After explicitly agreeing to transmit the test prompt to ZCode, maintainers can run the hardware smoke script:
+
+```powershell
+npm run build
+npm run smoke:zcode -- --confirm-send --model DeepSeek/deepseek-flash --project D:\repo\app --task "Inspect package.json without modifying files, then report the result"
+```
+
+`--confirm-send`, `--model`, and `--task` are all required, so omission prevents transmission. The script uses an isolated MCP data home, prints the task ID and status changes plus the evidence directory, and preserves the ZCode window.
+
 ## CDP and instance safety
 
 - Only `127.0.0.1` is used. The page must identify as ZCode and a ZCode root process must own the debugging port.
@@ -51,7 +64,7 @@ For `agent_question`, the message is sent only to the exactly matched original s
 
 Projects are matched by normalized absolute path. Windows matching is case-insensitive and slash-insensitive; macOS retains platform semantics. Basename-only duplicates are ambiguous and never auto-selected.
 
-When import is required, the adapter snapshots existing dialogs before clicking Choose Folder. Windows accepts only a new ZCode-owned `#32770` window and sets/reads the path through UI Automation. macOS operates only ZCode's sheet/window and passes the POSIX path through `osascript` argv. The final full path is always read back from ZCode.
+When import is required, the adapter snapshots existing dialogs before clicking Choose Folder. Windows accepts only a new ZCode-owned `#32770` window and sets/reads the path through UI Automation. macOS operates only ZCode's sheet/window, passes the POSIX path through `osascript` argv, and prefers the locale-independent default-button accessibility role. Both platforms verify that the submitted picker closed; the final full path is then read back from ZCode.
 
 ## Liveness, verification, and repair
 
@@ -63,7 +76,7 @@ After completion, the shared acceptance engine runs. A failed round writes one p
 
 | Platform | Verified | Pending |
 |---|---|---|
-| Windows 10 x64 | Discovery of `D:\Z-Code\ZCode\ZCode.exe`, version `3.11.2.6792`, safe detection of a running non-CDP instance | Post-close real project/model/development/question/repair loop |
+| Windows 10 x64 | Discovery of `D:\Z-Code\ZCode\ZCode.exe`, version `3.11.2.6792`, non-CDP instance protection, CDP startup, full-path readback for `tianshu-mcp`, display/internal-ID readback for `DeepSeek/deepseek-flash`, and Full Access readback | Real prompt transmission, file development, question continuation, new-project import, and repair loop |
 | macOS | Cross-platform implementation and CI/mock coverage | Real installation, Accessibility, and full end-to-end evidence |
 
 The built-in profile must remain `research` until both pending hardware runs are complete.
