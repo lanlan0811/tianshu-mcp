@@ -11,9 +11,10 @@ export interface ZcodeCandidate {
   version?: string;
 }
 
-function validExecutable(p: string): boolean {
+function validExecutable(p: string, platform: NodeJS.Platform = process.platform): boolean {
   try {
-    return fs.statSync(p).isFile() && /^zcode(?:\.exe)?$/i.test(path.basename(p));
+    const api = platform === "win32" ? path.win32 : path.posix;
+    return fs.statSync(p).isFile() && /^zcode(?:\.exe)?$/i.test(api.basename(p));
   } catch {
     return false;
   }
@@ -96,21 +97,29 @@ function registryInstallLocations(): string[] {
   }
 }
 
-function pathCandidates(): string[] {
-  const names = process.platform === "win32" ? ["ZCode.exe"] : ["ZCode"];
+function pathCandidates(platform: NodeJS.Platform): string[] {
+  const names = platform === "win32" ? ["ZCode.exe"] : ["ZCode"];
+  const api = platform === "win32" ? path.win32 : path.posix;
+  const delimiter = platform === "win32" ? ";" : ":";
   return (process.env.PATH ?? "")
-    .split(path.delimiter)
-    .flatMap((dir) => names.map((name) => path.join(dir, name)));
+    .split(delimiter)
+    .flatMap((dir) => names.map((name) => api.join(dir, name)));
 }
 
 /** Data-driven ZCode discovery. Optional injected inputs make order/platform behavior unit-testable. */
 export function discoverZcode(
   profile: AgentProfile,
-  input: { platform?: NodeJS.Platform; fixedDrives?: string[]; registryDirs?: string[] } = {},
+  input: {
+    platform?: NodeJS.Platform;
+    fixedDrives?: string[];
+    registryDirs?: string[];
+    driveRoots?: Record<string, string>;
+  } = {},
 ): ZcodeCandidate | null {
   const platform = input.platform ?? process.platform;
+  const api = platform === "win32" ? path.win32 : path.posix;
   const explicit = profile.gui?.exePath?.trim() || profile.command?.trim();
-  if (explicit && validExecutable(explicit))
+  if (explicit && validExecutable(explicit, platform))
     return { path: explicit, source: "explicit", version: fileVersion(explicit) };
   const disc = profile.executableDiscovery;
   if (!disc) return null;
@@ -123,7 +132,10 @@ export function discoverZcode(
     );
     for (const drive of drives)
       for (const rel of disc.relativePaths ?? [])
-        candidates.push({ p: path.win32.join(`${drive}\\`, rel), source: "fixed-drive" });
+        candidates.push({
+          p: path.win32.join(input.driveRoots?.[drive] ?? `${drive}\\`, rel),
+          source: "fixed-drive",
+        });
     for (const dir of input.registryDirs ?? registryInstallLocations()) {
       candidates.push({ p: path.win32.join(dir, "ZCode.exe"), source: "registry" });
       candidates.push({ p: path.win32.join(dir, "ZCode", "ZCode.exe"), source: "registry" });
@@ -133,18 +145,18 @@ export function discoverZcode(
     const dir = expandEnvPath(dirTpl.replace("{HOME}", os.homedir()));
     for (const name of disc.fileNames ?? [])
       candidates.push({
-        p: path.join(dir, name),
+        p: api.join(dir, name),
         source: platform === "darwin" && dir.includes(".app") ? "bundle" : "standard",
       });
   }
-  for (const p of pathCandidates()) candidates.push({ p, source: "path" });
+  for (const p of pathCandidates(platform)) candidates.push({ p, source: "path" });
 
   const seen = new Set<string>();
   for (const candidate of candidates) {
     const key = platform === "win32" ? candidate.p.toLowerCase() : candidate.p;
     if (seen.has(key)) continue;
     seen.add(key);
-    if (validExecutable(candidate.p))
+    if (validExecutable(candidate.p, platform))
       return { path: candidate.p, source: candidate.source, version: fileVersion(candidate.p) };
   }
   return null;

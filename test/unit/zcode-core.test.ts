@@ -33,6 +33,115 @@ describe("ZCode 安装与模型", () => {
     expect(normalizeDrive("d:")).toBe("D:");
     expect(orderedDrives(["C:", "D:", "E:", "d:"], ["D:"])).toEqual(["D:", "C:", "E:"]);
   });
+  it("固定盘候选按可配置优先级发现，而不是硬编码盘符", async () => {
+    const root = await makeTmpRoot("zcode-drives");
+    const cRoot = path.join(root, "c-drive");
+    const dRoot = path.join(root, "d-drive");
+    const relative = path.join("Z-Code", "ZCode", "ZCode.exe");
+    for (const driveRoot of [cRoot, dRoot]) {
+      fs.mkdirSync(path.join(driveRoot, path.dirname(relative)), { recursive: true });
+      fs.writeFileSync(path.join(driveRoot, relative), "");
+    }
+    const profile = AgentProfileSchema.parse({
+      driver: "gui",
+      adapter: "zcode-gui",
+      status: "research",
+      command: null,
+      executableDiscovery: {
+        dirs: [],
+        fileNames: ["ZCode.exe"],
+        preferredDrives: ["D:"],
+        relativePaths: [relative],
+      },
+    });
+    expect(
+      discoverZcode(profile, {
+        platform: "win32",
+        fixedDrives: ["C:", "D:"],
+        driveRoots: { "C:": cRoot, "D:": dRoot },
+        registryDirs: [],
+      }),
+    ).toMatchObject({ path: path.win32.join(dRoot, relative), source: "fixed-drive" });
+    await rmrf(root);
+  });
+  it("Windows 注册表安装位置和标准目录均可发现", async () => {
+    const root = await makeTmpRoot("zcode-registry-standard");
+    const registryRoot = path.join(root, "registry");
+    const standardRoot = path.join(root, "standard");
+    fs.mkdirSync(registryRoot, { recursive: true });
+    fs.mkdirSync(standardRoot, { recursive: true });
+    fs.writeFileSync(path.join(registryRoot, "ZCode.exe"), "");
+    fs.writeFileSync(path.join(standardRoot, "ZCode.exe"), "");
+    const base = {
+      driver: "gui" as const,
+      adapter: "zcode-gui" as const,
+      status: "research" as const,
+      command: null,
+    };
+    const registryProfile = AgentProfileSchema.parse({
+      ...base,
+      executableDiscovery: {
+        dirs: [],
+        fileNames: ["ZCode.exe"],
+        preferredDrives: [],
+        relativePaths: [],
+      },
+    });
+    expect(
+      discoverZcode(registryProfile, {
+        platform: "win32",
+        fixedDrives: [],
+        registryDirs: [registryRoot],
+      }),
+    ).toMatchObject({ source: "registry" });
+    const standardProfile = AgentProfileSchema.parse({
+      ...base,
+      executableDiscovery: {
+        dirs: [standardRoot],
+        fileNames: ["ZCode.exe"],
+        preferredDrives: [],
+        relativePaths: [],
+      },
+    });
+    expect(
+      discoverZcode(standardProfile, {
+        platform: "win32",
+        fixedDrives: [],
+        registryDirs: [],
+      }),
+    ).toMatchObject({ path: path.win32.join(standardRoot, "ZCode.exe"), source: "standard" });
+    await rmrf(root);
+  });
+  it("macOS 系统与用户 Applications bundle 均按顺序发现", async () => {
+    const root = await makeTmpRoot("zcode-macos-bundles");
+    const systemDir = path.join(root, "Applications", "ZCode.app", "Contents", "MacOS");
+    const userDir = path.join(root, "Users", "tester", "Applications", "ZCode.app", "Contents", "MacOS");
+    fs.mkdirSync(systemDir, { recursive: true });
+    fs.mkdirSync(userDir, { recursive: true });
+    fs.writeFileSync(path.join(userDir, "ZCode"), "");
+    const profile = AgentProfileSchema.parse({
+      driver: "gui",
+      adapter: "zcode-gui",
+      status: "research",
+      command: null,
+      executableDiscovery: {
+        dirs: [systemDir, userDir],
+        fileNames: ["ZCode"],
+        preferredDrives: [],
+        relativePaths: [],
+      },
+    });
+    expect(discoverZcode(profile, { platform: "darwin" })).toMatchObject({
+      path: path.posix.join(userDir, "ZCode"),
+      source: "bundle",
+    });
+    fs.writeFileSync(path.join(systemDir, "ZCode"), "");
+    expect(discoverZcode(profile, { platform: "darwin" })).toMatchObject({
+      path: path.posix.join(systemDir, "ZCode"),
+      source: "bundle",
+    });
+    await rmrf(root);
+  });
   it("严格解析 供应商/模型", () => {
     expect(parseZcodeModel("DeepSeek/deepseek-flash")).toEqual({
       provider: "DeepSeek",
