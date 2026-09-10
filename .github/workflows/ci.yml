@@ -90,11 +90,16 @@ jobs:
           npm pack --pack-destination "$RUNNER_TEMP/pkg"
           TGZ=$(ls "$RUNNER_TEMP/pkg"/*.tgz | head -1)
           test -n "$TGZ"
-          tar -tzf "$TGZ" | grep -q "package/dist/index.js" || { echo "dist/index.js missing"; exit 1; }
-          tar -tzf "$TGZ" | grep -q "package/skills/tianshu-mcp/SKILL.md" || { echo "SKILL.md missing"; exit 1; }
-          tar -tzf "$TGZ" | grep -q "package/README.md" || { echo "README.md missing"; exit 1; }
-          tar -tzf "$TGZ" | grep -q "package/README.en.md" || { echo "README.en.md missing"; exit 1; }
-          tar -tzf "$TGZ" | grep -q "package/LICENSE" || { echo "LICENSE missing"; exit 1; }
+          # 先落一份清单再逐条 grep：直接 `tar | grep -q` 会因 grep 提前退出触发
+          # tar 的 SIGPIPE（stdout: write error），在 Actions 的 pipefail 下误报缺失。
+          LIST="$RUNNER_TEMP/pkg/listing.txt"
+          tar -tzf "$TGZ" > "$LIST"
+          MISSING=0
+          for f in package/dist/index.js package/skills/tianshu-mcp/SKILL.md \
+                   package/README.md package/README.en.md package/LICENSE; do
+            if ! grep -qF "$f" "$LIST"; then echo "$f missing"; MISSING=1; fi
+          done
+          [ "$MISSING" -eq 0 ] || exit 1
           echo "TGZ=$TGZ" >> "$GITHUB_ENV"
           echo "tarball content OK: $TGZ"
       - name: Install tarball into clean consumer & run strict stdio check
