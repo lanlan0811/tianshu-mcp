@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import type {
   AgentRunLogger,
   AgentRunOptions,
@@ -184,6 +185,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
         endReason: "setup_failed",
       });
     await deps.sleep(500);
+    const activeSession = await cdp.session();
 
     if (!(await cdp.click("projectTrigger")))
       return result({
@@ -226,6 +228,16 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
             : undefined,
           error: selected.needsPermission ? undefined : selected.message,
           hardFailure: !selected.needsPermission,
+          session: selected.needsPermission
+            ? {
+                id: activeSession.id,
+                title: activeSession.title,
+                boundProjectPath: ctx.projectPath,
+                provider: spec.provider,
+                model: spec.model,
+                permissionMode: gui.defaultPermissionMode,
+              }
+            : undefined,
         });
     }
     if (!(await waitBound(cdp, ctx.projectPath, deps)))
@@ -296,8 +308,16 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
       if (ctx.resume?.kind === "continue" && !ctx.resume.sendMessage) {
         logger.info("[zcode] 用户确认文本不发送给模型；环境复检通过后发送原始任务书");
       }
-      const marker = `【tianshu:${ctx.taskId}:r${ctx.round}】`;
+      const attempt =
+        ctx.resume?.kind === "continue"
+          ? `continue:${createHash("sha256")
+              .update(ctx.resume.message ?? "confirmed")
+              .digest("hex")
+              .slice(0, 8)}`
+          : (ctx.resume?.kind ?? "initial");
+      const marker = `【tianshu:${ctx.taskId}:r${ctx.round}:${attempt}】`;
       const before = await cdp.conversationText();
+      const beforePoll = await cdp.poll();
       await cdp.typeText(marker + message);
       const typed = await cdp.inputText();
       if (!typed.includes(marker))
@@ -307,17 +327,30 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
           endReason: "input_mismatch",
         });
       await cdp.sendMessage();
-      await deps.sleep(500);
-      const after = await cdp.conversationText();
-      const polled = await cdp.poll();
-      if (!after.includes(marker) && !polled.stopVisible && !polled.loading && !polled.activeTool) {
-        if (before.includes(marker)) logger.info("[zcode] 会话已存在同一消息，避免重复发送");
-        else
-          return result({
-            hardFailure: true,
-            error: "发送结果无法确认，未观察到用户消息或运行信号",
-            endReason: "send_unknown",
-          });
+      let seenMessage = before.includes(marker);
+      let seenStateChange = false;
+      let seenRunning = false;
+      for (let i = 0; i < 20 && !(seenMessage && seenStateChange && seenRunning); i++) {
+        // eslint-disable-next-line no-await-in-loop
+        await deps.sleep(250);
+        // eslint-disable-next-line no-await-in-loop
+        const [after, input, polled] = await Promise.all([
+          cdp.conversationText(),
+          cdp.inputText(),
+          cdp.poll(),
+        ]);
+        seenMessage ||= after.includes(marker);
+        seenStateChange ||= !input.includes(marker);
+        seenRunning ||= polled.stopVisible || polled.loading || polled.activeTool;
+        if (polled.assistantText && polled.assistantText !== beforePoll.assistantText)
+          seenRunning = true;
+      }
+      if (!(seenMessage && seenStateChange && seenRunning)) {
+        return result({
+          hardFailure: true,
+          error: `发送结果无法确认（用户消息=${seenMessage}，输入状态变化=${seenStateChange}，运行信号=${seenRunning}）；不重复发送`,
+          endReason: "send_unknown",
+        });
       }
     }
 

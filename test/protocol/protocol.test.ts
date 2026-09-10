@@ -87,6 +87,9 @@ describe("工具面", () => {
     expect(meta).not.toBeNull();
     expect(meta!.ok).toBe(true);
     expect(text).toContain("stub");
+    expect(text).toContain("zcode");
+    expect(text).toContain("driver=gui");
+    expect(text).toContain("profileStatus=research");
   });
 
   it("list_tasks 空表也返回合法格式", async () => {

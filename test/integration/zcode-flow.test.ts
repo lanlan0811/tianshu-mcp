@@ -55,6 +55,7 @@ function resolved(): ResolvedAgent {
 class FakeZcode {
   sent = 0;
   typed = "";
+  conversation = "";
   provider = "";
   model = "";
   permission = "";
@@ -103,7 +104,7 @@ class FakeZcode {
     return true;
   }
   async conversationText() {
-    return this.sent ? this.typed : "";
+    return this.conversation;
   }
   async typeText(text: string) {
     this.typed = text;
@@ -113,8 +114,19 @@ class FakeZcode {
   }
   async sendMessage() {
     this.sent++;
+    this.conversation = this.typed;
+    this.typed = "";
   }
   async poll() {
+    if (!this.sent)
+      return {
+        stopVisible: false,
+        loading: false,
+        activeTool: false,
+        assistantText: "",
+        inputEnabled: true,
+        sendEnabled: true,
+      };
     this.polls++;
     return {
       stopVisible: this.polls === 1,
@@ -122,6 +134,22 @@ class FakeZcode {
       activeTool: false,
       question: this.question,
       assistantText: "开发完成",
+      inputEnabled: true,
+      sendEnabled: true,
+    };
+  }
+}
+
+class NoEvidenceZcode extends FakeZcode {
+  override async sendMessage() {
+    this.sent++;
+  }
+  override async poll() {
+    return {
+      stopVisible: false,
+      loading: false,
+      activeTool: false,
+      assistantText: "",
       inputEnabled: true,
       sendEnabled: true,
     };
@@ -186,6 +214,21 @@ describe("ZCode 假 CDP 单轮", () => {
     expect(result.ok).toBe(false);
     expect(result.endReason).toBe("model_unavailable");
     expect(fake.sent).toBe(0);
+  });
+  it("发送证据不完整时 fail-closed 且不重复发送", async () => {
+    const project = await makeTmpRoot("zcode-send-evidence");
+    cleanup.push(project);
+    const fake = new NoEvidenceZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.endReason).toBe("send_unknown");
+    expect(result.error).toMatch(/用户消息=false.*输入状态变化=false.*运行信号=false/);
+    expect(fake.sent).toBe(1);
   });
   it("模型提问返回 needs_user 和原会话", async () => {
     const project = await makeTmpRoot("zcode-question");

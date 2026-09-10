@@ -23,7 +23,7 @@ $window=$null
 do {
   $root=[System.Windows.Automation.AutomationElement]::RootElement
   $wins=$root.FindAll([System.Windows.Automation.TreeScope]::Children,[System.Windows.Automation.Condition]::TrueCondition)
-  foreach($w in $wins){$h=[string]$w.Current.NativeWindowHandle; $pid=[string]$w.Current.ProcessId; if($w.Current.ClassName -eq '#32770' -and $baseline -notcontains $h -and $owners -contains $pid){$window=$w;break}}
+  foreach($w in $wins){$h=[string]$w.Current.NativeWindowHandle; $pid=[string]$w.Current.ProcessId; $title=[string]$w.Current.Name; if($w.Current.ClassName -eq '#32770' -and $baseline -notcontains $h -and $owners -contains $pid -and $title -match '选择|打开|Select|Choose|Browse|Open'){$window=$w;break}}
   if(-not $window){Start-Sleep -Milliseconds 200}
 } while(-not $window -and (Get-Date) -lt $deadline)
 if(-not $window){throw '未发现 ZCode 新建的文件夹对话框'}
@@ -37,6 +37,23 @@ if([IO.Path]::GetFullPath($pattern.Current.Value).TrimEnd('\') -ne [IO.Path]::Ge
 [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')`;
 
 export async function listOwnedDialogs(pids: number[]): Promise<string[]> {
+  if (process.platform === "darwin") {
+    const script = `tell application "System Events"
+tell process "ZCode"
+  set total to 0
+  repeat with w in windows
+    set total to total + (count of sheets of w)
+  end repeat
+  return "sheet-count:" & total
+end tell
+end tell`;
+    try {
+      const { stdout } = await execFileAsync("osascript", ["-e", script], { timeout: 10_000 });
+      return [stdout.trim() || "sheet-count:0"];
+    } catch {
+      return ["sheet-count:0"];
+    }
+  }
   if (process.platform !== "win32") return [];
   const { stdout } = await execFileAsync(
     "powershell.exe",
@@ -73,12 +90,24 @@ export async function selectZcodeFolder(
     }
   }
   if (process.platform === "darwin") {
+    const baselineCount = Number(/^sheet-count:(\d+)$/.exec(baseline[0] ?? "")?.[1] ?? 0);
     const script = `on run argv
 set targetFolder to item 1 of argv
+set baselineCount to (item 2 of argv) as integer
 tell application "System Events"
   if UI elements enabled is false then error "ACCESSIBILITY_PERMISSION_REQUIRED"
   tell process "ZCode"
     set frontmost to true
+    set deadline to (current date) + 15
+    repeat
+      set total to 0
+      repeat with w in windows
+        set total to total + (count of sheets of w)
+      end repeat
+      if total > baselineCount then exit repeat
+      if (current date) > deadline then error "NEW_ZCODE_FOLDER_SHEET_NOT_FOUND"
+      delay 0.2
+    end repeat
     keystroke "g" using {command down, shift down}
     delay 0.3
     keystroke targetFolder
@@ -90,7 +119,9 @@ tell application "System Events"
 end tell
 end run`;
     try {
-      await execFileAsync("osascript", ["-e", script, folder], { timeout: 20_000 });
+      await execFileAsync("osascript", ["-e", script, folder, String(baselineCount)], {
+        timeout: 20_000,
+      });
       return { ok: true, message: "macOS 文件夹面板已提交" };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

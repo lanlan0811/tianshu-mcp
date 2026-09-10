@@ -39,7 +39,7 @@ export class ZcodeCdpClient {
   async text(key: ZcodeSelectorKey): Promise<string> {
     return (
       (await this.evaluate<string>(
-        `(function(){for(const s of ${candidateExpr(key, this.selectors)}){for(const e of document.querySelectorAll(s)){const r=e.getBoundingClientRect();if(r.width&&r.height)return (e.textContent||e.getAttribute('title')||'').trim()}}return ''})()`,
+        `(function(){for(const s of ${candidateExpr(key, this.selectors)}){for(const e of document.querySelectorAll(s)){const r=e.getBoundingClientRect();if(r.width&&r.height)return (e.value||e.textContent||e.getAttribute('title')||'').trim()}}return ''})()`,
       )) || ""
     );
   }
