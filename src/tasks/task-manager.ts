@@ -228,6 +228,18 @@ export class TaskManager {
       await this.store.updateStatus(meta, "cancelled", meta.lastMessage);
       return { found: true };
     }
+    if (meta.status === "needs_user") {
+      meta.cancelRequestedAt = nowIso();
+      meta.abortSource = "user";
+      meta.errorType = "cancelled";
+      meta.cancelReason = reason;
+      meta.lastMessage = reason
+        ? `已取消（等待用户处理时）：${reason}`
+        : "已取消（等待用户处理时）";
+      await this.store.appendEvent(meta.taskId, "cancel_requested", "needs_user", meta.lastMessage);
+      await this.store.updateStatus(meta, "cancelled", meta.lastMessage);
+      return { found: true };
+    }
     if (ACTIVE_STATUSES.includes(meta.status)) {
       // queued 之外的活动中任务：记 cancel_requested（含 cancelReason）再 abort
       await this.store.markCancelRequested(meta, reason);

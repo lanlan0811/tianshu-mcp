@@ -20,6 +20,7 @@
       "displayName": "Codex (OpenAI 桌面端 CLI)",   // 展示名
       "type": "cli",                                  // 目前仅 cli
       "driver": "spawn",                              // spawn=外部子进程（默认）；gui=桌面 UI 自动化
+      "adapter": "zcode-gui",                         // GUI 可选：traework-gui | zcode-gui；旧缺省按 TraeWork 兼容
       "status": "ready",                              // ready | research | unsupported
       "command": null,                                // 可执行；null + discovery 则自动探测
       "argsTemplate": ["exec", "<prompt:arg>", "--skip-git-repo-check"],
@@ -32,14 +33,17 @@
       "executableDiscovery": {                        // 可执行自动发现（选填）
         "dirs": ["C:/Users/<你>/AppData/Local/OpenAI/Codex/bin"],
         "fileNames": ["codex.exe", "codex"],          // 无 fileNames 则目录不扫描
-        "fallbackCommand": "codex"                    // 最后回退：PATH 查找
+        "fallbackCommand": "codex",                   // 最后回退：PATH 查找
+        "preferredDrives": ["D:"],                    // Windows 固定盘优先级
+        "relativePaths": ["Z-Code/ZCode/ZCode.exe"]   // 相对盘根候选
       },
       "gui": {                                        // 仅 driver="gui" 使用（如 traework）
         "cdpPort": 9222, "cdpPortAuto": true, "cdpPortRange": 20,
         "exeArgs": ["--remote-debugging-port=<port>"], "windowMode": "reuse",
         "launchTimeoutMs": 60000, "pollIntervalMs": 3000, "stableRounds": 12,
         "idleTimeoutMs": 600000, "cdpSendTimeoutMs": 15000, "progressIntervalMs": 30000,
-        "modelSwitch": true, "modeSwitch": true, "freshSession": true, "selectors": {}
+        "modelSwitch": true, "modeSwitch": true, "freshSession": true, "selectors": {},
+        "modelRequired": false, "defaultPermissionMode": "完全访问", "defaultAutoFixRounds": 2
       }
     }
   }
@@ -53,7 +57,7 @@
 | `spawn`（默认） | 拉起外部 CLI 子进程（`argsTemplate` + `promptMode`），结果按退出码判定 |
 | `gui` | 通过 CDP 驱动桌面 UI（当前仅 `traework`）；不 spawn 子进程，`run_task` 可传 `model` 指定其模型 |
 
-> `driver=gui` 时 `argsTemplate`/`promptMode` 不生效；`gui` 段字段含义与安全约束见 [traework-cdp.md](traework-cdp.md)。
+> `driver=gui` 时 `argsTemplate`/`promptMode` 不生效。显式 `adapter` 用于隔离 TraeWork 与 ZCode；旧 profile 缺失该字段时仍按 TraeWork 行为兼容。分别见 [traework-cdp.md](traework-cdp.md) 与 [zcode-cdp.md](zcode-cdp.md)。
 
 TraeWork 存活检测相关字段：`stableRounds` 仅确认 DOM 已稳定；随后还需持续 `idleTimeoutMs` 无变化且无运行信号才返回
 `idle`。`cdpSendTimeoutMs` 限制单次 CDP 命令等待，`progressIntervalMs` 控制 `query_task` 可见的进度事件频率。
@@ -114,6 +118,8 @@ TraeWork 存活检测相关字段：`stableRounds` 仅确认 DOM 已稳定；随
 | `unsupported` | 明确不支持（见 adapter-matrix.md） | 同上 |
 
 > `traework` 已于 2026-09-08 由 `unsupported` 改为 `ready` + `driver=gui`（CDP 驱动桌面 UI，见 [traework-cdp.md](traework-cdp.md)）。
+
+> `zcode` 使用 `driver=gui` + `adapter=zcode-gui`。`model` 必须是 `供应商/模型`，默认权限为“完全访问”、默认自动返修 2 轮。Windows/macOS 真机证据全部完成前内置状态保持 `research`。
 
 ## 常见问题
 

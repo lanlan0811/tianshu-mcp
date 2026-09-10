@@ -71,6 +71,10 @@ jobs:
           # 只捕获本次生成、与解析版本一致的那个 tarball
           TGZ="$RUNNER_TEMP/tianshu-mcp-${{ steps.version.outputs.version }}.tgz"
           test -f "$TGZ" || { echo "expected tarball $TGZ not found"; ls "$RUNNER_TEMP"/*.tgz; exit 1; }
+          tar -tzf "$TGZ" > "$RUNNER_TEMP/package-list.txt"
+          for REQUIRED in package/dist/agents/zcode/adapter.js package/dist/agents/zcode/run.js package/scripts/probe-zcode.mjs; do
+            grep -qF "$REQUIRED" "$RUNNER_TEMP/package-list.txt" || { echo "missing $REQUIRED"; exit 1; }
+          done
           echo "tarball=$TGZ" >> "$GITHUB_OUTPUT"
 
       - name: Install tarball into clean consumer & strict stdio check

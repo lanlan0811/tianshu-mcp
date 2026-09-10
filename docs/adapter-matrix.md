@@ -1,6 +1,6 @@
 # Agent 能力调研矩阵（adapter-matrix.md）
 
-外部 AI-Agent 接入调研结论。维护原则：**只接有官方 CLI / 编程接口的 agent**；无接口的不 pty 硬接，明确标 unsupported 并给替代建议。
+外部 AI-Agent 接入调研结论。维护原则：优先官方 CLI；Electron 桌面产品仅在能通过本机 CDP 严格核验产品、进程、项目与会话时使用隔离 GUI adapter，不调用未公开内部协议。
 
 更新记录：本文件与 `docs/agent-profiles.md` 配套。状态随 M2/M3 调研推进刷新。
 
@@ -9,7 +9,7 @@
 | Agent | 接口类型 | 状态 | 可执行发现 | 登录态 | 任务/文件回读 | 备注 |
 |---|---|---|---|---|---|---|
 | **Codex**（OpenAI 桌面端） | 本地 CLI `codex.exe` | ✅ **已冒烟通过**（2026-09-07 run_task→verify_task，见 [m2-smoke-record.md](m2-smoke-record.md)） | `executableDiscovery` → `.../Codex/bin/<hash>/codex.exe`（实测 v0.153.4） | 复用 `~/.codex`（auth.json），与桌面端同账号 | cwd 内读写文件；stdout 流式 | `codex exec "<prompt>" --sandbox workspace-write`（勿与 --approve-for-me 同用） |
-| **Zcode**（ZCode 桌面） | Electron 桌面应用（`D:\Z-Code\ZCode\ZCode.exe`）；无随包无头 CLI | ❌ **unsupported（无无头 agent-exec 接口）** | 数据目录 `.zcode/cli` 非入口（会话数据）；打包 tools 仅 cua-helper/ripgrep/ugrep | 复用本机登录态 | — | 桌面会话/agent 由应用自身驱动；tianshu-mcp 无法无头 spawn（见 Z1） |
+| **Zcode**（ZCode 桌面） | Electron + 独立 `zcode-gui` CDP adapter | **research（实现完成，双平台真机待补齐）** | 数据驱动固定盘/注册表/标准目录/macOS bundle | 复用本机登录态 | DOM 回读项目、模型、权限、会话与回复 | 无头 CLI 仍不存在；GUI 路线见 [zcode-cdp.md](zcode-cdp.md) |
 | **TraeWork / TRAE SOLO CN** | 桌面 IDE（v1.107.1）+ **CDP GUI 驱动** | ✅ **已接入并真机验证**（2026-09-08；见 T1 更正与 [traework-cdp.md](traework-cdp.md)） | 无头 CLI 不存在；以 `--remote-debugging-port` 驱动聊天 UI | 复用 TraeWork 桌面端登录态（本 MCP 不读取凭证） | 从 DOM 提取回复；项目文件由 TraeWork 自身写入 | `byted-solo.builtin-mcp` 是 MCP 客户端扩展，非被驱动接口 |
 | **stub**（测试用） | 本地脚本 | ✅ 内置测试 | 测试注入 profile | 无 | — | 仅 M1 集成测试使用 |
 
@@ -83,7 +83,7 @@
 > 更正记录：早前版本基于 `%APPDATA%` 误判「本机未安装 Trae」；随后在 `D:/` 发现真实安装并定论「无无头 CLI」；
 > 本次进一步确证 GUI 路线可行，profile 已改为 `status: "ready"` + `driver: "gui"`。
 
-## Z1 — Zcode headless 入口（2026-09-07 实测，已定论）
+## Z1 — Zcode headless 入口（2026-09-07 实测，结论仅限无头路线）
 
 **结论：`unsupported`——ZCode 是 Electron 桌面应用（`D:\Z-Code\ZCode\ZCode.exe`），未随包提供 headless agent-exec CLI 供外部无头驱动。**
 
@@ -96,7 +96,7 @@
 
 因此 tianshu-mcp **无法把 Zcode 作为外部 agent 无头 spawn**（R14：不 pty 硬接、不 GUI 自动化默认实施）。内置 profile 已把 zcode 置为 `status: "research"`→应改为 unsupported 说明留待：若 ZCode 未来提供 headless CLI/官方接口，可重跑本调研。
 
-> 更正记录：早前按开发计划 §13 Z1 标记"待产品侧确认"；本次定位到真实安装 `D:\Z-Code\ZCode` 并确认无随包无头 CLI，结论改为明确 unsupported。
+> 2026-09-11 更正：无头 CLI 结论保持不变，但 Electron CDP GUI 路线已实现为独立 `zcode-gui` adapter，支持 `needs_user/continue_task` 和自动验收返修。内置 profile 在 Windows/macOS 真机闭环全部完成前保持 `research`。详见 [zcode-cdp.md](zcode-cdp.md)。
 
 ## 只读调研来源（D:\Tianshu 逆向，仅作事实依据）
 

@@ -1,6 +1,6 @@
 ---
 name: tianshu-mcp
-description: 让外部 AI-Agent（codex/zcode/traework）做项目开发并自动验收、失败返修的编排方法。当任务需要"叫一个 AI-Agent 去开发/改代码/补测试并验收，不行就返修"时先加载本技能：按它用 mcp__tianshu-mcp__run_task/query_task/verify_task/rework_task 派活、轮询、读验收报告、驱动返修。小改动或纯问答不需要。
+description: 让外部 AI-Agent（codex/zcode/traework）做项目开发并自动验收、失败返修的编排方法。当任务需要"叫一个 AI-Agent 去开发/改代码/补测试并验收，不行就返修"时先加载本技能：按它用 mcp__tianshu-mcp__run_task/continue_task/query_task/verify_task/rework_task 派活、暂停继续、轮询、读验收报告、驱动返修。小改动或纯问答不需要。
 triggers: '开发|编码|写代码|改代码|实现功能|加功能|修复|重构|补测试|写测试|验收|返修|返工|重做|ai.?agent|子代理|外部.?agent|agent|codex|zcode|traework|claude|编排|项目开发|派活'
 ---
 
@@ -16,7 +16,7 @@ triggers: '开发|编码|写代码|改代码|实现功能|加功能|修复|重�
 ## 1. 选 agent
 
 - `codex`：Codex 桌面端自带 CLI（通用编码，默认，推荐先试）。
-- `zcode`：本机 Zcode CLI（无头入口调研结论为不可用，当前不可选）。
+- `zcode`：ZCode 桌面端独立 CDP GUI adapter。要求已安装、已登录；`model` 必须为 `供应商/模型`，发送前确认“完全访问”。双平台真机证据补齐前 profile 为 `research`，用 `get_profiles` 读取当前机器实际探测结果。
 - `traework`：TraeWork（TRAE SOLO CN）桌面端，**GUI 驱动**（CDP）。适合需要 TraeWork 原生能力的任务；要求 TraeWork 已登录、窗口可见。可用 `model` 指定模型（如 `GLM-5.3`）、`mode` 指定面板模式（`Work`/`Code`/`Design`）。
 - 不确定时问用户，或读项目 `projects.json` 的 `defaultAgentId`。用 `get_profiles` 看当前实际可用性（会做可执行探测）。
 
@@ -27,10 +27,10 @@ triggers: '开发|编码|写代码|改代码|实现功能|加功能|修复|重�
 - `projectPath`：**必须**是项目绝对路径（如 `D:\repo\my-app`）。
 - `task`：自然语言任务书。要写清 **目标 / 验收要点 / 约束 / 相关文件 / 上下文**，模板见 usage-examples.md。
 - `agentId`：默认取项目 default 或 codex。
-- `model`：可选，仅 GUI 类 agent（`traework`）生效，用于指定 TraeWork 使用的模型（如 `GLM-5.3`）；CLI 类 agent 忽略。
+- `model`：TraeWork 可选；ZCode 必填且格式为 `供应商/模型`（如 `DeepSeek/deepseek-flash`）。
 - `mode`：可选，仅 GUI 类 agent（`traework`）生效，指定面板模式 `Work` / `Code` / `Design`；不传时从任务书文本识别（如「切换到 Code 模式」），识别不到则保持 `Work`。实现顺序为「新建会话 → 切模式 → 在目标模式内绑定项目」。
 - `autoVerify: true`：跑完自动验收（命令检查 + 代码分析）。
-- `autoFixRounds: N`：>0 才开启失败自动返修（默认建议 2；不传 = 0 保守模式）。
+- `autoFixRounds: N`：>0 才开启失败自动返修；ZCode 缺省为 2，其余 agent 仍按 server 默认。
 - `taskTimeoutMs`：任务级超时，缺省 30 分钟，长任务可调大。
 
 返回立刻给 `taskId`（异步契约）。**不要把任务书当同步调用等结果。**
@@ -41,6 +41,7 @@ triggers: '开发|编码|写代码|改代码|实现功能|加功能|修复|重�
 - 同一项目勿重复派单：每项目串行，重复派会排队，反而更慢。
 - 状态语义：
   - `queued` 排队中 / `running` 开发中 / `verify_start` 验收中 / `fixing` 返修中；
+  - `needs_user` 表示 ZCode 正在等待问题回答、关闭旧实例、登录或系统权限；按提示处理后调用 `continue_task(taskId, message)`，禁止新开会话冒充恢复；
   - 终态见下。
 
 ## 4. 终态解读

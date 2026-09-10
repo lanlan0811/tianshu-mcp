@@ -201,7 +201,7 @@ export const TRANSITIONS: Record<TaskStatus, readonly TaskStatus[]> = {
   succeeded: [],
   failed: [],
   needs_attention: [],
-  needs_user: ["queued"],
+  needs_user: ["queued", "cancelled"],
   cancelled: [],
   interrupted: [],
 };

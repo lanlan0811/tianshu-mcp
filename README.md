@@ -34,11 +34,11 @@
 
 天枢的角色是总指挥；本 MCP server 是**调度层 + 执行面 + 客观验收仪**；外部 AI-Agent（Codex CLI、TraeWork GUI）是执行开发的「工人」。
 
-- **8 个 MCP 工具**：`run_task / query_task / list_tasks / get_task_report / cancel_task / verify_task / rework_task / get_profiles`。
+- **9 个 MCP 工具**：`run_task / continue_task / query_task / list_tasks / get_task_report / cancel_task / verify_task / rework_task / get_profiles`。
 - **异步契约**：`run_task` 秒回 `taskId`，长任务用 `query_task` 轮询（长任务不卡 `tools/call`）。
 - **客观验收**：自动命令检查（typecheck/lint/test/build，缺则跳过 + 技术栈推导）+ 程序化代码分析（变更清单/diffstat/TODO·debugger·密钥形态等可疑标记），全部相对 **git 基线**，不自动 commit/stash。
 - **失败返修闭环**：自动返修（`autoFixRounds`）+ 手动 `rework_task`；验收失败时自动生成修复计划文件并回填给 agent；轮次用尽 → `needs_attention` 等天枢裁决。
-- **两种执行面**：`driver: "spawn"` 走外部 CLI 子进程（Codex）；`driver: "gui"` 走桌面 UI 自动化（TraeWork 经 CDP 驱动，可选 `model` 指定模型、`mode` 指定 Work/Code/Design 面板模式）。
+- **两种执行面**：`driver: "spawn"` 走外部 CLI 子进程（Codex）；`driver: "gui"` 由显式 adapter 驱动桌面 UI（TraeWork 与 ZCode 各自使用隔离的 CDP 流程）。
 - **调度纪律**：每项目串行队列 + 全局并发上限（默认 2，可配）。
 - **不碰密钥**：各 agent 用自己的登录态；本 server 不保存/转发任何 API key。
 - **可扩展**：新 agent = 一个 profile（数据）+（如需）一个 adapter 文件，零改编排核心。
@@ -85,10 +85,10 @@ npm install -g tianshu-mcp
 | 命令 | `npx` | `node` |
 | 参数（空格分隔） | `-y tianshu-mcp` | `<仓库绝对路径>/dist/index.js` |
 
-> - 服务器 ID 即工具前缀：填 `tianshu-mcp` 后工具名为 `mcp__tianshu-mcp__run_task` 等 8 个。
+> - 服务器 ID 即工具前缀：填 `tianshu-mcp` 后工具名为 `mcp__tianshu-mcp__run_task` 等 9 个。
 > - 参数按空格分隔填写，**不要加引号**；本地开发模式请把 `<仓库绝对路径>` 换成真实绝对路径（如 `D:/Trae项目/tianshu-mcp/dist/index.js`）。
 > - 界面未提供环境变量输入框；如需自定义数据目录，改用下面的 `config.json` 方式设置 `TIANSHU_MCP_HOME`。
-> - 添加后连接成功即完成；新开会话即可看到 8 个工具。
+> - 添加后连接成功即完成；新开会话即可看到 9 个工具。
 
 ### 或改 config.json（可配环境变量）
 
@@ -108,7 +108,7 @@ npm install -g tianshu-mcp
 }
 ```
 
-新开会话后，工具面出现 `mcp__tianshu-mcp__run_task` 等 8 个工具。用 stub 预演（不碰真实登录态）→ 切 codex 跑真实任务：
+新开会话后，工具面出现 `mcp__tianshu-mcp__run_task` 等 9 个工具。用 stub 预演（不碰真实登录态）→ 切 codex 跑真实任务：
 
 ```text
 run_task(projectPath=D:/xxx/my-app, task=「…任务书…」, agentId=codex, autoVerify=true, autoFixRounds=2)
@@ -125,11 +125,21 @@ run_task(projectPath=D:/xxx/my-app, agentId=traework, task=「切换到 Code 模
 > `mode` 支持 `Work` / `Code` / `Design`；不传时从任务书文本识别（如「切换到 Code 模式」），识别不到则保持 `Work`。
 > TraeWork 的三种模式**各自维护独立的项目绑定**，因此实现顺序为「新建会话 → 切到目标模式 → 在目标模式内绑定项目」。
 
-## 工具面（8 个）
+驱动 ZCode 时，`model` 必须使用精确的 `供应商/模型`，且不能传 `mode`：
+
+```text
+run_task(projectPath=D:/xxx/my-app, agentId=zcode, task=「按 `./plan.md` 完成开发」,
+         model=DeepSeek/deepseek-flash, autoVerify=true)
+```
+
+ZCode 提问或需要用户处理登录、旧实例、系统权限时进入 `needs_user`；处理后调用 `continue_task(taskId, message)` 恢复原会话。完整约束见 [docs/zcode-cdp.md](docs/zcode-cdp.md)。
+
+## 工具面（9 个）
 
 | 工具 | 能力 / 审批 | 作用 |
 |---|---|---|
 | `run_task` | write + 审批 | 派活（可带自动验收/自动返修），异步返回 `taskId` |
+| `continue_task` | write + 审批 | 恢复 `needs_user` 的原 ZCode 会话 |
 | `query_task` | read | 轮询状态 / 进度 / 日志尾 |
 | `list_tasks` | read | 历史任务过滤列表 |
 | `get_task_report` | read | 某轮验收报告全文（`report.md`） |
@@ -160,6 +170,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=traework, task=「切换到 Code 模
 | [docs/agent-profiles.md](docs/agent-profiles.md) | agent profiles 字段说明 + 真实机器样例（codex M2 定稿） |
 | [docs/adapter-matrix.md](docs/adapter-matrix.md) | 各 Agent 能力调研矩阵（Codex/Zcode/TraeWork/扩展位） |
 | [docs/traework-cdp.md](docs/traework-cdp.md) | TraeWork GUI 驱动（CDP）：原理、配置、模式切换、选择器、安全红线、踩坑记录、验证记录 |
+| [docs/zcode-cdp.md](docs/zcode-cdp.md) | ZCode GUI 驱动：安装探测、精确项目/模型、完全访问、暂停继续、验收返修与双平台状态 |
 | [docs/acceptance-config.md](docs/acceptance-config.md) | 项目级 `.tianshu-mcp/acceptance.json` 验收配置规范 |
 | [docs/release-v0.1.9.md](docs/release-v0.1.9.md) | v0.1.9 发布说明（TraeWork 任务进行中检测与实例保留） |
 | [docs/release-v0.1.10.md](docs/release-v0.1.10.md) | v0.1.10 发布说明（修复 stdio 日志污染：诊断日志统一走 stderr） |
@@ -230,7 +241,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=traework, task=「切换到 Code 模
 | agentId | driver | status | 说明 |
 |---|---|---|---|
 | `codex` | `spawn` | **ready** | 复用 `~/.codex` 登录态；`codex exec` 无头执行；M2 真实冒烟通过 |
-| `zcode` | `spawn` | **unsupported** | ZCode 桌面无随包 headless CLI（Z1 定论） |
+| `zcode` | `zcode-gui` | **research** | CDP GUI adapter 已实现；Windows/macOS 真机闭环全部完成前不标 `ready` |
 | `traework` | **`gui`** | **ready** | CDP 驱动 TRAE SOLO CN 桌面 UI；三种面板模式真机验证通过 |
 | `stub` | `spawn` | 仅测试 | `test/stub-agent/stub-agent.mjs` 三剧本（good/fix-on-first/never） |
 

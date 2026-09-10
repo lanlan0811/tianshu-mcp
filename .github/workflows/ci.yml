@@ -96,7 +96,8 @@ jobs:
           tar -tzf "$TGZ" > "$LIST"
           MISSING=0
           for f in package/dist/index.js package/skills/tianshu-mcp/SKILL.md \
-                   package/README.md package/README.en.md package/LICENSE; do
+                   package/dist/agents/zcode/adapter.js package/dist/agents/zcode/run.js \
+                   package/scripts/probe-zcode.mjs package/README.md package/README.en.md package/LICENSE; do
             if ! grep -qF "$f" "$LIST"; then echo "$f missing"; MISSING=1; fi
           done
           [ "$MISSING" -eq 0 ] || exit 1

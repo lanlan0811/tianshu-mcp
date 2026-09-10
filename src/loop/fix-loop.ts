@@ -194,6 +194,17 @@ export class TaskOrchestrator {
             taskDir: store.dir(meta.taskId),
             logger,
           });
+          const [planReadable, reportReadable] = await Promise.all([
+            readTextSafe(plan.taskPath),
+            readTextSafe(verdict.mdPath),
+          ]);
+          if (planReadable == null || reportReadable == null) {
+            return this.finish(
+              "failed",
+              "internal",
+              "返修计划或验收报告在任务数据目录中不可读，拒绝发送降级摘要",
+            );
+          }
           feedback = buildFixFeedback(meta.task, verdict.summary, verdict.mdPath, plan.taskPath);
           continue;
         }

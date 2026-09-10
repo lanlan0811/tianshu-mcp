@@ -59,15 +59,22 @@
 
 ### 4. 桌面自动化白名单
 
-内置 computer-use **仅**允许驱动 TraeWork 的文件夹选择对话框（窗口标题匹配 + 宿主进程白名单）。
+内置原生自动化**仅**允许驱动 TraeWork 或 ZCode 本次新打开、且所有者进程可核验的文件夹选择对话框。
 其他任何窗口（浏览器、终端、编辑器、系统对话框）一律拒绝并抛 `COMPUTER_USE_DENIED`。
 
 ### 5. 权限审批
 
-写/执行类工具（`run_task` / `cancel_task` / `rework_task`）默认声明 `requireApproval`，
+写/执行类工具（`run_task` / `cancel_task` / `rework_task` / `continue_task`）默认声明 `requireApproval`，
 由宿主（天枢）在 UI 侧把关；读/查询/验收类工具免审批。
 
-### 6. 代码保护
+### 6. ZCode GUI 边界
+
+- CDP 仅连接 `127.0.0.1`，并同时核验 ZCode 页面标识与调试端口所属进程。
+- 不读取、复制、解密或打印 ZCode 登录数据、密钥和凭证；不调用安装包内未公开的 `app-server` 协议。
+- 既有无 CDP 实例只触发 `needs_user`，绝不自动关闭。超时或断线保留窗口，不自动点击停止。
+- 文件夹路径经环境变量或 argv 传递，写入后回读一致才确认。
+
+### 7. 代码保护
 
 - 动工前采集 git 基线（HEAD + 脏状态）；验收报告相对基线计算变更。
 - **不自动** commit / stash / 回滚；需要回滚由用户基于报告自行决定。

@@ -292,9 +292,10 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
 
     const session = await cdp.session();
     const message = prompt(ctx, refs);
-    if (ctx.resume?.kind === "continue" && !ctx.resume.sendMessage) {
-      logger.info("[zcode] 用户已确认外部条件，重新检查后恢复；不向模型发送确认文本");
-    } else {
+    {
+      if (ctx.resume?.kind === "continue" && !ctx.resume.sendMessage) {
+        logger.info("[zcode] 用户确认文本不发送给模型；环境复检通过后发送原始任务书");
+      }
       const marker = `【tianshu:${ctx.taskId}:r${ctx.round}】`;
       const before = await cdp.conversationText();
       await cdp.typeText(marker + message);

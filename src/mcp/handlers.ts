@@ -1,5 +1,5 @@
 /**
- * 8 个工具的具体 handler。统一返回 ToolResult（文本 + meta 块）。
+ * 9 个工具的具体 handler。统一返回 ToolResult（文本 + meta 块）。
  * run_task / rework / verify 依赖 AppContext 提供的 manager/engine/services。
  */
 import fsp from "node:fs/promises";

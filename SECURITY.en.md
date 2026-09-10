@@ -60,16 +60,22 @@ Understanding these boundaries helps you judge whether a finding is intended beh
 
 ### 4. Desktop-automation whitelist
 
-The built-in computer-use is allowed **only** to drive TraeWork's folder picker (window-title match plus a
-host-process whitelist). Anything else (browser, terminal, editor, system dialogs) is refused with
+Native automation is allowed **only** for a folder picker newly opened by TraeWork or ZCode whose owner process is verified. Anything else (browser, terminal, editor, system dialogs) is refused with
 `COMPUTER_USE_DENIED`.
 
 ### 5. Permission approvals
 
-Write/execute tools (`run_task` / `cancel_task` / `rework_task`) declare `requireApproval` by default and
+Write/execute tools (`run_task` / `cancel_task` / `rework_task` / `continue_task`) declare `requireApproval` by default and
 are gated by the host (Tianshu) UI; read/query/verify tools need no approval.
 
-### 6. Code protection
+### 6. ZCode GUI boundary
+
+- CDP only connects to `127.0.0.1`; both the ZCode page identity and owning debug-port process are checked.
+- Login data, keys, and credentials are never read, copied, decrypted, or printed. The packaged private `app-server` protocol is not called.
+- A running non-CDP instance only produces `needs_user` and is never closed automatically. Timeouts and disconnects preserve the window and do not click Stop.
+- Folder paths are passed through environment variables or argv and are read back before confirmation.
+
+### 7. Code protection
 
 - A git baseline (HEAD + dirty state) is captured before work starts; verification reports compute changes
   relative to that baseline.

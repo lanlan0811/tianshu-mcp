@@ -47,7 +47,7 @@
 | agentId | driver | status | 说明 |
 |---|---|---|---|
 | `codex` | `spawn` | **ready** | 复用 `~/.codex` 登录态；`codex exec` 无头执行；M2 真实冒烟通过 |
-| `zcode` | `spawn` | **unsupported** | ZCode 桌面无随包 headless CLI（Z1 定论） |
+| `zcode` | `zcode-gui` | **research** | CDP GUI adapter 已实现；双平台真机闭环待完成，见 `docs/zcode-cdp.md` |
 | `traework` | **`gui`** | **ready** | CDP 驱动 TRAE SOLO CN 桌面 UI；三种面板模式真机验证通过 |
 | `stub` | `spawn` | 仅测试 | `test/stub-agent/stub-agent.mjs` 三剧本（good/fix-on-first/never） |
 
@@ -98,7 +98,7 @@ src/
 │   ├── schema.ts         zod 全集（工具入参、profile、projects、验收配置、TraeworkMode）
 │   └── store.ts          数据目录读写 + last-known-good 热加载
 ├── mcp/
-│   ├── tools.ts          8 个工具的元数据（name/description/inputSchema/capability/approval）
+│   ├── tools.ts          9 个工具的元数据（含 continue_task）
 │   ├── handlers.ts       工具实现
 │   ├── context.ts        meta → TaskContext
 │   └── formatter.ts      文本 + meta 块
@@ -108,7 +108,7 @@ src/
 │   └── repair-plan.ts    验收失败时生成修复计划文件
 ├── agents/
 │   ├── adapter.ts        AgentAdapter 接口（含可选 run() 执行面）
-│   ├── registry.ts       按 profile.driver 构造 adapter（spawn→CliAdapter，gui→TraeworkGuiAdapter）
+│   ├── registry.ts       按 profile.driver + adapter 构造 Cli/TraeWork/ZCode adapter
 │   ├── cli.ts            通用 CLI adapter
 │   ├── spawn.ts          子进程封装（windowsHide/stdio 管道/超时/kill tree）
 │   ├── builtin.ts        内置 profiles（codex/zcode/traework）
@@ -375,6 +375,7 @@ hwnd 贯穿传递（只操作探测到的那个窗口）、下拉未命中时先
 | `CODE_OF_CONDUCT.md` / `.en.md` | 行为准则 |
 | `docs/tianshu-integration.md` / `.en.md` | 接入配置、冒烟步骤、FAQ |
 | `docs/traework-cdp.md` / `.en.md` | TraeWork GUI 驱动原理、选择器、安全红线、踩坑记录 |
+| `docs/zcode-cdp.md` / `.en.md` | ZCode GUI adapter、暂停继续、返修闭环与双平台真机证据状态 |
 | `docs/agent-profiles.md` / `.en.md` | profile 字段说明（含 `driver`/`gui`） |
 | `docs/adapter-matrix.md` / `.en.md` | 各 agent 能力调研矩阵 |
 | `docs/acceptance-config.md` / `.en.md` | 项目级验收配置规范 |
@@ -397,8 +398,9 @@ hwnd 贯穿传递（只操作探测到的那个窗口）、下拉未命中时先
 ## 11. 接手人下一步建议
 
 1. 先跑 `npm ci && npm run typecheck && npm run lint && npm test && npm run build`，确认基线绿。
-2. 读 `README.md` + `docs/traework-cdp.md §6/§8`（安全红线与踩坑），再动 TraeWork 相关代码。
+2. 读 `README.md`、`docs/traework-cdp.md` 和 `docs/zcode-cdp.md`（安全红线与平台证据），再动 GUI adapter 相关代码。
    项目文件夹绑定出问题时，先看本文 §8.1 的排障顺序（下拉项 ≠ 项目 map、三处已修缺陷、两个定位陷阱）。
 3. 若 TraeWork 升级导致选择器失效：用 `scripts/probe-traework.mjs selectors` 诊断，优先用 profile `gui.selectors` 覆盖，不改代码。
-4. 新增 agent：优先只加 profile（见 `docs/agent-profiles.md`）；需要特殊输出解析再写 adapter。
-5. 发版前务必确认 `src/version.generated.ts` 与 `package.json` 同步提交（CI 有「构建后无 tracked diff」门禁）。
+4. ZCode 仍需完成 Windows 关闭旧实例后的真实闭环和 macOS 真机闭环；证据未齐前不得把 profile 从 `research` 改为 `ready`。
+5. 新增 agent：优先只加 profile（见 `docs/agent-profiles.md`）；需要特殊输出解析再写 adapter。
+6. 发版前务必确认 `src/version.generated.ts` 与 `package.json` 同步提交（CI 有「构建后无 tracked diff」门禁）。

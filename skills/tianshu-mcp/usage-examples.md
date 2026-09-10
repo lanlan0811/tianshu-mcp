@@ -62,7 +62,7 @@
 | 字段 | 含义 |
 |---|---|
 | `ok` | 是否成功（succeeded 才有 true） |
-| `status` | queued/running/verify_start/fixing/succeeded/failed/needs_attention/cancelled/interrupted |
+| `status` | queued/running/verify_start/fixing/needs_user/succeeded/failed/needs_attention/cancelled/interrupted |
 | `round` / `roundsUsed` | 已进行的 agent 轮次 |
 | `changedFiles` | 相对 git 基线的变更清单（含未跟踪新增） |
 | `diffstat` | 增删行摘要（`+A -D`） |
@@ -72,7 +72,24 @@
 
 规则：`ok=true` 且 status=succeeded → 交付达成；否则读 `reportFiles.md` 全文定位。
 
-## 3. 返修提示语模板
+## 3. ZCode 派活与继续
+
+```text
+run_task(projectPath=D:/repo/app, agentId=zcode,
+  model=DeepSeek/deepseek-flash,
+  task=按 `./docs/plan.md` 与 `./design-system` 实现功能,
+  autoVerify=true)
+```
+
+若 `query_task` 返回 `needs_user`：
+
+```text
+continue_task(taskId=tsk_..., message=采用 PostgreSQL 方案)
+```
+
+`agent_question` 的 message 会发送到原会话；关闭旧实例、登录或系统权限场景的 message 仅作为用户已处理的确认。
+
+## 4. 返修提示语模板
 
 给 `rework_task(taskId, feedback)` 的 `feedback`，讲究**针对性**，避免空转：
 
@@ -96,7 +113,7 @@
 parameter of type 'number' (src/run.ts:42)。请只修这一处类型问题并重跑 npm run build 确认。
 ```
 
-## 4. 汇报模板
+## 5. 汇报模板
 
 `get_task_report` 拿全文后向用户汇报建议包含：
 

@@ -34,11 +34,11 @@ Registered by Tianshu as a standard MCP server, it dispatches external AI-Agents
 
 Tianshu plays the role of the overall commander; this MCP server is the **scheduler + execution surface + objective acceptance gate**; the external AI-Agent (Codex CLI, TraeWork GUI) is the "worker" that does the development.
 
-- **8 MCP tools**: `run_task / query_task / list_tasks / get_task_report / cancel_task / verify_task / rework_task / get_profiles`.
+- **9 MCP tools**: `run_task / continue_task / query_task / list_tasks / get_task_report / cancel_task / verify_task / rework_task / get_profiles`.
 - **Async contract**: `run_task` returns a `taskId` immediately; long-running work is polled via `query_task` (never blocks `tools/call`).
 - **Objective acceptance**: automated command checks (typecheck/lint/test/build — skipped when absent, plus tech-stack derivation) + programmatic code analysis (changed-file list / diffstat / suspicious signals such as TODO, debugger, secret-like patterns), all relative to a **git baseline**; never auto-commits or stashes.
 - **Rework loop**: automatic rework (`autoFixRounds`) + manual `rework_task`; on verification failure a repair-plan file is generated and fed back to the agent; when rounds run out → `needs_attention` awaiting Tianshu's verdict.
-- **Two execution surfaces**: `driver: "spawn"` runs an external CLI child process (Codex); `driver: "gui"` drives a desktop UI (TraeWork over CDP, with an optional `model` and `mode` — Work/Code/Design).
+- **Two execution surfaces**: `driver: "spawn"` runs an external CLI child process (Codex); `driver: "gui"` selects an explicit, isolated TraeWork or ZCode CDP adapter.
 - **Scheduling discipline**: per-project serial queue + global concurrency cap (default 2, configurable).
 - **No key handling**: each agent uses its own login state; this server never stores or forwards any API key.
 - **Extensible**: a new agent = one profile (data) + (if needed) one adapter file — no changes to the orchestration core.
@@ -86,10 +86,10 @@ In Tianshu go to **Settings → MCP Servers → Add** and fill in the fields bel
 | Command | `npx` | `node` |
 | Arguments (space-separated) | `-y tianshu-mcp` | `<absolute-repo-path>/dist/index.js` |
 
-> - The server ID becomes the tool prefix: with `tianshu-mcp` the tools are `mcp__tianshu-mcp__run_task` and 7 others.
+> - The server ID becomes the tool prefix: with `tianshu-mcp` the tools are `mcp__tianshu-mcp__run_task` and 8 others.
 > - Arguments are space-separated, **no quotes**; for local dev replace `<absolute-repo-path>` with a real path (e.g. `D:/TraeProject/tianshu-mcp/dist/index.js`).
 > - The dialog has no env-var field; to customize the data directory, use the `config.json` method below and set `TIANSHU_MCP_HOME`.
-> - Once the server connects, open a new session and the 8 tools appear.
+> - Once the server connects, open a new session and the 9 tools appear.
 
 ### Or edit config.json (supports env vars)
 
@@ -109,7 +109,7 @@ Register as a Tianshu MCP server (local dev mode):
 }
 ```
 
-After opening a new session, the 8 tools such as `mcp__tianshu-mcp__run_task` appear. Rehearse with the stub agent first (no real login state), then switch to the `codex` profile for real tasks:
+After opening a new session, the 9 tools such as `mcp__tianshu-mcp__run_task` appear. Rehearse with the stub agent first (no real login state), then switch to the `codex` profile for real tasks:
 
 ```text
 run_task(projectPath=D:/xxx/my-app, task=「…task brief…」, agentId=codex, autoVerify=true, autoFixRounds=2)
@@ -126,11 +126,21 @@ run_task(projectPath=D:/xxx/my-app, agentId=traework, task=「Switch to Code mod
 > `mode` accepts `Work` / `Code` / `Design`; when omitted it is detected from the task text (e.g. "switch to Code mode"), otherwise `Work` is kept.
 > TraeWork's three modes **each keep an independent project binding**, so the order is: new session → switch to target mode → bind the project inside that mode.
 
-## Tool surface (8 tools)
+For ZCode, `model` must be an exact `provider/model` and `mode` is rejected:
+
+```text
+run_task(projectPath=D:/xxx/my-app, agentId=zcode, task="Implement `./plan.md`",
+         model=DeepSeek/deepseek-flash, autoVerify=true)
+```
+
+Questions, login, an existing non-CDP instance, or system permission pause as `needs_user`; call `continue_task(taskId, message)` to resume the recorded session. See [docs/zcode-cdp.en.md](docs/zcode-cdp.en.md).
+
+## Tool surface (9 tools)
 
 | Tool | Capability / approval | Purpose |
 |---|---|---|
 | `run_task` | write + approval | Dispatch work (optional auto-verify / auto-rework); returns `taskId` asynchronously |
+| `continue_task` | write + approval | Resume the original ZCode session from `needs_user` |
 | `query_task` | read | Poll status / progress / log tail |
 | `list_tasks` | read | Filtered history of tasks |
 | `get_task_report` | read | Full text of a verification round's report (`report.md`) |
@@ -161,6 +171,7 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 | [docs/agent-profiles.en.md](docs/agent-profiles.en.md) | Agent profile field reference + real-machine samples |
 | [docs/adapter-matrix.en.md](docs/adapter-matrix.en.md) | Agent capability research matrix (Codex/Zcode/TraeWork/extension slots) |
 | [docs/traework-cdp.en.md](docs/traework-cdp.en.md) | TraeWork GUI driver (CDP): mechanism, config, mode switching, selectors, safety invariants, pitfalls, verification record |
+| [docs/zcode-cdp.en.md](docs/zcode-cdp.en.md) | ZCode GUI driver: discovery, exact project/model, Full Access, pause/continue, verification and platform evidence |
 | [docs/acceptance-config.en.md](docs/acceptance-config.en.md) | Project-level `.tianshu-mcp/acceptance.json` acceptance config spec |
 | [docs/release-v0.1.9.en.md](docs/release-v0.1.9.en.md) | v0.1.9 release notes (TraeWork task liveness and instance retention) |
 | [docs/release-v0.1.10.en.md](docs/release-v0.1.10.en.md) | v0.1.10 release notes (stdio log pollution fix: diagnostics on stderr) |
@@ -229,7 +240,7 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 | agentId | driver | status | Notes |
 |---|---|---|---|
 | `codex` | `spawn` | **ready** | Reuses `~/.codex` login state; `codex exec` headless; passed real M2 smoke |
-| `zcode` | `spawn` | **unsupported** | ZCode desktop ships no headless CLI (Z1 conclusion) |
+| `zcode` | `zcode-gui` | **research** | CDP GUI adapter implemented; remains non-ready until both Windows and macOS hardware loops pass |
 | `traework` | **`gui`** | **ready** | CDP-driven TRAE SOLO CN desktop UI; all three panel modes machine-verified |
 | `stub` | `spawn` | tests only | `test/stub-agent/stub-agent.mjs` with 3 playbooks (good/fix-on-first/never) |
 

@@ -15,6 +15,7 @@ built-in (`src/agents/builtin.ts`) → user `agent-profiles.json` overrides by `
       "displayName": "…",
       "type": "cli",                 // only cli today
       "driver": "spawn",             // spawn = external child process (default); gui = desktop UI automation
+      "adapter": "zcode-gui",        // GUI discriminator: traework-gui | zcode-gui; missing keeps legacy TraeWork behavior
       "status": "ready",             // ready | research | unsupported
       "command": null,               // absolute path; null + discovery = auto-probe
       "argsTemplate": ["exec", "<prompt:arg>"],
@@ -26,14 +27,17 @@ built-in (`src/agents/builtin.ts`) → user `agent-profiles.json` overrides by `
       "executableDiscovery": {
         "dirs": ["{LOCALAPPDATA}/OpenAI/Codex/bin"],   // env placeholders, no hardcoded users
         "fileNames": ["codex.exe", "codex"],
-        "fallbackCommand": "codex"
+        "fallbackCommand": "codex",
+        "preferredDrives": ["D:"],
+        "relativePaths": ["Z-Code/ZCode/ZCode.exe"]
       },
       "gui": {                       // only for driver="gui" (e.g. traework)
         "cdpPort": 9222, "cdpPortAuto": true, "cdpPortRange": 20,
         "exeArgs": ["--remote-debugging-port=<port>"], "windowMode": "reuse",
         "launchTimeoutMs": 60000, "pollIntervalMs": 3000, "stableRounds": 12,
         "idleTimeoutMs": 600000, "cdpSendTimeoutMs": 15000, "progressIntervalMs": 30000,
-        "modelSwitch": true, "modeSwitch": true, "freshSession": true, "selectors": {}
+        "modelSwitch": true, "modeSwitch": true, "freshSession": true, "selectors": {},
+        "modelRequired": false, "defaultPermissionMode": "Full Access", "defaultAutoFixRounds": 2
       }
     }
   }
@@ -47,7 +51,7 @@ built-in (`src/agents/builtin.ts`) → user `agent-profiles.json` overrides by `
 | `spawn` (default) | launches an external CLI child process (`argsTemplate` + `promptMode`); success is decided by exit code |
 | `gui` | drives a desktop UI over CDP (currently only `traework`); no child process, and `run_task` may pass `model` to pick its model |
 
-> With `driver=gui`, `argsTemplate`/`promptMode` are unused. See [traework-cdp.en.md](traework-cdp.en.md) for the `gui` section and its safety invariants.
+> With `driver=gui`, `argsTemplate`/`promptMode` are unused. An explicit `adapter` isolates TraeWork and ZCode; a legacy profile without it keeps TraeWork behavior. See [traework-cdp.en.md](traework-cdp.en.md) and [zcode-cdp.en.md](zcode-cdp.en.md).
 
 TraeWork liveness fields: `stableRounds` only confirms that the DOM is stable; `idle` is returned only after another
 `idleTimeoutMs` without changes or authoritative running signals. `cdpSendTimeoutMs` bounds one CDP command, while
@@ -74,9 +78,11 @@ retain the instance and expose `agentEndReason` / `keptInstance` in metadata.
 
 ## Status semantics
 
-`ready` = command/discovery usable; `research` = probe attempted, placeholder if not found; `unsupported` = explicitly not drivable (e.g. ZCode).
+`ready` = command/discovery usable; `research` = implemented or probed but hardware evidence is incomplete; `unsupported` = explicitly not drivable.
 
 > `traework` moved from `unsupported` to `ready` + `driver=gui` on 2026-09-08 (CDP-driven desktop UI; see [traework-cdp.en.md](traework-cdp.en.md)).
+
+> `zcode` uses `driver=gui` + `adapter=zcode-gui`. It requires `provider/model`, confirms Full Access, and defaults to two automatic repair rounds. The built-in profile remains `research` until both Windows and macOS hardware loops are recorded.
 
 ## Real-machine sample
 

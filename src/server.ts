@@ -1,6 +1,6 @@
 /**
  * server.ts：组装 —— 加载配置、初始化数据目录/日志、TaskManager/AcceptanceEngine/
- * Registry、注册 8 个工具到 McpServer、触发技能自检安装。被 index.ts 调用以 stdio 启动。
+ * Registry、注册 9 个工具到 McpServer、触发技能自检安装。被 index.ts 调用以 stdio 启动。
  */
 import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -27,7 +27,14 @@ export interface ServerAssembly {
   close: () => Promise<void>;
 }
 
-export async function buildServer(opts: { home?: string; logger?: Logger; skipSkillInstall?: boolean; maxRunningOverride?: number } = {}): Promise<ServerAssembly> {
+export async function buildServer(
+  opts: {
+    home?: string;
+    logger?: Logger;
+    skipSkillInstall?: boolean;
+    maxRunningOverride?: number;
+  } = {},
+): Promise<ServerAssembly> {
   const home = opts.home ?? resolveDataHome();
   const logger = opts.logger ?? (await LoggerCtor.create(path.join(home, "logs")));
   const dataHome = new DataHome(home, logger, BUILTIN_PROFILES);
@@ -38,7 +45,14 @@ export async function buildServer(opts: { home?: string; logger?: Logger; skipSk
   const store = new TaskStore(home, logger);
   const registry = new AgentAdapterRegistry(() => dataHome.loadProfiles(), logger);
   const engine = new AcceptanceEngine(store, logger);
-  const manager = new TaskManager(store, dataHome, registry, engine, logger, makeBuildCtx({ store, dataHome }));
+  const manager = new TaskManager(
+    store,
+    dataHome,
+    registry,
+    engine,
+    logger,
+    makeBuildCtx({ store, dataHome }),
+  );
   await manager.initialize(maxRunning);
 
   // 技能自检安装（失败仅告警不阻断，§17.5）；后台执行，不阻塞握手
@@ -61,7 +75,7 @@ export async function buildServer(opts: { home?: string; logger?: Logger; skipSk
     {
       capabilities: { tools: {} },
       instructions:
-        "tianshu-mcp：调度外部 AI-Agent（codex/zcode）完成 项目开发 → 验收 → 返修 闭环。工具返回文本 + ---tianshu-mcp-meta--- JSON 块。run_task 是异步的：先拿 taskId 再用 query_task 轮询。",
+        "tianshu-mcp：调度外部 AI-Agent（codex/zcode/traework）完成项目开发、验收、返修闭环。ZCode 提问或等待用户环境处理时进入 needs_user，可用 continue_task 恢复原会话。run_task 异步返回 taskId，再用 query_task 轮询。",
     },
   );
 
@@ -88,8 +102,13 @@ export async function buildServer(opts: { home?: string; logger?: Logger; skipSk
         try {
           const parsed = tool.inputSchema.safeParse(args ?? {});
           if (!parsed.success) {
-            const detail = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
-            return { content: [{ type: "text" as const, text: `Error: 参数不合法 — ${detail}` }], isError: true };
+            const detail = parsed.error.issues
+              .map((i) => `${i.path.join(".")}: ${i.message}`)
+              .join("; ");
+            return {
+              content: [{ type: "text" as const, text: `Error: 参数不合法 — ${detail}` }],
+              isError: true,
+            };
           }
           return await handler(parsed.data as Record<string, unknown>);
         } catch (e) {

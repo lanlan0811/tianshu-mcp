@@ -1,5 +1,5 @@
 /**
- * 工具注册表：8 个工具的 name/description/inputSchema/capability/approval 元数据。
+ * 工具注册表：9 个工具的 name/description/inputSchema/capability/approval 元数据。
  * MCP 层用 inputSchema 声明；capability/requireApproval 供天枢 policy（§5/§11.3）。
  * 能力标注遵守 R11：读/查询/验收 read；run/cancel/rework write + requireApproval。
  */
@@ -35,7 +35,7 @@ export const TOOL_DEFS: ToolDef[] = [
   {
     name: "run_task",
     description:
-      "派活：启动一次外部 AI-Agent（codex CLI；traework 为 GUI 驱动）开发任务，可带自动验收与失败自动返修。返回 taskId，立即返回；用 query_task 轮询。projectPath 必须是存在的项目绝对路径；task 是给 agent 的自然语言任务书。可选 model（traework 用，如 GLM-5.3）与 mode（traework 面板模式 Work/Code/Design；缺省从任务书文本识别，识别不到则 Work）。",
+      "派活：启动外部 AI-Agent 开发任务并可自动验收返修，异步返回 taskId。ZCode 要求 model=供应商/模型，不支持 mode；TraeWork 的 model 可选并支持 Work/Code/Design mode。task/context 内的 ZCode 项目路径引用会在发送前校验。",
     inputSchema: RunTaskParamsSchema,
     capability: "write",
     requireApproval: true,

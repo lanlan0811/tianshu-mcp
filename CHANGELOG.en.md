@@ -18,6 +18,24 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.2.0] — 2026-09-11
+
+### Added
+
+- Dedicated `zcode-gui` Electron CDP adapter with data-driven Windows/macOS discovery, dynamic ports, product/process checks, and a global serial lock.
+- Exact ZCode project binding, guarded native folder pickers, `provider/model`, Full Access read-back, and idempotent sending.
+- Paused `needs_user` state and approval-gated `continue_task` for original-session answers and environment rechecks after instance, login, or permission handling.
+- Multi-signal liveness, progress events, UI preservation, default auto-verification, and two same-session repair rounds. Repair plans stay in MCP task storage.
+- `scripts/probe-zcode.mjs`, fake-CDP/state/path/model tests, and bilingual documentation.
+
+### Safety and compatibility
+
+- GUI profiles support an explicit `adapter`; legacy `driver="gui"` profiles retain TraeWork behavior.
+- The built-in ZCode profile remains `research` until both real platform loops pass.
+- No private `app-server`, credential access, automatic user-instance termination, or fixed screen coordinates.
+
+---
+
 ## [0.1.10] — 2026-09-10
 
 ### Fixed
