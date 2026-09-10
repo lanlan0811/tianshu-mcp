@@ -34,13 +34,13 @@
 | 分支 | `master`（**只在此分支提交**，不建其他分支） |
 | 发布提交 | `dc471d2 修复 TraeWork 任务进行中检测并发布 v0.1.9`（v0.1.10 修复提交见本次交付记录） |
 | 版本 / 许可证 | `0.1.10` / Apache-2.0 |
-| 标签 | `v0.1.0` … `v0.1.9`（v0.1.2+ 均已推双仓；v0.1.10 tag 待发布时打） |
-| 工作树 | 本次修复变更集（含严格 stdio 门禁与双语文档） |
+| 标签 | `v0.1.0` … `v0.1.10`（均已推双仓） |
+| 工作树 | 干净；`github/master` 与 `gitee/master` 均同步于 `e91fc47` |
 | 测试 | **202/202 通过**（31 个测试文件：单元 20 + 集成 10 + 协议 1） |
 | 门禁 | lint 0 warning、typecheck clean、build 成功、`check:stdio` 6/6 场景通过、`npm pack` 内容校验通过 |
-| CI | `CI` workflow：ubuntu/windows/macos × Node 20/22/24 + 严格 stdio + 安装包协议检查 |
-| npm | v0.1.10 发布状态按实际结果记录（本仓库只在 `release.yml` 创建 GitHub Release 草稿，npm/Gitee 需单独发布） |
-| Release | v0.1.10 发布状态按实际结果记录 |
+| CI | run `34435434742`（commit `e91fc47`）：ubuntu/windows/macos × Node 20/22/24 + pack-check = **10/10 全绿** |
+| npm | `tianshu-mcp@0.1.10` 已发布，`dist-tags.latest = 0.1.10` |
+| Release | GitHub `v0.1.10` 与 Gitee `v0.1.10` 均已发布并附 `tianshu-mcp-0.1.10.tgz` |
 
 ### Agent 适配现状
 
@@ -347,6 +347,9 @@ hwnd 贯穿传递（只操作探测到的那个窗口）、下拉未命中时先
 | 修复后 | 源码入口与 `dist` 入口 `check:stdio` 均 **6/6 通过**，stdout 非协议行 0 |
 | 安装包 | tarball 安装到干净消费者目录（不装 dev 依赖）后 6/6 通过 |
 | 门禁 | `typecheck` / `lint` / `build` / `check:stdio` / `pack:check` 全绿；31 文件 **202/202** 测试通过 |
+| CI | run `34435434742`（commit `e91fc47`）：ubuntu/windows/macos × Node 20/22/24 + pack-check = **10/10 全绿** |
+| 发布产物 | npm `tianshu-mcp@0.1.10`（`latest=0.1.10`）；GitHub 与 Gitee `v0.1.10` Release 均附 `tianshu-mcp-0.1.10.tgz` |
+| 发布包复验 | 干净消费者目录安装 registry 上的 `0.1.10` 后 `check:stdio` 6/6 通过 |
 
 ---
 
