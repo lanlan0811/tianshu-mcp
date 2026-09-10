@@ -39,6 +39,7 @@ export interface MetaBlockFields {
   modelProvider?: string;
   permissionMode?: string;
   progressSummary?: string;
+  lastRunSignal?: string;
 }
 
 export type ToolResult = {
@@ -94,6 +95,7 @@ export function metaFromTask(meta: TaskMeta, extra?: Partial<MetaBlockFields>): 
     modelProvider: meta.modelProvider,
     permissionMode: meta.permissionMode,
     progressSummary: meta.progressSummary,
+    lastRunSignal: meta.lastRunSignal,
     ...extra,
   };
 }

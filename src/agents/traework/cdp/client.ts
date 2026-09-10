@@ -214,11 +214,27 @@ export class TraeworkCdpClient {
   /** 页面内执行表达式并取回值（异常返回 undefined，由调用方决定处理） */
   async evaluate<T = unknown>(expression: string): Promise<T> {
     const r = (await this.send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true })) as {
-      exceptionDetails?: { text?: string };
+      exceptionDetails?: {
+        text?: string;
+        lineNumber?: number;
+        columnNumber?: number;
+        exception?: { description?: string; value?: unknown };
+      };
       result?: { value?: unknown };
     };
     if (r.exceptionDetails) {
-      throw new Error(`页面执行错误: ${r.exceptionDetails.text ?? "unknown"}`);
+      const detail =
+        r.exceptionDetails.exception?.description ??
+        (r.exceptionDetails.exception?.value === undefined
+          ? undefined
+          : String(r.exceptionDetails.exception.value)) ??
+        r.exceptionDetails.text ??
+        "unknown";
+      const location =
+        r.exceptionDetails.lineNumber === undefined
+          ? ""
+          : `（${r.exceptionDetails.lineNumber + 1}:${(r.exceptionDetails.columnNumber ?? 0) + 1}）`;
+      throw new Error(`页面执行错误${location}: ${detail}`);
     }
     return r.result?.value as T;
   }

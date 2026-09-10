@@ -97,6 +97,9 @@ class FakeZcode {
     if (key === "chatInput") return this.typed;
     return "";
   }
+  async selection() {
+    return { display: this.model, internal: this.model };
+  }
   async session() {
     return { id: "session-1", title: "任务一" };
   }

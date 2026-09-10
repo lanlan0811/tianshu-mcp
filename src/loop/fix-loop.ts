@@ -93,6 +93,7 @@ export class TaskOrchestrator {
         const runRes = await this.runAgentOnce(ctx, resolved);
         meta.logFile = runRes.logFile;
         meta.agentEndReason = runRes.endReason;
+        meta.lastRunSignal = runRes.endReason ?? meta.lastRunSignal;
         meta.keptInstance = runRes.keptInstance;
         meta.progressSummary = runRes.progressSummary;
         if (runRes.session) {
@@ -304,10 +305,13 @@ export class TaskOrchestrator {
       return adapter.run(ctx, resolved, {
         signal: this.signal,
         logger: this.deps.logger,
-        onProgress: (note) =>
-          this.deps.store
-            .appendEvent(ctx.taskId, "note", this.meta.status, note)
-            .then(() => undefined),
+        onProgress: async (note) => {
+          this.meta.progressSummary = note;
+          this.meta.lastRunSignal = /运行证据=([^；]+)/.exec(note)?.[1] ?? this.meta.lastRunSignal;
+          this.meta.updatedAt = new Date().toISOString();
+          await this.deps.store.appendEvent(ctx.taskId, "note", this.meta.status, note);
+          await this.deps.store.writeSnapshot(this.meta);
+        },
       });
     }
 

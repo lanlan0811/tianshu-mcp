@@ -258,7 +258,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
     if (!provider.clicked)
       return result({
         hardFailure: true,
-        error: `供应商不存在或同名歧义：${spec.provider}（匹配 ${provider.count}）`,
+        error: `供应商不存在或同名歧义：${spec.provider}（匹配 ${provider.count}${provider.available?.length ? `；可见候选=${provider.available.slice(0, 20).join("、")}` : ""}）`,
         endReason: "model_unavailable",
       });
     await deps.sleep(250);
@@ -266,18 +266,19 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
     if (!model.clicked)
       return result({
         hardFailure: true,
-        error: `模型不存在或同名歧义：${spec.provider}/${spec.model}（匹配 ${model.count}）`,
+        error: `模型不存在或同名歧义：${spec.provider}/${spec.model}（匹配 ${model.count}${model.available?.length ? `；可见候选=${model.available.slice(0, 20).join("、")}` : ""}）`,
         endReason: "model_unavailable",
       });
     await deps.sleep(300);
-    const modelValue = await cdp.text("modelValue");
-    if (
-      !exactUiName(modelValue, spec.model) &&
-      !exactUiName(modelValue, `${spec.provider}/${spec.model}`)
-    )
+    const modelValue = await cdp.selection("modelValue");
+    const displayMatches =
+      exactUiName(modelValue.display, spec.model) ||
+      exactUiName(modelValue.display, `${spec.provider}/${spec.model}`);
+    const internalMatches = exactUiName(modelValue.internal, spec.model);
+    if (!displayMatches || !internalMatches)
       return result({
         hardFailure: true,
-        error: `模型切换回读不一致：${modelValue}`,
+        error: `模型切换回读不一致：display=${modelValue.display || "空"}，internal=${modelValue.internal || "空"}`,
         endReason: "model_mismatch",
       });
     const permission = gui.defaultPermissionMode ?? "完全访问";

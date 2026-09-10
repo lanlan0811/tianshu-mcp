@@ -20,6 +20,7 @@
     "skills",
     "assets",
     "scripts/probe-zcode.mjs",
+    "scripts/smoke-zcode.mjs",
     "README.md",
     "README.en.md",
     "CHANGELOG.md",
@@ -45,6 +46,7 @@
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "check:stdio": "node scripts/check-stdio.mjs --entry dist/index.js",
     "check:stdio:src": "node scripts/check-stdio.mjs --entry src/index.ts --tsx",
+    "smoke:zcode": "node scripts/smoke-zcode.mjs",
     "pack:check": "npm pack --dry-run"
   },
   "dependencies": {
