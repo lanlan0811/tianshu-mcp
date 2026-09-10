@@ -49,7 +49,7 @@ Tianshu plays the role of the overall commander; this MCP server is the **schedu
 
 | Item | Requirement |
 |---|---|
-| Node.js | ≥ 20 (CI covers 20 / 22) |
+| Node.js | ≥ 20 (CI covers 20 / 22 / 24) |
 | Package manager | npm (the repo ships a `package-lock.json`) |
 | OS | Windows / macOS / Linux (verified by the three-platform CI matrix) |
 | Git | Optional; acceptance baseline analysis is more complete inside a git repository |
@@ -63,7 +63,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 196 tests across 30 files (19 unit + 10 integration + 1 protocol)
+npm test             # 221 tests across 35 files, including ZCode unit/fake-CDP/restart/repair coverage
 ```
 
 ### Install the npm package

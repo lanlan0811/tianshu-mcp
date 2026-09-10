@@ -49,7 +49,7 @@
 
 | 项 | 要求 |
 |---|---|
-| Node.js | ≥ 20（CI 覆盖 20 / 22） |
+| Node.js | ≥ 20（CI 覆盖 20 / 22 / 24） |
 | 包管理器 | npm（仓库含 `package-lock.json`） |
 | 操作系统 | Windows / macOS / Linux（CI 三平台矩阵验证） |
 | Git | 可选；验收的基线分析在 git 仓库内更完整 |
@@ -63,7 +63,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 196 项测试：30 个文件（单元 19 + 集成 10 + 协议 1）
+npm test             # 221 项测试：35 个文件，含 ZCode 单元/假 CDP/重启/返修闭环
 ```
 
 ### 安装 npm 包

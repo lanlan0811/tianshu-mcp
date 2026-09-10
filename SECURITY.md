@@ -82,7 +82,7 @@
 ## 依赖与供应链
 
 - 运行时依赖最小集：`@modelcontextprotocol/sdk`、`zod`、`cross-spawn`。
-- 提交前 `npm audit` 应无已知漏洞；CI 在 Ubuntu/Windows/macOS × Node 20/22 上运行类型检查、
+- 提交前 `npm audit` 应无已知漏洞；CI 在 Ubuntu/Windows/macOS × Node 20/22/24 上运行类型检查、
   lint、测试与构建。
 - 发布物经 `npm pack` 内容校验（必须含 `dist/`、技能、双 README、LICENSE、`assets/`）。
 

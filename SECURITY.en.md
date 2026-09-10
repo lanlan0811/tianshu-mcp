@@ -85,7 +85,7 @@ are gated by the host (Tianshu) UI; read/query/verify tools need no approval.
 
 - Minimal runtime dependencies: `@modelcontextprotocol/sdk`, `zod`, `cross-spawn`.
 - `npm audit` should report no known vulnerabilities before committing; CI runs typecheck, lint, tests and
-  build on Ubuntu/Windows/macOS × Node 20/22.
+  build on Ubuntu/Windows/macOS × Node 20/22/24.
 - Published artifacts pass an `npm pack` content check (must include `dist/`, skills, both READMEs,
   LICENSE, `assets/`).
 
