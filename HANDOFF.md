@@ -351,6 +351,7 @@ hwnd 贯穿传递（只操作探测到的那个窗口）、下拉未命中时先
 | 发布产物 | npm `tianshu-mcp@0.1.10`（`latest=0.1.10`）；GitHub 与 Gitee `v0.1.10` Release 均附 `tianshu-mcp-0.1.10.tgz` |
 | 发布包复验 | 干净消费者目录安装 registry 上的 `0.1.10` 后 `check:stdio` 6/6 通过 |
 | 桌面宿主重连 | 天枢桌面端 v3.16.1：`2 servers connected, 10 tools`（本 server 8 个），无过滤包装器；会话内真实调用 `get_profiles` 成功。详见 `docs/issue-1-host-reconnect-record.md` |
+| 3.17.0 复验 | 宿主升级后 UI 显示 0/2；根因是天枢内嵌 npm 的 `minipass` 旧副本污染（与本 server 无关）。移开陈旧嵌套目录后 `GET /mcp/status` 显示 tianshu-mcp `connected` / `toolCount:8`，会话内 `mcp__tianshu-mcp__get_profiles` 调用成功 |
 
 ---
 

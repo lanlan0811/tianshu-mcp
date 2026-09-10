@@ -129,6 +129,7 @@
 |---|---|
 | 工具没出现 / server 连不上 | 看 server 日志 `<home>/logs/server.log`；确认 node 版本与 dist 构建；确认 config 字段（command 或 url 至少其一） |
 | stderr 出现 INFO/WARN | 正常诊断，不是错误；详见 §6 日志契约 |
+| 升级天枢后 `0/N 已连接 · 0 个工具可用`，**所有** npx 条目（含 context7）都报 `-32000 Connection closed` | 天枢内嵌 node-runtime 的 npm 依赖树被旧副本污染（`minipass-flush` 等的嵌套 `minipass` 残留 v3/v5，遮蔽顶层的 v7，报 `Class extends value undefined`）。与 tianshu-mcp 无关。修复见 [docs/issue-1-host-reconnect-record.md](issue-1-host-reconnect-record.md) §4.2（移开陈旧嵌套目录），或 §4.3 改用直接命令入口绕开 npx |
 | `run_task` 报 agent 不可用 | `get_profiles` 看探测结果；装 CLI 或修 profile（docs/agent-profiles.md） |
 | 验收误判（找不到命令） | 验收子进程显式继承 PATH；确认项目在 git 仓库内（基线分析需要） |
 | 任务卡 running | `query_task` 看日志尾；`cancel_task`；重启 server 会归档为 interrupted |

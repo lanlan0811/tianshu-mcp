@@ -113,6 +113,7 @@ For troubleshooting, read `<data dir>/logs/server.log` (default `~/.tianshu-mcp/
 |---|---|
 | tools missing / not connected | read `<home>/logs/server.log`; check node version, dist build, config fields |
 | `INFO`/`WARN` on stderr | normal diagnostics, not an error; see §6 |
+| After a Tianshu upgrade, `0/N connected · 0 tools available` and **every** npx entry (including context7) reports `-32000 Connection closed` | The bundled node-runtime npm tree has stale nested `minipass` copies (v3/v5 inside `minipass-flush` etc. shadowing the top-level v7 → `Class extends value undefined`). Unrelated to tianshu-mcp. Fix in [docs/issue-1-host-reconnect-record.md](issue-1-host-reconnect-record.md) §4.2 (rename the stale nested dirs), or use §4.3 (direct command entry, bypassing npx) |
 | `run_task` agent unavailable | `get_profiles`; install CLI or fix profile (docs/agent-profiles.md) |
 | task stuck running | `query_task` tail, `cancel_task`, or restart server (marks interrupted) |
 | skill not matched | skill auto-installs to `~/.rivet/skills/tianshu-mcp`; changes need a new session |
