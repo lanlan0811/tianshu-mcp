@@ -1,6 +1,6 @@
 {
   "name": "tianshu-mcp",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "天枢 × AI-Agent 编排 MCP server —— 由天枢调度本 server 去驱动外部 AI-Agent（Codex CLI、TraeWork GUI）完成 项目开发 → 验收 → 失败返修 → 再验收 的闭环。",
   "type": "module",
   "license": "Apache-2.0",
@@ -42,6 +42,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "check:stdio": "node scripts/check-stdio.mjs --entry dist/index.js",
+    "check:stdio:src": "node scripts/check-stdio.mjs --entry src/index.ts --tsx",
     "pack:check": "npm pack --dry-run"
   },
   "dependencies": {

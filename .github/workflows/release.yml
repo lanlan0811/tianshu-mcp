@@ -28,7 +28,7 @@ jobs:
           cache: npm
           registry-url: "https://registry.npmjs.org"
 
-      - name: Install & verify (up to 3 attempts)
+      - name: Install, lint, test, build, strict stdio (up to 3 attempts on npm ci)
         shell: bash
         run: |
           for i in 1 2 3; do
@@ -38,8 +38,12 @@ jobs:
             if [ "$i" -eq 3 ]; then echo "npm ci failed after 3 attempts"; exit 1; fi
           done
           npm run typecheck
+          npm run lint
           npm test
           npm run build
+          # 真实入口严格 stdio：stdout 只允许合法 MCP 消息（issue #1 门禁）
+          npm run check:stdio
+          npm run pack:check
 
       - name: Read package version
         id: pkgver
@@ -68,6 +72,21 @@ jobs:
           TGZ="$RUNNER_TEMP/tianshu-mcp-${{ steps.version.outputs.version }}.tgz"
           test -f "$TGZ" || { echo "expected tarball $TGZ not found"; ls "$RUNNER_TEMP"/*.tgz; exit 1; }
           echo "tarball=$TGZ" >> "$GITHUB_OUTPUT"
+
+      - name: Install tarball into clean consumer & strict stdio check
+        shell: bash
+        # 消费者不安装开发依赖；验证分发包可独立运行且 stdout 合规，失败即阻断草稿创建。
+        run: |
+          CONSUMER="$RUNNER_TEMP/consumer"
+          rm -rf "$CONSUMER"; mkdir -p "$CONSUMER"
+          (cd "$CONSUMER" && npm init -y >/dev/null && npm install --no-audit --no-fund "${{ steps.pack.outputs.tarball }}")
+          BIN="$CONSUMER/node_modules/tianshu-mcp/dist/index.js"
+          test -f "$BIN" || { echo "installed bin missing: $BIN"; exit 1; }
+          node scripts/check-stdio.mjs \
+            --entry "$BIN" \
+            --repo "$CONSUMER/node_modules/tianshu-mcp" \
+            --expect-version "${{ steps.version.outputs.version }}" \
+            --fixtures "$GITHUB_WORKSPACE/test/stub-agent"
 
       - name: Draft GitHub Release
         uses: softprops/action-gh-release@v2

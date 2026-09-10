@@ -1,0 +1,118 @@
+
+ RUN  v3.2.7 D:/Trae项目/tianshu-mcp
+
+ ❯ test/unit/log.test.ts (6 tests | 4 failed) 3952ms
+   × Logger 输出通道（stdout 必须保持为空） > 默认 INFO 阈值：DEBUG 被过滤，INFO/WARN/ERROR 全部走 stderr，stdout 为空 595ms
+     → stdout 应为空，实际收到:
+[2026-09-10T03:35:57.656Z] [INFO] probe-info-中文与特殊字符✓
+[2026-09-10T03:35:57.660Z] [WARN] probe-warn
+: expected '[2026-09-10T03:35:57.656Z] [INFO] pro…' to be '' // Object.is equality
+   × Logger 输出通道（stdout 必须保持为空） > DEBUG 阈值：四级日志全部走 stderr，stdout 为空，级别标签保留 556ms
+     → stdout 应为空，实际收到:
+[2026-09-10T03:35:58.232Z] [DEBUG] probe-debug
+[2026-09-10T03:35:58.238Z] [INFO] probe-info-中文与特殊字符✓
+[2026-09-10T03:35:58.238Z] [WARN] probe-warn
+: expected '[2026-09-10T03:35:58.232Z] [DEBUG] pr…' to be '' // Object.is equality
+   ✓ Logger 输出通道（stdout 必须保持为空） > ERROR 阈值：仅 error 输出，debug/info/warn 全部静默  578ms
+   × Logger 文件日志 > 阈值过滤后写文件：WARN 阈值只落 warn/error，内容 UTF-8 无损 568ms
+     → expected '[2026-09-10T03:35:59.371Z] [WARN] pro…' to be '' // Object.is equality
+   × Logger 文件日志 > DEBUG 阈值：文件保留全部四级且内容 UTF-8 无损 582ms
+     → expected '[2026-09-10T03:35:59.960Z] [DEBUG] pr…' to be '' // Object.is equality
+   ✓ Logger 文件日志 > 追加不覆盖：两次运行后文件保留 8 行  1071ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/unit/log.test.ts > Logger 输出通道（stdout 必须保持为空） > 默认 INFO 阈值：DEBUG 被过滤，INFO/WARN/ERROR 全部走 stderr，stdout 为空
+AssertionError: stdout 应为空，实际收到:
+[2026-09-10T03:35:57.656Z] [INFO] probe-info-中文与特殊字符✓
+[2026-09-10T03:35:57.660Z] [WARN] probe-warn
+: expected '[2026-09-10T03:35:57.656Z] [INFO] pro…' to be '' // Object.is equality
+
+- Expected
++ Received
+
++ [2026-09-10T03:35:57.656Z] [INFO] probe-info-中文与特殊字符✓
++ [2026-09-10T03:35:57.660Z] [WARN] probe-warn
++
+
+ ❯ test/unit/log.test.ts:67:55
+     65|     const r = probe("-", "info");
+     66|     expect(r.code).toBe(0);
+     67|     expect(r.stdout, `stdout 应为空，实际收到:\n${r.stdout}`).toBe("");
+       |                                                       ^
+     68|     const ls = lines(r.stderr);
+     69|     expect(sortedLevels(ls)).toEqual(["ERROR", "INFO", "WARN"]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  test/unit/log.test.ts > Logger 输出通道（stdout 必须保持为空） > DEBUG 阈值：四级日志全部走 stderr，stdout 为空，级别标签保留
+AssertionError: stdout 应为空，实际收到:
+[2026-09-10T03:35:58.232Z] [DEBUG] probe-debug
+[2026-09-10T03:35:58.238Z] [INFO] probe-info-中文与特殊字符✓
+[2026-09-10T03:35:58.238Z] [WARN] probe-warn
+: expected '[2026-09-10T03:35:58.232Z] [DEBUG] pr…' to be '' // Object.is equality
+
+- Expected
++ Received
+
++ [2026-09-10T03:35:58.232Z] [DEBUG] probe-debug
++ [2026-09-10T03:35:58.238Z] [INFO] probe-info-中文与特殊字符✓
++ [2026-09-10T03:35:58.238Z] [WARN] probe-warn
++
+
+ ❯ test/unit/log.test.ts:77:55
+     75|     const r = probe("-", "debug");
+     76|     expect(r.code).toBe(0);
+     77|     expect(r.stdout, `stdout 应为空，实际收到:\n${r.stdout}`).toBe("");
+       |                                                       ^
+     78|     const ls = lines(r.stderr);
+     79|     expect(sortedLevels(ls)).toEqual(["DEBUG", "ERROR", "INFO", "WARN"…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  test/unit/log.test.ts > Logger 文件日志 > 阈值过滤后写文件：WARN 阈值只落 warn/error，内容 UTF-8 无损
+AssertionError: expected '[2026-09-10T03:35:59.371Z] [WARN] pro…' to be '' // Object.is equality
+
+- Expected
++ Received
+
++ [2026-09-10T03:35:59.371Z] [WARN] probe-warn
++
+
+ ❯ test/unit/log.test.ts:98:22
+     96|     const r = probe(home, "warn");
+     97|     expect(r.code).toBe(0);
+     98|     expect(r.stdout).toBe("");
+       |                      ^
+     99|     const ls = await waitForLines(path.join(home, "server.log"), 2);
+    100|     expect(sortedLevels(ls)).toEqual(["ERROR", "WARN"]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  test/unit/log.test.ts > Logger 文件日志 > DEBUG 阈值：文件保留全部四级且内容 UTF-8 无损
+AssertionError: expected '[2026-09-10T03:35:59.960Z] [DEBUG] pr…' to be '' // Object.is equality
+
+- Expected
++ Received
+
++ [2026-09-10T03:35:59.960Z] [DEBUG] probe-debug
++ [2026-09-10T03:35:59.966Z] [INFO] probe-info-中文与特殊字符✓
++ [2026-09-10T03:35:59.967Z] [WARN] probe-warn
++
+
+ ❯ test/unit/log.test.ts:113:22
+    111|     const r = probe(home, "debug");
+    112|     expect(r.code).toBe(0);
+    113|     expect(r.stdout).toBe("");
+       |                      ^
+    114|     const ls = await waitForLines(path.join(home, "server.log"), 4);
+    115|     expect(sortedLevels(ls)).toEqual(["DEBUG", "ERROR", "INFO", "WARN"…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 2 passed (6)
+   Start at  11:35:55
+   Duration  6.23s (transform 614ms, setup 0ms, collect 1.53s, tests 3.95s, environment 0ms, prepare 357ms)
+

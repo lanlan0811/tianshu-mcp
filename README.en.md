@@ -141,6 +141,18 @@ run_task(projectPath=D:/xxx/my-app, agentId=traework, task=「Switch to Code mod
 
 > Every result is "human-readable text + a `---tianshu-mcp-meta---` JSON block" so the host can extract it with a regex.
 
+## Logging & stdio contract
+
+This server is a standard MCP **stdio server** and follows the transport contract strictly:
+
+- **stdout carries MCP JSON-RPC messages only.** No diagnostic log is ever written to stdout — doing so corrupts the JSON-RPC stream and makes strict clients fail to handshake or call tools.
+- **All log levels (DEBUG/INFO/WARN/ERROR) go to stderr** and are appended to `logs/server.log` under the data directory (UTF-8, ISO timestamp, with a level tag).
+- Therefore **an `INFO`/`WARN` line on stderr does not mean the server failed**; it is normal diagnostics. Only a startup failure (`tianshu-mcp 启动失败:`) is fatal, and it exits with a non-zero code.
+
+The data directory defaults to `~/.tianshu-mcp` (override with `TIANSHU_MCP_HOME`); the log file lives at `<data dir>/logs/server.log`.
+
+Use `server.log` when troubleshooting connections; do not treat stderr output itself as a server fault.
+
 ## Documentation
 
 | Doc | Content |
@@ -151,6 +163,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=traework, task=「Switch to Code mod
 | [docs/traework-cdp.en.md](docs/traework-cdp.en.md) | TraeWork GUI driver (CDP): mechanism, config, mode switching, selectors, safety invariants, pitfalls, verification record |
 | [docs/acceptance-config.en.md](docs/acceptance-config.en.md) | Project-level `.tianshu-mcp/acceptance.json` acceptance config spec |
 | [docs/release-v0.1.9.en.md](docs/release-v0.1.9.en.md) | v0.1.9 release notes (TraeWork task liveness and instance retention) |
+| [docs/release-v0.1.10.en.md](docs/release-v0.1.10.en.md) | v0.1.10 release notes (stdio log pollution fix: diagnostics on stderr) |
 | [docs/release-v0.1.8.en.md](docs/release-v0.1.8.en.md) | v0.1.8 release notes (atomic-write concurrency fix) |
 | [docs/release-v0.1.7.en.md](docs/release-v0.1.7.en.md) | v0.1.7 release notes (binding root cause: native path) |
 | [docs/release-v0.1.6.en.md](docs/release-v0.1.6.en.md) | v0.1.6 release notes (project-folder binding fix) |
@@ -207,6 +220,9 @@ run_task(projectPath=D:/xxx/my-app, agentId=traework, task=「Switch to Code mod
 - **M9 — TraeWork task liveness detection + v0.1.9** ✅ (2026-09-09, see [release-v0.1.9.en.md](docs/release-v0.1.9.en.md)) — **196 tests**
   - The stop button / loading task tail became authoritative running signals that outrank the completion mark; stable rounds only start the idle timer (default 10 minutes) before returning `idle`
   - CDP disconnects reject all pending requests + a 15s per-command timeout; abnormal endings (idle/timeout/aborted/cdp_lost) keep the instance and record `agentEndReason` / `keptInstance`
+- **M10 — stdio log pollution fix + v0.1.10** ✅ (2026-09-10, see [release-v0.1.10.en.md](docs/release-v0.1.10.en.md)) — **issue #1**
+  - The unified logger now sends all levels to stderr, leaving stdout for MCP JSON-RPC messages only
+  - Added a strict stdio smoke (real-process byte-stream validation, 6 scenarios), Node 24 CI coverage, and an installed-package protocol gate
 
 ## Agent support status
 
@@ -229,7 +245,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=traework, task=「Switch to Code mod
 
 | Document | Content |
 |---|---|
-| [CHANGELOG.en.md](CHANGELOG.en.md) | Version history (v0.1.0 → v0.1.9) |
+| [CHANGELOG.en.md](CHANGELOG.en.md) | Version history (v0.1.0 → v0.1.10) |
 | [CONTRIBUTING.en.md](CONTRIBUTING.en.md) | Dev setup, conventions, commit/release flow, adding an agent |
 | [SECURITY.en.md](SECURITY.en.md) | Security model (zero credentials / command whitelist / process & desktop-automation boundaries) and private reporting |
 | [CODE_OF_CONDUCT.en.md](CODE_OF_CONDUCT.en.md) | Contributor Code of Conduct |

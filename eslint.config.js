@@ -25,5 +25,13 @@ export default [
       "no-control-regex": "off",
     },
   },
+  {
+    files: ["src/**/*.ts"],
+    rules: {
+      // stdout 由 MCP transport 独占：禁止运行时代码直接写 stdout（issue #1）。
+      // 启动失败仍允许 console.error（stderr）；开发脚本与测试 fixture 不受此限。
+      "no-console": ["error", { allow: ["error"] }],
+    },
+  },
   prettier,
 ];

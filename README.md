@@ -140,6 +140,18 @@ run_task(projectPath=D:/xxx/my-app, agentId=traework, task=「切换到 Code 模
 
 > 返回统一为「人类可读文本 + `---tianshu-mcp-meta---` JSON 块」，便于宿主正则抽取。
 
+## 日志与 stdio 契约
+
+本 server 是标准 MCP **stdio server**，严格遵守传输契约：
+
+- **stdout 只承载 MCP JSON-RPC 消息**。任何诊断日志都不会写入 stdout——否则会破坏 JSON-RPC 流，导致严格客户端握手或工具调用失败。
+- **所有级别日志（DEBUG/INFO/WARN/ERROR）写入 stderr**，同时追加到数据目录下的 `logs/server.log`（UTF-8，ISO 时间戳，含级别标签）。
+- 因此 **stderr 里出现 `INFO`/`WARN` 不代表服务器出错**；它是正常诊断信息。只有启动失败（`tianshu-mcp 启动失败:`）才是致命错误，并会以非 0 退出码结束。
+
+数据目录默认 `~/.tianshu-mcp`（可用 `TIANSHU_MCP_HOME` 覆盖），日志文件位于 `<数据目录>/logs/server.log`。
+
+排查连接问题时以 `server.log` 为准；不要因为 stderr 有输出就判定 server 异常。
+
 ## 文档
 
 | 文档 | 内容 |
@@ -150,6 +162,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=traework, task=「切换到 Code 模
 | [docs/traework-cdp.md](docs/traework-cdp.md) | TraeWork GUI 驱动（CDP）：原理、配置、模式切换、选择器、安全红线、踩坑记录、验证记录 |
 | [docs/acceptance-config.md](docs/acceptance-config.md) | 项目级 `.tianshu-mcp/acceptance.json` 验收配置规范 |
 | [docs/release-v0.1.9.md](docs/release-v0.1.9.md) | v0.1.9 发布说明（TraeWork 任务进行中检测与实例保留） |
+| [docs/release-v0.1.10.md](docs/release-v0.1.10.md) | v0.1.10 发布说明（修复 stdio 日志污染：诊断日志统一走 stderr） |
 | [docs/release-v0.1.8.md](docs/release-v0.1.8.md) | v0.1.8 发布说明（原子写并发缺陷修复） |
 | [docs/release-v0.1.7.md](docs/release-v0.1.7.md) | v0.1.7 发布说明（绑定根因：原生路径） |
 | [docs/release-v0.1.6.md](docs/release-v0.1.6.md) | v0.1.6 发布说明（项目文件夹绑定修复） |
@@ -208,6 +221,9 @@ run_task(projectPath=D:/xxx/my-app, agentId=traework, task=「切换到 Code 模
 - **M9 — TraeWork 任务进行中检测 + v0.1.9** ✅（2026-09-09，见 [release-v0.1.9.md](docs/release-v0.1.9.md)）— **196 测试**
   - 停止按钮 / loading task tail 成为权威运行信号，优先于完成标志；稳定轮数只启动空闲计时（默认 10 分钟）才返回 `idle`
   - CDP 断线收敛全部 pending + 单次命令 15s 超时；异常结束（idle/timeout/aborted/cdp_lost）保留实例并写 `agentEndReason` / `keptInstance`
+- **M10 — stdio 日志污染修复 + v0.1.10** ✅（2026-09-10，见 [release-v0.1.10.md](docs/release-v0.1.10.md)）— **issue #1**
+  - 统一 Logger 所有级别改走 stderr，stdout 只承载 MCP JSON-RPC 消息
+  - 新增严格 stdio 冒烟（真实进程字节流校验，6 场景）、Node 24 CI 覆盖与安装包协议门禁
 
 ## Agent 适配现状
 
@@ -231,7 +247,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=traework, task=「切换到 Code 模
 | 文档 | 内容 |
 |---|---|
 | [HANDOFF.md](HANDOFF.md) | 项目交接文档：当前状态快照、架构导览、硬性红线、已知限制、接手建议 |
-| [CHANGELOG.md](CHANGELOG.md) | 版本变更日志（v0.1.0 → v0.1.9） |
+| [CHANGELOG.md](CHANGELOG.md) | 版本变更日志（v0.1.0 → v0.1.10） |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 开发环境、工程规范、提交与发布流程、如何新增 agent |
 | [SECURITY.md](SECURITY.md) | 安全模型（凭证零管理/命令白名单/进程与桌面自动化边界）与私密报告渠道 |
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | 贡献者行为准则 |

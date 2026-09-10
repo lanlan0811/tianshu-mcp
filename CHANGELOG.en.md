@@ -18,6 +18,40 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.1.10] — 2026-09-10
+
+### Fixed
+
+- **Fixed stdio log pollution (issue #1)**: the unified logger previously sent only ERROR to
+  `console.error` while INFO/WARN/DEBUG went to `console.log`, sharing stdout with MCP JSON-RPC
+  messages and breaking handshakes or tool calls in strict stdio clients. All levels passing the
+  threshold now go to stderr, leaving stdout for valid MCP messages only.
+- Log file appending, timestamps, level tags and the `<data dir>/logs/server.log` path are unchanged;
+  a startup failure is still reported on stderr.
+
+### Added
+
+- New `scripts/check-stdio.mjs` strict stdio smoke: a real child process validates the complete
+  stdout/stderr byte stream, allowing only newline-delimited, schema-valid MCP JSON-RPC messages on
+  stdout; empty lines, non-JSON lines, parser errors, or trailing fragments at exit fail the run.
+  It covers six scenarios: first start, second start with matching skills, `--no-skill-install`,
+  a corrupt `config.json`, logs during a stub task, and clean EOF shutdown.
+- New `npm run check:stdio` and `npm run check:stdio:src` scripts.
+
+### Tests
+
+- New `test/unit/log.test.ts`: real-child-process checks for the four log levels' channels, default
+  INFO filtering, threshold-filtered file logging, and UTF-8 content (4/6 failed before the fix; see
+  `docs/m2-evidence/issue1-old-impl-log-test-failure.txt`).
+- CI's three-platform matrix now includes Node 24; the build step runs the strict stdio check instead
+  of an EOF-exit-only smoke.
+- CI `pack-check` and Release install the freshly built tarball into a clean consumer directory, read
+  the installed bin dynamically, and reuse the same strict stdio check; Release adds `lint` and the
+  installed-package protocol gate, failing before a draft is created.
+- ESLint enables `no-console` (allowing `error` only) for `src/**/*.ts` to prevent new direct stdout writes.
+
+---
+
 ## [0.1.9] — 2026-09-09
 
 ### Fixed

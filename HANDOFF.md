@@ -1,6 +1,6 @@
 # HANDOFF.md — 项目交接说明
 
-> 交接快照：**2026-09-09**（v0.1.9 已发布）。本文写给**接手本仓库的人**：先读「交接快照」了解当前状态，再按「从零搭环境」上手。
+> 交接快照：**2026-09-10**（v0.1.10 修复 stdio 日志污染）。本文写给**接手本仓库的人**：先读「交接快照」了解当前状态，再按「从零搭环境」上手。
 > 工作区规则见 `AGENTS.md`（gitignore 中，仅本地），安装/用法见 `README.md`，本文不重复，只做导览与状态记录。
 
 ---
@@ -15,7 +15,7 @@
 
 - **天枢官方仓库**：<https://github.com/huiliyi37/Tianshu-harness>（基于 harness 工程的终端编程智能体运行时，TUI × GUI；Apache-2.0）
 - **本仓库**：`github.com/lanlan0811/tianshu-mcp`（主）｜`gitee.com/lan0811/tianshu-mcp`（镜像）
-- **npm**：`tianshu-mcp`（当前 `0.1.9`）
+- **npm**：`tianshu-mcp`（当前 `0.1.10`）
 
 ### 为什么是这样设计的（硬约束）
 
@@ -32,15 +32,15 @@
 | 项 | 状态 |
 |---|---|
 | 分支 | `master`（**只在此分支提交**，不建其他分支） |
-| 发布提交 | `dc471d2 修复 TraeWork 任务进行中检测并发布 v0.1.9` |
-| 版本 / 许可证 | `0.1.9` / Apache-2.0 |
-| 标签 | `v0.1.0` … `v0.1.9`（v0.1.2+ 均已推双仓） |
-| 工作树 | 干净；`github/master` 与 `gitee/master` 均同步 |
-| 测试 | **196/196 通过**（30 个测试文件：单元 19 + 集成 10 + 协议 1） |
-| 门禁 | lint 0 warning、typecheck clean、build 成功、`npm pack` 内容校验通过 |
-| CI | `CI` workflow：ubuntu/windows/macos × Node 20/22 + tarball 检查 = **7/7 全绿** |
-| npm | `tianshu-mcp@0.1.9` 已发布，`dist-tags.latest = 0.1.9` |
-| Release | GitHub/Gitee Release `v0.1.9` 均已发布（附 `tianshu-mcp-0.1.9.tgz`） |
+| 发布提交 | `dc471d2 修复 TraeWork 任务进行中检测并发布 v0.1.9`（v0.1.10 修复提交见本次交付记录） |
+| 版本 / 许可证 | `0.1.10` / Apache-2.0 |
+| 标签 | `v0.1.0` … `v0.1.9`（v0.1.2+ 均已推双仓；v0.1.10 tag 待发布时打） |
+| 工作树 | 本次修复变更集（含严格 stdio 门禁与双语文档） |
+| 测试 | **202/202 通过**（31 个测试文件：单元 20 + 集成 10 + 协议 1） |
+| 门禁 | lint 0 warning、typecheck clean、build 成功、`check:stdio` 6/6 场景通过、`npm pack` 内容校验通过 |
+| CI | `CI` workflow：ubuntu/windows/macos × Node 20/22/24 + 严格 stdio + 安装包协议检查 |
+| npm | v0.1.10 发布状态按实际结果记录（本仓库只在 `release.yml` 创建 GitHub Release 草稿，npm/Gitee 需单独发布） |
+| Release | v0.1.10 发布状态按实际结果记录 |
 
 ### Agent 适配现状
 
@@ -65,6 +65,7 @@
 - **M7** 绑定**根因**修复（规范化路径被选择器拒绝 → `toNativeWindowsPath`）+ 写入回读校验 / hwnd 贯穿 / 遗留对话框清理 + v0.1.7 — **178 测试**
 - **M8** 原子写并发缺陷修复（临时文件名唯一化 + rename 退避重试，CI windows/Node20 真根因）+ v0.1.8 — **181 测试**
 - **M9** TraeWork 任务进行中检测（权威运行信号 + 空闲计时 + CDP 断线收敛 + 异常保留实例）+ v0.1.9 — **196 测试**
+- **M10** stdio 日志污染修复（issue #1：Logger 全级别改走 stderr + 严格 stdio 门禁 + Node 24 + 安装包协议门禁）+ v0.1.10 — **202 测试**
 
 ### 实现期修复记录（重要）
 
@@ -80,6 +81,10 @@
    已改为随机后缀 + rename 退避重试。回归：`test/unit/atomic-write.test.ts`。
 6. **长思考被提前判完成**（M9）：稳定 36 秒不再等同完成；停止按钮与 loading task tail 优先于完成标志，
    静态确认后再等待默认 10 分钟才返回 `idle`。异常结束保留实例，详见 §8.2。
+7. **stdio 日志污染**（M10 / v0.1.10，issue #1）：统一 `Logger` 只有 ERROR 走 `console.error`，
+   INFO/WARN/DEBUG 走 `console.log`，与 MCP JSON-RPC 共用 stdout → 严格客户端握手/调用失败。
+   修复：全级别统一 stderr，stdout 只承载协议消息。回归：`test/unit/log.test.ts` +
+   `scripts/check-stdio.mjs`（真实进程字节流校验，6 场景），ESLint `no-console` 兜底。详见 §8.3。
 
 ---
 
@@ -157,7 +162,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 196 项
+npm test             # 202 项
 ```
 
 日常循环（改 `src/` 后）：
@@ -315,6 +320,34 @@ hwnd 贯穿传递（只操作探测到的那个窗口）、下拉未命中时先
 真机使用的独立项目、任务日志与报告均在仓库忽略目录 `.tianshu-mcp/` 下，不进入发布产物；验证实例在
 完成存活确认后按「PID + 可执行名 + 调试端口」核对，并以非树式方式安全关闭。
 
+## 8.3 stdio 日志污染修复（M10 / v0.1.10，issue #1）
+
+### 事实与根因
+
+- MCP stdio 规范：**stdout 只承载合法 MCP JSON-RPC 消息**，诊断日志应写 stderr。
+- 旧 `src/util/log.ts` 只有 `error` 走 `console.error`，`info`/`warn`/`debug` 走 `console.log`（stdout）。
+  默认 INFO 阈值下，连接提示、技能自检、任务状态等都会污染协议流，且可延续到握手之后。
+- 复现（旧实现，`node --import tsx src/index.ts`，隔离 HOME）：6 个场景全部在 stdout 出现
+  `[INFO] …` 非协议行；证据见 `docs/m2-evidence/issue1-old-impl-stdio-check-failure.txt`。
+
+### 修复与门禁
+
+- `src/util/log.ts`：所有通过阈值的级别统一 `console.error`（stderr），日志文件追加行为不变。
+- `eslint.config.js`：`src/**/*.ts` 启用 `no-console`（仅允许 `error`），阻止再次直接写 stdout。
+- `scripts/check-stdio.mjs`：真实子进程捕获完整 stdout/stderr，逐行用官方 `JSONRPCMessageSchema`
+  校验，空行/非 JSON/parser error/退出残留片段即失败；覆盖首次启动、再次启动、`--no-skill-install`、
+  损坏 `config.json`、stub 任务运行期日志、EOF 关闭 6 场景。消费者安装 tarball 后复用同一脚本。
+- 回归：`test/unit/log.test.ts` 以子进程探针断言四级通道、默认 INFO 过滤、文件阈值与 UTF-8。
+
+### 2026-09-10 本地门禁物证
+
+| 项 | 结果 |
+|---|---|
+| 修复前 | `test/unit/log.test.ts` 4/6 失败；`check-stdio` 6/6 场景失败（证据已归档） |
+| 修复后 | 源码入口与 `dist` 入口 `check:stdio` 均 **6/6 通过**，stdout 非协议行 0 |
+| 安装包 | tarball 安装到干净消费者目录（不装 dev 依赖）后 6/6 通过 |
+| 门禁 | `typecheck` / `lint` / `build` / `check:stdio` / `pack:check` 全绿；31 文件 **202/202** 测试通过 |
+
 ---
 
 ## 9. 凭证与安全红线
@@ -331,7 +364,7 @@ hwnd 贯穿传递（只操作探测到的那个窗口）、下拉未命中时先
 | 文档 | 内容 |
 |---|---|
 | `README.md` / `README.en.md` | 项目总览、快速开始（含天枢界面配置）、文档索引 |
-| `CHANGELOG.md` / `.en.md` | 版本历史 v0.1.0 → v0.1.9 |
+| `CHANGELOG.md` / `.en.md` | 版本历史 v0.1.0 → v0.1.10 |
 | `CONTRIBUTING.md` / `.en.md` | 开发环境、门禁、规范、提交/发布流程、如何新增 agent |
 | `SECURITY.md` / `.en.md` | 安全模型与漏洞报告 |
 | `CODE_OF_CONDUCT.md` / `.en.md` | 行为准则 |
@@ -340,6 +373,7 @@ hwnd 贯穿传递（只操作探测到的那个窗口）、下拉未命中时先
 | `docs/agent-profiles.md` / `.en.md` | profile 字段说明（含 `driver`/`gui`） |
 | `docs/adapter-matrix.md` / `.en.md` | 各 agent 能力调研矩阵 |
 | `docs/acceptance-config.md` / `.en.md` | 项目级验收配置规范 |
+| `docs/release-v0.1.10.md` / `.en.md` | v0.1.10 发布说明（stdio 日志污染修复，issue #1） |
 | `docs/release-v0.1.9.md` / `.en.md` | v0.1.9 发布说明（任务进行中检测与实例保留） |
 | `docs/release-v0.1.8.md` / `.en.md` | v0.1.8 发布说明（原子写并发缺陷修复） |
 | `docs/release-v0.1.7.md` / `.en.md` | v0.1.7 发布说明（绑定根因：原生路径形式） |

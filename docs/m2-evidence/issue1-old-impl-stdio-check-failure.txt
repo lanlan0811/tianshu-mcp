@@ -1,0 +1,53 @@
+check-stdio: entry=D:\Trae项目\tianshu-mcp\src\index.ts
+  repo=D:\Trae项目\tianshu-mcp  version=0.1.10  tools=cancel_task,get_profiles,get_task_report,list_tasks,query_task,rework_task,run_task,verify_task
+  node args: --import tsx
+  [FAIL] first-start
+         等待 stderr 出现「技能已安装到」超时；当前 stderr:
+         
+         stdout: stdout 第 1 行非法 JSON（parser error）：[2026-09-10T03:51:34.135Z] [INFO] tianshu-mcp 已连接（stdio）。数据目录: C:\Users\Lenovo\AppData\Local\Temp\tianshu-stdio-shared-skills-kmUIdA，工具数: 8
+         stdout: stdout 第 3 行非法 JSON（parser error）：[2026-09-10T03:51:34.160Z] [INFO] 技能已安装到 C:\Users\Lenovo\AppData\Local\Temp\tianshu-stdio-shared-skills-kmUIdA\.rivet\skills\tianshu-mcp（新会话生效，无热加载）。
+         stdout: stdout 第 4 行非法 JSON（parser error）：[2026-09-10T03:51:34.161Z] [INFO] 技能已安装到 C:\Users\Lenovo\AppData\Local\Temp\tianshu-stdio-shared-skills-kmUIdA\.rivet\skills\tianshu-mcp（新会话生效，无热加载）。
+  [FAIL] second-start-skill-matched
+         等待 stderr 出现「技能已安装且内容一致」超时；当前 stderr:
+         
+         stdout: stdout 第 1 行非法 JSON（parser error）：[2026-09-10T03:52:05.746Z] [INFO] 技能已安装且内容一致，跳过（C:\Users\Lenovo\AppData\Local\Temp\tianshu-stdio-shared-skills-kmUIdA\.rivet\skills\tianshu-mcp）。
+         stdout: stdout 第 2 行非法 JSON（parser error）：[2026-09-10T03:52:05.768Z] [INFO] tianshu-mcp 已连接（stdio）。数据目录: C:\Users\Lenovo\AppData\Local\Temp\tianshu-stdio-shared-skills-kmUIdA，工具数: 8
+  [FAIL] no-skill-install
+         stdout 存在非协议内容：
+           - stdout 第 1 行非法 JSON（parser error）：[2026-09-10T03:52:37.322Z] [INFO] tianshu-mcp 已连接（stdio）。数据目录: C:\Users\Lenovo\AppData\Local\Temp\tianshu-stdio-no-skill-install-XgtoH1，工具数: 8
+           - stdout 第 5 行非法 JSON（parser error）：[2026-09-10T03:52:38.881Z] [INFO] 收到 stdin EOF，开始关闭：归档活动任务并终止子进程…
+           - stdout 第 6 行非法 JSON（parser error）：[2026-09-10T03:52:38.882Z] [INFO] server 关闭：归档活动任务并终止子进程…
+         stdout: stdout 第 1 行非法 JSON（parser error）：[2026-09-10T03:52:37.322Z] [INFO] tianshu-mcp 已连接（stdio）。数据目录: C:\Users\Lenovo\AppData\Local\Temp\tianshu-stdio-no-skill-install-XgtoH1，工具数: 8
+         stdout: stdout 第 5 行非法 JSON（parser error）：[2026-09-10T03:52:38.881Z] [INFO] 收到 stdin EOF，开始关闭：归档活动任务并终止子进程…
+         stdout: stdout 第 6 行非法 JSON（parser error）：[2026-09-10T03:52:38.882Z] [INFO] server 关闭：归档活动任务并终止子进程…
+  [FAIL] corrupt-config-warn
+         等待 stderr 出现「config.json JSON 损坏」超时；当前 stderr:
+         
+         stdout: stdout 第 1 行非法 JSON（parser error）：[2026-09-10T03:52:40.361Z] [WARN] config.json JSON 损坏，保留上一有效配置
+         stdout: stdout 第 2 行非法 JSON（parser error）：[2026-09-10T03:52:40.388Z] [INFO] tianshu-mcp 已连接（stdio）。数据目录: C:\Users\Lenovo\AppData\Local\Temp\tianshu-stdio-corrupt-config-warn-hbAfZQ，工具数: 8
+         stdout: stdout 第 5 行非法 JSON（parser error）：[2026-09-10T03:52:40.428Z] [INFO] 技能已安装到 C:\Users\Lenovo\AppData\Local\Temp\tianshu-stdio-corrupt-config-warn-hbAfZQ\.rivet\skills\tianshu-mcp（新会话生效，无热加载）。
+         stdout: stdout 第 6 行非法 JSON（parser error）：[2026-09-10T03:52:40.428Z] [INFO] 技能已安装到 C:\Users\Lenovo\AppData\Local\Temp\tianshu-stdio-corrupt-config-warn-hbAfZQ\.rivet\skills\tianshu-mcp（新会话生效，无热加载）。
+  [FAIL] task-runtime-logs
+         等待 stderr 出现「run_task 已提交」超时；当前 stderr:
+         
+         stdout: stdout 第 1 行非法 JSON（parser error）：[2026-09-10T03:52:56.968Z] [INFO] tianshu-mcp 已连接（stdio）。数据目录: C:\Users\Lenovo\AppData\Local\Temp\tianshu-stdio-task-runtime-logs-3uF1Sv，工具数: 8
+         stdout: stdout 第 4 行非法 JSON（parser error）：[2026-09-10T03:52:57.012Z] [INFO] 技能已安装到 C:\Users\Lenovo\AppData\Local\Temp\tianshu-stdio-task-runtime-logs-3uF1Sv\.rivet\skills\tianshu-mcp（新会话生效，无热加载）。
+         stdout: stdout 第 5 行非法 JSON（parser error）：[2026-09-10T03:52:57.012Z] [INFO] 技能已安装到 C:\Users\Lenovo\AppData\Local\Temp\tianshu-stdio-task-runtime-logs-3uF1Sv\.rivet\skills\tianshu-mcp（新会话生效，无热加载）。
+         stdout: stdout 第 7 行非法 JSON（parser error）：[2026-09-10T03:52:57.716Z] [INFO] 任务 tsk_20260910115257_fd51aa 启动（agent=stub, project=c:/Users/Lenovo/AppData/Local/Temp/tianshu-stdio-proj-task-BoSo7d, roundsUsed=0）
+         stdout: stdout 第 8 行非法 JSON（parser error）：[2026-09-10T03:52:57.718Z] [INFO] run_task 已提交 tsk_20260910115257_fd51aa (agent=stub, project=c:/Users/Lenovo/AppData/Local/Temp/tianshu-stdio-proj-task-BoSo7d)
+         stdout: stdout 第 16 行非法 JSON（parser error）：[2026-09-10T03:52:59.610Z] [INFO] 任务 tsk_20260910115257_fd51aa 第 0 轮验收: 通过（2 项检查）
+         stdout: stdout 第 18 行非法 JSON（parser error）：[2026-09-10T03:52:59.622Z] [INFO] 任务 tsk_20260910115257_fd51aa 结束: succeeded
+  [FAIL] eof-close
+         stdout 存在非协议内容：
+           - stdout 第 1 行非法 JSON（parser error）：[2026-09-10T03:53:06.267Z] [INFO] tianshu-mcp 已连接（stdio）。数据目录: C:\Users\Lenovo\AppData\Local\Temp\tianshu-stdio-eof-close-xby3oC，工具数: 8
+           - stdout 第 4 行非法 JSON（parser error）：[2026-09-10T03:53:06.302Z] [INFO] 技能已安装到 C:\Users\Lenovo\AppData\Local\Temp\tianshu-stdio-eof-close-xby3oC\.rivet\skills\tianshu-mcp（新会话生效，无热加载）。
+           - stdout 第 5 行非法 JSON（parser error）：[2026-09-10T03:53:06.302Z] [INFO] 技能已安装到 C:\Users\Lenovo\AppData\Local\Temp\tianshu-stdio-eof-close-xby3oC\.rivet\skills\tianshu-mcp（新会话生效，无热加载）。
+           - stdout 第 7 行非法 JSON（parser error）：[2026-09-10T03:53:06.314Z] [INFO] 收到 stdin EOF，开始关闭：归档活动任务并终止子进程…
+           - stdout 第 8 行非法 JSON（parser error）：[2026-09-10T03:53:06.314Z] [INFO] server 关闭：归档活动任务并终止子进程…
+         stdout: stdout 第 1 行非法 JSON（parser error）：[2026-09-10T03:53:06.267Z] [INFO] tianshu-mcp 已连接（stdio）。数据目录: C:\Users\Lenovo\AppData\Local\Temp\tianshu-stdio-eof-close-xby3oC，工具数: 8
+         stdout: stdout 第 4 行非法 JSON（parser error）：[2026-09-10T03:53:06.302Z] [INFO] 技能已安装到 C:\Users\Lenovo\AppData\Local\Temp\tianshu-stdio-eof-close-xby3oC\.rivet\skills\tianshu-mcp（新会话生效，无热加载）。
+         stdout: stdout 第 5 行非法 JSON（parser error）：[2026-09-10T03:53:06.302Z] [INFO] 技能已安装到 C:\Users\Lenovo\AppData\Local\Temp\tianshu-stdio-eof-close-xby3oC\.rivet\skills\tianshu-mcp（新会话生效，无热加载）。
+         stdout: stdout 第 7 行非法 JSON（parser error）：[2026-09-10T03:53:06.314Z] [INFO] 收到 stdin EOF，开始关闭：归档活动任务并终止子进程…
+         stdout: stdout 第 8 行非法 JSON（parser error）：[2026-09-10T03:53:06.314Z] [INFO] server 关闭：归档活动任务并终止子进程…
+
+check-stdio: 6/6 场景失败

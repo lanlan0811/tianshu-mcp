@@ -96,11 +96,23 @@ Return format: human text + `---tianshu-mcp-meta---` JSON block.
 - All tools are async: `run_task` returns a taskId immediately; poll via `query_task` (5–10s).
 - Default task timeout 30 min (`taskTimeoutMs` overrides at call level; call > profile > server default). Per-check verify timeout default 5 min.
 
-## 6. FAQ
+## 6. Logging and the stdout/stderr contract
+
+Tianshu acts as a standard MCP stdio client, so this server guarantees (the contract fixed in v0.1.10):
+
+- **stdout carries MCP JSON-RPC messages only.** No diagnostic log is ever written to stdout, so the JSON-RPC stream is never corrupted.
+- **DEBUG/INFO/WARN/ERROR all go to stderr** and are appended to `<data dir>/logs/server.log`.
+- **An `INFO`/`WARN` line on stderr is normal diagnostics, not an error**; only a startup failure is fatal and exits non-zero.
+- No client-side filtering wrapper, log disabling, or SDK upgrade is required.
+
+For troubleshooting, read `<data dir>/logs/server.log` (default `~/.tianshu-mcp/logs/server.log`); it mirrors stderr.
+
+## 7. FAQ
 
 | Symptom | Fix |
 |---|---|
 | tools missing / not connected | read `<home>/logs/server.log`; check node version, dist build, config fields |
+| `INFO`/`WARN` on stderr | normal diagnostics, not an error; see §6 |
 | `run_task` agent unavailable | `get_profiles`; install CLI or fix profile (docs/agent-profiles.md) |
 | task stuck running | `query_task` tail, `cancel_task`, or restart server (marks interrupted) |
 | skill not matched | skill auto-installs to `~/.rivet/skills/tianshu-mcp`; changes need a new session |

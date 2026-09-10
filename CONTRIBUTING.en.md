@@ -11,7 +11,7 @@ Chinese version: [CONTRIBUTING.md](CONTRIBUTING.md)
 
 | Item | Requirement |
 |---|---|
-| Node.js | ≥ 20 (CI covers 20 / 22) |
+| Node.js | ≥ 20 (CI covers 20 / 22 / 24) |
 | Package manager | npm (the repo ships `package-lock.json`) |
 | OS | Windows / macOS / Linux (three-platform CI matrix) |
 | Git | Needed for baseline-analysis features and commits |
@@ -36,22 +36,31 @@ Scripts:
 | `npm run test:watch` | Watch mode |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint with `--max-warnings 0` (zero tolerance) |
+| `npm run check:stdio` | Strict stdio protocol check (runs the built `dist`) |
+| `npm run check:stdio:src` | Same, but runs the source entry via `tsx` (no build needed) |
 | `npm run format` | Prettier over `src` and `test` |
 | `npm run pack:check` | `npm pack --dry-run` to inspect the published contents |
 
 ## 3. Required before committing (same as CI)
 
 ```bash
-npm run typecheck && npm run lint && npm test && npm run build
+npm run typecheck && npm run lint && npm test && npm run build && npm run check:stdio
 ```
+
+`check:stdio` spawns a real child process and validates the complete stdout/stderr byte stream per
+scenario: stdout may contain only newline-delimited, schema-valid MCP JSON-RPC messages (requests and
+response IDs checked); empty lines, non-JSON lines, parser errors, or trailing fragments at exit all
+fail the run. It covers six scenarios: first start, second start with matching skills,
+`--no-skill-install`, a corrupt `config.json`, logs while a stub task runs, and clean EOF shutdown.
 
 CI enforces two extra checks — keep them in mind locally:
 
 1. **No unexpected tracked diff after build**: `npm run build` rewrites `src/version.generated.ts`;
    when bumping the version, commit that file together with `package.json`, otherwise CI's
    "No unexpected tracked diff after build" fails.
-2. **Tarball contents**: after `npm pack`, the archive must contain `dist/index.js`,
-   `skills/tianshu-mcp/SKILL.md`, `README.md`, `README.en.md`, `LICENSE` (and `assets/`).
+2. **Tarball contents and installed-package protocol**: CI installs the freshly built tarball into a
+   clean consumer directory, reads the installed bin dynamically, and reuses `scripts/check-stdio.mjs`
+   (the consumer installs no dev dependencies).
 
 ## 4. Engineering conventions
 
@@ -62,6 +71,9 @@ CI enforces two extra checks — keep them in mind locally:
 - **Cross-platform**: anything touching paths/processes/signals must handle both Windows and POSIX
   (the three-platform CI matrix verifies this).
 - **SVG icons only**: emoji must not be used as icons.
+- **stdout is reserved for the MCP protocol**: runtime code under `src/**` must not call
+  `console.log/info/debug`; log through `src/util/log.ts` (which writes stderr via `console.error`).
+  ESLint's `no-console` enforces this, and `npm run check:stdio` covers new output with a real process.
 - **Zero lint warnings**: `npm run lint` runs with `--max-warnings 0`.
 - **Tests**: new features and fixes should ship with tests; prefer unit tests for pure functions and
   integration/protocol tests for orchestration or protocol behavior.
@@ -90,6 +102,7 @@ Test layers:
 | Unit | `test/unit/` | Pure functions and component logic |
 | Integration | `test/integration/` | stub-agent 3 playbooks, TraeWork fake-CDP end-to-end |
 | Protocol | `test/protocol/` | Official SDK stdio/in-memory client asserting the tool surface and return format |
+| Real process | `scripts/check-stdio.mjs` | Strict stdio gate: real child-process byte stream, stdout may carry MCP messages only |
 | Real-machine probe | `scripts/probe-traework.mjs` | Requires a real TraeWork, **not in CI** |
 
 ## 6. Commits and branches

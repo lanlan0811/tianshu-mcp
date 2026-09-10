@@ -17,6 +17,34 @@
 
 ---
 
+## [0.1.10] — 2026-09-10
+
+### 修复
+
+- **修复 stdio 日志污染（issue #1）**：统一日志模块此前只有 ERROR 走 `console.error`，
+  INFO/WARN/DEBUG 都走 `console.log`，与 MCP JSON-RPC 消息共用 stdout，导致严格 stdio 客户端
+  握手或工具调用失败。现在所有通过阈值的级别一律写 stderr，stdout 只承载合法 MCP 消息。
+- 日志文件追加、时间戳、级别标签与 `<数据目录>/logs/server.log` 路径保持不变；启动失败仍以 stderr 报错。
+
+### 新增
+
+- 新增 `scripts/check-stdio.mjs` 严格 stdio 冒烟：真实子进程按字节校验完整 stdout/stderr，
+  stdout 只允许有换行分隔的合法 MCP JSON-RPC 消息（官方 schema 校验），空行 / 非 JSON / parser error /
+  退出残留片段任意一条即失败。覆盖首次启动、已有技能再次启动、`--no-skill-install`、
+  损坏 `config.json`、stub 任务运行期日志、正常 EOF 关闭六个场景。
+- 新增 `npm run check:stdio` 与 `npm run check:stdio:src` 脚本。
+
+### 测试
+
+- 新增 `test/unit/log.test.ts`：以真实子进程验证四级日志的输出通道、默认 INFO 过滤、阈值过滤后的
+  文件日志与 UTF-8 内容（修复前 4/6 失败，见 `docs/m2-evidence/issue1-old-impl-log-test-failure.txt`）。
+- CI 三平台矩阵增加 Node 24；构建后用严格 stdio 检查替换仅验证 EOF 退出的冒烟。
+- CI `pack-check` 与 Release 把本次 tarball 安装到干净消费者目录，动态读取已安装 bin 并复用同一严格
+  stdio 检查；Release 增加 `lint` 与安装包协议门禁，失败即阻断草稿创建。
+- ESLint 对 `src/**/*.ts` 启用 `no-console`（仅允许 `error`），防止再次向 stdout 直接输出。
+
+---
+
 ## [0.1.9] — 2026-09-09
 
 ### 修复

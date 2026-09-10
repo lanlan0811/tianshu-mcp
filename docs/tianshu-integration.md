@@ -112,11 +112,23 @@
 - 任务级默认超时 30 分钟（run_task 可传 `taskTimeoutMs`）；验收单条命令默认 5 分钟。
 - 若联调发现 tools/call 有更短上层超时，天枢侧需接受先拿 taskId 的模式。
 
-## 6. 常见问题
+## 6. 日志与 stdout/stderr 契约
+
+天枢按标准 MCP stdio 客户端工作，对本 server 的日志通道要求如下（即 v0.1.10 修复的契约）：
+
+- **stdout 仅承载 MCP JSON-RPC 消息**。本 server 的所有诊断日志都不写 stdout，避免污染 JSON-RPC 流。
+- **DEBUG/INFO/WARN/ERROR 全部写 stderr**，并追加到 `<数据目录>/logs/server.log`。
+- **stderr 里有 `INFO`/`WARN` 属正常诊断**，不是错误；只有启动失败才致命并返回非 0 退出码。
+- 客户端无需为日志做任何过滤包装；也不需要关闭日志或升级 SDK。
+
+排障时读取 `<数据目录>/logs/server.log`（默认 `~/.tianshu-mcp/logs/server.log`）即可获得与 stderr 相同的内容。
+
+## 7. 常见问题
 
 | 症状 | 处理 |
 |---|---|
 | 工具没出现 / server 连不上 | 看 server 日志 `<home>/logs/server.log`；确认 node 版本与 dist 构建；确认 config 字段（command 或 url 至少其一） |
+| stderr 出现 INFO/WARN | 正常诊断，不是错误；详见 §6 日志契约 |
 | `run_task` 报 agent 不可用 | `get_profiles` 看探测结果；装 CLI 或修 profile（docs/agent-profiles.md） |
 | 验收误判（找不到命令） | 验收子进程显式继承 PATH；确认项目在 git 仓库内（基线分析需要） |
 | 任务卡 running | `query_task` 看日志尾；`cancel_task`；重启 server 会归档为 interrupted |

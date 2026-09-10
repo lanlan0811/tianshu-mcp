@@ -10,7 +10,7 @@
 
 | 项 | 要求 |
 |---|---|
-| Node.js | ≥ 20（CI 覆盖 20 / 22） |
+| Node.js | ≥ 20（CI 覆盖 20 / 22 / 24） |
 | 包管理器 | npm（仓库含 `package-lock.json`） |
 | 操作系统 | Windows / macOS / Linux（CI 三平台矩阵） |
 | Git | 用于基线分析相关功能与提交 |
@@ -35,21 +35,28 @@ npm test              # vitest（单元 + 集成 + 协议）
 | `npm run test:watch` | 监听模式 |
 | `npm run typecheck` | `tsc --noEmit` 类型检查 |
 | `npm run lint` | ESLint，`--max-warnings 0`（零容忍） |
+| `npm run check:stdio` | 严格 stdio 协议检查（构建后跑 `dist`） |
+| `npm run check:stdio:src` | 同上，但直接以 `tsx` 跑源码入口（免构建） |
 | `npm run format` | Prettier 格式化 `src` 与 `test` |
 | `npm run pack:check` | `npm pack --dry-run`，确认发布内容 |
 
 ## 3. 提交前必须通过（与 CI 一致）
 
 ```bash
-npm run typecheck && npm run lint && npm test && npm run build
+npm run typecheck && npm run lint && npm test && npm run build && npm run check:stdio
 ```
+
+`check:stdio` 用真实子进程捕获完整 stdout/stderr 字节流，逐个场景校验：
+stdout 只允许有换行分隔的合法 MCP JSON-RPC 消息（官方 schema 校验请求/响应 ID），
+空行、非 JSON 行、parser error、退出残留片段任意一条即失败。覆盖首次启动、已有技能再次启动、
+`--no-skill-install`、损坏 config.json、stub 任务运行期日志、正常 EOF 关闭六个场景。
 
 CI 额外校验两条，请本地也注意：
 
 1. **构建后工作树无意外改动**：`npm run build` 会重写 `src/version.generated.ts`；
    改版本号时该文件必须与 `package.json` 一并提交，否则 CI 的「No unexpected tracked diff after build」会失败。
-2. **tarball 内容**：`npm pack` 后必须包含 `dist/index.js`、`skills/tianshu-mcp/SKILL.md`、
-   `README.md`、`README.en.md`、`LICENSE`（以及 `assets/`）。
+2. **tarball 内容与安装包协议**：CI 会把本次生成的 tarball 安装到干净消费者目录，
+   动态读取已安装 bin 并复用 `scripts/check-stdio.mjs` 做协议验证（消费者不装开发依赖）。
 
 ## 4. 工程规范
 
@@ -59,6 +66,9 @@ CI 额外校验两条，请本地也注意：
   代码只提供探测规则与默认值。
 - **双系统兼容**：涉及路径/进程/信号的地方必须同时考虑 Windows 与 POSIX（CI 三平台矩阵会验证）。
 - **图标用 SVG**：禁止使用 emoji 作为图标。
+- **stdout 只走 MCP 协议**：`src/**` 运行时代码禁止 `console.log/info/debug`，日志一律经
+  `src/util/log.ts` 写 stderr（`console.error`）；ESLint `no-console` 已强制此约束，
+  新增输出由 `npm run check:stdio` 的真实进程测试兜底。
 - **零 lint 警告**：`npm run lint` 为 `--max-warnings 0`。
 - **测试**：新功能/缺陷修复应带测试；纯函数优先做单元测试，涉及编排/协议走集成或协议测试。
 - **外部输入**：一律经 zod 校验（`src/config/schema.ts`）。
@@ -86,6 +96,7 @@ src/
 | 单元 | `test/unit/` | 纯函数与组件逻辑 |
 | 集成 | `test/integration/` | stub-agent 三剧本、TraeWork 假 CDP 端到端 |
 | 协议 | `test/protocol/` | 官方 SDK stdio/in-memory 客户端断言工具面与返回格式 |
+| 真实进程 | `scripts/check-stdio.mjs` | 严格 stdio 门禁：真实子进程字节流，stdout 只允许合法 MCP 消息 |
 | 真机探针 | `scripts/probe-traework.mjs` | 需真实 TraeWork，**不入 CI** |
 
 ## 6. 提交与分支规范

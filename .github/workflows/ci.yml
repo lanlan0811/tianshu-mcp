@@ -15,7 +15,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        node: [20, 22]
+        node: [20, 22, 24]
     steps:
       - uses: actions/checkout@v4
       - name: Setup Node ${{ matrix.node }}
@@ -48,17 +48,10 @@ jobs:
           npm test
       - name: Build (tsc → dist/)
         run: npm run build
-      - name: Server boots & exits cleanly on stdin EOF
-        shell: bash
-        # macOS 无 GNU timeout；用 node 起子进程喂 EOF，10s 未退出则判失败
-        run: |
-          node -e "
-            const { spawn } = require('child_process');
-            const cp = spawn(process.execPath, ['dist/index.js', '--no-skill-install'], { stdio: ['pipe','inherit','inherit'] });
-            cp.stdin.end();
-            const t = setTimeout(() => { console.error('server did not exit within 10s'); cp.kill(); process.exit(1); }, 10000);
-            cp.on('exit', (c) => { clearTimeout(t); console.log('server exited code', c); process.exit(c === 0 ? 0 : 1); });
-          "
+      - name: Strict stdio protocol check (stdout must carry only MCP messages)
+        # 真实子进程捕获完整字节流：非协议行 / parser error / 空行 / 残留片段任意一条即失败。
+        # 覆盖 6 个必测场景（首次/再次启动、禁用技能安装、损坏 config、任务运行期日志、EOF 关闭）。
+        run: npm run check:stdio
       - name: No unexpected tracked diff after build
         shell: bash
         run: |
@@ -91,14 +84,31 @@ jobs:
       - name: Build
         run: npm run build
       - name: Pack to temp and assert required contents
+        shell: bash
         run: |
-          mkdir -p /tmp/pkg
-          npm pack --pack-destination /tmp/pkg
-          TGZ=$(ls /tmp/pkg/*.tgz | head -1)
+          mkdir -p "$RUNNER_TEMP/pkg"
+          npm pack --pack-destination "$RUNNER_TEMP/pkg"
+          TGZ=$(ls "$RUNNER_TEMP/pkg"/*.tgz | head -1)
           test -n "$TGZ"
           tar -tzf "$TGZ" | grep -q "package/dist/index.js" || { echo "dist/index.js missing"; exit 1; }
           tar -tzf "$TGZ" | grep -q "package/skills/tianshu-mcp/SKILL.md" || { echo "SKILL.md missing"; exit 1; }
           tar -tzf "$TGZ" | grep -q "package/README.md" || { echo "README.md missing"; exit 1; }
           tar -tzf "$TGZ" | grep -q "package/README.en.md" || { echo "README.en.md missing"; exit 1; }
           tar -tzf "$TGZ" | grep -q "package/LICENSE" || { echo "LICENSE missing"; exit 1; }
+          echo "TGZ=$TGZ" >> "$GITHUB_ENV"
           echo "tarball content OK: $TGZ"
+      - name: Install tarball into clean consumer & run strict stdio check
+        shell: bash
+        # 消费者不安装项目开发依赖；动态读取已安装 bin，并复用同一严格 stdio 检查。
+        run: |
+          CONSUMER="$RUNNER_TEMP/consumer"
+          rm -rf "$CONSUMER"; mkdir -p "$CONSUMER"
+          (cd "$CONSUMER" && npm init -y >/dev/null && npm install --no-audit --no-fund "$TGZ")
+          BIN="$CONSUMER/node_modules/tianshu-mcp/dist/index.js"
+          test -f "$BIN" || { echo "installed bin missing: $BIN"; exit 1; }
+          # 安装包内无 src/，脚本自动回退读 dist/mcp/tools.js 抽取工具集合
+          node scripts/check-stdio.mjs \
+            --entry "$BIN" \
+            --repo "$CONSUMER/node_modules/tianshu-mcp" \
+            --expect-version "$(node -p "require('./package.json').version")" \
+            --fixtures "$GITHUB_WORKSPACE/test/stub-agent"
