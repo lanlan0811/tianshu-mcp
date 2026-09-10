@@ -350,6 +350,7 @@ hwnd 贯穿传递（只操作探测到的那个窗口）、下拉未命中时先
 | CI | run `34435434742`（commit `e91fc47`）：ubuntu/windows/macos × Node 20/22/24 + pack-check = **10/10 全绿** |
 | 发布产物 | npm `tianshu-mcp@0.1.10`（`latest=0.1.10`）；GitHub 与 Gitee `v0.1.10` Release 均附 `tianshu-mcp-0.1.10.tgz` |
 | 发布包复验 | 干净消费者目录安装 registry 上的 `0.1.10` 后 `check:stdio` 6/6 通过 |
+| 桌面宿主重连 | 天枢桌面端 v3.16.1：`2 servers connected, 10 tools`（本 server 8 个），无过滤包装器；会话内真实调用 `get_profiles` 成功。详见 `docs/issue-1-host-reconnect-record.md` |
 
 ---
 
@@ -377,6 +378,7 @@ hwnd 贯穿传递（只操作探测到的那个窗口）、下拉未命中时先
 | `docs/adapter-matrix.md` / `.en.md` | 各 agent 能力调研矩阵 |
 | `docs/acceptance-config.md` / `.en.md` | 项目级验收配置规范 |
 | `docs/release-v0.1.10.md` / `.en.md` | v0.1.10 发布说明（stdio 日志污染修复，issue #1） |
+| `docs/issue-1-host-reconnect-record.md` | issue #1 桌面宿主重连验收（v3.16.1：10 tools + 真实工具调用） |
 | `docs/release-v0.1.9.md` / `.en.md` | v0.1.9 发布说明（任务进行中检测与实例保留） |
 | `docs/release-v0.1.8.md` / `.en.md` | v0.1.8 发布说明（原子写并发缺陷修复） |
 | `docs/release-v0.1.7.md` / `.en.md` | v0.1.7 发布说明（绑定根因：原生路径形式） |
