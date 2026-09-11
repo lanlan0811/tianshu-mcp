@@ -9,7 +9,7 @@
 | Agent | 接口类型 | 状态 | 可执行发现 | 登录态 | 任务/文件回读 | 备注 |
 |---|---|---|---|---|---|---|
 | **Codex**（OpenAI 桌面端） | 本地 CLI `codex.exe` | ✅ **已冒烟通过**（2026-09-07 run_task→verify_task，见 [m2-smoke-record.md](m2-smoke-record.md)） | `executableDiscovery` → `.../Codex/bin/<hash>/codex.exe`（实测 v0.153.4） | 复用 `~/.codex`（auth.json），与桌面端同账号 | cwd 内读写文件；stdout 流式 | `codex exec "<prompt>" --sandbox workspace-write`（勿与 --approve-for-me 同用） |
-| **Zcode**（ZCode 桌面） | Electron + 独立 `zcode-gui` CDP adapter | **research（实现完成，双平台真机待补齐）** | 数据驱动固定盘/注册表/标准目录/macOS bundle | 复用本机登录态 | DOM 回读项目、模型、权限、会话与回复 | 无头 CLI 仍不存在；GUI 路线见 [zcode-cdp.md](zcode-cdp.md) |
+| **Zcode**（ZCode 桌面） | Electron + 独立 `zcode-gui` CDP adapter | **research（Windows 真机已通过，macOS 待补齐）** | 数据驱动固定盘/注册表/标准目录/macOS bundle | 复用本机登录态 | DOM 回读项目、模型、权限、会话与回复 | Windows 证据见 [zcode-windows-smoke.md](zcode-windows-smoke.md)；无头 CLI 仍不存在 |
 | **TraeWork / TRAE SOLO CN** | 桌面 IDE（v1.107.1）+ **CDP GUI 驱动** | ✅ **已接入并真机验证**（2026-09-08；见 T1 更正与 [traework-cdp.md](traework-cdp.md)） | 无头 CLI 不存在；以 `--remote-debugging-port` 驱动聊天 UI | 复用 TraeWork 桌面端登录态（本 MCP 不读取凭证） | 从 DOM 提取回复；项目文件由 TraeWork 自身写入 | `byted-solo.builtin-mcp` 是 MCP 客户端扩展，非被驱动接口 |
 | **stub**（测试用） | 本地脚本 | ✅ 内置测试 | 测试注入 profile | 无 | — | 仅 M1 集成测试使用 |
 

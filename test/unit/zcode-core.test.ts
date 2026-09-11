@@ -9,14 +9,55 @@ import {
   rootZcodeProcesses,
 } from "../../src/agents/zcode/instance.js";
 import { TraeworkCdpClient } from "../../src/agents/traework/cdp/client.js";
-import { parseZcodeModel } from "../../src/agents/zcode/model.js";
+import {
+  CdpDisconnectedError,
+  CdpUnavailableError,
+  retryZcodeEvaluation,
+} from "../../src/agents/zcode/cdp.js";
+import {
+  normalizeZcodeModelSelection,
+  parseZcodeModel,
+} from "../../src/agents/zcode/model.js";
 import { matchZcodeProject, normalizeProjectPath } from "../../src/agents/zcode/project.js";
 import { validateTaskReferences } from "../../src/agents/zcode/references.js";
 import { judgeZcodePoll } from "../../src/agents/zcode/liveness.js";
 import { parseMacSheetBaseline, validateMacSheetBaseline } from "../../src/agents/zcode/dialog.js";
+import { ZCODE_SELECTORS } from "../../src/agents/zcode/selectors.js";
 import { makeTmpRoot, rmrf } from "../test-utils.js";
 
 describe("ZCode 安装与模型", () => {
+  it("AskUserQuestion 使用带选项的可访问 listbox 定位且不依赖中文文案", () => {
+    expect(ZCODE_SELECTORS.questionCard.primary).toBe(
+      '[role="listbox"][aria-label]:has([role="option"])',
+    );
+    expect(ZCODE_SELECTORS.questionCard.note).not.toContain("提交");
+  });
+  it("只重试一次 Runtime.evaluate 瞬态超时，不重试真实断线", async () => {
+    let transientCalls = 0;
+    expect(
+      await retryZcodeEvaluation(
+        async () => {
+          transientCalls++;
+          if (transientCalls === 1) throw new CdpUnavailableError("renderer busy");
+          return "stable";
+        },
+        async () => {},
+      ),
+    ).toBe("stable");
+    expect(transientCalls).toBe(2);
+
+    let disconnectedCalls = 0;
+    await expect(
+      retryZcodeEvaluation(
+        async () => {
+          disconnectedCalls++;
+          throw new CdpDisconnectedError("closed");
+        },
+        async () => {},
+      ),
+    ).rejects.toBeInstanceOf(CdpDisconnectedError);
+    expect(disconnectedCalls).toBe(1);
+  });
   it("Windows 文件夹守卫不覆盖 PowerShell 只读 PID 变量", () => {
     const source = fs.readFileSync(path.resolve("src", "agents", "zcode", "dialog.ts"), "utf8");
     expect(source).not.toMatch(/\$pid\b/i);
@@ -57,6 +98,7 @@ describe("ZCode 安装与模型", () => {
       { pid: 11, commandLine: "ZCode.exe --remote-debugging-port 9334" },
       { pid: 12, commandLine: "ZCode.exe --type=renderer --remote-debugging-port=9333" },
       { pid: 13, commandLine: "ZCode.exe zcode.cjs app-server --stdio" },
+      { pid: 14, commandLine: "ZCode.exe --no-warnings tools/cua-helper/windows-helper.js" },
     ];
     expect(rootZcodeProcesses(rows).map((row) => row.pid)).toEqual([10, 11]);
     expect(remoteDebugPort(rows[0]!.commandLine)).toBe(9333);
@@ -211,6 +253,22 @@ describe("ZCode 安装与模型", () => {
     });
     expect(() => parseZcodeModel("deepseek-flash")).toThrow(/供应商\/模型/);
     expect(() => parseZcodeModel("A/B/C")).toThrow(/格式错误/);
+  });
+  it("模型回读移除动态无障碍标签并优先使用当前模型属性", () => {
+    expect(
+      normalizeZcodeModelSelection({
+        display: "DeepSeek/deepseek-flash选择模型",
+        ariaLabel: "选择模型",
+        currentValue: "custom:provider-id:deepseek-flash",
+        legacyInternal: "stale-value",
+      }),
+    ).toEqual({ display: "DeepSeek/deepseek-flash", internal: "deepseek-flash" });
+    expect(
+      normalizeZcodeModelSelection({
+        display: "Select modelDeepSeek/deepseek-flash",
+        ariaLabel: "Select model",
+      }),
+    ).toEqual({ display: "DeepSeek/deepseek-flash", internal: "deepseek-flash" });
   });
 });
 

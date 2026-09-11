@@ -63,7 +63,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 251 项测试：37 个文件，含 ZCode 单元/假 CDP/重启/返修闭环
+npm test             # 262 项测试：37 个文件，含 ZCode 单元/假 CDP/重启/返修闭环
 ```
 
 ### 安装 npm 包
@@ -171,6 +171,8 @@ ZCode 提问或需要用户处理登录、旧实例、系统权限时进入 `nee
 | [docs/adapter-matrix.md](docs/adapter-matrix.md) | 各 Agent 能力调研矩阵（Codex/Zcode/TraeWork/扩展位） |
 | [docs/traework-cdp.md](docs/traework-cdp.md) | TraeWork GUI 驱动（CDP）：原理、配置、模式切换、选择器、安全红线、踩坑记录、验证记录 |
 | [docs/zcode-cdp.md](docs/zcode-cdp.md) | ZCode GUI 驱动：安装探测、精确项目/模型、完全访问、暂停继续、验收返修与双平台状态 |
+| [docs/zcode-windows-smoke.md](docs/zcode-windows-smoke.md) | ZCode Windows 真机开发、同会话返修与提问续跑验收记录 |
+| [docs/release-v0.2.0.md](docs/release-v0.2.0.md) | v0.2.0 发布说明（ZCode GUI 统一闭环） |
 | [docs/acceptance-config.md](docs/acceptance-config.md) | 项目级 `.tianshu-mcp/acceptance.json` 验收配置规范 |
 | [docs/release-v0.1.9.md](docs/release-v0.1.9.md) | v0.1.9 发布说明（TraeWork 任务进行中检测与实例保留） |
 | [docs/release-v0.1.10.md](docs/release-v0.1.10.md) | v0.1.10 发布说明（修复 stdio 日志污染：诊断日志统一走 stderr） |
@@ -235,13 +237,16 @@ ZCode 提问或需要用户处理登录、旧实例、系统权限时进入 `nee
 - **M10 — stdio 日志污染修复 + v0.1.10** ✅（2026-09-10，见 [release-v0.1.10.md](docs/release-v0.1.10.md)）— **issue #1**
   - 统一 Logger 所有级别改走 stderr，stdout 只承载 MCP JSON-RPC 消息
   - 新增严格 stdio 冒烟（真实进程字节流校验，6 场景）、Node 24 CI 覆盖与安装包协议门禁
+- **M11 — ZCode GUI 统一闭环 + v0.2.0**（2026-09-11，见 [release-v0.2.0.md](docs/release-v0.2.0.md)）— **262 测试**
+  - Windows 真机通过开发、受控失败后同会话返修、`AskUserQuestion → continue_task` 三个场景；[验收记录](docs/zcode-windows-smoke.md)
+  - macOS 真机未补齐，内置 profile 依计划保持 `research`
 
 ## Agent 适配现状
 
 | agentId | driver | status | 说明 |
 |---|---|---|---|
 | `codex` | `spawn` | **ready** | 复用 `~/.codex` 登录态；`codex exec` 无头执行；M2 真实冒烟通过 |
-| `zcode` | `zcode-gui` | **research** | CDP GUI adapter 已实现；Windows/macOS 真机闭环全部完成前不标 `ready` |
+| `zcode` | `zcode-gui` | **research** | CDP GUI adapter 已实现且 Windows 真机闭环通过；macOS 真机完成前不标 `ready` |
 | `traework` | **`gui`** | **ready** | CDP 驱动 TRAE SOLO CN 桌面 UI；三种面板模式真机验证通过 |
 | `stub` | `spawn` | 仅测试 | `test/stub-agent/stub-agent.mjs` 三剧本（good/fix-on-first/never） |
 
@@ -258,7 +263,7 @@ ZCode 提问或需要用户处理登录、旧实例、系统权限时进入 `nee
 | 文档 | 内容 |
 |---|---|
 | [HANDOFF.md](HANDOFF.md) | 项目交接文档：当前状态快照、架构导览、硬性红线、已知限制、接手建议 |
-| [CHANGELOG.md](CHANGELOG.md) | 版本变更日志（v0.1.0 → v0.1.10） |
+| [CHANGELOG.md](CHANGELOG.md) | 版本变更日志（v0.1.0 → v0.2.0） |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 开发环境、工程规范、提交与发布流程、如何新增 agent |
 | [SECURITY.md](SECURITY.md) | 安全模型（凭证零管理/命令白名单/进程与桌面自动化边界）与私密报告渠道 |
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | 贡献者行为准则 |

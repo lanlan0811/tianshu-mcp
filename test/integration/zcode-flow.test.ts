@@ -19,7 +19,10 @@ import { AcceptanceEngine } from "../../src/verify/acceptance.js";
 import { TaskManager } from "../../src/tasks/task-manager.js";
 import { makeBuildCtx } from "../../src/mcp/context.js";
 import { normPath } from "../../src/util/path.js";
-import { CdpDisconnectedError } from "../../src/agents/zcode/cdp.js";
+import {
+  CdpDisconnectedError,
+  CdpUnavailableError,
+} from "../../src/agents/zcode/cdp.js";
 import type { ZcodeProjectItem } from "../../src/agents/zcode/project.js";
 
 const logger = new Logger(null, "error");
@@ -71,8 +74,8 @@ class FakeZcode {
   async connect() {}
   disconnect() {}
   async dismissMenus() {}
-  async exists() {
-    return false;
+  async exists(key: string) {
+    return key === "chatInput";
   }
   async click(key: string) {
     return ["newTask", "projectTrigger", "modelTrigger", "permissionTrigger"].includes(key);
@@ -132,6 +135,9 @@ class FakeZcode {
     this.conversation = this.typed;
     this.typed = "";
   }
+  async answerQuestion(answer: string) {
+    return { answered: false, count: 0, available: [answer] };
+  }
   async poll() {
     if (!this.sent)
       return {
@@ -155,6 +161,36 @@ class FakeZcode {
   }
 }
 
+class ResumeQuestionZcode extends FakeZcode {
+  answers: string[] = [];
+  answered = false;
+  override async poll() {
+    if (!this.answered)
+      return {
+        stopVisible: false,
+        loading: false,
+        activeTool: false,
+        question: "done.txt 应写入哪个值？",
+        assistantText: "",
+        inputEnabled: false,
+        sendEnabled: false,
+      };
+    return super.poll();
+  }
+  override async answerQuestion(answer: string) {
+    this.answers.push(answer);
+    this.answered = true;
+    this.sent = 1;
+    return { answered: true, count: 1, available: ["PASS", "CANCEL"] };
+  }
+}
+
+class AmbiguousQuestionAnswerZcode extends ResumeQuestionZcode {
+  override async answerQuestion() {
+    return { answered: false, count: 0, available: ["PASS", "CANCEL"] };
+  }
+}
+
 class NoEvidenceZcode extends FakeZcode {
   override async sendMessage() {
     this.sent++;
@@ -171,6 +207,33 @@ class NoEvidenceZcode extends FakeZcode {
   }
 }
 
+class DelayedSendAcceptanceZcode extends FakeZcode {
+  checks = 0;
+  override async sendMessage() {
+    this.sent++;
+    this.conversation = this.typed;
+  }
+  override async inputText() {
+    this.checks++;
+    return this.checks < 25 ? this.typed : "";
+  }
+  override async sessionForMarker(marker: string) {
+    return this.checks >= 25 ? super.sessionForMarker(marker) : undefined;
+  }
+  override async poll() {
+    if (this.checks < 25)
+      return {
+        stopVisible: false,
+        loading: false,
+        activeTool: false,
+        assistantText: "",
+        inputEnabled: true,
+        sendEnabled: false,
+      };
+    return super.poll();
+  }
+}
+
 class AmbiguousSessionZcode extends FakeZcode {
   override async session() {
     return {};
@@ -182,6 +245,38 @@ class AmbiguousSessionZcode extends FakeZcode {
           { id: "session-b", title: "任务 B" },
         ]
       : [];
+  }
+  override async sessionForMarker() {
+    return undefined;
+  }
+}
+
+class DelayedSessionRegistrationZcode extends FakeZcode {
+  sessionChecks = 0;
+  override async session() {
+    return {};
+  }
+  override async sessions() {
+    if (!this.sent) return [];
+    this.sessionChecks++;
+    return this.sessionChecks >= 25 ? [{ id: "delayed-session", title: "延迟任务" }] : [];
+  }
+  override async sessionForMarker() {
+    return undefined;
+  }
+}
+
+class StaleActiveSessionZcode extends FakeZcode {
+  override async session() {
+    return { id: "previous-session", title: "上一任务" };
+  }
+  override async sessions() {
+    return this.sent
+      ? [
+          { id: "new-session", title: "当前任务" },
+          { id: "previous-session", title: "上一任务" },
+        ]
+      : [{ id: "previous-session", title: "上一任务" }];
   }
   override async sessionForMarker() {
     return undefined;
@@ -227,6 +322,21 @@ class PermissionMismatchZcode extends FakeZcode {
   }
 }
 
+class PresetControlsZcode extends FakeZcode {
+  constructor(projectPath: string) {
+    super(projectPath);
+    this.model = "deepseek-flash";
+    this.permission = "完全访问";
+  }
+  override async selection() {
+    return { display: "DeepSeek/deepseek-flash", internal: "deepseek-flash" };
+  }
+  override async click(key: string) {
+    if (["modelTrigger", "permissionTrigger"].includes(key)) return false;
+    return super.click(key);
+  }
+}
+
 class InputMismatchZcode extends FakeZcode {
   override async inputText() {
     return "输入被 ZCode 截断";
@@ -237,6 +347,18 @@ class DisconnectedZcode extends FakeZcode {
   override async poll() {
     if (this.sent) throw new CdpDisconnectedError("test disconnect");
     return super.poll();
+  }
+}
+
+class BusyStartupZcode extends FakeZcode {
+  override async exists(_key: string): Promise<boolean> {
+    throw new CdpUnavailableError("renderer busy");
+  }
+}
+
+class QuestionOnlyStartupZcode extends FakeZcode {
+  override async exists(key: string) {
+    return key === "questionCard";
   }
 }
 
@@ -310,12 +432,105 @@ function opts(): AgentRunOptions {
 function depsFor(fake: FakeZcode): Partial<ZcodeRunDeps> {
   return {
     ensureInstance: async () => ({ ready: { port: 9333, pid: 1, title: "ZCode" } }),
+    listProcesses: () => [{ pid: 1, commandLine: "ZCode.exe --remote-debugging-port=9333" }],
     createClient: () => fake as never,
     sleep: async () => {},
   };
 }
 
 describe("ZCode 假 CDP 单轮", () => {
+  it("continue_task 在原会话问题卡片精确选项并不发送普通聊天消息", async () => {
+    const project = await makeTmpRoot("zcode-resume-question");
+    cleanup.push(project);
+    const fake = new ResumeQuestionZcode(project);
+    const resumed = {
+      ...ctx(project),
+      resume: {
+        kind: "continue" as const,
+        message: "PASS",
+        sendMessage: true,
+        sessionId: "session-1",
+        sessionTitle: "任务一",
+        boundProjectPath: project,
+        provider: "DeepSeek",
+        model: "deepseek-flash",
+        permissionMode: "完全访问",
+      },
+    };
+    const result = await runZcodeTask({
+      ctx: resumed,
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.ok).toBe(true);
+    expect(result.session?.id).toBe("session-1");
+    expect(fake.answers).toEqual(["PASS"]);
+    expect(fake.typed).toBe("");
+  });
+
+  it("continue_task 续答无唯一选项时保留 needs_user 现场", async () => {
+    const project = await makeTmpRoot("zcode-resume-question-mismatch");
+    cleanup.push(project);
+    const fake = new AmbiguousQuestionAnswerZcode(project);
+    const resumed = {
+      ...ctx(project),
+      resume: {
+        kind: "continue" as const,
+        message: "UNKNOWN",
+        sendMessage: true,
+        sessionId: "session-1",
+        sessionTitle: "任务一",
+      },
+    };
+    const result = await runZcodeTask({
+      ctx: resumed,
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.endReason).toBe("needs_user");
+    expect(result.needsUserKind).toBe("agent_question");
+    expect(result.pendingQuestion).toMatch(/PASS、CANCEL/);
+    expect(fake.sent).toBe(0);
+  });
+
+  it("AskUserQuestion 等待页可作为稳定连接入口", async () => {
+    const project = await makeTmpRoot("zcode-startup-question");
+    cleanup.push(project);
+    const fake = new QuestionOnlyStartupZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.ok).toBe(true);
+    expect(fake.sent).toBe(1);
+  });
+  it("已列出的 ZCode 页面暂时繁忙时重建连接并等待输入框稳定", async () => {
+    const project = await makeTmpRoot("zcode-startup-busy");
+    cleanup.push(project);
+    const busy = new BusyStartupZcode(project);
+    const stable = new FakeZcode(project);
+    let clientsCreated = 0;
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: {
+        ...depsFor(stable),
+        createClient: () => (++clientsCreated === 1 ? busy : stable) as never,
+      },
+    });
+    expect(result.ok).toBe(true);
+    expect(clientsCreated).toBe(2);
+    expect(stable.sent).toBe(1);
+  });
   it("项目、供应商、模型、完全访问回读成功后仅发送一次", async () => {
     const project = await makeTmpRoot("zcode-fake");
     cleanup.push(project);
@@ -340,6 +555,7 @@ describe("ZCode 假 CDP 单轮", () => {
     const fake = new MissingProjectZcode(project);
     let selectedPath = "";
     let baseline: string[] = [];
+    let clientsCreated = 0;
     const result = await runZcodeTask({
       ctx: ctx(project),
       resolved: resolved(),
@@ -347,6 +563,10 @@ describe("ZCode 假 CDP 单轮", () => {
       logFile: path.join(project, "agent.log"),
       deps: {
         ...depsFor(fake),
+        createClient: () => {
+          clientsCreated++;
+          return fake as never;
+        },
         listDialogs: async () => ["existing-dialog"],
         selectFolder: async (folder, _pids, before) => {
           selectedPath = folder;
@@ -360,6 +580,7 @@ describe("ZCode 假 CDP 单轮", () => {
     expect(fake.chooseFolderClicked).toBe(true);
     expect(selectedPath).toBe(project);
     expect(baseline).toEqual(["existing-dialog"]);
+    expect(clientsCreated).toBe(2);
     expect(fake.sent).toBe(1);
   });
   it("供应商不存在时不发送", async () => {
@@ -461,6 +682,20 @@ describe("ZCode 假 CDP 单轮", () => {
     expect(result.endReason).toBe("permission_unknown");
     expect(fake.sent).toBe(0);
   });
+  it("模型与完全访问已精确匹配时复用回读值且不重复打开菜单", async () => {
+    const project = await makeTmpRoot("zcode-preset-controls");
+    cleanup.push(project);
+    const fake = new PresetControlsZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.ok).toBe(true);
+    expect(fake.sent).toBe(1);
+  });
   it("输入框回读不一致时不发送", async () => {
     const project = await makeTmpRoot("zcode-input-mismatch");
     cleanup.push(project);
@@ -513,6 +748,22 @@ describe("ZCode 假 CDP 单轮", () => {
     expect(result.error).toMatch(/用户消息=false.*输入状态变化=false.*运行信号=false/);
     expect(fake.sent).toBe(1);
   });
+  it("ZCode 延迟接受消息时在扩展观察窗内取得会话且不重复发送", async () => {
+    const project = await makeTmpRoot("zcode-send-delayed");
+    cleanup.push(project);
+    const fake = new DelayedSendAcceptanceZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.ok).toBe(true);
+    expect(result.session?.id).toBe("session-1");
+    expect(fake.checks).toBeGreaterThanOrEqual(25);
+    expect(fake.sent).toBe(1);
+  });
   it("任务已发送但新会话无法唯一识别时保留现场且不重复发送", async () => {
     const project = await makeTmpRoot("zcode-session-ambiguous");
     cleanup.push(project);
@@ -527,6 +778,37 @@ describe("ZCode 假 CDP 单轮", () => {
     expect(result.endReason).toBe("session_lost");
     expect(result.error).toMatch(/无法唯一取得 ZCode 新会话 ID/);
     expect(result.keptInstance).toBe(true);
+    expect(fake.sent).toBe(1);
+  });
+  it("发送状态已变化但新会话延迟登记时继续观察且不重复发送", async () => {
+    const project = await makeTmpRoot("zcode-session-delayed");
+    cleanup.push(project);
+    const fake = new DelayedSessionRegistrationZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.ok).toBe(true);
+    expect(result.session?.id).toBe("delayed-session");
+    expect(fake.sessionChecks).toBeGreaterThanOrEqual(25);
+    expect(fake.sent).toBe(1);
+  });
+  it("新建任务期间旧会话面板仍可见时只记录发送后新增会话", async () => {
+    const project = await makeTmpRoot("zcode-session-stale-pane");
+    cleanup.push(project);
+    const fake = new StaleActiveSessionZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.ok).toBe(true);
+    expect(result.session?.id).toBe("new-session");
     expect(fake.sent).toBe(1);
   });
   it("模型提问返回 needs_user 和原会话", async () => {

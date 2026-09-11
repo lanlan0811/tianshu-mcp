@@ -1,6 +1,6 @@
 # HANDOFF.md — 项目交接说明
 
-> 交接快照：**2026-09-10**（v0.1.10 修复 stdio 日志污染）。本文写给**接手本仓库的人**：先读「交接快照」了解当前状态，再按「从零搭环境」上手。
+> 交接快照：**2026-09-11**（v0.2.0 ZCode GUI 统一闭环）。本文写给**接手本仓库的人**：先读「交接快照」了解当前状态，再按「从零搭环境」上手。
 > 工作区规则见 `AGENTS.md`（gitignore 中，仅本地），安装/用法见 `README.md`，本文不重复，只做导览与状态记录。
 
 ---
@@ -15,7 +15,7 @@
 
 - **天枢官方仓库**：<https://github.com/huiliyi37/Tianshu-harness>（基于 harness 工程的终端编程智能体运行时，TUI × GUI；Apache-2.0）
 - **本仓库**：`github.com/lanlan0811/tianshu-mcp`（主）｜`gitee.com/lan0811/tianshu-mcp`（镜像）
-- **npm**：`tianshu-mcp`（当前 `0.1.10`）
+- **npm**：`tianshu-mcp`（当前发布目标 `0.2.0`）
 
 ### 为什么是这样设计的（硬约束）
 
@@ -33,7 +33,7 @@
 |---|---|
 | 分支 | `master`（**只在此分支提交**，不建其他分支） |
 | 发布提交 | `dc471d2 修复 TraeWork 任务进行中检测并发布 v0.1.9`（v0.1.10 修复提交见本次交付记录） |
-| 版本 / 许可证 | `0.1.10` / Apache-2.0 |
+| 版本 / 许可证 | `0.2.0` / Apache-2.0 |
 | 标签 | `v0.1.0` … `v0.1.10`（均已推双仓） |
 | 工作树 | 干净；`github/master` 与 `gitee/master` 均同步于 `e91fc47` |
 | 测试 | **202/202 通过**（31 个测试文件：单元 20 + 集成 10 + 协议 1） |
@@ -47,7 +47,7 @@
 | agentId | driver | status | 说明 |
 |---|---|---|---|
 | `codex` | `spawn` | **ready** | 复用 `~/.codex` 登录态；`codex exec` 无头执行；M2 真实冒烟通过 |
-| `zcode` | `zcode-gui` | **research** | CDP GUI adapter 已实现；双平台真机闭环待完成，见 `docs/zcode-cdp.md` |
+| `zcode` | `zcode-gui` | **research** | CDP GUI adapter 与 Windows 真机闭环已完成；macOS 真机待补齐，见 `docs/zcode-cdp.md` |
 | `traework` | **`gui`** | **ready** | CDP 驱动 TRAE SOLO CN 桌面 UI；三种面板模式真机验证通过 |
 | `stub` | `spawn` | 仅测试 | `test/stub-agent/stub-agent.mjs` 三剧本（good/fix-on-first/never） |
 
@@ -401,6 +401,6 @@ hwnd 贯穿传递（只操作探测到的那个窗口）、下拉未命中时先
 2. 读 `README.md`、`docs/traework-cdp.md` 和 `docs/zcode-cdp.md`（安全红线与平台证据），再动 GUI adapter 相关代码。
    项目文件夹绑定出问题时，先看本文 §8.1 的排障顺序（下拉项 ≠ 项目 map、三处已修缺陷、两个定位陷阱）。
 3. 若 TraeWork 升级导致选择器失效：用 `scripts/probe-traework.mjs selectors` 诊断，优先用 profile `gui.selectors` 覆盖，不改代码。
-4. ZCode 仍需完成 Windows 关闭旧实例后的真实闭环和 macOS 真机闭环；证据未齐前不得把 profile 从 `research` 改为 `ready`。
+4. ZCode Windows 真机开发、同会话返修和提问续跑已通过；仍需 macOS 真机闭环，证据未齐前不得把 profile 从 `research` 改为 `ready`。
 5. 新增 agent：优先只加 profile（见 `docs/agent-profiles.md`）；需要特殊输出解析再写 adapter。
 6. 发版前务必确认 `src/version.generated.ts` 与 `package.json` 同步提交（CI 有「构建后无 tracked diff」门禁）。

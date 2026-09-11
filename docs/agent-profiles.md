@@ -119,7 +119,7 @@ TraeWork 存活检测相关字段：`stableRounds` 仅确认 DOM 已稳定；随
 
 > `traework` 已于 2026-09-08 由 `unsupported` 改为 `ready` + `driver=gui`（CDP 驱动桌面 UI，见 [traework-cdp.md](traework-cdp.md)）。
 
-> `zcode` 使用 `driver=gui` + `adapter=zcode-gui`。`model` 必须是 `供应商/模型`，默认权限为“完全访问”、默认自动返修 2 轮。Windows/macOS 真机证据全部完成前内置状态保持 `research`。
+> `zcode` 使用 `driver=gui` + `adapter=zcode-gui`。`model` 必须是 `供应商/模型`，默认权限为“完全访问”、默认自动返修 2 轮。Windows 真机闭环已完成；macOS 真机证据完成前内置状态保持 `research`。
 
 ## 常见问题
 

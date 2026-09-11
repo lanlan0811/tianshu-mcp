@@ -79,10 +79,14 @@ export const ZCODE_SELECTORS: Record<ZcodeSelectorKey, ZcodeSelectorSpec> = {
     note: "助手消息；3.11.2 使用 v4-row-* 和 assistant-row",
   },
   questionCard: {
-    primary: '[data-testid*="question"]',
-    fallbacks: ['[class*="ask-user"]', '[class*="question-card"]'],
+    primary: '[role="listbox"][aria-label]:has([role="option"])',
+    fallbacks: [
+      '[data-testid*="question"]',
+      '[class*="ask-user"]',
+      '[class*="question-card"]',
+    ],
     verifiedVersion: "3.11.x",
-    note: "待用户回答",
+    note: "AskUserQuestion 待用户回答控件；优先使用可访问语义，不依赖本地化按钮文本",
   },
   runningCard: {
     primary: '[data-state="loading"]',

@@ -63,7 +63,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 251 tests across 37 files, including ZCode unit/fake-CDP/restart/repair coverage
+npm test             # 262 tests across 37 files, including ZCode unit/fake-CDP/restart/repair coverage
 ```
 
 ### Install the npm package
@@ -172,6 +172,8 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 | [docs/adapter-matrix.en.md](docs/adapter-matrix.en.md) | Agent capability research matrix (Codex/Zcode/TraeWork/extension slots) |
 | [docs/traework-cdp.en.md](docs/traework-cdp.en.md) | TraeWork GUI driver (CDP): mechanism, config, mode switching, selectors, safety invariants, pitfalls, verification record |
 | [docs/zcode-cdp.en.md](docs/zcode-cdp.en.md) | ZCode GUI driver: discovery, exact project/model, Full Access, pause/continue, verification and platform evidence |
+| [docs/zcode-windows-smoke.en.md](docs/zcode-windows-smoke.en.md) | ZCode Windows hardware record for development, same-session repair, and question continuation |
+| [docs/release-v0.2.0.en.md](docs/release-v0.2.0.en.md) | v0.2.0 release notes (unified ZCode GUI loop) |
 | [docs/acceptance-config.en.md](docs/acceptance-config.en.md) | Project-level `.tianshu-mcp/acceptance.json` acceptance config spec |
 | [docs/release-v0.1.9.en.md](docs/release-v0.1.9.en.md) | v0.1.9 release notes (TraeWork task liveness and instance retention) |
 | [docs/release-v0.1.10.en.md](docs/release-v0.1.10.en.md) | v0.1.10 release notes (stdio log pollution fix: diagnostics on stderr) |
@@ -234,13 +236,16 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 - **M10 — stdio log pollution fix + v0.1.10** ✅ (2026-09-10, see [release-v0.1.10.en.md](docs/release-v0.1.10.en.md)) — **issue #1**
   - The unified logger now sends all levels to stderr, leaving stdout for MCP JSON-RPC messages only
   - Added a strict stdio smoke (real-process byte-stream validation, 6 scenarios), Node 24 CI coverage, and an installed-package protocol gate
+- **M11 — ZCode GUI unified loop + v0.2.0** (2026-09-11, see [release-v0.2.0.en.md](docs/release-v0.2.0.en.md)) — **262 tests**
+  - Windows hardware passed real development, same-session repair after a controlled failure, and `AskUserQuestion → continue_task`; see the [acceptance record](docs/zcode-windows-smoke.en.md)
+  - macOS hardware is pending, so the built-in profile remains `research` as required by the plan
 
 ## Agent support status
 
 | agentId | driver | status | Notes |
 |---|---|---|---|
 | `codex` | `spawn` | **ready** | Reuses `~/.codex` login state; `codex exec` headless; passed real M2 smoke |
-| `zcode` | `zcode-gui` | **research** | CDP GUI adapter implemented; remains non-ready until both Windows and macOS hardware loops pass |
+| `zcode` | `zcode-gui` | **research** | CDP GUI adapter and Windows hardware loop passed; remains non-ready until macOS hardware passes |
 | `traework` | **`gui`** | **ready** | CDP-driven TRAE SOLO CN desktop UI; all three panel modes machine-verified |
 | `stub` | `spawn` | tests only | `test/stub-agent/stub-agent.mjs` with 3 playbooks (good/fix-on-first/never) |
 
@@ -256,7 +261,7 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 
 | Document | Content |
 |---|---|
-| [CHANGELOG.en.md](CHANGELOG.en.md) | Version history (v0.1.0 → v0.1.10) |
+| [CHANGELOG.en.md](CHANGELOG.en.md) | Version history (v0.1.0 → v0.2.0) |
 | [CONTRIBUTING.en.md](CONTRIBUTING.en.md) | Dev setup, conventions, commit/release flow, adding an agent |
 | [SECURITY.en.md](SECURITY.en.md) | Security model (zero credentials / command whitelist / process & desktop-automation boundaries) and private reporting |
 | [CODE_OF_CONDUCT.en.md](CODE_OF_CONDUCT.en.md) | Contributor Code of Conduct |

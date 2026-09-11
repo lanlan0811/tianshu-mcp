@@ -34,6 +34,12 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 - The built-in ZCode profile remains `research` until both real platform loops pass.
 - No private `app-server`, credential access, automatic user-instance termination, or fixed screen coordinates.
 
+### Fixed and verified
+
+- Fixed ZCode read-back for dynamic model labels, transient renderer load/reload, delayed new-session registration, and stale session-ID contamination.
+- `AskUserQuestion` continuation now selects and submits an exact accessible option in the original session; zero or ambiguous matches fail closed.
+- Windows 10 x64 passed three hardware loops: real file development, same-session repair after a controlled failure, and `continue_task` after a model question. macOS hardware evidence remains pending.
+
 ---
 
 ## [0.1.10] — 2026-09-10

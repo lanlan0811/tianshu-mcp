@@ -27,18 +27,25 @@ export function parseProcessRows(raw: string): ZcodeProcess[] {
 }
 
 export function listZcodeProcesses(): ZcodeProcess[] {
-  try {
-    if (process.platform === "win32") {
+  if (process.platform === "win32") {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
       const script =
         'Get-CimInstance Win32_Process -Filter "Name=\'ZCode.exe\'" | ForEach-Object { "$($_.ProcessId)`t$($_.ExecutablePath)`t$($_.CommandLine)" }';
-      return parseProcessRows(
-        execFileSync("powershell.exe", ["-NoProfile", "-Command", script], {
-          encoding: "utf8",
-          windowsHide: true,
-          timeout: 8_000,
-        }),
-      );
+        return parseProcessRows(
+          execFileSync("powershell.exe", ["-NoProfile", "-Command", script], {
+            encoding: "utf8",
+            windowsHide: true,
+            timeout: 15_000,
+          }),
+        );
+      } catch {
+        if (attempt === 1) return [];
+      }
     }
+    return [];
+  }
+  try {
     const raw = execFileSync("ps", ["-axo", "pid=,command="], { encoding: "utf8", timeout: 5_000 });
     return raw.split(/\r?\n/).flatMap((line) => {
       const m = /^\s*(\d+)\s+(.*ZCode.*)$/.exec(line);
@@ -50,7 +57,9 @@ export function listZcodeProcesses(): ZcodeProcess[] {
 }
 
 export function rootZcodeProcesses(rows: ZcodeProcess[]): ZcodeProcess[] {
-  return rows.filter((p) => !/--type=|zcode\.cjs|plugin-host|crashpad/i.test(p.commandLine));
+  return rows.filter(
+    (p) => !/--type=|zcode\.cjs|plugin-host|cua-helper|crashpad/i.test(p.commandLine),
+  );
 }
 
 export function remoteDebugPort(commandLine: string): number | null {
@@ -90,16 +99,29 @@ export async function ensureZcodeInstance(
   gui: GuiProfile,
   logger: AgentRunLogger,
 ): Promise<{ ready?: ZcodeReady; needsClose?: boolean; child?: ChildProcess }> {
-  const roots = rootZcodeProcesses(listZcodeProcesses());
-  for (const proc of roots) {
-    const port = remoteDebugPort(proc.commandLine);
-    if (port) {
-      // eslint-disable-next-line no-await-in-loop
-      const ready = await probeZcodePort(port, roots);
-      if (ready) return { ready };
-    }
+  let roots = rootZcodeProcesses(listZcodeProcesses());
+  if (!roots.length) {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    roots = rootZcodeProcesses(listZcodeProcesses());
   }
-  if (roots.length) return { needsClose: true };
+  if (roots.length) {
+    if (!roots.some((proc) => remoteDebugPort(proc.commandLine))) return { needsClose: true };
+    const reuseDeadline = Date.now() + gui.launchTimeoutMs;
+    while (Date.now() < reuseDeadline) {
+      roots = rootZcodeProcesses(listZcodeProcesses());
+      for (const proc of roots) {
+        const port = remoteDebugPort(proc.commandLine);
+        if (port) {
+          // eslint-disable-next-line no-await-in-loop
+          const ready = await probeZcodePort(port, roots);
+          if (ready) return { ready };
+        }
+      }
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    throw new Error(`等待既有 ZCode CDP 页面就绪超时（${gui.launchTimeoutMs}ms）`);
+  }
   let port = gui.cdpPort;
   if (gui.cdpPortAuto) {
     let found = false;
@@ -128,7 +150,24 @@ export async function ensureZcodeInstance(
     // eslint-disable-next-line no-await-in-loop
     const ready = await probeZcodePort(port);
     if (ready) return { ready, child };
-    if (child.exitCode !== null) throw new Error(`ZCode 启动后提前退出（exit=${child.exitCode}）`);
+    if (child.exitCode !== null) {
+      const forwardedRoots = rootZcodeProcesses(listZcodeProcesses());
+      for (const proc of forwardedRoots) {
+        const forwardedPort = remoteDebugPort(proc.commandLine);
+        if (forwardedPort) {
+          // eslint-disable-next-line no-await-in-loop
+          const forwarded = await probeZcodePort(forwardedPort, forwardedRoots);
+          if (forwarded) {
+            logger.info(
+              `[zcode] 启动器 exit=${child.exitCode}，已复用现有 ZCode CDP 端口 ${forwarded.port}`,
+            );
+            return { ready: forwarded, child };
+          }
+        }
+      }
+      if (child.exitCode !== 0)
+        throw new Error(`ZCode 启动后提前退出（exit=${child.exitCode}）`);
+    }
   }
   throw new Error(`等待 ZCode CDP 就绪超时（${gui.launchTimeoutMs}ms）`);
 }

@@ -6,12 +6,39 @@ import {
 import { candidateExpr, type ZcodeSelectorKey } from "./selectors.js";
 import type { ZcodePoll } from "./liveness.js";
 import type { ZcodeProjectItem } from "./project.js";
+import { normalizeZcodeModelSelection } from "./model.js";
 
 export { CdpDisconnectedError, CdpUnavailableError };
+
+export async function retryZcodeEvaluation<T>(
+  operation: () => Promise<T>,
+  sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (
+        attempt >= 1 ||
+        !(error instanceof CdpUnavailableError) ||
+        error instanceof CdpDisconnectedError
+      )
+        throw error;
+      await sleep(500);
+    }
+  }
+}
 
 export interface ZcodeSessionItem {
   id: string;
   title?: string;
+}
+
+export interface ZcodeQuestionAnswerResult {
+  answered: boolean;
+  count: number;
+  available: string[];
+  error?: string;
 }
 
 export class ZcodeCdpClient {
@@ -30,7 +57,7 @@ export class ZcodeCdpClient {
     this.inner.disconnect();
   }
   evaluate<T>(expression: string): Promise<T> {
-    return this.inner.evaluate<T>(expression);
+    return retryZcodeEvaluation(() => this.inner.evaluate<T>(expression));
   }
   send(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
     return this.inner.send(method, params);
@@ -116,9 +143,15 @@ export class ZcodeCdpClient {
     return { clicked: true, count: found.count, available: found.available };
   }
   async selection(key: ZcodeSelectorKey): Promise<{ display: string; internal: string }> {
-    return this.evaluate(
-      `(function(){for(const s of ${candidateExpr(key, this.selectors)})for(const e of document.querySelectorAll(s)){const r=e.getBoundingClientRect();if(!r.width||!r.height)continue;const data=e.closest('[data-model-id],[data-model],[data-value]')||e.querySelector('[data-model-id],[data-model],[data-value]')||e;const display=(e.value||e.textContent||'').trim();const explicit=(data.getAttribute('data-model-id')||data.getAttribute('data-model')||data.getAttribute('data-value')||'').trim();return {display,internal:explicit||(display.includes('/')?display.slice(display.indexOf('/')+1).trim():'')}}return {display:'',internal:''}})()`,
+    const raw = await this.evaluate<{
+      display: string;
+      ariaLabel?: string;
+      currentValue?: string;
+      legacyInternal?: string;
+    }>(
+      `(function(){for(const s of ${candidateExpr(key, this.selectors)})for(const e of document.querySelectorAll(s)){const r=e.getBoundingClientRect();if(!r.width||!r.height)continue;const data=e.closest('[data-model-id],[data-model],[data-value]')||e.querySelector('[data-model-id],[data-model],[data-value]')||e;return {display:(e.value||e.textContent||'').trim(),ariaLabel:(e.getAttribute('aria-label')||'').trim(),currentValue:(e.getAttribute('data-model-current-value')||'').trim(),legacyInternal:(data.getAttribute('data-model-id')||data.getAttribute('data-model')||data.getAttribute('data-value')||'').trim()}}return {display:''}})()`,
     );
+    return normalizeZcodeModelSelection(raw);
   }
   async projects(): Promise<ZcodeProjectItem[]> {
     return this.evaluate(
@@ -192,12 +225,51 @@ export class ZcodeCdpClient {
       });
     }
   }
+  async answerQuestion(answer: string): Promise<ZcodeQuestionAnswerResult> {
+    const located = await this.evaluate<{
+      count: number;
+      available: string[];
+      point?: { x: number; y: number };
+      buttonStates: boolean[];
+    }>(
+      `(function(){const norm=s=>(s||'').normalize('NFKC').trim().toLocaleLowerCase();const target=norm(${JSON.stringify(answer)});const visible=e=>{const r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>0&&r.height>0&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth&&s.display!=='none'&&s.visibility!=='hidden'};const boxes=[...document.querySelectorAll('[role="listbox"][aria-label]:has([role="option"])')].filter(visible);if(boxes.length!==1)return {count:boxes.length,available:[],buttonStates:[]};const box=boxes[0];const options=[...box.querySelectorAll('[role="option"]')].filter(visible);const label=e=>{const leaves=[...e.querySelectorAll('*')].filter(n=>n.children.length===0).map(n=>(n.textContent||'').trim()).filter(Boolean);return leaves.find(x=>norm(x)===target)||e.getAttribute('aria-label')||e.getAttribute('data-value')||''};const available=options.map(e=>{const leaves=[...e.querySelectorAll('*')].filter(n=>n.children.length===0).map(n=>(n.textContent||'').trim()).filter(Boolean);return leaves.find(x=>x&&!/^\\d+[.\uff0e]$/.test(x))||(e.textContent||'').trim()}).filter(Boolean);const matches=options.filter(e=>norm(label(e))===target);let scope=box,buttons=[];while(scope.parentElement){scope=scope.parentElement;buttons=[...scope.querySelectorAll('button:not([role="option"])')].filter(visible);if(buttons.length)break}if(matches.length!==1)return {count:matches.length,available,buttonStates:buttons.map(e=>e.disabled||e.getAttribute('aria-disabled')==='true')};matches[0].scrollIntoView({block:'center'});const r=matches[0].getBoundingClientRect();return {count:1,available,point:{x:r.left+r.width/2,y:r.top+r.height/2},buttonStates:buttons.map(e=>e.disabled||e.getAttribute('aria-disabled')==='true')}})()`,
+    );
+    if (!located.point)
+      return { answered: false, count: located.count, available: located.available };
+    await this.clickAt(located.point.x, located.point.y);
+    await this.evaluate(`new Promise(resolve=>setTimeout(resolve,100))`);
+    const submit = await this.evaluate<
+      | { answered: true }
+      | { answered: false; error: string }
+      | { answered: false; point: { x: number; y: number } }
+    >(
+      `(function(){const visible=e=>{const r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>0&&r.height>0&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth&&s.display!=='none'&&s.visibility!=='hidden'};const boxes=[...document.querySelectorAll('[role="listbox"][aria-label]:has([role="option"])')].filter(visible);if(boxes.length===0)return {answered:true};if(boxes.length!==1)return {answered:false,error:'问题卡片数量不唯一'};let scope=boxes[0],buttons=[];while(scope.parentElement){scope=scope.parentElement;buttons=[...scope.querySelectorAll('button:not([role="option"])')].filter(visible);if(buttons.length)break}const enabled=buttons.filter(e=>!e.disabled&&e.getAttribute('aria-disabled')!=='true');const submits=enabled.filter(e=>e.type==='submit');const newlyEnabled=buttons.filter((e,i)=>!e.disabled&&e.getAttribute('aria-disabled')!=='true'&&${JSON.stringify(located.buttonStates)}[i]===true);const candidates=submits.length===1?submits:newlyEnabled.length===1?newlyEnabled:enabled.length===1?enabled:[];if(candidates.length!==1)return {answered:false,error:'无法唯一定位问题提交按钮'};const r=candidates[0].getBoundingClientRect();return {answered:false,point:{x:r.left+r.width/2,y:r.top+r.height/2}}})()`,
+    );
+    if (submit.answered)
+      return { answered: true, count: 1, available: located.available };
+    if (!("point" in submit))
+      return { answered: false, count: 1, available: located.available, error: submit.error };
+    await this.clickAt(submit.point.x, submit.point.y);
+    for (let i = 0; i < 20; i++) {
+      // eslint-disable-next-line no-await-in-loop
+      if (!(await this.exists("questionCard")))
+        return { answered: true, count: 1, available: located.available };
+      // eslint-disable-next-line no-await-in-loop
+      await this.evaluate(`new Promise(resolve=>setTimeout(resolve,100))`);
+    }
+    return {
+      answered: false,
+      count: 1,
+      available: located.available,
+      error: "问题选项提交后卡片未消失",
+    };
+  }
   async conversationText(): Promise<string> {
     return this.text("messageList");
   }
   async poll(): Promise<ZcodePoll> {
     return this.evaluate(
-      `(function(){const sels=${JSON.stringify(Object.fromEntries((["stopButton", "runningCard", "toolCall", "questionCard", "assistantMessage", "chatInput", "sendButton"] as ZcodeSelectorKey[]).map((k) => [k, JSON.parse(candidateExpr(k, this.selectors))])))};const visible=k=>{for(const s of sels[k])for(const e of document.querySelectorAll(s)){const r=e.getBoundingClientRect();if(r.width&&r.height)return e}return null};const all=k=>{const a=[];for(const s of sels[k])for(const e of document.querySelectorAll(s))if(!a.includes(e))a.push(e);return a};const q=visible('questionCard');const assistants=all('assistantMessage');const last=assistants[assistants.length-1];const input=visible('chatInput');const send=visible('sendButton');return {stopVisible:!!visible('stopButton'),loading:!!visible('runningCard'),activeTool:!!visible('toolCall'),question:q?(q.textContent||'').trim():undefined,assistantText:last?(last.textContent||'').trim():'',inputEnabled:!!input&&!input.disabled&&input.getAttribute('aria-disabled')!=='true',sendEnabled:!!send&&!send.disabled&&send.getAttribute('aria-disabled')!=='true'}})()`,
+      `(function(){const sels=${JSON.stringify(Object.fromEntries((["stopButton", "runningCard", "toolCall", "questionCard", "assistantMessage", "chatInput", "sendButton"] as ZcodeSelectorKey[]).map((k) => [k, JSON.parse(candidateExpr(k, this.selectors))])))};const visible=k=>{for(const s of sels[k])for(const e of document.querySelectorAll(s)){const r=e.getBoundingClientRect();if(r.width&&r.height)return e}return null};const all=k=>{const a=[];for(const s of sels[k])for(const e of document.querySelectorAll(s))if(!a.includes(e))a.push(e);return a};const q=visible('questionCard');const assistants=all('assistantMessage');const last=assistants[assistants.length-1];const input=visible('chatInput');const send=visible('sendButton');return {stopVisible:!!visible('stopButton'),loading:!!visible('runningCard'),activeTool:!!visible('toolCall'),question:q?(q.getAttribute('aria-label')||q.textContent||'').trim():undefined,assistantText:last?(last.textContent||'').trim():'',inputEnabled:!!input&&!input.disabled&&input.getAttribute('aria-disabled')!=='true',sendEnabled:!!send&&!send.disabled&&send.getAttribute('aria-disabled')!=='true'}})()`,
     );
   }
 }

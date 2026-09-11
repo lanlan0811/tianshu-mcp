@@ -27,6 +27,7 @@ export interface RunZcodeArgs {
 }
 export interface ZcodeRunDeps {
   ensureInstance: typeof ensureZcodeInstance;
+  listProcesses: typeof listZcodeProcesses;
   createClient: (
     port: number,
     timeout: number,
@@ -38,6 +39,7 @@ export interface ZcodeRunDeps {
 }
 const DEFAULT_DEPS: ZcodeRunDeps = {
   ensureInstance: ensureZcodeInstance,
+  listProcesses: listZcodeProcesses,
   createClient: (p, t, s) => new ZcodeCdpClient(p, t, s),
   listDialogs: listOwnedDialogs,
   selectFolder: selectZcodeFolder,
@@ -109,6 +111,40 @@ async function waitBound(
     await deps.sleep(300);
   }
   return false;
+}
+
+async function connectStableZcode(
+  ready: ZcodeReady,
+  gui: GuiProfile,
+  deps: ZcodeRunDeps,
+  allowLoginPage = false,
+): Promise<ZcodeCdpClient> {
+  const attempts = Math.max(1, Math.ceil(gui.launchTimeoutMs / 500));
+  let lastError: unknown;
+  for (let i = 0; i < attempts; i++) {
+    const candidate = deps.createClient(ready.port, gui.cdpSendTimeoutMs, gui.selectors);
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await candidate.connect();
+      // A listed target can still belong to a busy/reloading renderer. Require
+      // a real DOM round-trip before using the connection.
+      // eslint-disable-next-line no-await-in-loop
+      if (allowLoginPage && (await candidate.exists("loginPage"))) return candidate;
+      // eslint-disable-next-line no-await-in-loop
+      if (allowLoginPage && (await candidate.exists("questionCard"))) return candidate;
+      // eslint-disable-next-line no-await-in-loop
+      if (await candidate.exists("chatInput")) return candidate;
+      lastError = new Error("ZCode 输入框尚未恢复");
+    } catch (error) {
+      lastError = error;
+    }
+    candidate.disconnect();
+    // eslint-disable-next-line no-await-in-loop
+    await deps.sleep(500);
+  }
+  throw (lastError instanceof Error
+    ? lastError
+    : new Error(`ZCode CDP 未在 ${gui.launchTimeoutMs}ms 内恢复`));
 }
 
 async function clickExactWhenReady(
@@ -186,8 +222,8 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
     if (!inst.ready)
       return result({ hardFailure: true, error: "ZCode 实例未就绪", endReason: "setup_failed" });
     const ready: ZcodeReady = inst.ready;
-    cdp = deps.createClient(ready.port, gui.cdpSendTimeoutMs, gui.selectors);
-    await cdp.connect();
+    cdp = await connectStableZcode(ready, gui, deps, true);
+    logger.info("[zcode] ZCode CDP 页面与输入状态已稳定");
     if (await cdp.exists("loginPage"))
       return result({
         endReason: "needs_user",
@@ -228,6 +264,35 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
     const activeSession = ctx.resume
       ? { id: ctx.resume.sessionId, title: ctx.resume.sessionTitle }
       : await cdp.session();
+
+    let session = ctx.resume ? activeSession : {};
+    let permission = ctx.resume?.permissionMode ?? gui.defaultPermissionMode ?? "完全访问";
+    let answeredQuestion = false;
+    if (ctx.resume?.kind === "continue" && ctx.resume.sendMessage) {
+      const pending = await cdp.poll();
+      if (pending.question) {
+        const answer = await cdp.answerQuestion(ctx.resume.message ?? "");
+        if (!answer.answered)
+          return result({
+            endReason: "needs_user",
+            needsUserKind: "agent_question",
+            pendingQuestion: `${pending.question}\n续答未提交：匹配 ${answer.count}${answer.available.length ? `；可用选项=${answer.available.join("、")}` : ""}${answer.error ? `；${answer.error}` : ""}`,
+            session: {
+              id: activeSession.id,
+              title: activeSession.title,
+              boundProjectPath: ctx.projectPath,
+              provider: spec.provider,
+              model: spec.model,
+              permissionMode: permission,
+            },
+            progressSummary: "ZCode 仍在等待可唯一匹配的用户选项",
+          });
+        answeredQuestion = true;
+        logger.info(`[zcode] 已在原会话问题卡片中精确提交续答：${ctx.resume.message ?? ""}`);
+      }
+    }
+
+    if (!answeredQuestion) {
 
     if (!(await cdp.click("projectTrigger")))
       return result({
@@ -274,7 +339,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
           });
       }
     } else {
-      const pids = listZcodeProcesses().map((p) => p.pid);
+      const pids = deps.listProcesses().map((p) => p.pid);
       const before = await deps.listDialogs(pids);
       if (!(await cdp.click("addProject")))
         return result({
@@ -316,6 +381,10 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
               }
             : undefined,
         });
+      logger.info("[zcode] 项目首次导入完成，等待 ZCode CDP 页面重新稳定");
+      cdp.disconnect();
+      cdp = await connectStableZcode(ready, gui, deps);
+      logger.info("[zcode] 项目导入后的 ZCode CDP 页面已恢复");
     }
     if (!(await waitBound(cdp, ctx.projectPath, deps)))
       return result({
@@ -323,31 +392,39 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
         error: "ZCode 项目绑定回读与 projectPath 不一致",
         endReason: "project_mismatch",
       });
+    logger.info(`[zcode] 项目绑定回读通过：${ctx.projectPath}`);
 
-    if (!(await cdp.click("modelTrigger")))
-      return result({
-        hardFailure: true,
-        error: "无法打开 ZCode 模型菜单",
-        endReason: "setup_failed",
-      });
-    await deps.sleep(250);
-    const provider = await clickExactWhenReady(cdp, "providerOption", spec.provider, deps);
-    if (!provider.clicked)
-      return result({
-        hardFailure: true,
-        error: `供应商不存在或同名歧义：${spec.provider}（匹配 ${provider.count}${provider.available?.length ? `；可见候选=${provider.available.slice(0, 20).join("、")}` : ""}）`,
-        endReason: "model_unavailable",
-      });
-    await deps.sleep(250);
-    const model = await clickExactWhenReady(cdp, "modelOption", spec.model, deps);
-    if (!model.clicked)
-      return result({
-        hardFailure: true,
-        error: `模型不存在或同名歧义：${spec.provider}/${spec.model}（匹配 ${model.count}${model.available?.length ? `；可见候选=${model.available.slice(0, 20).join("、")}` : ""}）`,
-        endReason: "model_unavailable",
-      });
-    await deps.sleep(300);
-    const modelValue = await cdp.selection("modelValue");
+    let modelValue = await cdp.selection("modelValue");
+    const modelMatches = () =>
+      (exactUiName(modelValue.display, spec.model) ||
+        exactUiName(modelValue.display, `${spec.provider}/${spec.model}`)) &&
+      exactUiName(modelValue.internal, spec.model);
+    if (!modelMatches()) {
+      if (!(await cdp.click("modelTrigger")))
+        return result({
+          hardFailure: true,
+          error: "无法打开 ZCode 模型菜单",
+          endReason: "setup_failed",
+        });
+      await deps.sleep(250);
+      const provider = await clickExactWhenReady(cdp, "providerOption", spec.provider, deps);
+      if (!provider.clicked)
+        return result({
+          hardFailure: true,
+          error: `供应商不存在或同名歧义：${spec.provider}（匹配 ${provider.count}${provider.available?.length ? `；可见候选=${provider.available.slice(0, 20).join("、")}` : ""}）`,
+          endReason: "model_unavailable",
+        });
+      await deps.sleep(250);
+      const model = await clickExactWhenReady(cdp, "modelOption", spec.model, deps);
+      if (!model.clicked)
+        return result({
+          hardFailure: true,
+          error: `模型不存在或同名歧义：${spec.provider}/${spec.model}（匹配 ${model.count}${model.available?.length ? `；可见候选=${model.available.slice(0, 20).join("、")}` : ""}）`,
+          endReason: "model_unavailable",
+        });
+      await deps.sleep(300);
+      modelValue = await cdp.selection("modelValue");
+    } else logger.info(`[zcode] 模型回读已匹配，复用 ${spec.provider}/${spec.model}`);
     const displayMatches =
       exactUiName(modelValue.display, spec.model) ||
       exactUiName(modelValue.display, `${spec.provider}/${spec.model}`);
@@ -358,21 +435,23 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
         error: `模型切换回读不一致：display=${modelValue.display || "空"}，internal=${modelValue.internal || "空"}`,
         endReason: "model_mismatch",
       });
-    const permission = gui.defaultPermissionMode ?? "完全访问";
-    if (!(await cdp.click("permissionTrigger")))
-      return result({
-        hardFailure: true,
-        error: "无法打开 ZCode 权限菜单",
-        endReason: "permission_unknown",
-      });
-    const perm = await clickExactWhenReady(cdp, "permissionOption", permission, deps);
-    if (!perm.clicked)
-      return result({
-        hardFailure: true,
-        error: `无法唯一选择权限模式：${permission}`,
-        endReason: "permission_unknown",
-      });
-    await deps.sleep(250);
+    permission = gui.defaultPermissionMode ?? "完全访问";
+    if (!exactUiName(await cdp.text("permissionValue"), permission)) {
+      if (!(await cdp.click("permissionTrigger")))
+        return result({
+          hardFailure: true,
+          error: "无法打开 ZCode 权限菜单",
+          endReason: "permission_unknown",
+        });
+      const perm = await clickExactWhenReady(cdp, "permissionOption", permission, deps);
+      if (!perm.clicked)
+        return result({
+          hardFailure: true,
+          error: `无法唯一选择权限模式：${permission}`,
+          endReason: "permission_unknown",
+        });
+      await deps.sleep(250);
+    } else logger.info(`[zcode] 权限回读已匹配，复用 ${permission}`);
     if (!exactUiName(await cdp.text("permissionValue"), permission))
       return result({
         hardFailure: true,
@@ -380,7 +459,10 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
         endReason: "permission_unknown",
       });
 
-    let session = activeSession;
+    // A fresh-task click can leave the previous session pane mounted and visible
+    // until ZCode accepts the first message. Never carry that stale id into a
+    // newly submitted task; identify the new session from the marker or the
+    // post-send session-list delta instead.
     const message = prompt(ctx, refs);
     {
       if (ctx.resume?.kind === "continue" && !ctx.resume.sendMessage) {
@@ -409,7 +491,14 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
       let seenStateChange = false;
       let seenRunning = false;
       let markedSession: Awaited<ReturnType<ZcodeCdpClient["sessionForMarker"]>> = undefined;
-      for (let i = 0; i < 20 && !(seenMessage && (seenStateChange || seenRunning || markedSession)); i++) {
+      const confirmationAttempts = Math.ceil(
+        Math.min(60_000, Math.max(5_000, ctx.taskTimeoutMs)) / 250,
+      );
+      for (
+        let i = 0;
+        i < confirmationAttempts && !(seenMessage && (seenStateChange || seenRunning || markedSession));
+        i++
+      ) {
         // eslint-disable-next-line no-await-in-loop
         await deps.sleep(250);
         // eslint-disable-next-line no-await-in-loop
@@ -437,7 +526,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
       if (!ctx.resume) {
         const previousIds = new Set(sessionsBefore.map((item) => item.id));
         let added: Awaited<ReturnType<ZcodeCdpClient["sessions"]>> = [];
-        for (let i = 0; i < 20; i++) {
+        for (let i = 0; i < confirmationAttempts; i++) {
           // eslint-disable-next-line no-await-in-loop
           const current = await cdp.sessions();
           added = current.filter((item) => !previousIds.has(item.id));
@@ -448,7 +537,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
         if (!session.id && added.length === 1) session = added[0]!;
         else if (!session.id) {
           const current = await cdp.session();
-          if (current.id) session = current;
+          if (current.id && !previousIds.has(current.id)) session = current;
         }
       }
       if (!session.id)
@@ -457,6 +546,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
           error: "任务已发送，但无法唯一取得 ZCode 新会话 ID；已保留现场且不会重复发送",
           endReason: "session_lost",
         });
+    }
     }
 
     const deadline = started + ctx.taskTimeoutMs;

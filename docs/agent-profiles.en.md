@@ -82,7 +82,7 @@ retain the instance and expose `agentEndReason` / `keptInstance` in metadata.
 
 > `traework` moved from `unsupported` to `ready` + `driver=gui` on 2026-09-08 (CDP-driven desktop UI; see [traework-cdp.en.md](traework-cdp.en.md)).
 
-> `zcode` uses `driver=gui` + `adapter=zcode-gui`. It requires `provider/model`, confirms Full Access, and defaults to two automatic repair rounds. The built-in profile remains `research` until both Windows and macOS hardware loops are recorded.
+> `zcode` uses `driver=gui` + `adapter=zcode-gui`. It requires `provider/model`, confirms Full Access, and defaults to two automatic repair rounds. The Windows hardware loop is complete; the built-in profile remains `research` until the macOS hardware loop is recorded.
 
 ## Real-machine sample
 

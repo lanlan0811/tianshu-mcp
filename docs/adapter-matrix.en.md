@@ -9,7 +9,7 @@ headless CLI/API **or a verified programmatic GUI driver**; agents without eithe
 | Agent | Interface | Status | Login | Notes |
 |---|---|---|---|---|
 | **Codex** (OpenAI desktop) | local CLI `codex.exe` | ✅ **smoke-passed** (run_task→verify_task, see [m2-smoke-record.md](m2-smoke-record.md)) | reuses `~/.codex` | `codex exec "<prompt>" --sandbox workspace-write` (don't combine with --approve-for-me) |
-| **Zcode** (ZCode desktop) | Electron + dedicated `zcode-gui` CDP adapter | **research** (implemented; dual-platform hardware evidence pending) | machine login | exact project/model/permission/session DOM read-back; see [zcode-cdp.en.md](zcode-cdp.en.md) |
+| **Zcode** (ZCode desktop) | Electron + dedicated `zcode-gui` CDP adapter | **research** (Windows hardware passed; macOS pending) | machine login | exact project/model/permission/session DOM read-back; see [zcode-cdp.en.md](zcode-cdp.en.md) and [zcode-windows-smoke.en.md](zcode-windows-smoke.en.md) |
 | **TraeWork / TRAE SOLO CN** | desktop IDE + **CDP GUI driver** | ✅ **integrated & machine-verified** (2026-09-08; see T1 correction and [traework-cdp.en.md](traework-cdp.en.md)) | reuses TraeWork desktop login (this MCP reads no credentials) | no headless CLI; drives the chat UI via `--remote-debugging-port`; replies extracted from the DOM |
 
 ## Extending
