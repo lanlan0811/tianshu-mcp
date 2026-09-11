@@ -1,8 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { AgentProfileSchema } from "../../src/config/schema.js";
 import { discoverZcode, orderedDrives, normalizeDrive } from "../../src/agents/zcode/discovery.js";
+import {
+  probeZcodePort,
+  remoteDebugPort,
+  rootZcodeProcesses,
+} from "../../src/agents/zcode/instance.js";
+import { TraeworkCdpClient } from "../../src/agents/traework/cdp/client.js";
 import { parseZcodeModel } from "../../src/agents/zcode/model.js";
 import { matchZcodeProject, normalizeProjectPath } from "../../src/agents/zcode/project.js";
 import { validateTaskReferences } from "../../src/agents/zcode/references.js";
@@ -44,6 +50,42 @@ describe("ZCode 安装与模型", () => {
   it("固定盘按可配置 D 优先并去重", () => {
     expect(normalizeDrive("d:")).toBe("D:");
     expect(orderedDrives(["C:", "D:", "E:", "d:"], ["D:"])).toEqual(["D:", "C:", "E:"]);
+  });
+  it("只保留 ZCode 根进程并解析等号或空格形式的 CDP 端口", () => {
+    const rows = [
+      { pid: 10, commandLine: "ZCode.exe --remote-debugging-port=9333" },
+      { pid: 11, commandLine: "ZCode.exe --remote-debugging-port 9334" },
+      { pid: 12, commandLine: "ZCode.exe --type=renderer --remote-debugging-port=9333" },
+      { pid: 13, commandLine: "ZCode.exe zcode.cjs app-server --stdio" },
+    ];
+    expect(rootZcodeProcesses(rows).map((row) => row.pid)).toEqual([10, 11]);
+    expect(remoteDebugPort(rows[0]!.commandLine)).toBe(9333);
+    expect(remoteDebugPort(rows[1]!.commandLine)).toBe(9334);
+    expect(remoteDebugPort("ZCode.exe")).toBeNull();
+  });
+  it("CDP 端口必须同时匹配 ZCode 根进程和产品页面", async () => {
+    const rows = [{ pid: 10, commandLine: "ZCode.exe --remote-debugging-port=9333" }];
+    const targets = vi.spyOn(TraeworkCdpClient, "listTargets");
+    targets.mockResolvedValue([
+      {
+        type: "page",
+        title: "Google Chrome",
+        url: "https://example.com",
+        webSocketDebuggerUrl: "ws://127.0.0.1/chrome",
+      },
+    ]);
+    expect(await probeZcodePort(9333, rows)).toBeNull();
+    expect(await probeZcodePort(9444, rows)).toBeNull();
+    targets.mockResolvedValue([
+      {
+        type: "page",
+        title: "ZCode",
+        url: "file:///zcode/index.html",
+        webSocketDebuggerUrl: "ws://127.0.0.1/zcode",
+      },
+    ]);
+    expect(await probeZcodePort(9333, rows)).toMatchObject({ port: 9333, pid: 10, title: "ZCode" });
+    targets.mockRestore();
   });
   it("配置的首选盘即使系统盘枚举失败也可发现，且不硬编码盘符", async () => {
     const root = await makeTmpRoot("zcode-drives");
