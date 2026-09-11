@@ -10,7 +10,7 @@
 
 **Tianshu × AI-Agent orchestration MCP server**
 
-Registered by Tianshu as a standard MCP server, it dispatches external AI-Agents (Codex CLI; TraeWork/TRAE SOLO CN driven through its desktop UI over CDP) to drive the closed loop of **project development → acceptance → failure rework → re-acceptance** (horizontally extensible).
+Registered by Tianshu as a standard MCP server, it dispatches external AI-Agents (Codex desktop, TraeWork/TRAE SOLO CN and ZCode, all driven through their desktop UIs over CDP) to drive the closed loop of **project development → acceptance → failure rework → re-acceptance** (horizontally extensible).
 
 > Official Tianshu repository: [github.com/huiliyi37/Tianshu-harness](https://github.com/huiliyi37/Tianshu-harness) — a harness-engineering terminal coding-agent runtime (TUI × GUI); this MCP plugs into it as an MCP server.
 
@@ -32,13 +32,13 @@ Registered by Tianshu as a standard MCP server, it dispatches external AI-Agents
 
 ## What this is
 
-Tianshu plays the role of the overall commander; this MCP server is the **scheduler + execution surface + objective acceptance gate**; the external AI-Agent (Codex CLI, TraeWork GUI) is the "worker" that does the development.
+Tianshu plays the role of the overall commander; this MCP server is the **scheduler + execution surface + objective acceptance gate**; the external AI-Agent (Codex / TraeWork / ZCode GUI) is the "worker" that does the development.
 
 - **9 MCP tools**: `run_task / continue_task / query_task / list_tasks / get_task_report / cancel_task / verify_task / rework_task / get_profiles`.
 - **Async contract**: `run_task` returns a `taskId` immediately; long-running work is polled via `query_task` (never blocks `tools/call`).
 - **Objective acceptance**: automated command checks (typecheck/lint/test/build — skipped when absent, plus tech-stack derivation) + programmatic code analysis (changed-file list / diffstat / suspicious signals such as TODO, debugger, secret-like patterns), all relative to a **git baseline**; never auto-commits or stashes.
 - **Rework loop**: automatic rework (`autoFixRounds`) + manual `rework_task`; on verification failure a repair-plan file is generated and fed back to the agent; when rounds run out → `needs_attention` awaiting Tianshu's verdict.
-- **Two execution surfaces**: `driver: "spawn"` runs an external CLI child process (Codex); `driver: "gui"` selects an explicit, isolated TraeWork or ZCode CDP adapter.
+- **Execution surfaces**: `driver: "gui"` selects an explicit, isolated Codex/TraeWork/ZCode CDP adapter; `driver: "spawn"` runs an external CLI child process.
 - **Scheduling discipline**: per-project serial queue + global concurrency cap (default 2, configurable).
 - **No key handling**: each agent uses its own login state; this server never stores or forwards any API key.
 - **Extensible**: a new agent = one profile (data) + (if needed) one adapter file — no changes to the orchestration core.
@@ -63,7 +63,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 262 tests across 37 files, including ZCode unit/fake-CDP/restart/repair coverage
+npm test             # 332 tests across 39 files, including Codex/ZCode unit/fake-CDP/restart/repair coverage
 ```
 
 ### Install the npm package
@@ -112,9 +112,16 @@ Register as a Tianshu MCP server (local dev mode):
 After opening a new session, the 9 tools such as `mcp__tianshu-mcp__run_task` appear. Rehearse with the stub agent first (no real login state), then switch to the `codex` profile for real tasks:
 
 ```text
-run_task(projectPath=D:/xxx/my-app, task=「…task brief…」, agentId=codex, autoVerify=true, autoFixRounds=2)
+run_task(projectPath=D:/xxx/my-app, task=「…task brief…」, agentId=codex,
+         model=「GPT-5.6 Sol」, reasoningLevel=「high」, autoVerify=true, autoFixRounds=5)
   → taskId → poll query_task(taskId) → succeeded / failed / needs_attention → get_task_report
 ```
+
+> `codex` is now a **desktop GUI driver** (`driver=gui` + `activation=msix-com`): Codex ships as an MSIX
+> store package whose `ChatGPT.exe` cannot be launched directly (policy denies it); it must be started via
+> COM activation with a dedicated `--user-data-dir` before CDP can drive it. `planDoc` / `designSystem` are
+> appended to the initial instruction. See [docs/codex-gui-cdp.en.md](docs/codex-gui-cdp.en.md) and the
+> [hardware acceptance record](docs/codex-windows-smoke.en.md).
 
 When driving TraeWork, `model` and `mode` are available:
 
@@ -173,6 +180,8 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 | [docs/traework-cdp.en.md](docs/traework-cdp.en.md) | TraeWork GUI driver (CDP): mechanism, config, mode switching, selectors, safety invariants, pitfalls, verification record |
 | [docs/zcode-cdp.en.md](docs/zcode-cdp.en.md) | ZCode GUI driver: discovery, exact project/model, Full Access, pause/continue, verification and platform evidence |
 | [docs/zcode-windows-smoke.en.md](docs/zcode-windows-smoke.en.md) | ZCode Windows hardware record for development, same-session repair, and question continuation |
+| [docs/codex-gui-cdp.en.md](docs/codex-gui-cdp.en.md) | Codex desktop GUI driver: MSIX COM activation, CDP attach, selectors, run detection, verify/repair |
+| [docs/codex-windows-smoke.en.md](docs/codex-windows-smoke.en.md) | Codex Windows hardware record (incl. verify-fail → auto plan → repair-pass loop) |
 | [docs/release-v0.2.0.en.md](docs/release-v0.2.0.en.md) | v0.2.0 release notes (unified ZCode GUI loop) |
 | [docs/acceptance-config.en.md](docs/acceptance-config.en.md) | Project-level `.tianshu-mcp/acceptance.json` acceptance config spec |
 | [docs/release-v0.1.9.en.md](docs/release-v0.1.9.en.md) | v0.1.9 release notes (TraeWork task liveness and instance retention) |
@@ -244,7 +253,7 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 
 | agentId | driver | status | Notes |
 |---|---|---|---|
-| `codex` | `spawn` | **ready** | Reuses `~/.codex` login state; `codex exec` headless; passed real M2 smoke |
+| `codex` | `gui` | **ready** | Desktop GUI over CDP (MSIX COM activation + dedicated profile); supports `model`/`reasoningLevel`/`planDoc`/`designSystem`; Windows machine-verified |
 | `zcode` | `zcode-gui` | **research** | CDP GUI adapter and Windows hardware loop passed; remains non-ready until macOS hardware passes |
 | `traework` | **`gui`** | **ready** | CDP-driven TRAE SOLO CN desktop UI; all three panel modes machine-verified |
 | `stub` | `spawn` | tests only | `test/stub-agent/stub-agent.mjs` with 3 playbooks (good/fix-on-first/never) |

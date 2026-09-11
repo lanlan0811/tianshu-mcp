@@ -5,6 +5,7 @@ tianshu-mcp 的 Codex 适配器：驱动 OpenAI Codex 桌面端（ChatGPT 桌面
 - 实现：`src/agents/codex/**`
 - 计划：`.zcode/plans/codex-gui-adapter-plan.md`
 - 状态：Windows 已真机验证；macOS 标 `research`（未验证，不参与就绪判定）
+- 真机验收记录：[codex-windows-smoke.md](codex-windows-smoke.md)
 - 关联：[adapter-matrix.md](adapter-matrix.md)、[agent-profiles.md](agent-profiles.md)、[acceptance-config.md](acceptance-config.md)
 
 ---

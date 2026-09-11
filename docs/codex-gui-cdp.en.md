@@ -5,6 +5,7 @@ The tianshu-mcp Codex adapter drives the OpenAI Codex desktop app (the ChatGPT d
 - Implementation: `src/agents/codex/**`
 - Plan: `.zcode/plans/codex-gui-adapter-plan.md`
 - Status: verified on Windows real hardware; macOS is `research` (unverified, excluded from readiness)
+- Hardware acceptance: [codex-windows-smoke.en.md](codex-windows-smoke.en.md)
 - Related: [adapter-matrix.en.md](adapter-matrix.en.md), [agent-profiles.en.md](agent-profiles.en.md), [acceptance-config.md](acceptance-config.md)
 
 ---

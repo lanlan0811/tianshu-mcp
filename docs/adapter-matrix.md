@@ -8,7 +8,7 @@
 
 | Agent | 接口类型 | 状态 | 可执行发现 | 登录态 | 任务/文件回读 | 备注 |
 |---|---|---|---|---|---|---|
-| **Codex**（OpenAI 桌面端） | **MSIX GUI + CDP**（`codex-gui` adapter） | ✅ **Windows 真机已验证**（COM 激活 + CDP + 关键选择器，2026-09-11；macOS 标 research） | Appx 查询优先（`Get-AppxPackage` → InstallLocation）→ 扫盘 `WindowsApps\OpenAI.Codex_*` 取最新版本 | 复用 `~/.codex`（auth.json），与用户手动打开的实例共享 | DOM 回读项目、模型/思考等级、权限、回复 | GUI 宿主 `app\ChatGPT.exe` 无法直启（策略拒绝），须 `IApplicationActivationManager` 激活并注入专属 `--user-data-dir`；见 [codex-gui-cdp.md](codex-gui-cdp.md) |
+| **Codex**（OpenAI 桌面端） | **MSIX GUI + CDP**（`codex-gui` adapter） | ✅ **Windows 真机已验证**（COM 激活 + CDP + 关键选择器 + 验收返修闭环，2026-09-11；见 [codex-windows-smoke.md](codex-windows-smoke.md)；macOS 标 research） | Appx 查询优先（`Get-AppxPackage` → InstallLocation）→ 扫盘 `WindowsApps\OpenAI.Codex_*` 取最新版本 | 复用 `~/.codex`（auth.json），与用户手动打开的实例共享 | DOM 回读项目、模型/思考等级、权限、回复 | GUI 宿主 `app\ChatGPT.exe` 无法直启（策略拒绝），须 `IApplicationActivationManager` 激活并注入专属 `--user-data-dir`；见 [codex-gui-cdp.md](codex-gui-cdp.md) |
 | **Zcode**（ZCode 桌面） | Electron + 独立 `zcode-gui` CDP adapter | **research（Windows 真机已通过，macOS 待补齐）** | 数据驱动固定盘/注册表/标准目录/macOS bundle | 复用本机登录态 | DOM 回读项目、模型、权限、会话与回复 | Windows 证据见 [zcode-windows-smoke.md](zcode-windows-smoke.md)；无头 CLI 仍不存在 |
 | **TraeWork / TRAE SOLO CN** | 桌面 IDE（v1.107.1）+ **CDP GUI 驱动** | ✅ **已接入并真机验证**（2026-09-08；见 T1 更正与 [traework-cdp.md](traework-cdp.md)） | 无头 CLI 不存在；以 `--remote-debugging-port` 驱动聊天 UI | 复用 TraeWork 桌面端登录态（本 MCP 不读取凭证） | 从 DOM 提取回复；项目文件由 TraeWork 自身写入 | `byted-solo.builtin-mcp` 是 MCP 客户端扩展，非被驱动接口 |
 | **stub**（测试用） | 本地脚本 | ✅ 内置测试 | 测试注入 profile | 无 | — | 仅 M1 集成测试使用 |

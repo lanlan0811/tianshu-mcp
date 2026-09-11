@@ -10,7 +10,7 @@
 
 **天枢 × AI-Agent 编排 MCP server**
 
-由天枢（Tianshu）当作标准 MCP server 接入，调度外部 AI-Agent（Codex CLI；TraeWork/TRAE SOLO CN 经 CDP 驱动桌面 UI）完成 **项目开发 → 验收 → 失败返修 → 再验收** 的闭环（架构可横向扩展）。
+由天枢（Tianshu）当作标准 MCP server 接入，调度外部 AI-Agent（Codex 桌面端、TraeWork/TRAE SOLO CN、ZCode 均经 CDP 驱动桌面 UI）完成 **项目开发 → 验收 → 失败返修 → 再验收** 的闭环（架构可横向扩展）。
 
 > 天枢官方仓库：[github.com/huiliyi37/Tianshu-harness](https://github.com/huiliyi37/Tianshu-harness) —— 基于 harness 工程的终端编程智能体运行时（TUI × GUI），本 MCP 作为其 MCP server 接入。
 
@@ -32,13 +32,13 @@
 
 ## 这是什么
 
-天枢的角色是总指挥；本 MCP server 是**调度层 + 执行面 + 客观验收仪**；外部 AI-Agent（Codex CLI、TraeWork GUI）是执行开发的「工人」。
+天枢的角色是总指挥；本 MCP server 是**调度层 + 执行面 + 客观验收仪**；外部 AI-Agent（Codex / TraeWork / ZCode GUI）是执行开发的「工人」。
 
 - **9 个 MCP 工具**：`run_task / continue_task / query_task / list_tasks / get_task_report / cancel_task / verify_task / rework_task / get_profiles`。
 - **异步契约**：`run_task` 秒回 `taskId`，长任务用 `query_task` 轮询（长任务不卡 `tools/call`）。
 - **客观验收**：自动命令检查（typecheck/lint/test/build，缺则跳过 + 技术栈推导）+ 程序化代码分析（变更清单/diffstat/TODO·debugger·密钥形态等可疑标记），全部相对 **git 基线**，不自动 commit/stash。
 - **失败返修闭环**：自动返修（`autoFixRounds`）+ 手动 `rework_task`；验收失败时自动生成修复计划文件并回填给 agent；轮次用尽 → `needs_attention` 等天枢裁决。
-- **两种执行面**：`driver: "spawn"` 走外部 CLI 子进程（Codex）；`driver: "gui"` 由显式 adapter 驱动桌面 UI（TraeWork 与 ZCode 各自使用隔离的 CDP 流程）。
+- **执行面**：`driver: "gui"` 由显式 adapter 驱动桌面 UI（Codex / TraeWork / ZCode 各自使用隔离的 CDP 流程）；`driver: "spawn"` 走外部 CLI 子进程。
 - **调度纪律**：每项目串行队列 + 全局并发上限（默认 2，可配）。
 - **不碰密钥**：各 agent 用自己的登录态；本 server 不保存/转发任何 API key。
 - **可扩展**：新 agent = 一个 profile（数据）+（如需）一个 adapter 文件，零改编排核心。
@@ -63,7 +63,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 262 项测试：37 个文件，含 ZCode 单元/假 CDP/重启/返修闭环
+npm test             # 332 项测试：39 个文件，含 Codex/ZCode 单元/假 CDP/重启/返修闭环
 ```
 
 ### 安装 npm 包
@@ -111,9 +111,15 @@ npm install -g tianshu-mcp
 新开会话后，工具面出现 `mcp__tianshu-mcp__run_task` 等 9 个工具。用 stub 预演（不碰真实登录态）→ 切 codex 跑真实任务：
 
 ```text
-run_task(projectPath=D:/xxx/my-app, task=「…任务书…」, agentId=codex, autoVerify=true, autoFixRounds=2)
+run_task(projectPath=D:/xxx/my-app, task=「…任务书…」, agentId=codex,
+         model=「GPT-5.6 Sol」, reasoningLevel=「高」, autoVerify=true, autoFixRounds=5)
   → taskId → query_task(taskId) 轮询 → succeeded / failed / needs_attention → get_task_report 读报告
 ```
+
+> `codex` 现为**桌面端 GUI 驱动**（`driver=gui` + `activation=msix-com`）：Codex 是 MSIX 商店包，
+> 其 `ChatGPT.exe` 无法直接启动（被策略拒绝），须经 COM 激活并注入专属 `--user-data-dir` 后方可
+> 用 CDP 驱动。可传 `planDoc` / `designSystem` 拼进初始指令。详见 [docs/codex-gui-cdp.md](docs/codex-gui-cdp.md)
+> 与 [真机验收记录](docs/codex-windows-smoke.md)。
 
 驱动 TraeWork 时可用 `model` 与 `mode`：
 
@@ -172,6 +178,8 @@ ZCode 提问或需要用户处理登录、旧实例、系统权限时进入 `nee
 | [docs/traework-cdp.md](docs/traework-cdp.md) | TraeWork GUI 驱动（CDP）：原理、配置、模式切换、选择器、安全红线、踩坑记录、验证记录 |
 | [docs/zcode-cdp.md](docs/zcode-cdp.md) | ZCode GUI 驱动：安装探测、精确项目/模型、完全访问、暂停继续、验收返修与双平台状态 |
 | [docs/zcode-windows-smoke.md](docs/zcode-windows-smoke.md) | ZCode Windows 真机开发、同会话返修与提问续跑验收记录 |
+| [docs/codex-gui-cdp.md](docs/codex-gui-cdp.md) | Codex 桌面端 GUI 驱动：MSIX COM 激活、CDP 接管、选择器、运行检测、验收返修 |
+| [docs/codex-windows-smoke.md](docs/codex-windows-smoke.md) | Codex Windows 真机验收记录（含验收失败→自动生成计划→返修通过闭环） |
 | [docs/release-v0.2.0.md](docs/release-v0.2.0.md) | v0.2.0 发布说明（ZCode GUI 统一闭环） |
 | [docs/acceptance-config.md](docs/acceptance-config.md) | 项目级 `.tianshu-mcp/acceptance.json` 验收配置规范 |
 | [docs/release-v0.1.9.md](docs/release-v0.1.9.md) | v0.1.9 发布说明（TraeWork 任务进行中检测与实例保留） |
