@@ -31,10 +31,20 @@ const projectPath = path.resolve(readArg("--project") ?? process.cwd());
 const model = readArg("--model");
 const task = readArg("--task");
 const timeoutMs = Number(readArg("--timeout-ms") ?? 15 * 60_000);
+const answer = readArg("--answer");
+const autoVerify = process.argv.includes("--auto-verify");
+const autoFixRounds = Number(readArg("--auto-fix-rounds") ?? (autoVerify ? 2 : 0));
 
-if (!process.argv.includes("--confirm-send") || !model || !task) {
+if (
+  !process.argv.includes("--confirm-send") ||
+  !model ||
+  !task ||
+  !Number.isInteger(autoFixRounds) ||
+  autoFixRounds < 0 ||
+  autoFixRounds > 10
+) {
   process.stderr.write(
-    "用法: node scripts/smoke-zcode.mjs --confirm-send --model <供应商/模型> --task <任务> [--project <绝对路径>] [--timeout-ms <毫秒>]\n",
+    "用法: node scripts/smoke-zcode.mjs --confirm-send --model <供应商/模型> --task <任务> [--project <绝对路径>] [--auto-verify] [--auto-fix-rounds <0-10>] [--answer <续答>] [--timeout-ms <毫秒>]\n",
   );
   process.exit(2);
 }
@@ -58,8 +68,8 @@ try {
     task,
     agentId: "zcode",
     model,
-    autoVerify: false,
-    autoFixRounds: 0,
+    autoVerify,
+    autoFixRounds,
     taskTimeoutMs: timeoutMs,
   });
   if (submitted.result.isError || !submitted.meta?.taskId)
@@ -68,6 +78,7 @@ try {
   process.stdout.write(`${JSON.stringify({ event: "submitted", taskId, home })}\n`);
   const startedAt = Date.now();
   let previous = "";
+  let continued = false;
   for (;;) {
     const current = await call(client, "query_task", { taskId, tailLines: 20 });
     const meta = current.meta ?? {};
@@ -81,6 +92,18 @@ try {
     if (signature !== previous) {
       process.stdout.write(`${JSON.stringify({ event: "status", taskId, ...JSON.parse(signature) })}\n`);
       previous = signature;
+    }
+    if (meta.status === "needs_user" && answer && !continued) {
+      const resumed = await call(client, "continue_task", { taskId, message: answer });
+      if (resumed.result.isError)
+        throw new Error(`continue_task 失败：${resumed.text}`);
+      continued = true;
+      previous = "";
+      process.stdout.write(
+        `${JSON.stringify({ event: "continued", taskId, message: answer, meta: resumed.meta })}\n`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      continue;
     }
     if (
       ["succeeded", "failed", "needs_attention", "cancelled", "interrupted", "needs_user"].includes(

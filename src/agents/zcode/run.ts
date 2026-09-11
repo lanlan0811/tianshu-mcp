@@ -113,7 +113,7 @@ async function waitBound(
 
 async function clickExactWhenReady(
   cdp: ZcodeCdpClient,
-  key: "providerOption" | "modelOption" | "permissionOption",
+  key: "providerOption" | "modelOption" | "permissionOption" | "chooseFolder",
   value: string,
   deps: ZcodeRunDeps,
 ): ReturnType<ZcodeCdpClient["clickExact"]> {
@@ -122,6 +122,25 @@ async function clickExactWhenReady(
     // eslint-disable-next-line no-await-in-loop
     last = await cdp.clickExact(key, value);
     if (last.clicked || last.count > 1) return last;
+    // eslint-disable-next-line no-await-in-loop
+    await deps.sleep(200);
+  }
+  return last;
+}
+
+async function clickAnyExactWhenReady(
+  cdp: ZcodeCdpClient,
+  key: "chooseFolder",
+  values: string[],
+  deps: ZcodeRunDeps,
+): ReturnType<ZcodeCdpClient["clickExact"]> {
+  let last = { clicked: false, count: 0, available: [] as string[] };
+  for (let i = 0; i < 15; i++) {
+    for (const value of values) {
+      // eslint-disable-next-line no-await-in-loop
+      last = await cdp.clickExact(key, value);
+      if (last.clicked || last.count > 1) return last;
+    }
     // eslint-disable-next-line no-await-in-loop
     await deps.sleep(200);
   }
@@ -181,6 +200,8 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
           permissionMode: gui.defaultPermissionMode,
         },
       });
+
+    await cdp.dismissMenus();
 
     const sessionsBefore = ctx.resume ? [] : await cdp.sessions();
 
@@ -255,10 +276,23 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
     } else {
       const pids = listZcodeProcesses().map((p) => p.pid);
       const before = await deps.listDialogs(pids);
-      if (!(await cdp.click("chooseFolder")))
+      if (!(await cdp.click("addProject")))
         return result({
           hardFailure: true,
-          error: "找不到 ZCode 选择文件夹入口",
+          error: "找不到 ZCode 添加项目入口",
+          endReason: "setup_failed",
+        });
+      await deps.sleep(300);
+      const folderOption = await clickAnyExactWhenReady(
+        cdp,
+        "chooseFolder",
+        ["打开文件夹", "Open Folder"],
+        deps,
+      );
+      if (!folderOption.clicked)
+        return result({
+          hardFailure: true,
+          error: `无法唯一选择 ZCode 打开文件夹菜单项（匹配 ${folderOption.count}${folderOption.available.length ? `；可见候选=${folderOption.available.slice(0, 20).join("、")}` : ""}）`,
           endReason: "setup_failed",
         });
       const selected = await deps.selectFolder(ctx.projectPath, pids, before);

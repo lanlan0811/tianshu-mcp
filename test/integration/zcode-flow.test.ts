@@ -67,6 +67,7 @@ class FakeZcode {
   ) {}
   async connect() {}
   disconnect() {}
+  async dismissMenus() {}
   async exists() {
     return false;
   }
@@ -188,11 +189,15 @@ class MissingProjectZcode extends FakeZcode {
   folderSelected = false;
   chooseFolderClicked = false;
   override async click(key: string) {
-    if (key === "chooseFolder") {
-      this.chooseFolderClicked = true;
-      return true;
-    }
+    if (key === "addProject") return true;
     return super.click(key);
+  }
+  override async clickExact(key: string, value: string) {
+    if (key === "chooseFolder" && ["打开文件夹", "Open Folder"].includes(value)) {
+      this.chooseFolderClicked = true;
+      return { clicked: true, count: 1, available: [value] };
+    }
+    return super.clickExact(key, value);
   }
   override async projects() {
     return [];

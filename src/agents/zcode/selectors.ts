@@ -18,6 +18,7 @@ export type ZcodeSelectorKey =
   | "projectItem"
   | "projectPath"
   | "projectTrigger"
+  | "addProject"
   | "chooseFolder"
   | "modelTrigger"
   | "providerOption"
@@ -113,11 +114,23 @@ export const ZCODE_SELECTORS: Record<ZcodeSelectorKey, ZcodeSelectorSpec> = {
     verifiedVersion: "3.11.x",
     note: "项目菜单",
   },
-  chooseFolder: {
-    primary: '[role="menu"] [role="menuitem"]:not([data-testid])',
-    fallbacks: ['button[aria-label*="选择文件夹"]', 'button[aria-label*="Choose folder"]'],
+  addProject: {
+    primary: 'button[data-testid="project-add"]',
+    fallbacks: [
+      'button[aria-label*="添加项目"]',
+      'button[aria-label*="Add project"]',
+    ],
     verifiedVersion: "3.11.x",
-    note: "原生目录面板入口",
+    note: "打开添加项目菜单",
+  },
+  chooseFolder: {
+    primary: '[role="menu"] [role="menuitem"]',
+    fallbacks: [
+      'button[aria-label*="选择文件夹"]',
+      'button[aria-label*="Choose folder"]',
+    ],
+    verifiedVersion: "3.11.x",
+    note: "添加项目菜单中的打开文件夹项；必须按本地化标签唯一匹配",
   },
   modelTrigger: {
     primary: '[data-testid="chat-model-select-trigger"]',

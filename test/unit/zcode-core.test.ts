@@ -10,6 +10,14 @@ import { judgeZcodePoll } from "../../src/agents/zcode/liveness.js";
 import { makeTmpRoot, rmrf } from "../test-utils.js";
 
 describe("ZCode 安装与模型", () => {
+  it("Windows 文件夹守卫不覆盖 PowerShell 只读 PID 变量", () => {
+    const source = fs.readFileSync(
+      path.resolve("src", "agents", "zcode", "dialog.ts"),
+      "utf8",
+    );
+    expect(source).not.toMatch(/\$pid\b/i);
+    expect(source).toContain("$dialogOwnerPid");
+  });
   it("显式 gui.exePath 优先且读取真实文件", async () => {
     const root = await makeTmpRoot("zcode-discovery");
     const exe = path.join(root, process.platform === "win32" ? "ZCode.exe" : "ZCode");
@@ -33,7 +41,7 @@ describe("ZCode 安装与模型", () => {
     expect(normalizeDrive("d:")).toBe("D:");
     expect(orderedDrives(["C:", "D:", "E:", "d:"], ["D:"])).toEqual(["D:", "C:", "E:"]);
   });
-  it("固定盘候选按可配置优先级发现，而不是硬编码盘符", async () => {
+  it("配置的首选盘即使系统盘枚举失败也可发现，且不硬编码盘符", async () => {
     const root = await makeTmpRoot("zcode-drives");
     const cRoot = path.join(root, "c-drive");
     const dRoot = path.join(root, "d-drive");
@@ -57,7 +65,7 @@ describe("ZCode 安装与模型", () => {
     expect(
       discoverZcode(profile, {
         platform: "win32",
-        fixedDrives: ["C:", "D:"],
+        fixedDrives: [],
         driveRoots: { "C:": cRoot, "D:": dRoot },
         registryDirs: [],
       }),

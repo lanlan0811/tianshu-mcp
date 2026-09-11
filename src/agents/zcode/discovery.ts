@@ -124,40 +124,74 @@ export function discoverZcode(
   const disc = profile.executableDiscovery;
   if (!disc) return null;
 
-  const candidates: Array<{ p: string; source: ZcodeCandidate["source"] }> = [];
-  if (platform === "win32") {
-    const drives = orderedDrives(
-      input.fixedDrives ?? windowsFixedDrives(),
-      disc.preferredDrives ?? [],
-    );
-    for (const drive of drives)
-      for (const rel of disc.relativePaths ?? [])
-        candidates.push({
-          p: path.win32.join(input.driveRoots?.[drive] ?? `${drive}\\`, rel),
-          source: "fixed-drive",
-        });
-    for (const dir of input.registryDirs ?? registryInstallLocations()) {
-      candidates.push({ p: path.win32.join(dir, "ZCode.exe"), source: "registry" });
-      candidates.push({ p: path.win32.join(dir, "ZCode", "ZCode.exe"), source: "registry" });
+  const firstValid = (
+    candidates: Array<{ p: string; source: ZcodeCandidate["source"] }>,
+  ): ZcodeCandidate | null => {
+    const seen = new Set<string>();
+    for (const candidate of candidates) {
+      const key = platform === "win32" ? candidate.p.toLowerCase() : candidate.p;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (validExecutable(candidate.p, platform))
+        return { path: candidate.p, source: candidate.source, version: fileVersion(candidate.p) };
     }
+    return null;
+  };
+
+  if (platform === "win32") {
+    const preferredDrives = (disc.preferredDrives ?? [])
+      .map(normalizeDrive)
+      .filter((drive): drive is string => Boolean(drive));
+    const driveCandidates = (
+      drives: string[],
+    ): Array<{ p: string; source: ZcodeCandidate["source"] }> => {
+      const candidates: Array<{ p: string; source: ZcodeCandidate["source"] }> = [];
+      for (const drive of drives)
+        for (const rel of disc.relativePaths ?? [])
+          candidates.push({
+            p: path.win32.join(input.driveRoots?.[drive] ?? `${drive}\\`, rel),
+            source: "fixed-drive",
+          });
+      return candidates;
+    };
+
+    // Configured preferred drives are explicit profile data. Probe them first so a slow/failed
+    // WMI fixed-drive query cannot make an installed GUI agent transiently unavailable.
+    const preferred = firstValid(driveCandidates(preferredDrives));
+    if (preferred) return preferred;
+
+    const drives = orderedDrives(input.fixedDrives ?? windowsFixedDrives(), preferredDrives).filter(
+      (drive) => !preferredDrives.includes(drive),
+    );
+    const fixedDrive = firstValid(driveCandidates(drives));
+    if (fixedDrive) return fixedDrive;
+
+    const registryCandidates: Array<{ p: string; source: ZcodeCandidate["source"] }> = [];
+    for (const dir of input.registryDirs ?? registryInstallLocations()) {
+      registryCandidates.push({ p: path.win32.join(dir, "ZCode.exe"), source: "registry" });
+      registryCandidates.push({
+        p: path.win32.join(dir, "ZCode", "ZCode.exe"),
+        source: "registry",
+      });
+    }
+    const registry = firstValid(registryCandidates);
+    if (registry) return registry;
   }
+
+  const standardCandidates: Array<{ p: string; source: ZcodeCandidate["source"] }> = [];
   for (const dirTpl of disc.dirs ?? []) {
     const dir = expandEnvPath(dirTpl.replace("{HOME}", os.homedir()));
     for (const name of disc.fileNames ?? [])
-      candidates.push({
+      standardCandidates.push({
         p: api.join(dir, name),
         source: platform === "darwin" && dir.includes(".app") ? "bundle" : "standard",
       });
   }
-  for (const p of pathCandidates(platform)) candidates.push({ p, source: "path" });
+  const standard = firstValid(standardCandidates);
+  if (standard) return standard;
 
-  const seen = new Set<string>();
-  for (const candidate of candidates) {
-    const key = platform === "win32" ? candidate.p.toLowerCase() : candidate.p;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    if (validExecutable(candidate.p, platform))
-      return { path: candidate.p, source: candidate.source, version: fileVersion(candidate.p) };
-  }
-  return null;
+  const executableInPath = firstValid(
+    pathCandidates(platform).map((p) => ({ p, source: "path" as const })),
+  );
+  return executableInPath;
 }

@@ -21,6 +21,7 @@
     "assets",
     "scripts/probe-zcode.mjs",
     "scripts/smoke-zcode.mjs",
+    "scripts/prepare-zcode-fixture.mjs",
     "README.md",
     "README.en.md",
     "CHANGELOG.md",
@@ -47,6 +48,7 @@
     "check:stdio": "node scripts/check-stdio.mjs --entry dist/index.js",
     "check:stdio:src": "node scripts/check-stdio.mjs --entry src/index.ts --tsx",
     "smoke:zcode": "node scripts/smoke-zcode.mjs",
+    "fixture:zcode": "node scripts/prepare-zcode-fixture.mjs",
     "pack:check": "npm pack --dry-run"
   },
   "dependencies": {
