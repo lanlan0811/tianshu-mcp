@@ -56,7 +56,10 @@ export function judgeZcodePoll(
   if (idleSince && now - idleSince >= idleTimeoutMs)
     return { kind: "idle_timeout", state: { hash, stable, idleSince }, evidence };
   // ZCode can finish without a textual badge: stable assistant reply + composer ready is authoritative.
-  if (stable >= stableRounds && poll.inputEnabled && poll.sendEnabled)
+  // ZCode disables the send button while the empty composer is ready.  The
+  // editable composer itself, together with a stable assistant reply and no
+  // running signal, is the authoritative completion evidence.
+  if (stable >= stableRounds && poll.inputEnabled)
     return { kind: "finished", state: { hash, stable, idleSince }, evidence };
   return { kind: "pending", state: { hash, stable, idleSince }, evidence };
 }

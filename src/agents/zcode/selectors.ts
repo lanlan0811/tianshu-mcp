@@ -52,10 +52,14 @@ export const ZCODE_SELECTORS: Record<ZcodeSelectorKey, ZcodeSelectorSpec> = {
     note: "权威运行信号",
   },
   newTask: {
-    primary: '[data-testid="conversation-new-task"],[data-testid="task-new-button"]',
-    fallbacks: ['button[aria-label*="新建任务"]', 'button[aria-label*="New task"]'],
+    primary: 'button[data-testid="conversation-new-task"]',
+    fallbacks: [
+      'button[aria-label*="新建任务"]',
+      'button[aria-label*="New task"]',
+      '[data-testid="task-new-button"]',
+    ],
     verifiedVersion: "3.11.x",
-    note: "新建会话",
+    note: "当前窗口顶部的新建会话按钮；避免命中其他工作区挂载的 task-new-button",
   },
   messageList: {
     primary: '[data-testid="v4-timeline"]',
@@ -64,10 +68,14 @@ export const ZCODE_SELECTORS: Record<ZcodeSelectorKey, ZcodeSelectorSpec> = {
     note: "消息列表",
   },
   assistantMessage: {
-    primary: '[data-message-role="assistant"]',
-    fallbacks: ['[data-role="assistant"]', '[class*="assistant-message"]'],
+    primary: '[data-testid^="v4-row-"][class*="assistant-row"]',
+    fallbacks: [
+      '[data-message-role="assistant"]',
+      '[data-role="assistant"]',
+      '[class*="assistant-message"]',
+    ],
     verifiedVersion: "3.11.x",
-    note: "助手消息",
+    note: "助手消息；3.11.2 使用 v4-row-* 和 assistant-row",
   },
   questionCard: {
     primary: '[data-testid*="question"]',

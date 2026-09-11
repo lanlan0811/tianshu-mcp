@@ -111,6 +111,23 @@ async function waitBound(
   return false;
 }
 
+async function clickExactWhenReady(
+  cdp: ZcodeCdpClient,
+  key: "providerOption" | "modelOption" | "permissionOption",
+  value: string,
+  deps: ZcodeRunDeps,
+): ReturnType<ZcodeCdpClient["clickExact"]> {
+  let last = { clicked: false, count: 0, available: [] as string[] };
+  for (let i = 0; i < 15; i++) {
+    // eslint-disable-next-line no-await-in-loop
+    last = await cdp.clickExact(key, value);
+    if (last.clicked || last.count > 1) return last;
+    // eslint-disable-next-line no-await-in-loop
+    await deps.sleep(200);
+  }
+  return last;
+}
+
 export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> {
   const started = Date.now(),
     { ctx, resolved, opts, logFile } = args,
@@ -213,6 +230,28 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
           error: "精确项目项点击失败",
           endReason: "setup_failed",
         });
+      if (!(await waitBound(cdp, ctx.projectPath, deps))) {
+        // ZCode may ignore a menu click while its workspace list is still
+        // animating. Retrying this pre-send, idempotent binding is safe.
+        if (!(await cdp.click("projectTrigger")))
+          return result({
+            hardFailure: true,
+            error: "项目首次绑定未生效，且无法重新打开项目列表",
+            endReason: "project_mismatch",
+          });
+        await deps.sleep(300);
+        const retried = matchZcodeProject(await cdp.projects(), ctx.projectPath);
+        if (
+          retried.ambiguous ||
+          !retried.item ||
+          !(await cdp.clickProject(retried.item.id, retried.item.path))
+        )
+          return result({
+            hardFailure: true,
+            error: "项目首次绑定未生效，重试时无法唯一选择目标项目",
+            endReason: "project_mismatch",
+          });
+      }
     } else {
       const pids = listZcodeProcesses().map((p) => p.pid);
       const before = await deps.listDialogs(pids);
@@ -258,7 +297,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
         endReason: "setup_failed",
       });
     await deps.sleep(250);
-    const provider = await cdp.clickExact("providerOption", spec.provider);
+    const provider = await clickExactWhenReady(cdp, "providerOption", spec.provider, deps);
     if (!provider.clicked)
       return result({
         hardFailure: true,
@@ -266,7 +305,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
         endReason: "model_unavailable",
       });
     await deps.sleep(250);
-    const model = await cdp.clickExact("modelOption", spec.model);
+    const model = await clickExactWhenReady(cdp, "modelOption", spec.model, deps);
     if (!model.clicked)
       return result({
         hardFailure: true,
@@ -292,7 +331,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
         error: "无法打开 ZCode 权限菜单",
         endReason: "permission_unknown",
       });
-    const perm = await cdp.clickExact("permissionOption", permission);
+    const perm = await clickExactWhenReady(cdp, "permissionOption", permission, deps);
     if (!perm.clicked)
       return result({
         hardFailure: true,
@@ -335,7 +374,8 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
       let seenMessage = before.includes(marker);
       let seenStateChange = false;
       let seenRunning = false;
-      for (let i = 0; i < 20 && !(seenMessage && seenStateChange && seenRunning); i++) {
+      let markedSession: Awaited<ReturnType<ZcodeCdpClient["sessionForMarker"]>> = undefined;
+      for (let i = 0; i < 20 && !(seenMessage && (seenStateChange || seenRunning || markedSession)); i++) {
         // eslint-disable-next-line no-await-in-loop
         await deps.sleep(250);
         // eslint-disable-next-line no-await-in-loop
@@ -349,14 +389,17 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
         seenRunning ||= polled.stopVisible || polled.loading || polled.activeTool;
         if (polled.assistantText && polled.assistantText !== beforePoll.assistantText)
           seenRunning = true;
+        // eslint-disable-next-line no-await-in-loop
+        markedSession ||= await cdp.sessionForMarker(marker);
       }
-      if (!(seenMessage && seenStateChange && seenRunning)) {
+      if (!(seenMessage && (seenStateChange || seenRunning || markedSession))) {
         return result({
           hardFailure: true,
-          error: `发送结果无法确认（用户消息=${seenMessage}，输入状态变化=${seenStateChange}，运行信号=${seenRunning}）；不重复发送`,
+          error: `发送结果无法确认（用户消息=${seenMessage}，输入状态变化=${seenStateChange}，运行信号=${seenRunning}，标记会话=${!!markedSession}）；不重复发送`,
           endReason: "send_unknown",
         });
       }
+      if (markedSession) session = markedSession;
       if (!ctx.resume) {
         const previousIds = new Set(sessionsBefore.map((item) => item.id));
         let added: Awaited<ReturnType<ZcodeCdpClient["sessions"]>> = [];
@@ -368,8 +411,8 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
           // eslint-disable-next-line no-await-in-loop
           await deps.sleep(250);
         }
-        if (added.length === 1) session = added[0]!;
-        else {
+        if (!session.id && added.length === 1) session = added[0]!;
+        else if (!session.id) {
           const current = await cdp.session();
           if (current.id) session = current;
         }

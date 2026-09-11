@@ -209,10 +209,11 @@ describe("ZCode 运行信号", () => {
     expect(v.kind).toBe("needs_user");
     expect(v.question).toBe("请选择方案");
   });
-  it("回复连续稳定且输入可用才完成", () => {
-    const first = judgeZcodePoll(base, { hash: "", stable: 0, idleSince: 0 }, 2, 1000, 10);
-    const second = judgeZcodePoll(base, first.state, 2, 1000, 20);
-    const third = judgeZcodePoll(base, second.state, 2, 1000, 30);
+  it("回复连续稳定且空输入框可编辑时完成，不要求禁用的发送按钮可用", () => {
+    const completed = { ...base, sendEnabled: false };
+    const first = judgeZcodePoll(completed, { hash: "", stable: 0, idleSince: 0 }, 2, 1000, 10);
+    const second = judgeZcodePoll(completed, first.state, 2, 1000, 20);
+    const third = judgeZcodePoll(completed, second.state, 2, 1000, 30);
     expect(third.kind).toBe("finished");
   });
 });

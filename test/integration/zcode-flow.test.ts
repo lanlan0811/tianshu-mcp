@@ -106,6 +106,11 @@ class FakeZcode {
   async sessions() {
     return this.sent ? [{ id: "session-1", title: "任务一" }] : [];
   }
+  async sessionForMarker(marker: string) {
+    return this.sent && this.conversation.includes(marker)
+      ? { id: "session-1", title: "任务一" }
+      : undefined;
+  }
   async selectSession() {
     return true;
   }
@@ -173,6 +178,9 @@ class AmbiguousSessionZcode extends FakeZcode {
           { id: "session-b", title: "任务 B" },
         ]
       : [];
+  }
+  override async sessionForMarker() {
+    return undefined;
   }
 }
 
