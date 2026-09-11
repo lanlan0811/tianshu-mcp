@@ -22,7 +22,7 @@ import type {
 } from "../adapter.js";
 import type { GuiProfile } from "../../config/schema.js";
 import { mkdirp } from "../../util/fs.js";
-import { parseCodexModel, exactUiName, levelUiTexts, parseTriggerValue } from "./model.js";
+import { parseCodexModel, exactUiName, parseTriggerValue, type NormalizedLevel } from "./model.js";
 import { matchCodexProject, projectBasename } from "./project.js";
 import { judgeCodexPoll, initialCodexState, type CodexPoll, type CodexPollState } from "./liveness.js";
 import { CodexCdpClient, CdpDisconnectedError, CdpUnavailableError } from "./cdp.js";
@@ -30,6 +30,7 @@ import { discoverCodex } from "./discovery.js";
 import { ensureCodexInstance, listCodexProcesses, type CodexReady } from "./instance.js";
 import { listCodexDialogs, selectCodexFolder, closeStrayDialogs } from "./dialog.js";
 import { focusCodexApp } from "./launcher.js";
+import { ensureProjectRegistered } from "./registry.js";
 import { buildInitialPrompt } from "./input.js";
 import { validateTaskReferences } from "../zcode/references.js";
 
@@ -49,6 +50,7 @@ export interface CodexRunDeps {
   selectFolder: typeof selectCodexFolder;
   closeDialogs: typeof closeStrayDialogs;
   focusApp: typeof focusCodexApp;
+  ensureRegistered: typeof ensureProjectRegistered;
   sleep: (ms: number) => Promise<void>;
 }
 const DEFAULT_DEPS: CodexRunDeps = {
@@ -60,6 +62,7 @@ const DEFAULT_DEPS: CodexRunDeps = {
   selectFolder: selectCodexFolder,
   closeDialogs: closeStrayDialogs,
   focusApp: focusCodexApp,
+  ensureRegistered: ensureProjectRegistered,
   sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
 };
 
@@ -73,7 +76,7 @@ export function codexGuiOf(resolved: ResolvedAgent): GuiProfile {
     exePath: g?.exePath,
     exeArgs: g?.exeArgs ?? ["--remote-debugging-port=<port>"],
     windowMode: g?.windowMode ?? "reuse",
-    launchTimeoutMs: g?.launchTimeoutMs ?? 60_000,
+    launchTimeoutMs: g?.launchTimeoutMs ?? 150_000,
     pollIntervalMs: g?.pollIntervalMs ?? 3_000,
     stableRounds: g?.stableRounds ?? 4,
     idleTimeoutMs: g?.idleTimeoutMs ?? 10 * 60_000,
@@ -206,6 +209,16 @@ export async function runCodexTask(args: RunCodexArgs): Promise<AgentRunResult> 
         endReason: "setup_failed",
       });
     logger.info(`[codex] 安装：${exePath}；AUMID=${aumid ?? "n/a"}`);
+
+    // 优先把目标目录登记进 Codex 项目列表（等价于用户手动建过一次项目）。
+    // 这一步会先停受管实例再写状态文件，因此必须在 ensureInstance 之前执行。
+    // 失败/不支持时返回 skipped，后续自动回退到界面「新建项目」路径。
+    try {
+      const reg = deps.ensureRegistered(ctx.projectPath, gui, logger);
+      logger.info(`[codex] 项目登记：${reg.status}（${reg.message}）`);
+    } catch (e) {
+      logger.warn(`[codex] 项目登记异常，回退界面新建路径：${e instanceof Error ? e.message : String(e)}`);
+    }
 
     const inst = await deps.ensureInstance({ path: exePath, aumid }, gui, logger);
     if (!inst.ready)
@@ -489,10 +502,13 @@ async function ensureModelAndLevel(
   deps: CodexRunDeps,
   logger: AgentRunLogger,
 ): Promise<{ ok: boolean; error?: string; endReason?: string }> {
-  const triggerValue = parseTriggerValue(await cdp.modelTriggerText());
-  const modelMatches = exactUiName(triggerValue.model, spec.model);
-  const levelMatches = !spec.level || triggerValue.level === spec.level;
-  if (modelMatches && levelMatches) {
+  // 新建会话/切换项目后输入框工具条会重渲染，刚绑定时模型 chip 可能短暂为空；
+  // 先等回读稳定，避免把「正在渲染」误判成「模型不符」而多余地翻菜单（甚至失败）。
+  let triggerValue = parseTriggerValue(await waitStableTrigger(cdp, deps, 6_000));
+  const matches = (): boolean =>
+    exactUiName(triggerValue.model, spec.model) &&
+    (!spec.level || triggerValue.level === spec.level);
+  if (matches()) {
     logger.info(`[codex] 模型/等级回读已匹配，复用 ${triggerValue.model}${triggerValue.level ? ` ${triggerValue.level}` : ""}`);
     return { ok: true };
   }
@@ -505,12 +521,14 @@ async function ensureModelAndLevel(
     // eslint-disable-next-line no-await-in-loop
     if (!(await cdp.click("modelTrigger")))
       return { ok: false, error: "无法打开 Codex 模型菜单", endReason: "setup_failed" };
+    // 菜单展开动画
     // eslint-disable-next-line no-await-in-loop
-    await deps.sleep(400);
+    await deps.sleep(900);
 
-    if (!modelMatches) {
+    // ---- 模型：菜单项为 menuitemradio，按可见文本精确选择 ----
+    if (!exactUiName(triggerValue.model, spec.model)) {
       // eslint-disable-next-line no-await-in-loop
-      const model = await cdp.clickExact("menuItem", spec.model);
+      const model = await cdp.clickModelItem(spec.model);
       if (!model.clicked)
         return {
           ok: false,
@@ -518,36 +536,75 @@ async function ensureModelAndLevel(
           error: `模型不存在或同名歧义：${spec.model}（匹配 ${model.count}${model.available.length ? `；可见候选=${model.available.slice(0, 20).join("、")}` : ""}）`,
         };
       // eslint-disable-next-line no-await-in-loop
-      await deps.sleep(400);
+      await deps.sleep(700);
     }
+
+    // ---- 思考强度：真机实测是滑块（不是菜单项），用方向键调到目标档位 ----
     if (spec.level) {
-      const candidateTexts = levelUiTexts(spec.level);
-      let levelHit = { clicked: false, count: 0, available: [] as string[] };
-      for (const text of candidateTexts) {
-        // eslint-disable-next-line no-await-in-loop
-        levelHit = await cdp.clickExact("menuItem", text);
-        if (levelHit.clicked) break;
-      }
-      if (!levelHit.clicked)
+      const target = LEVEL_SLIDER_STOP[spec.level];
+      // eslint-disable-next-line no-await-in-loop
+      const set = await cdp.setReasoningSlider(target);
+      if (!set.ok)
         return {
           ok: false,
           endReason: "model_unavailable",
-          error: `思考等级不存在或同名歧义：${spec.level}（候选=${candidateTexts.join("/")}）`,
+          error: `无法把思考强度滑块调到「${spec.level}」（期望档位 ${target}，实际 ${set.value ?? "未读到"}）；请确认模型菜单已展开且含强度滑块`,
         };
+      logger.info(`[codex] 思考强度滑块已设为 ${spec.level}（档位 ${set.value}）`);
       // eslint-disable-next-line no-await-in-loop
       await deps.sleep(400);
     }
+
+    // 菜单选择后 UI 会重渲染：先关菜单再回读触发器文本
     // eslint-disable-next-line no-await-in-loop
-    const after = parseTriggerValue(await cdp.modelTriggerText());
-    if (exactUiName(after.model, spec.model) && (!spec.level || after.level === spec.level))
-      return { ok: true };
+    await cdp.pressEscape();
+    // eslint-disable-next-line no-await-in-loop
+    await deps.sleep(500);
+    // eslint-disable-next-line no-await-in-loop
+    triggerValue = parseTriggerValue(await waitStableTrigger(cdp, deps, 5_000));
+    if (matches()) return { ok: true };
   }
-  const finalValue = parseTriggerValue(await cdp.modelTriggerText());
+  const finalValue = parseTriggerValue(await waitStableTrigger(cdp, deps, 4_000));
   return {
     ok: false,
     endReason: "model_mismatch",
     error: `模型/等级切换回读不一致：期望 ${spec.model}${spec.level ? ` ${spec.level}` : ""}，实际 ${finalValue.model}${finalValue.level ? ` ${finalValue.level}` : ""}`,
   };
+}
+
+/**
+ * 思考强度滑块档位映射（真机实测 26.903.x，aria-valuemin=0 / max=4）：
+ *   0=轻度 1=中 2=高 3=极高 4=极高
+ * 归一等级 → 官方档位（高=2，与界面「高」标签一致）。
+ */
+const LEVEL_SLIDER_STOP: Record<NormalizedLevel, number> = { low: 0, medium: 1, high: 2 };
+
+/**
+ * 等待模型触发器回读稳定：UI 重渲染期间可能出现空文本，连续两次读到相同的非空值才返回。
+ * 超时则返回最后一次读到的值（由调用方判定是否匹配）。
+ */
+async function waitStableTrigger(
+  cdp: CodexCdpClient,
+  deps: CodexRunDeps,
+  timeoutMs: number,
+): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  let last = "";
+  let stableHits = 0;
+  while (Date.now() < deadline) {
+    // eslint-disable-next-line no-await-in-loop
+    const text = (await cdp.modelTriggerText()).trim();
+    if (text && text === last) {
+      stableHits += 1;
+      if (stableHits >= 1) return text;
+    } else {
+      stableHits = 0;
+    }
+    last = text;
+    // eslint-disable-next-line no-await-in-loop
+    await deps.sleep(250);
+  }
+  return last;
 }
 
 /** 强制权限模式（决策 5：完全访问） */

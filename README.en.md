@@ -121,7 +121,7 @@ run_task(projectPath=D:/xxx/my-app, task=「…task brief…」, agentId=codex,
 > store package whose `ChatGPT.exe` cannot be launched directly (policy denies it); it must be started via
 > COM activation with a dedicated `--user-data-dir` before CDP can drive it. `planDoc` / `designSystem` are
 > appended to the initial instruction. See [docs/codex-gui-cdp.en.md](docs/codex-gui-cdp.en.md) and the
-> [hardware acceptance record](docs/codex-windows-smoke.en.md).
+> [hardware acceptance record](docs/codex-windows-smoke.en.md). Projects not yet registered on the Codex side are **registered automatically** — no manual project creation needed.
 
 When driving TraeWork, `model` and `mode` are available:
 

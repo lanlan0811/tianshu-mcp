@@ -39,7 +39,8 @@ export const BUILTIN_PROFILES: Record<string, AgentProfile> = {
       cdpPortRange: 30,
       exeArgs: [],
       windowMode: "reuse",
-      launchTimeoutMs: 60_000,
+      // Codex 冷启动（MSIX 首帧 + 渲染）可能超过 60s；实测约 60-90s，放宽到 150s
+      launchTimeoutMs: 150_000,
       pollIntervalMs: 3_000,
       stableRounds: 4,
       idleTimeoutMs: 10 * 60_000,

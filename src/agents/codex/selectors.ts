@@ -47,6 +47,8 @@ export type CodexSelectorKey =
   | "sourceFolderArea"
   | "createProjectButton"
   | "modelTrigger"
+  | "reasoningSlider"
+  | "modelMenuItem"
   | "menuItem"
   | "permissionTrigger"
   | "permissionOption"
@@ -154,16 +156,45 @@ export const CODEX_SELECTORS: Record<CodexSelectorKey, CodexSelectorSpec> = {
     note: "创建项目确认按钮（须确认源文件夹已挂上后再点；文本匹配还需限定 button）",
   },
   modelTrigger: {
-    // 实测：菜单栏（文件/编辑/视图/帮助）与模式切换器（Codex）都带 aria-haspopup=menu，
-    // 必须排除；真正的模型/等级触发器位于输入框区域内（与 本地/分支/权限 同一组）。
-    primary: 'button[aria-haspopup="menu"]',
-    fallbacks: ["[aria-haspopup='menu']"],
-    excludes: ['[role="menubar"]', "header", '[class*="menubar" i]'],
+    // 真机实测（26.903.x）：输入框工具条同一组有 4 个 aria-haspopup=menu 的 chip：
+    //   本地(aria=选择聊天的运行位置) / 分支(aria=切换分支) / 权限(aria=更改权限) / 模型+等级
+    // 其中只有「模型+等级」chip **没有 aria-label** —— 故用 :not([aria-label]) 精确锁定它。
+    // 早期用通用 `button[aria-haspopup="menu"]`，解析顺序会把「完全访问」排在前面，
+    // 导致 click(modelTrigger) 实际点到权限按钮、模型菜单打不开（真机实测踩坑）。
+    primary: 'button[aria-haspopup="menu"]:not([aria-label])',
+    fallbacks: ['button[aria-haspopup="menu"]:not([aria-label])', '[aria-haspopup="menu"]'],
+    excludes: [
+      '[role="menubar"]',
+      "header",
+      '[class*="menubar" i]',
+      // 兜底：万一日后模型 chip 也带上 aria-label，仍靠排除同组其它 chip 收敛
+      '[aria-label="更改权限"]',
+      '[aria-label="选择聊天的运行位置"]',
+      '[aria-label="切换分支"]',
+      '[aria-label*="permission" i]',
+    ],
     // 作用域：输入框容器（CSS Module 基名 ComposerLayout 稳定，哈希后缀会变）。
     // 兼容性优先，同时列出 ProseMirror 元素本身。
     scope: '[class*="ComposerLayout"],div.ProseMirror[contenteditable="true"]',
     verifiedVersion: "26.903.x",
     note: "模型+思考等级菜单触发器；限定在输入框作用域内，排除顶部菜单栏与模式切换器",
+  },
+  reasoningSlider: {
+    // 真机实测（26.903.x）：思考强度是**滑块**（不是菜单项），
+    // 5 档 aria-valuemin=0 / aria-valuemax=4，标签依次 轻度/中/高/极高/极高。
+    // 位于模型菜单内，用左右方向键调节；必须精确比较，避免「高」误命中「极高」。
+    primary: '[role="slider"]',
+    fallbacks: ['[role="menu"] input[type="range"]', 'input[type="range"]'],
+    verifiedVersion: "26.903.x",
+    note: "模型菜单里的思考强度滑块（用方向键调节，aria-valuenow 表示档位）",
+  },
+  modelMenuItem: {
+    // 真机实测：模型候选是 role=menuitemradio，选中项 aria-checked="true"。
+    // 「默认 推荐模型集」也是 menuitemradio，需按文本/aria-checked 区分。
+    primary: '[role="menu"] [role="menuitemradio"]',
+    fallbacks: ['[role="menuitemradio"]', '[role="listbox"] [role="option"]'],
+    verifiedVersion: "26.903.x",
+    note: "模型候选（menuitemradio，aria-checked 表示当前选中）",
   },
   menuItem: {
     primary: '[role="menu"] [role="menuitem"]',

@@ -98,7 +98,7 @@ export class CodexCdpClient {
     }
   }
 
-  private async pressEscape(): Promise<void> {
+  async pressEscape(): Promise<void> {
     await this.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
     await this.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
   }
@@ -129,18 +129,26 @@ export class CodexCdpClient {
     );
   }
 
-  /** 点击第一个可见元素（DOM click 优先，回退坐标点击） */
-  async click(key: CodexSelectorKey): Promise<boolean> {
-    const point = await this.evaluate<{ x: number; y: number } | null>(
-      this.withResolve(
-        `${this.visibleFilter}const els=__codexResolve(${specArgs(key, this.selectors)});for(const e of els){if(!vis(e))continue;const r=e.getBoundingClientRect();if(e.click){e.click();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}}}return null;`,
-      ),
-    );
-    if (point) return true;
-    const pos = await this.center(key);
-    if (!pos) return false;
-    await this.clickAt(pos.x, pos.y);
-    return true;
+  /**
+   * 点击第一个可见元素。
+   * 真机教训：菜单/弹层需要 **trusted** 事件才会展开——DOM `e.click()` 在这里无效
+   * （曾导致「无法打开 Codex 模型菜单」）。故一律走真实鼠标事件，并等待元素可点。
+   */
+  async click(key: CodexSelectorKey, timeoutMs = 5_000): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      // eslint-disable-next-line no-await-in-loop
+      const pos = await this.center(key);
+      if (pos) {
+        // eslint-disable-next-line no-await-in-loop
+        await this.clickAt(pos.x, pos.y);
+        return true;
+      }
+      if (Date.now() >= deadline) return false;
+      // 元素尚未渲染/不可见：短暂等待后重试（新建会话/切项目后 UI 会重渲染）
+      // eslint-disable-next-line no-await-in-loop
+      await this.evaluate(`new Promise(r=>setTimeout(r,150))`);
+    }
   }
 
   /**
@@ -259,6 +267,95 @@ export class CodexCdpClient {
         })()`,
       )) || ""
     );
+  }
+
+  /**
+   * 读取模型菜单内「思考强度」滑块档位（aria-valuenow）。
+   * 返回 null 表示菜单未展开或未找到滑块。
+   */
+  async reasoningSliderValue(): Promise<number | null> {
+    const v = await this.evaluate<number | null>(
+      this.withResolve(
+        `${this.visibleFilter}
+         const els=__codexResolve(${specArgs("reasoningSlider", this.selectors)}).filter(vis);
+         const s=els[0];
+         if(!s)return null;
+         const n=Number(s.getAttribute('aria-valuenow'));
+         return Number.isFinite(n)?n:null;`,
+      ),
+    );
+    return v === null || v === undefined ? null : Number(v);
+  }
+
+  /**
+   * 读取模型菜单内「选择模型」菜单项文本（形如「GPT-5.6 Sol 高」），
+   * 用于回读当前模型与思考等级（菜单展开时触发器自身文本读不到）。
+   */
+  async modelMenuItemText(): Promise<string> {
+    return (
+      (await this.evaluate<string>(
+        this.withResolve(
+          `${this.visibleFilter}
+           const els=__codexResolve(${specArgs("modelMenuItem", this.selectors)}).filter(vis);
+           // 「选择模型」项带 aria-label；优先它，否则取含模型特征的项
+           const norm=(s)=>(s||'').trim();
+           const pick=els.find((e)=>norm(e.getAttribute('aria-label'))==='选择模型')
+             || els.find((e)=>/GPT|Sol|Claude|Terra|Luna|Astra/i.test(e.innerText||''))
+             || els[0];
+           return pick?((pick.innerText||'').replace(/\\s+/g,' ').trim()):'';`,
+        ),
+      )) || ""
+    );
+  }
+
+  /** 聚焦思考强度滑块 */
+  async focusReasoningSlider(): Promise<boolean> {
+    return this.evaluate<boolean>(
+      this.withResolve(
+        `${this.visibleFilter}
+         const els=__codexResolve(${specArgs("reasoningSlider", this.selectors)}).filter(vis);
+         const s=els[0];
+         if(!s)return false;
+         if(s.focus)s.focus();
+         return document.activeElement===s||s.contains(document.activeElement);`,
+      ),
+    );
+  }
+
+  /**
+   * 用方向键把滑块调到目标档位（精确到 aria-valuenow）。
+   * 先连续左键回到最小，再右键逐档推进，避免依赖起始位置。
+   */
+  async setReasoningSlider(target: number): Promise<{ ok: boolean; value: number | null }> {
+    if (!(await this.focusReasoningSlider())) return { ok: false, value: null };
+    const arrow = async (key: string, vk: number): Promise<void> => {
+      await this.send("Input.dispatchKeyEvent", { type: "rawKeyDown", key, code: key, windowsVirtualKeyCode: vk });
+      await this.send("Input.dispatchKeyEvent", { type: "keyUp", key, code: key, windowsVirtualKeyCode: vk });
+      await this.evaluate(`new Promise(r=>setTimeout(r,60))`);
+    };
+    for (let i = 0; i < 8; i++) await arrow("ArrowLeft", 37);
+    for (let i = 0; i < target; i++) await arrow("ArrowRight", 39);
+    const value = await this.reasoningSliderValue();
+    return { ok: value === target, value };
+  }
+
+  /** 点击模型菜单内的模型项（menuitemradio），按可见文本精确匹配 */
+  async clickModelItem(modelName: string): Promise<{ clicked: boolean; count: number; available: string[] }> {
+    const found = await this.evaluate<{ count: number; available: string[]; point?: { x: number; y: number } }>(
+      this.withResolve(
+        `const norm=(s)=>(s||'').normalize('NFKC').replace(/\\s+/g,' ').trim().toLocaleLowerCase();
+         const target=norm(${JSON.stringify(modelName)});
+         ${this.visibleFilter}
+         const els=__codexResolve(${specArgs("modelMenuItem", this.selectors)}).filter(vis);
+         const available=els.map((e)=>(e.innerText||'').replace(/\\s+/g,' ').trim()).filter(Boolean);
+         const hits=els.filter((e)=>norm(e.innerText)===target);
+         if(hits.length===1){const e=hits[0];const r=e.getBoundingClientRect();return {count:1,available,point:{x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}}}
+         return {count:hits.length,available};`,
+      ),
+    );
+    if (!found.point) return { clicked: false, count: found.count, available: found.available };
+    await this.clickAt(found.point.x, found.point.y);
+    return { clicked: true, count: found.count, available: found.available };
   }
 
   /** 读取当前模型/思考等级触发器文本（限定输入框作用域，排除菜单栏与模式切换器） */

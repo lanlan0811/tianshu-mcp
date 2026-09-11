@@ -119,7 +119,7 @@ run_task(projectPath=D:/xxx/my-app, task=「…任务书…」, agentId=codex,
 > `codex` 现为**桌面端 GUI 驱动**（`driver=gui` + `activation=msix-com`）：Codex 是 MSIX 商店包，
 > 其 `ChatGPT.exe` 无法直接启动（被策略拒绝），须经 COM 激活并注入专属 `--user-data-dir` 后方可
 > 用 CDP 驱动。可传 `planDoc` / `designSystem` 拼进初始指令。详见 [docs/codex-gui-cdp.md](docs/codex-gui-cdp.md)
-> 与 [真机验收记录](docs/codex-windows-smoke.md)。
+> 与 [真机验收记录](docs/codex-windows-smoke.md)。项目未在 Codex 侧登记时会**自动登记**，无需手动建项目。
 
 驱动 TraeWork 时可用 `model` 与 `mode`：
 

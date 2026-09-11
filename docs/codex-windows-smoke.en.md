@@ -61,6 +61,28 @@ None of the following were caught by unit/integration tests (with a fake CDP); a
 | 8 | The native dialog is invisible to UIA top-level enumeration | Use Win32 `EnumWindows` + `FromHandle` |
 | 9 | Leftover native dialogs from a failed run blocked the next run | New `closeStrayDialogs` startup cleanup |
 | 10 | PowerShell cold-start `Add-Type` exceeded the timeout | Widen timeouts; make baseline enumeration non-fatal |
+| 11 | Model trigger mis-matched the permission chip (4 chips in the group share `aria-haspopup="menu"`; only the model chip lacks `aria-label`) | Primary selector → `button[aria-haspopup="menu"]:not([aria-label])` + exclude the other chips |
+| 12 | Reasoning strength is actually `role="slider"` (0–4), not a menu item — the old implementation could never set it | New slider selector + arrow-key driving (轻度/中/高/极高); level comparison now exact-match |
+| 13 | Toolbar re-renders after binding/creating, so a transient empty model read was treated as "model mismatch" | New stable read-back wait (two identical non-empty reads) |
+| 14 | The model menu only opens on a **trusted** click; DOM `element.click()` is ignored ("cannot open Codex model menu") | `click()` now always dispatches real mouse events, with a wait/retry for clickability |
+| 15 | Unregistered projects went through the unreliable native-dialog path (foreground lock) | New `registry.ts` registers directly into Codex project state (idempotent + backup + atomic write + written while the instance is stopped); an unregistered project then completed the full loop |
+| 16 | Registration requires a managed-instance cold start; the 60s readiness budget was too short (~85s measured) | `launchTimeoutMs` raised to 150s |
+
+## 4.1 Round 2: real business task acceptance (2026-09-12)
+
+Driving Codex via this MCP to actually build a "Fruit Ninja" mini-game (HTML+CSS+JS, `GPT-5.6 Sol` with
+reasoning strength "高", project `D:\Trae项目\切水果小游戏`). After 32 minutes Codex produced
+`index.html` / `style.css` / `game.js`; all acceptance checks passed and it was verified playable in headless Edge:
+
+- Clicking "开始切水果" starts the game (start screen disappears);
+- Continuous swipes **raise the score** (observed 2 and 6) and **lives decrement on misses**;
+- Lives exhausted → Game Over shows final score / best combo → "再来一局" restarts (cycled 5 times);
+- No JS exceptions; `game.js` passes a syntax check; zero external resource references (favicon is an inline `data:` URL).
+
+This round exposed and fixed 3 more hardware defects (table 11–13 below): the model trigger matching the
+permission chip, reasoning strength actually being a slider rather than a menu item, and empty reads during
+trigger re-render. Note: this project's Codex-side registration (`local_projects`) was pre-seeded by the test;
+an unregistered new project still goes through the native-dialog path (see §5).
 
 ## 5. Known limitations
 

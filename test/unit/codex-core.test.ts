@@ -36,6 +36,8 @@ import {
   levelUiTexts,
   exactUiName,
   parseTriggerValue,
+  levelTokenMatches,
+  extractLevelToken,
 } from "../../src/agents/codex/model.js";
 import { judgeCodexPoll, initialCodexState } from "../../src/agents/codex/liveness.js";
 import {
@@ -329,9 +331,18 @@ describe("Codex 模型与思考等级", () => {
 
   it("等级候选文案中英双语", () => {
     expect(levelUiTexts("high")).toEqual(["高", "High"]);
-    expect(levelUiTexts("low")).toEqual(["低", "Low"]);
+    expect(levelUiTexts("low")).toEqual(["轻度", "低", "Low", "Light"]);
     expect(normalizeLevel("中")).toBe("medium");
     expect(normalizeLevel("unknown")).toBeUndefined();
+  });
+
+  it("等级文案必须精确匹配，避免「高」误命中「极高」（真机实测滑块含 极高 档）", () => {
+    expect(levelTokenMatches("高", "high")).toBe(true);
+    expect(levelTokenMatches("极高", "high")).toBe(false);
+    expect(levelTokenMatches("中度", "medium")).toBe(false);
+    expect(levelTokenMatches("中", "medium")).toBe(true);
+    expect(extractLevelToken("GPT-5.6 Sol 高")).toBe("高");
+    expect(extractLevelToken("GPT-5.6 Sol 极高")).toBe("极高");
   });
 
   it("触发器回读解析「模型 + 等级」", () => {
@@ -600,6 +611,20 @@ describe("Codex 选择器规范", () => {
     expect(specArgs("createProjectButton")).toContain("创建项目");
   });
 
+  it("模型触发器用 :not([aria-label]) 锁定（真机实测：同组权限/分支/本地 chip 也带 aria-haspopup）", () => {
+    // 真机踩坑：输入框工具条同组 4 个 chip 都有 aria-haspopup=menu，
+    // 只有「模型+等级」没有 aria-label；用通用选择器会先命中「完全访问」导致点错。
+    expect(CODEX_SELECTORS.modelTrigger.primary).toContain(':not([aria-label])');
+    expect(CODEX_SELECTORS.modelTrigger.excludes).toEqual(
+      expect.arrayContaining(['[aria-label="更改权限"]', '[aria-label="选择聊天的运行位置"]', '[aria-label="切换分支"]']),
+    );
+  });
+
+  it("思考强度是滑块选择器，模型候选是 menuitemradio（真机实测菜单结构）", () => {
+    expect(CODEX_SELECTORS.reasoningSlider.primary).toContain('[role="slider"]');
+    expect(CODEX_SELECTORS.modelMenuItem.primary).toContain("menuitemradio");
+  });
+
   it("resolve 函数接受 specArgs 单数组形式（真机曾因参数错位抛 length 错）", async () => {
     // 真机教训：cdp.ts 以 __codexResolve(specArgs(...)) 单数组调用，
     // 若函数只接受 5 个位置参数，texts 为 undefined → 抛 TypeError。
@@ -673,5 +698,96 @@ describe("Codex run 配置归一", () => {
     expect(gui.permissionMode).toBe("完全访问");
     expect(gui.defaultAutoFixRounds).toBe(5);
     expect(gui.fixPlanDir).toBe(".zcode/plans");
+  });
+});
+
+/* ---------------- 项目登记（解决新建项目依赖原生对话框） ---------------- */
+
+describe("Codex 项目登记", () => {
+  const stateWith = (entries: Record<string, { id: string; name: string; rootPaths: string[] }>) => ({
+    "local-projects": entries,
+    "project-order": Object.keys(entries),
+    "unrelated-key": { keep: true },
+  });
+
+  it("已登记同路径（Windows 大小写不敏感）→ 识别为已存在", async () => {
+    const { isProjectRegistered } = await import("../../src/agents/codex/registry.js");
+    const st = stateWith({
+      abc: { id: "abc", name: "切水果小游戏", rootPaths: ["D:\\切水果小游戏"] },
+    });
+    expect(isProjectRegistered(st, "d:\\切水果小游戏")).toBe("abc");
+    expect(isProjectRegistered(st, "D:\\其它")).toBeNull();
+  });
+
+  it("非 Windows 直接 skipped（不写文件）", async () => {
+    const { ensureProjectRegistered } = await import("../../src/agents/codex/registry.js");
+    const r = ensureProjectRegistered("D:PROJX", { activation: "msix-com" } as never, silentLogger, {
+      platform: "linux",
+    });
+    expect(r.status).toBe("skipped");
+  });
+
+  it("登记新项目：写入 local-projects/project-order 且保留其它键、创建备份", async () => {
+    const { ensureProjectRegistered, isProjectRegistered } = await import("../../src/agents/codex/registry.js");
+    const root = await makeTmpRoot("codex-register");
+    const stateFile = path.join(root, "state.json");
+    const before = stateWith({
+      existing: { id: "existing", name: "已有项目", rootPaths: ["D:\\已有"] },
+    });
+    fs.writeFileSync(stateFile, JSON.stringify(before), "utf8");
+    let stopped = 0;
+    const r = ensureProjectRegistered("D:\\切水果小游戏", {} as never, silentLogger, {
+      stateFile,
+      platform: "win32",
+      stopInstances: () => {
+        stopped += 1;
+      },
+    });
+    expect(r.status).toBe("performed");
+    expect(stopped).toBe(1);
+    const after = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+    expect(after["unrelated-key"]).toEqual({ keep: true });
+    expect(isProjectRegistered(after, "D:\\切水果小游戏")).toBeTruthy();
+    expect(after["project-order"][0]).toBe(r.projectId);
+    expect(after["project-order"]).toContain("existing");
+    expect(fs.existsSync(`${stateFile}.tianshu-mcp-backup.json`)).toBe(true);
+    await rmrf(root);
+  });
+
+  it("已登记时不重复写入（幂等）", async () => {
+    const { ensureProjectRegistered } = await import("../../src/agents/codex/registry.js");
+    const root = await makeTmpRoot("codex-register-idempotent");
+    const stateFile = path.join(root, "state.json");
+    fs.writeFileSync(
+      stateFile,
+      JSON.stringify(stateWith({ x: { id: "x", name: "p", rootPaths: ["D:\\切水果小游戏"] } })),
+      "utf8",
+    );
+    const before = fs.readFileSync(stateFile, "utf8");
+    let stopped = 0;
+    const r = ensureProjectRegistered("D:\\切水果小游戏", {} as never, silentLogger, {
+      stateFile,
+      platform: "win32",
+      stopInstances: () => { stopped += 1; },
+    });
+    expect(r.status).toBe("already");
+    expect(stopped).toBe(0);
+    expect(fs.readFileSync(stateFile, "utf8")).toBe(before);
+    await rmrf(root);
+  });
+
+  it("状态文件不可解析 → skipped（回退界面路径，不破坏文件）", async () => {
+    const { ensureProjectRegistered } = await import("../../src/agents/codex/registry.js");
+    const root = await makeTmpRoot("codex-register-badjson");
+    const stateFile = path.join(root, "state.json");
+    fs.writeFileSync(stateFile, "{ not json", "utf8");
+    const r = ensureProjectRegistered("D:PROJX", {} as never, silentLogger, {
+      stateFile,
+      platform: "win32",
+      stopInstances: () => {},
+    });
+    expect(r.status).toBe("skipped");
+    expect(fs.readFileSync(stateFile, "utf8")).toBe("{ not json");
+    await rmrf(root);
   });
 });

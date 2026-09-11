@@ -95,7 +95,16 @@ Multilingual: every key ships bilingual candidates (`texts` / `ariaLabels`) plus
 - `model`: e.g. `GPT-5.6 Sol`
 - `reasoningLevel`: `低/中/高` or `low/medium/high` (normalized internally to `low|medium|high`)
 
-Interaction: open `modelTrigger` → pick the model in `[role="menu"]` → pick the reasoning level → read back the trigger text and verify (expect `<model> <level>`; retry ≤3 times, then abort with `model_mismatch`).
+**Actual UI structure (measured on hardware; differs from the original assumption)**: after opening the model menu —
+
+1. **Models** are `role="menuitemradio"` candidates; the current one has `aria-checked="true"`. Select by exact visible text.
+2. **Reasoning strength is a slider** (`role="slider"`, `aria-valuemin=0` / `aria-valuemax=4`), **not a menu item**:
+   its five stops are labelled **轻度(0) / 中(1) / 高(2) / 极高(3) / 极高(4)**.
+   Drive it by focusing the slider and pressing Left/Right arrows (return to minimum first, then step up, so the result does not depend on the starting position). Hence "高" is `aria-valuenow=2`.
+
+> An early implementation clicked the reasoning strength like a menu item, which **could never set it** (exposed by hardware testing); it now drives the slider with arrow keys. Also, level comparison must be **exact** — the UI contains both "高" and "极高", so a substring match would misread a manually-set "极高" as satisfying "高".
+
+Read-back: while the menu is open the trigger's own text is unreadable, so read the in-menu "选择模型" item text (e.g. `GPT-5.6 Sol 高`) instead, then re-check the trigger text after closing the menu; both reads wait for UI re-render to avoid empty values. Retry ≤3 times, then abort with `model_mismatch`.
 
 ## 7. Project binding and creation
 
@@ -103,7 +112,15 @@ Interaction: open `modelTrigger` → pick the model in `[role="menu"]` → pick 
 
 - **Match rule (decision 2)**: match the target directory's **basename** against Codex's project display names, case-insensitively on Windows; multiple hits → `project_ambiguous`, never guess.
 - **Existing project**: click `在 <name> 中开始新聊天` (fallback to `<name> 的项目操作`) → confirm by reading back the bottom workspace chip.
-- **New project** (matching the screenshot flow): click the project picker → "新建项目" → click the **center blank area** of "源文件夹" (**not** "创建项目" directly) → the Windows **native** folder dialog opens → keyboard-automate the **backslash** absolute path and confirm → confirm the source folder is populated → click "创建项目".
+- **New project (two-tier strategy)**:
+  1. **Automatic registration first** (`src/agents/codex/registry.ts`; deterministic, preferred): write the target directory into Codex's project state `~/.codex/.codex-global-state.json` under `local-projects` + `project-order`, equivalent to the user creating the project once inside Codex. Constraints: **idempotent** (no-op if already registered), **backup before writing** (`.tianshu-mcp-backup.json`, never overwriting an existing backup), **atomic write**, only these two keys are touched, and it only runs while the **MCP-managed instance is stopped** (so a running Codex cannot overwrite it); the user's own default-profile instance is never touched. On non-Windows / missing or unparseable state file → returns `skipped` and falls back to tier 2.
+  2. **UI creation** (fallback, matching the screenshot flow): click the project picker → "新建项目" → click the **center blank area** of "源文件夹" (**not** "创建项目" directly) → the Windows **native** folder dialog opens → keyboard-automate the **backslash** absolute path and confirm → confirm the source folder is populated → click "创建项目".
+
+> Automatic registration removes the "unregistered project stuck at project creation" pain: on hardware, an
+> unregistered directory was registered automatically and then completed the bound path end to end
+> (bind → model/level → permission → send → task done). Note registration stops the managed instance first,
+> so that round is the first task and requires a cold start (about 85s on hardware; `launchTimeoutMs` was
+> raised to 150s).
 
 The native dialog is unreachable from CDP, so `src/agents/codex/dialog.ts` drives it with UIA + `SendInput`, **fail-closed**:
 
