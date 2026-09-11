@@ -71,14 +71,16 @@ export function remoteUserDataDir(commandLine: string): string | null {
   return (m[1] ?? m[2] ?? "").trim() || null;
 }
 
-/** 路径归一（Windows 大小写不敏感 + 统一斜杠），用于身份比较 */
-export function normalizeDir(value: string): string {
-  const norm = path
+/** 路径归一（Windows 大小写不敏感 + 统一斜杠），用于身份比较。
+ *  platform 可注入以便单测在任意宿主上验证 Win/POSIX 两种语义。 */
+export function normalizeDir(value: string, platform: NodeJS.Platform = process.platform): string {
+  const api = platform === "win32" ? path.win32 : path.posix;
+  const norm = api
     .resolve(value)
     .replace(/[\\/]+$/, "")
     .split(/[\\/]+/)
     .join("/");
-  return process.platform === "win32" ? norm.toLowerCase() : norm;
+  return platform === "win32" ? norm.toLowerCase() : norm;
 }
 
 /** 默认专属 profile 目录（不硬编码用户名/盘符） */

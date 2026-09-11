@@ -264,8 +264,14 @@ describe("Codex 启动通道", () => {
     expect(remoteUserDataDir(rows[3]!.commandLine)).toBeNull();
   });
 
-  it("user-data-dir 身份比较在 Windows 下大小写不敏感", () => {
-    expect(normalizeDir("C:\\Users\\A\\Codex")).toBe(normalizeDir("c:/users/a/codex/"));
+  it("user-data-dir 身份比较：Windows 大小写不敏感，POSIX 保留大小写", () => {
+    // 显式注入 platform，避免断言依赖宿主平台（CI 的 ubuntu/macos 会因此失败）
+    expect(normalizeDir("C:\\Users\\A\\Codex", "win32")).toBe(
+      normalizeDir("c:/users/a/codex/", "win32"),
+    );
+    expect(normalizeDir("/Users/A/Codex", "darwin")).not.toBe(
+      normalizeDir("/users/a/codex", "darwin"),
+    );
   });
 
   it("Codex 页面身份：app:// 协议或 ChatGPT/Codex 标题", () => {
