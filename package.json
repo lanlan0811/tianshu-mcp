@@ -20,6 +20,7 @@
     "skills",
     "assets",
     "scripts/probe-zcode.mjs",
+    "scripts/probe-codex.mjs",
     "scripts/smoke-zcode.mjs",
     "scripts/prepare-zcode-fixture.mjs",
     "README.md",
