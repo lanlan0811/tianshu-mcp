@@ -90,7 +90,7 @@ continue_task(taskId=tsk_..., message=选择 PostgreSQL)
 
 | 平台 | 已验证 | 未完成 |
 |---|---|---|
-| Windows 10 x64 | 自动发现 `D:\Z-Code\ZCode\ZCode.exe`、版本 `3.11.2.6792`、既有无 CDP 实例保护、CDP 启动、`tianshu-mcp` 完整路径回读、`DeepSeek/deepseek-flash` 显示值和内部 ID 回读、“完全访问”回读 | 真实提示词发送、文件开发、提问继续、新项目导入和返修闭环 |
+| Windows 10 x64 | 自动发现 `D:\Z-Code\ZCode\ZCode.exe`、版本 `3.11.2.6792`、既有无 CDP 实例保护、CDP 启动、`tianshu-mcp` 完整路径回读、`DeepSeek/deepseek-flash` 显示值和内部 ID 回读、“完全访问”回读，以及隔离 fixture 的原生文件夹面板导入与完整路径确认 | 真实提示词发送、文件开发、提问继续和返修闭环 |
 | macOS | 跨平台实现与 CI 单元/假 CDP 路径 | 真实设备安装、Accessibility、完整端到端证据 |
 
 在两端完整证据补齐之前，内置 profile 必须保持 `research`。

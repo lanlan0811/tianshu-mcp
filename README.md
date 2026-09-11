@@ -63,7 +63,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 221 项测试：35 个文件，含 ZCode 单元/假 CDP/重启/返修闭环
+npm test             # 230 项测试：36 个文件，含 ZCode 单元/假 CDP/重启/返修闭环
 ```
 
 ### 安装 npm 包

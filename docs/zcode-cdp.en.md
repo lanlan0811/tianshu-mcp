@@ -76,7 +76,7 @@ After completion, the shared acceptance engine runs. A failed round writes one p
 
 | Platform | Verified | Pending |
 |---|---|---|
-| Windows 10 x64 | Discovery of `D:\Z-Code\ZCode\ZCode.exe`, version `3.11.2.6792`, non-CDP instance protection, CDP startup, full-path readback for `tianshu-mcp`, display/internal-ID readback for `DeepSeek/deepseek-flash`, and Full Access readback | Real prompt transmission, file development, question continuation, new-project import, and repair loop |
+| Windows 10 x64 | Discovery of `D:\Z-Code\ZCode\ZCode.exe`, version `3.11.2.6792`, non-CDP instance protection, CDP startup, full-path readback for `tianshu-mcp`, display/internal-ID readback for `DeepSeek/deepseek-flash`, Full Access readback, and native folder-picker import plus full-path confirmation for an isolated fixture | Real prompt transmission, file development, question continuation, and the repair loop |
 | macOS | Cross-platform implementation and CI/mock coverage | Real installation, Accessibility, and full end-to-end evidence |
 
 The built-in profile must remain `research` until both pending hardware runs are complete.
