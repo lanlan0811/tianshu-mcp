@@ -281,6 +281,8 @@ function depsFor(fake: FakeCodex, over: Partial<CodexRunDeps> = {}): Partial<Cod
     selectFolder: async () => ({ ok: true, message: "selected" }),
     focusApp: async () => true,
     closeDialogs: async () => 0,
+    // 关键：必须注入 no-op。真实实现会写用户 ~/.codex 的项目状态，测试绝不可污染真实环境。
+    ensureRegistered: () => ({ status: "skipped" as const, message: "test-noop" }),
     sleep: async () => {},
     ...over,
   };
