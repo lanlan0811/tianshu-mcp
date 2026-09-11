@@ -3,6 +3,27 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
+export function parseMacSheetBaseline(baseline: string[]): number | null {
+  if (baseline.length !== 1) return null;
+  const matched = /^sheet-count:(\d+)$/.exec(baseline[0] ?? "");
+  if (!matched) return null;
+  const count = Number(matched[1]);
+  return Number.isSafeInteger(count) ? count : null;
+}
+
+export function validateMacSheetBaseline(
+  baseline: string[],
+): { ok: true; count: 0 } | { ok: false; message: string } {
+  const count = parseMacSheetBaseline(baseline);
+  if (count == null) return { ok: false, message: "macOS ZCode 文件夹面板基线无效，拒绝自动化" };
+  if (count !== 0)
+    return {
+      ok: false,
+      message: `检测到 ${count} 个既有 ZCode sheet，无法唯一证明新文件夹面板，拒绝自动化`,
+    };
+  return { ok: true, count: 0 };
+}
+
 const WINDOWS_LIST_SCRIPT = String.raw`
 Add-Type @'
 using System; using System.Text; using System.Runtime.InteropServices;
@@ -258,10 +279,15 @@ export async function selectZcodeFolder(
     }
   }
   if (process.platform === "darwin") {
-    const baselineCount = Number(/^sheet-count:(\d+)$/.exec(baseline[0] ?? "")?.[1] ?? 0);
+    // System Events 不提供跨观测稳定的 sheet 标识。存在旧 sheet 时，仅凭数量无法证明
+    // 哪个是新面板，因此必须 fail-closed，绝不操作可能属于用户的既有面板。
+    const checkedBaseline = validateMacSheetBaseline(baseline);
+    if (!checkedBaseline.ok) return checkedBaseline;
+    const baselineCount = checkedBaseline.count;
     const script = `on run argv
 set targetFolder to item 1 of argv
 set baselineCount to (item 2 of argv) as integer
+if baselineCount is not 0 then error "EXISTING_ZCODE_SHEET_REFUSED"
 tell application "System Events"
   if UI elements enabled is false then error "ACCESSIBILITY_PERMISSION_REQUIRED"
   tell process "ZCode"
@@ -269,10 +295,17 @@ tell application "System Events"
     set deadline to (current date) + 15
     repeat
       set total to 0
+      set targetFound to false
       repeat with w in windows
-        set total to total + (count of sheets of w)
+        set windowSheetCount to count of sheets of w
+        set total to total + windowSheetCount
+        if total is 1 and windowSheetCount is 1 then
+          set targetSheet to sheet 1 of w
+          set targetFound to true
+        end if
       end repeat
-      if total > baselineCount then exit repeat
+      if total is 1 and targetFound then exit repeat
+      if total > 1 then error "AMBIGUOUS_NEW_ZCODE_FOLDER_SHEET"
       if (current date) > deadline then error "NEW_ZCODE_FOLDER_SHEET_NOT_FOUND"
       delay 0.2
     end repeat
@@ -281,7 +314,7 @@ tell application "System Events"
     keystroke targetFolder
     key code 36
     delay 0.5
-    set targetSheet to sheet 1 of window 1
+    if targetFound is false then error "AMBIGUOUS_NEW_ZCODE_FOLDER_SHEET"
     set submitted to false
     set defaultButtons to every button of targetSheet whose subrole is "AXDefaultButton"
     if (count of defaultButtons) is 1 then
@@ -304,7 +337,7 @@ tell application "System Events"
       repeat with w in windows
         set total to total + (count of sheets of w)
       end repeat
-      if total is less than or equal to baselineCount then exit repeat
+      if total is 0 then exit repeat
       if (current date) > closeDeadline then error "ZCODE_FOLDER_SHEET_STILL_OPEN"
       delay 0.2
     end repeat

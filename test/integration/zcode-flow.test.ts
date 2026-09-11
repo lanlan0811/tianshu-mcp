@@ -19,6 +19,8 @@ import { AcceptanceEngine } from "../../src/verify/acceptance.js";
 import { TaskManager } from "../../src/tasks/task-manager.js";
 import { makeBuildCtx } from "../../src/mcp/context.js";
 import { normPath } from "../../src/util/path.js";
+import { CdpDisconnectedError } from "../../src/agents/zcode/cdp.js";
+import type { ZcodeProjectItem } from "../../src/agents/zcode/project.js";
 
 const logger = new Logger(null, "error");
 const cleanup: string[] = [];
@@ -26,7 +28,7 @@ afterAll(async () => {
   for (const dir of cleanup) await rmrf(dir);
 });
 
-function resolved(): ResolvedAgent {
+function resolved(guiOverrides: Record<string, unknown> = {}): ResolvedAgent {
   const profile = AgentProfileSchema.parse({
     displayName: "ZCode test",
     driver: "gui",
@@ -39,6 +41,7 @@ function resolved(): ResolvedAgent {
       idleTimeoutMs: 1000,
       progressIntervalMs: 1,
       defaultPermissionMode: "完全访问",
+      ...guiOverrides,
     },
   });
   return {
@@ -74,7 +77,7 @@ class FakeZcode {
   async click(key: string) {
     return ["newTask", "projectTrigger", "modelTrigger", "permissionTrigger"].includes(key);
   }
-  async projects() {
+  async projects(): Promise<ZcodeProjectItem[]> {
     return [{ name: path.basename(this.projectPath), path: this.projectPath, id: "p1" }];
   }
   async clickProject() {
@@ -182,6 +185,86 @@ class AmbiguousSessionZcode extends FakeZcode {
   }
   override async sessionForMarker() {
     return undefined;
+  }
+}
+
+class AmbiguousProjectZcode extends FakeZcode {
+  override async projects() {
+    const name = path.basename(await this.boundProjectPath());
+    return [{ name }, { name }];
+  }
+}
+
+class WrongBoundProjectZcode extends FakeZcode {
+  override async boundProjectPath() {
+    return path.join(await super.boundProjectPath(), "wrong");
+  }
+}
+
+class OptionFailureZcode extends FakeZcode {
+  constructor(
+    projectPath: string,
+    private readonly failedKey: string,
+  ) {
+    super(projectPath);
+  }
+  override async clickExact(key: string, value: string) {
+    if (key === this.failedKey) return { clicked: false, count: 0, available: ["other"] };
+    return super.clickExact(key, value);
+  }
+}
+
+class ModelMismatchZcode extends FakeZcode {
+  override async selection() {
+    return { display: "deepseek-flash", internal: "another-model" };
+  }
+}
+
+class PermissionMismatchZcode extends FakeZcode {
+  override async text(key: string) {
+    if (key === "permissionValue") return "受限访问";
+    return super.text(key);
+  }
+}
+
+class InputMismatchZcode extends FakeZcode {
+  override async inputText() {
+    return "输入被 ZCode 截断";
+  }
+}
+
+class DisconnectedZcode extends FakeZcode {
+  override async poll() {
+    if (this.sent) throw new CdpDisconnectedError("test disconnect");
+    return super.poll();
+  }
+}
+
+class IdleZcode extends FakeZcode {
+  override async poll() {
+    if (!this.sent) return super.poll();
+    return {
+      stopVisible: false,
+      loading: false,
+      activeTool: false,
+      assistantText: "回复保持静止但输入框尚未就绪",
+      inputEnabled: false,
+      sendEnabled: false,
+    };
+  }
+}
+
+class RunningForeverZcode extends FakeZcode {
+  override async poll() {
+    if (!this.sent) return super.poll();
+    return {
+      stopVisible: true,
+      loading: false,
+      activeTool: false,
+      assistantText: "仍在运行",
+      inputEnabled: false,
+      sendEnabled: false,
+    };
   }
 }
 
@@ -294,6 +377,127 @@ describe("ZCode 假 CDP 单轮", () => {
     expect(result.endReason).toBe("model_unavailable");
     expect(fake.sent).toBe(0);
   });
+  it("同名项目缺少路径时停止且不发送", async () => {
+    const project = await makeTmpRoot("zcode-project-ambiguous");
+    cleanup.push(project);
+    const fake = new AmbiguousProjectZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.endReason).toBe("project_ambiguous");
+    expect(fake.sent).toBe(0);
+  });
+  it("项目绑定完整路径回读不一致时停止且不发送", async () => {
+    const project = await makeTmpRoot("zcode-project-mismatch");
+    cleanup.push(project);
+    const fake = new WrongBoundProjectZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.endReason).toBe("project_mismatch");
+    expect(fake.sent).toBe(0);
+  });
+  it("模型不存在或同名歧义时停止且不发送", async () => {
+    const project = await makeTmpRoot("zcode-model-missing");
+    cleanup.push(project);
+    const fake = new OptionFailureZcode(project, "modelOption");
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.endReason).toBe("model_unavailable");
+    expect(fake.sent).toBe(0);
+  });
+  it("模型显示值或内部 ID 回读不一致时停止且不发送", async () => {
+    const project = await makeTmpRoot("zcode-model-mismatch");
+    cleanup.push(project);
+    const fake = new ModelMismatchZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.endReason).toBe("model_mismatch");
+    expect(fake.sent).toBe(0);
+  });
+  it("完全访问选项不存在时停止且不发送", async () => {
+    const project = await makeTmpRoot("zcode-permission-missing");
+    cleanup.push(project);
+    const fake = new OptionFailureZcode(project, "permissionOption");
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.endReason).toBe("permission_unknown");
+    expect(fake.sent).toBe(0);
+  });
+  it("完全访问回读不一致时停止且不发送", async () => {
+    const project = await makeTmpRoot("zcode-permission-mismatch");
+    cleanup.push(project);
+    const fake = new PermissionMismatchZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.endReason).toBe("permission_unknown");
+    expect(fake.sent).toBe(0);
+  });
+  it("输入框回读不一致时不发送", async () => {
+    const project = await makeTmpRoot("zcode-input-mismatch");
+    cleanup.push(project);
+    const fake = new InputMismatchZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.endReason).toBe("input_mismatch");
+    expect(fake.sent).toBe(0);
+  });
+  it("macOS Accessibility 缺失时暂停且不发送", async () => {
+    const project = await makeTmpRoot("zcode-system-permission");
+    cleanup.push(project);
+    const fake = new MissingProjectZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: {
+        ...depsFor(fake),
+        listDialogs: async () => ["sheet-count:0"],
+        selectFolder: async () => ({
+          ok: false,
+          needsPermission: true,
+          message: "ACCESSIBILITY_PERMISSION_REQUIRED",
+        }),
+      },
+    });
+    expect(result.needsUserKind).toBe("system_permission");
+    expect(result.pendingQuestion).toMatch(/Accessibility/);
+    expect(fake.sent).toBe(0);
+  });
   it("发送证据不完整时 fail-closed 且不重复发送", async () => {
     const project = await makeTmpRoot("zcode-send-evidence");
     cleanup.push(project);
@@ -360,6 +564,56 @@ describe("ZCode 假 CDP 单轮", () => {
     });
     expect(result.needsUserKind).toBe("close_existing_instance");
     expect(created).toBe(false);
+    expect(result.keptInstance).toBe(true);
+  });
+  it("CDP 断开时 fail-closed 并保留实例", async () => {
+    const project = await makeTmpRoot("zcode-cdp-disconnect");
+    cleanup.push(project);
+    const fake = new DisconnectedZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.endReason).toBe("cdp_disconnected");
+    expect(result.keptInstance).toBe(true);
+    expect(fake.sent).toBe(1);
+  });
+  it("静态回复且 composer 未就绪达到阈值时收敛为空闲超时", async () => {
+    const project = await makeTmpRoot("zcode-idle-timeout");
+    cleanup.push(project);
+    const fake = new IdleZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved({ idleTimeoutMs: 0 }),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.endReason).toBe("idle_timeout");
+    expect(result.keptInstance).toBe(true);
+  });
+  it("任务总时限到达时停止 MCP 等待并保留实例", async () => {
+    const project = await makeTmpRoot("zcode-task-timeout");
+    cleanup.push(project);
+    const fake = new RunningForeverZcode(project);
+    const short = { ...ctx(project), taskTimeoutMs: 2 };
+    const result = await runZcodeTask({
+      ctx: short,
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: {
+        ...depsFor(fake),
+        sleep: async (ms) => {
+          if (ms <= 1) await new Promise((resolve) => setTimeout(resolve, 3));
+        },
+      },
+    });
+    expect(result.endReason).toBe("task_timeout");
+    expect(result.timeout).toBe(true);
     expect(result.keptInstance).toBe(true);
   });
 });

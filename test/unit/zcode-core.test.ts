@@ -7,16 +7,20 @@ import { parseZcodeModel } from "../../src/agents/zcode/model.js";
 import { matchZcodeProject, normalizeProjectPath } from "../../src/agents/zcode/project.js";
 import { validateTaskReferences } from "../../src/agents/zcode/references.js";
 import { judgeZcodePoll } from "../../src/agents/zcode/liveness.js";
+import { parseMacSheetBaseline, validateMacSheetBaseline } from "../../src/agents/zcode/dialog.js";
 import { makeTmpRoot, rmrf } from "../test-utils.js";
 
 describe("ZCode 安装与模型", () => {
   it("Windows 文件夹守卫不覆盖 PowerShell 只读 PID 变量", () => {
-    const source = fs.readFileSync(
-      path.resolve("src", "agents", "zcode", "dialog.ts"),
-      "utf8",
-    );
+    const source = fs.readFileSync(path.resolve("src", "agents", "zcode", "dialog.ts"), "utf8");
     expect(source).not.toMatch(/\$pid\b/i);
     expect(source).toContain("$dialogOwnerPid");
+  });
+  it("macOS 文件夹守卫只操作全进程唯一的新 sheet", () => {
+    const source = fs.readFileSync(path.resolve("src", "agents", "zcode", "dialog.ts"), "utf8");
+    expect(source).not.toContain("set targetSheet to sheet 1 of window 1");
+    expect(source).toContain('error "AMBIGUOUS_NEW_ZCODE_FOLDER_SHEET"');
+    expect(source).toContain("set targetSheet to sheet 1 of w");
   });
   it("显式 gui.exePath 优先且读取真实文件", async () => {
     const root = await makeTmpRoot("zcode-discovery");
@@ -123,7 +127,15 @@ describe("ZCode 安装与模型", () => {
   it("macOS 系统与用户 Applications bundle 均按顺序发现", async () => {
     const root = await makeTmpRoot("zcode-macos-bundles");
     const systemDir = path.join(root, "Applications", "ZCode.app", "Contents", "MacOS");
-    const userDir = path.join(root, "Users", "tester", "Applications", "ZCode.app", "Contents", "MacOS");
+    const userDir = path.join(
+      root,
+      "Users",
+      "tester",
+      "Applications",
+      "ZCode.app",
+      "Contents",
+      "MacOS",
+    );
     fs.mkdirSync(systemDir, { recursive: true });
     fs.mkdirSync(userDir, { recursive: true });
     fs.writeFileSync(path.join(userDir, "ZCode"), "");
@@ -160,12 +172,34 @@ describe("ZCode 安装与模型", () => {
   });
 });
 
+describe("ZCode macOS 文件夹面板基线", () => {
+  it("只接受 listOwnedDialogs 产生的单一非负 sheet 计数", () => {
+    expect(parseMacSheetBaseline(["sheet-count:0"])).toBe(0);
+    expect(parseMacSheetBaseline(["sheet-count:2"])).toBe(2);
+    expect(parseMacSheetBaseline([])).toBeNull();
+    expect(parseMacSheetBaseline(["sheet-count:-1"])).toBeNull();
+    expect(parseMacSheetBaseline(["sheet-count:0", "sheet-count:1"])).toBeNull();
+  });
+  it("存在任何既有 sheet 时 fail-closed，只有零基线可继续", () => {
+    expect(validateMacSheetBaseline(["sheet-count:0"])).toEqual({ ok: true, count: 0 });
+    expect(validateMacSheetBaseline(["sheet-count:1"])).toMatchObject({ ok: false });
+    expect(validateMacSheetBaseline(["bad-baseline"])).toMatchObject({ ok: false });
+  });
+});
+
 describe("ZCode 项目路径与引用", () => {
   it("Windows 路径大小写、斜杠和尾分隔符归一化", () => {
     expect(normalizeProjectPath("D:\\项目\\Demo\\", "win32")).toBe("d:/项目/demo");
     expect(
       matchZcodeProject([{ name: "Demo", path: "d:/项目/demo" }], "D:\\项目\\Demo", "win32").item,
     ).toBeDefined();
+  });
+  it("macOS 路径保留大小写语义并清理尾分隔符", () => {
+    expect(normalizeProjectPath("/Users/Test/Demo/", "darwin")).toBe("/Users/Test/Demo");
+    expect(
+      matchZcodeProject([{ name: "Demo", path: "/Users/Test/Demo" }], "/Users/Test/demo", "darwin")
+        .item,
+    ).toBeUndefined();
   });
   it("只有同名无路径时判歧义", () => {
     expect(

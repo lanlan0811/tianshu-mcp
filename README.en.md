@@ -63,7 +63,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 230 tests across 36 files, including ZCode unit/fake-CDP/restart/repair coverage
+npm test             # 245 tests across 36 files, including ZCode unit/fake-CDP/restart/repair coverage
 ```
 
 ### Install the npm package
