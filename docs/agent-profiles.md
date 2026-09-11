@@ -114,7 +114,7 @@ TraeWork 存活检测相关字段：`stableRounds` 仅确认 DOM 已稳定；随
 | status | 含义 | run_task 行为 |
 |---|---|---|
 | `ready` | 已配 command / discovery 可解析 | 可跑 |
-| `research` | 调研占位（zcode） | resolve 不 ok → run_task 立即失败并给原因 |
+| `research` | 实现已存在，但真机证据尚未完整（当前为 zcode） | 安装探测成功时可跑；否则立即失败并说明原因 |
 | `unsupported` | 明确不支持（见 adapter-matrix.md） | 同上 |
 
 > `traework` 已于 2026-09-08 由 `unsupported` 改为 `ready` + `driver=gui`（CDP 驱动桌面 UI，见 [traework-cdp.md](traework-cdp.md)）。
@@ -123,7 +123,7 @@ TraeWork 存活检测相关字段：`stableRounds` 仅确认 DOM 已稳定；随
 
 ## 常见问题
 
-- **探测到错误文件**：检查 `fileNames` 只写可执行名；zcode 无头入口调研结论为不可用，不自动探测（避免把 `db.sqlite` 之类误判为 CLI）。
+- **探测到错误文件**：检查 `fileNames` 只写合法可执行名。ZCode 只探测桌面程序 `ZCode.exe`/macOS bundle，不把 `db.sqlite`、运行时数据或未公开的 app-server 当作入口。
 - **profile 改动不生效**：server 每次 resolve 会重读 profiles 文件并缓存结果；`get_profiles` 会触发一次新探测。改完 profile 建议重启 server。
 - **env 有敏感值**：仅本机可见，不会写入 task.jsonl/日志；属于自担风险字段。
 - **driver=gui 的 agent 找不到可执行**：`get_profiles` 会显示探测结果；可在 profile 里直接配 `gui.exePath` 指定绝对路径。

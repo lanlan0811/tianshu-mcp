@@ -78,7 +78,7 @@ retain the instance and expose `agentEndReason` / `keptInstance` in metadata.
 
 ## Status semantics
 
-`ready` = command/discovery usable; `research` = implemented or probed but hardware evidence is incomplete; `unsupported` = explicitly not drivable.
+`ready` means command/discovery is usable and its release evidence is complete. `research` means an implementation exists but hardware evidence is incomplete: `run_task` is allowed when installation discovery succeeds and otherwise fails with a diagnostic. `unsupported` means explicitly not drivable.
 
 > `traework` moved from `unsupported` to `ready` + `driver=gui` on 2026-09-08 (CDP-driven desktop UI; see [traework-cdp.en.md](traework-cdp.en.md)).
 
