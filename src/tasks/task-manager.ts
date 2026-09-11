@@ -74,6 +74,7 @@ export class TaskManager {
   }
 
   async getMeta(taskId: string): Promise<TaskMeta | null> {
+    await this.store.waitForStatusWrite(taskId);
     return this.tasks.get(taskId) ?? (await this.store.readSnapshot(taskId));
   }
 
@@ -225,6 +226,9 @@ export class TaskManager {
         "queued",
         reason ? `收到取消请求：${reason}` : "收到取消请求（无 reason）",
       );
+      // pump 从队列取出任务到 orchestrator 首次写 running 之间，快照仍是 queued，
+      // 但 AbortController 已注册。此时也必须中止，否则任务会在 cancelled 后继续执行。
+      this.abortControllers.get(taskId)?.abort();
       await this.store.updateStatus(meta, "cancelled", meta.lastMessage);
       return { found: true };
     }

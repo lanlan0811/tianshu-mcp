@@ -41,6 +41,8 @@ const STATUS_EVENT_MAP: Record<TaskStatus, TaskEventName> = {
 };
 
 export class TaskStore {
+  private readonly statusWriteTails = new Map<string, Promise<void>>();
+
   constructor(
     private readonly home: string,
     private readonly logger: Logger,
@@ -115,20 +117,46 @@ export class TaskStore {
     return readJsonSafe<TaskMeta>(this.snapshotPath(taskId));
   }
 
+  /**
+   * 等待该任务最新的状态事件与快照全部落盘。
+   * 查询/取消调用通过这个屏障，避免在对应 JSONL 事件追加前观察到内存终态。
+   */
+  async waitForStatusWrite(taskId: string): Promise<void> {
+    await this.statusWriteTails.get(taskId);
+  }
+
   async updateStatus(
     meta: TaskMeta,
     status: TaskStatus,
     detail?: string,
     eventName?: TaskEvent["event"],
   ): Promise<void> {
-    const prev = meta.status;
-    meta.status = status;
-    meta.updatedAt = nowIso();
-    if (TERMINAL_STATUSES.includes(status)) meta.finishedAt = meta.updatedAt;
-    const name = eventName ?? STATUS_EVENT_MAP[status];
-    await this.appendEvent(meta.taskId, name, status, detail);
-    await this.writeSnapshot(meta);
-    this.logger.debug(`任务 ${meta.taskId}: ${prev} → ${status}${detail ? ` (${detail})` : ""}`);
+    const taskId = meta.taskId;
+    const previousWrite = this.statusWriteTails.get(taskId);
+    const write = (async () => {
+      if (previousWrite) await previousWrite;
+      const prev = meta.status;
+      // 终态只能由显式的 continue/rework 路径重新入队；异步收尾不得把已经取消、
+      // 失败或完成的任务覆盖回活动态。典型竞态是 pump 已取出 queued 任务，
+      // cancel_task 先落 cancelled，而 orchestrator 稍后才尝试写 running。
+      if (TERMINAL_STATUSES.includes(prev) && status !== prev) {
+        this.logger.warn(`任务 ${taskId}: 忽略非法终态改写 ${prev} → ${status}`);
+        return;
+      }
+      meta.status = status;
+      meta.updatedAt = nowIso();
+      if (TERMINAL_STATUSES.includes(status)) meta.finishedAt = meta.updatedAt;
+      const name = eventName ?? STATUS_EVENT_MAP[status];
+      await this.appendEvent(taskId, name, status, detail);
+      await this.writeSnapshot(meta);
+      this.logger.debug(`任务 ${taskId}: ${prev} → ${status}${detail ? ` (${detail})` : ""}`);
+    })();
+    this.statusWriteTails.set(taskId, write);
+    try {
+      await write;
+    } finally {
+      if (this.statusWriteTails.get(taskId) === write) this.statusWriteTails.delete(taskId);
+    }
   }
 
   async addNote(meta: TaskMeta, detail: string): Promise<void> {
