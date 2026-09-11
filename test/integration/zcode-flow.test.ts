@@ -653,6 +653,33 @@ class PausingAdapter extends ZcodeGuiAdapter {
   }
 }
 
+class EnvironmentPauseAdapter extends ZcodeGuiAdapter {
+  calls: TaskContext[] = [];
+  override async run(
+    ctx: TaskContext,
+    _resolved: ResolvedAgent,
+    _opts: AgentRunOptions,
+  ): Promise<AgentRunResult> {
+    this.calls.push(structuredClone(ctx));
+    const common = {
+      exitCode: 0,
+      timeout: false,
+      killed: false,
+      durationMs: 1,
+      logFile: path.join(ctx.taskDir, `agent-${ctx.round}.log`),
+      keptInstance: true,
+    };
+    if (this.calls.length === 1)
+      return {
+        ok: false,
+        ...common,
+        needsUserKind: "close_existing_instance",
+        pendingQuestion: "请关闭旧实例",
+      };
+    return { ok: true, ...common };
+  }
+}
+
 describe("needs_user → continue_task", () => {
   it("释放后复用同一任务和会话继续，回答只进入恢复上下文", async () => {
     const project = await makeTmpRoot("zcode-continue-project");
@@ -711,5 +738,51 @@ describe("needs_user → continue_task", () => {
       "continued",
     );
     expect(await manager.continueTask(meta.taskId, "重复")).toMatchObject({ found: false });
+  });
+
+  it("环境处理确认恢复原任务，但确认文本不发送给模型", async () => {
+    const project = await makeTmpRoot("zcode-confirm-project");
+    cleanup.push(project);
+    fs.writeFileSync(path.join(project, "README.md"), "x");
+    await gitInitAndCommit(project);
+    const home = await makeTmpRoot("zcode-confirm-home");
+    cleanup.push(home);
+    const data = new DataHome(home, logger, { zcode: resolved().profile });
+    await data.init();
+    const store = new TaskStore(home, logger);
+    const registry = new AgentAdapterRegistry(() => data.loadProfiles(), logger);
+    const adapter = new EnvironmentPauseAdapter("zcode");
+    registry.register("zcode", adapter);
+    const manager = new TaskManager(
+      store,
+      data,
+      registry,
+      new AcceptanceEngine(store, logger),
+      logger,
+      makeBuildCtx({ store, dataHome: data }),
+    );
+    await manager.initialize(1);
+    const meta = await manager.submit({
+      projectPath: normPath(project),
+      displayPath: project,
+      agentId: "zcode",
+      task: "原始开发任务",
+      model: "DeepSeek/deepseek-flash",
+      autoVerify: false,
+      autoFixRounds: 2,
+      taskTimeoutMs: 10_000,
+    });
+    for (let i = 0; i < 100 && (await manager.getMeta(meta.taskId))?.status !== "needs_user"; i++)
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    expect((await manager.continueTask(meta.taskId, "已关闭旧实例")).found).toBe(true);
+    for (let i = 0; i < 100 && (await manager.getMeta(meta.taskId))?.status !== "succeeded"; i++)
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(adapter.calls[1]?.resume).toMatchObject({
+      kind: "continue",
+      message: "已关闭旧实例",
+      sendMessage: false,
+    });
+    expect(adapter.calls[1]?.task).toBe("原始开发任务");
+    await manager.shutdownInterrupt();
   });
 });
