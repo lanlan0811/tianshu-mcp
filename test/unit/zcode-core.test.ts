@@ -69,7 +69,7 @@ describe("ZCode 安装与模型", () => {
         driveRoots: { "C:": cRoot, "D:": dRoot },
         registryDirs: [],
       }),
-    ).toMatchObject({ path: path.win32.join(dRoot, relative), source: "fixed-drive" });
+    ).toMatchObject({ path: path.join(dRoot, relative), source: "fixed-drive" });
     await rmrf(root);
   });
   it("Windows 注册表安装位置和标准目录均可发现", async () => {
@@ -117,7 +117,7 @@ describe("ZCode 安装与模型", () => {
         fixedDrives: [],
         registryDirs: [],
       }),
-    ).toMatchObject({ path: path.win32.join(standardRoot, "ZCode.exe"), source: "standard" });
+    ).toMatchObject({ path: path.join(standardRoot, "ZCode.exe"), source: "standard" });
     await rmrf(root);
   });
   it("macOS 系统与用户 Applications bundle 均按顺序发现", async () => {
@@ -140,12 +140,12 @@ describe("ZCode 安装与模型", () => {
       },
     });
     expect(discoverZcode(profile, { platform: "darwin" })).toMatchObject({
-      path: path.posix.join(userDir, "ZCode"),
+      path: path.join(userDir, "ZCode"),
       source: "bundle",
     });
     fs.writeFileSync(path.join(systemDir, "ZCode"), "");
     expect(discoverZcode(profile, { platform: "darwin" })).toMatchObject({
-      path: path.posix.join(systemDir, "ZCode"),
+      path: path.join(systemDir, "ZCode"),
       source: "bundle",
     });
     await rmrf(root);

@@ -13,8 +13,11 @@ export interface ZcodeCandidate {
 
 function validExecutable(p: string, platform: NodeJS.Platform = process.platform): boolean {
   try {
-    const api = platform === "win32" ? path.win32 : path.posix;
-    return fs.statSync(p).isFile() && /^zcode(?:\.exe)?$/i.test(api.basename(p));
+    const fileName = p.split(/[\\/]/).at(-1) ?? "";
+    return (
+      fs.statSync(p).isFile() &&
+      (platform === "win32" ? /^zcode\.exe$/i : /^zcode$/i).test(fileName)
+    );
   } catch {
     return false;
   }
@@ -117,7 +120,6 @@ export function discoverZcode(
   } = {},
 ): ZcodeCandidate | null {
   const platform = input.platform ?? process.platform;
-  const api = platform === "win32" ? path.win32 : path.posix;
   const explicit = profile.gui?.exePath?.trim() || profile.command?.trim();
   if (explicit && validExecutable(explicit, platform))
     return { path: explicit, source: "explicit", version: fileVersion(explicit) };
@@ -149,7 +151,9 @@ export function discoverZcode(
       for (const drive of drives)
         for (const rel of disc.relativePaths ?? [])
           candidates.push({
-            p: path.win32.join(input.driveRoots?.[drive] ?? `${drive}\\`, rel),
+            // `platform` can be injected for cross-platform tests; candidate paths still belong
+            // to the host filesystem that performs fs.statSync.
+            p: path.join(input.driveRoots?.[drive] ?? `${drive}\\`, rel),
             source: "fixed-drive",
           });
       return candidates;
@@ -168,9 +172,9 @@ export function discoverZcode(
 
     const registryCandidates: Array<{ p: string; source: ZcodeCandidate["source"] }> = [];
     for (const dir of input.registryDirs ?? registryInstallLocations()) {
-      registryCandidates.push({ p: path.win32.join(dir, "ZCode.exe"), source: "registry" });
+      registryCandidates.push({ p: path.join(dir, "ZCode.exe"), source: "registry" });
       registryCandidates.push({
-        p: path.win32.join(dir, "ZCode", "ZCode.exe"),
+        p: path.join(dir, "ZCode", "ZCode.exe"),
         source: "registry",
       });
     }
@@ -183,7 +187,7 @@ export function discoverZcode(
     const dir = expandEnvPath(dirTpl.replace("{HOME}", os.homedir()));
     for (const name of disc.fileNames ?? [])
       standardCandidates.push({
-        p: api.join(dir, name),
+        p: path.join(dir, name),
         source: platform === "darwin" && dir.includes(".app") ? "bundle" : "standard",
       });
   }
