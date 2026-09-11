@@ -9,7 +9,7 @@
  */
 import { TaskStore } from "./task-store.js";
 import { type TaskMeta, ACTIVE_STATUSES, isTerminal } from "./task.js";
-import type { TraeworkMode } from "../config/schema.js";
+import type { TraeworkMode, ReasoningLevel } from "../config/schema.js";
 import { TaskOrchestrator } from "../loop/fix-loop.js";
 import { genTaskId, nowIso } from "../util/id.js";
 import type { DataHome } from "../config/store.js";
@@ -25,8 +25,14 @@ export interface NewTaskInput {
   agentId: string;
   task: string;
   context?: string;
-  /** GUI 类 agent（traework）使用的模型名；CLI 类忽略 */
+  /** GUI 类 agent（traework/codex）使用的模型名；CLI 类忽略 */
   model?: string;
+  /** Codex GUI 思考等级；其他 agent 忽略 */
+  reasoningLevel?: ReasoningLevel;
+  /** Codex GUI 初始开发指令引用的计划文档路径 */
+  planDoc?: string;
+  /** Codex GUI 初始开发指令引用的设计系统目录路径 */
+  designSystem?: string;
   /** GUI 类 agent（traework）使用的面板模式；CLI 类忽略 */
   mode?: TraeworkMode;
   autoVerify: boolean;
@@ -111,6 +117,9 @@ export class TaskManager {
       task: input.task,
       context: input.context,
       model: input.model,
+      reasoningLevel: input.reasoningLevel,
+      planDoc: input.planDoc,
+      designSystem: input.designSystem,
       mode: input.mode,
       autoVerify: input.autoVerify,
       autoFixRounds: input.autoFixRounds,

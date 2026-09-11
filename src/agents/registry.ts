@@ -9,7 +9,9 @@ import type { AgentAdapter, ResolvedAgent, AgentRunResult, TaskContext } from ".
 import { CliAdapter } from "./cli.js";
 import { TraeworkGuiAdapter } from "./traework/adapter.js";
 import { ZcodeGuiAdapter } from "./zcode/adapter.js";
+import { CodexGuiAdapter } from "./codex/adapter.js";
 import { discoverZcode } from "./zcode/discovery.js";
+import { discoverCodex } from "./codex/discovery.js";
 import type { AgentProfile } from "../config/schema.js";
 import type { SpawnResult } from "./spawn.js";
 import { Logger } from "../util/log.js";
@@ -41,12 +43,16 @@ export class AgentAdapterRegistry {
     if (adapterType === "zcode-gui") {
       if (!(current instanceof ZcodeGuiAdapter))
         this.adapters.set(agentId, new ZcodeGuiAdapter(agentId));
+    } else if (adapterType === "codex-gui") {
+      if (!(current instanceof CodexGuiAdapter))
+        this.adapters.set(agentId, new CodexGuiAdapter(agentId));
     } else if (adapterType === "traework-gui") {
       if (!(current instanceof TraeworkGuiAdapter))
         this.adapters.set(agentId, new TraeworkGuiAdapter(agentId));
     } else if (
       current instanceof TraeworkGuiAdapter ||
       current instanceof ZcodeGuiAdapter ||
+      current instanceof CodexGuiAdapter ||
       !current
     ) {
       this.adapters.set(agentId, new CliAdapter(agentId));
@@ -115,6 +121,35 @@ export class AgentAdapterRegistry {
         argsTemplate: profile.argsTemplate,
         ok: false,
         message: profile.note || `agent '${agentId}' 被标记为 unsupported`,
+      };
+    }
+    // Codex 桌面端（MSIX）：不走 dirs/PATH 通用探测，用 Appx 查询 + 扫盘
+    if (profile.adapter === "codex-gui") {
+      const found = discoverCodex(profile);
+      if (found)
+        return {
+          id: agentId,
+          displayName: profile.displayName || agentId,
+          profile,
+          command: found.path,
+          argsTemplate: profile.argsTemplate,
+          ok: true,
+          message: `探测到 Codex: ${found.path}${found.version ? ` (v${found.version})` : ""}${found.aumid ? `；AUMID=${found.aumid}` : ""}`,
+          discovered: {
+            source: found.source === "explicit" ? "explicit" : "discovery",
+            version: found.version,
+          },
+        };
+      return {
+        id: agentId,
+        displayName: profile.displayName || agentId,
+        profile,
+        command: "",
+        argsTemplate: profile.argsTemplate,
+        ok: false,
+        message:
+          profile.note ||
+          `未探测到 Codex 桌面端（Get-AppxPackage 查询与 ${"WindowsApps"} 扫盘均失败）；请确认已安装 Codex`,
       };
     }
     if (profile.status === "research") {

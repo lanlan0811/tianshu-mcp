@@ -84,7 +84,51 @@ retain the instance and expose `agentEndReason` / `keptInstance` in metadata.
 
 > `zcode` uses `driver=gui` + `adapter=zcode-gui`. It requires `provider/model`, confirms Full Access, and defaults to two automatic repair rounds. The Windows hardware loop is complete; the built-in profile remains `research` until the macOS hardware loop is recorded.
 
+> `codex` uses `driver=gui` + `adapter=codex-gui` + `activation=msix-com`. Task parameters include `model` (e.g. `GPT-5.6 Sol`), `reasoningLevel` (低/中/高 or low/medium/high), `planDoc` and `designSystem`; it confirms Full Access and defaults to five automatic repair rounds. Machine-verified on Windows; the built-in macOS status is `research`. See [codex-gui-cdp.en.md](codex-gui-cdp.en.md).
+
 ## Real-machine sample
+
+### Codex desktop (GUI driver, Windows-verified 2026-09-11)
+
+```jsonc
+{
+  "profiles": {
+    "codex": {
+      "displayName": "Codex (ChatGPT desktop GUI)",
+      "type": "cli",
+      "driver": "gui",
+      "adapter": "codex-gui",
+      "status": "ready",
+      "command": null, "argsTemplate": [], "promptMode": "arg", "cwd": "task",
+      "timeoutMs": 1800000, "killTree": "taskkill",
+      "authNote": "reuses ~/.codex (shared with any instance the user opened; the managed instance uses a dedicated user-data-dir)",
+      "executableDiscovery": {
+        // Appx query first (version-agnostic); scan fallback. No version numbers / absolute paths.
+        "appxPackageName": "OpenAI.Codex",
+        "installRelativeExe": ["app/ChatGPT.exe"],
+        "scanRoots": ["{SYSTEMDRIVE}/Program Files/WindowsApps"],
+        "scanPattern": "OpenAI.Codex_*_x64__*/app/ChatGPT.exe"
+      },
+      "gui": {
+        "activation": "msix-com",
+        "userDataDir": "{LOCALAPPDATA}/tianshu-mcp/codex-gui/profile",
+        "appxPackageName": "OpenAI.Codex",
+        "cdpPort": 9333, "cdpPortAuto": true,
+        "permissionMode": "完全访问",
+        "fixPlanDir": ".zcode/plans",
+        "defaultAutoFixRounds": 5,
+        "launchTimeoutMs": 60000, "pollIntervalMs": 3000,
+        "stableRounds": 4, "idleTimeoutMs": 600000,
+        "selectors": {}
+      }
+    }
+  }
+}
+```
+
+> **Essential**: `activation: "msix-com"` and `userDataDir` are both mandatory — the GUI host `ChatGPT.exe` cannot be launched directly (policy denies), and reusing the default profile means the debug port never opens. Details: [codex-gui-cdp.en.md](codex-gui-cdp.en.md).
+
+### Historical: Codex kernel CLI (`codex exec`, superseded by the GUI driver)
 
 ```jsonc
 {
@@ -103,3 +147,5 @@ retain the instance and expose `agentEndReason` / `keptInstance` in metadata.
   }
 }
 ```
+
+> Kept as a historical record; this path is no longer the built-in default.

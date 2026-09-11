@@ -13,21 +13,40 @@ export const TraeworkModeSchema = z.enum(["Work", "Code", "Design"]);
 /** TraeWork 面板模式类型（单一真源，供 adapter/task/ui 共用） */
 export type TraeworkMode = z.infer<typeof TraeworkModeSchema>;
 
+/** Codex 思考等级：接受中英双语写法，内部归一为 low/medium/high */
+export const ReasoningLevelSchema = z.enum(["低", "中", "高", "low", "medium", "high"]);
+export type ReasoningLevel = z.infer<typeof ReasoningLevelSchema>;
+
 export const RunTaskParamsSchema = z.object({
   projectPath: AbsPath,
   task: z.string().min(1, "task 任务书不能为空"),
   agentId: z.string().min(1).optional(),
   /**
-   * 目标 agent 使用的模型（GUI 类 agent 如 traework 用；CLI 类 agent 忽略）。
-   * 例：GLM-5.3 / DeepSeek-V4-Flash。未传时沿用 agent 侧当前选择。
+   * 目标 agent 使用的模型（GUI 类 agent 如 traework/codex 用；CLI 类 agent 忽略）。
+   * 例：GLM-5.3 / DeepSeek-V4-Flash / GPT-5.6 Sol。未传时沿用 agent 侧当前选择。
    */
   model: z.string().min(1).optional(),
+  /**
+   * Codex 思考等级（仅 codex GUI 生效）。中英双语：低/中/高 或 low/medium/high。
+   * 未传时沿用 Codex 面板当前等级。
+   */
+  reasoningLevel: ReasoningLevelSchema.optional(),
   /**
    * TraeWork 面板模式（仅 GUI 类 agent traework 生效）。
    * 未传时从任务书文本识别「切换 Work/Code/Design 模式」，仍识别不到则保持 Work。
    * 项目文件夹绑定固定发生在 Work 模式，随后再切到目标模式。
    */
   mode: TraeworkModeSchema.optional(),
+  /**
+   * 计划文档路径（仅 codex GUI 生效）：相对项目根或绝对路径，
+   * 会被拼进初始开发指令「根据计划文档(<planDoc>)…」。
+   */
+  planDoc: z.string().min(1).optional(),
+  /**
+   * 设计系统目录路径（仅 codex GUI 生效）：相对项目根或绝对路径，
+   * 会被拼进初始开发指令「…和设计系统(<designSystem>)…」。
+   */
+  designSystem: z.string().min(1).optional(),
   autoVerify: z.boolean().optional(),
   autoFixRounds: z.number().int().min(0).max(10).optional(),
   context: z.string().optional(),
@@ -135,7 +154,7 @@ export type ServerConfig = z.infer<typeof ServerConfigSchema>;
 
 export const ExecutableDiscoverySchema = z.object({
   /**
-   * 候选根目录。支持 {LOCALAPPDATA} {APPDATA} {HOME} {USERPROFILE} 占位符与
+   * 候选根目录。支持 {LOCALAPPDATA} {APPDATA} {HOME} {USERPROFILE} {PROGRAMFILES} 占位符与
    * 平台相对路径；留空时由实现按平台注入标准候选（如 Windows 的 LOCALAPPDATA、macOS 的 ~/Applications）。
    */
   dirs: z.array(z.string()).default([]),
@@ -146,6 +165,14 @@ export const ExecutableDiscoverySchema = z.object({
   preferredDrives: z.array(z.string().regex(/^[A-Za-z]:$/)).default([]),
   /** 相对固定盘根目录的候选可执行路径。 */
   relativePaths: z.array(z.string()).default([]),
+  /** MSIX 应用包名（如 OpenAI.Codex）；用于 Get-AppxPackage 优先查询。 */
+  appxPackageName: z.string().optional(),
+  /** 包安装目录内、相对可执行路径（如 app/ChatGPT.exe）。 */
+  installRelativeExe: z.array(z.string()).default([]),
+  /** MSIX 回退扫盘的根目录（支持 {SYSTEMDRIVE} 等占位符）。 */
+  scanRoots: z.array(z.string()).default([]),
+  /** 扫盘时目录名匹配模式（glob，`*` 通配），如 OpenAI.Codex_*_x64__<pfn>/app/ChatGPT.exe。 */
+  scanPattern: z.string().optional(),
 });
 
 /**
@@ -195,6 +222,23 @@ export const GuiProfileSchema = z.object({
   defaultPermissionMode: z.string().optional(),
   /** agent 级自动返修默认轮数。 */
   defaultAutoFixRounds: z.number().int().min(0).max(10).optional(),
+  /**
+   * GUI 启动通道：spawn=直接以子进程启动 exe（ZCode/TraeWork）；
+   * msix-com=Windows MSIX 应用经 IApplicationActivationManager COM 激活（Codex 桌面端）。
+   */
+  activation: z.enum(["spawn", "msix-com"]).default("spawn"),
+  /**
+   * MSIX 应用的专属 user-data-dir（activation=msix-com 时必需）。
+   * 必须独立于用户手动打开的实例，否则单实例锁会导致调试端口无法开启。
+   * 支持 {LOCALAPPDATA} {APPDATA} {HOME} {USERPROFILE} 等占位符。
+   */
+  userDataDir: z.string().optional(),
+  /** MSIX 应用包名（activation=msix-com 时用于 Get-AppxPackage 查询）。 */
+  appxPackageName: z.string().optional(),
+  /** 发送前必须确认的权限模式（如「完全访问」）。未配置则不强制。 */
+  permissionMode: z.string().optional(),
+  /** 修复计划文档输出目录（相对项目根），默认 .zcode/plans/。 */
+  fixPlanDir: z.string().optional(),
 });
 export type GuiProfile = z.infer<typeof GuiProfileSchema>;
 
@@ -208,7 +252,7 @@ export const AgentProfileSchema = z.object({
    */
   driver: z.enum(["spawn", "gui"]).default("spawn"),
   /** GUI adapter 显式判别；旧 profile 缺省时保持 TraeWork 兼容行为。 */
-  adapter: z.enum(["traework-gui", "zcode-gui"]).optional(),
+  adapter: z.enum(["traework-gui", "zcode-gui", "codex-gui"]).optional(),
   status: z.enum(["ready", "research", "unsupported"]).default("ready"),
   command: z.string().nullable().optional(),
   argsTemplate: z.array(z.string()).default([]),

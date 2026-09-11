@@ -2,7 +2,7 @@
  * Task 类型 / 状态枚举 / 状态机迁移表。
  * 状态机见开发计划 §6：queued → running → … → succeeded/failed/cancelled/interrupted。
  */
-import type { TraeworkMode } from "../config/schema.js";
+import type { TraeworkMode, ReasoningLevel } from "../config/schema.js";
 
 export const TASK_STATUSES = [
   "queued",
@@ -115,8 +115,14 @@ export interface TaskMeta {
   agentId: string;
   task: string;
   context?: string;
-  /** GUI 类 agent（traework）使用的模型名；CLI 类忽略 */
+  /** GUI 类 agent（traework/codex）使用的模型名；CLI 类忽略 */
   model?: string;
+  /** Codex GUI 思考等级（已归一 low/medium/high）；其他 agent 忽略 */
+  reasoningLevel?: ReasoningLevel;
+  /** Codex GUI 初始开发指令引用的计划文档路径 */
+  planDoc?: string;
+  /** Codex GUI 初始开发指令引用的设计系统目录路径 */
+  designSystem?: string;
   /** GUI 类 agent（traework）使用的面板模式（Work/Code/Design）；CLI 类忽略 */
   mode?: TraeworkMode;
   autoVerify: boolean;

@@ -168,6 +168,8 @@ function guiOf(resolved: ResolvedAgent): GuiProfile {
     freshSession: g?.freshSession ?? true,
     selectors: g?.selectors ?? {},
     modelRequired: g?.modelRequired ?? false,
+    activation: g?.activation ?? "spawn",
+    permissionMode: g?.permissionMode,
     defaultPermissionMode: g?.defaultPermissionMode,
     defaultAutoFixRounds: g?.defaultAutoFixRounds,
   };

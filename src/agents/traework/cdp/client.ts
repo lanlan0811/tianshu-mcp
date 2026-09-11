@@ -35,6 +35,12 @@ export interface CdpClientOptions {
   connectTimeoutMs?: number;
   /** 单次 CDP 命令等待响应的超时（ms） */
   sendTimeoutMs?: number;
+  /**
+   * 多个 page target 时的排序偏好（返回值越小越优先）。
+   * 缺省取列表首个 page。Codex 等应用会额外暴露 avatar-overlay 等次级窗口，
+   * 需借此收敛到主应用窗口。
+   */
+  targetRank?: (t: CdpPageTarget) => number;
 }
 
 export interface LivenessProbe {
@@ -126,6 +132,14 @@ export class TraeworkCdpClient {
     }
   }
 
+  /** 从目标列表按偏好选出要连接的 page（缺省取首个） */
+  private pickTarget(targets: CdpPageTarget[]): CdpPageTarget | undefined {
+    const pages = targets.filter((t) => t.type === "page");
+    if (!pages.length) return undefined;
+    if (!this.opts.targetRank) return pages[0];
+    return [...pages].sort((a, b) => this.opts.targetRank!(a) - this.opts.targetRank!(b))[0];
+  }
+
   /** 连接页面（取第一个 type=page 目标） */
   async connect(): Promise<void> {
     let targets: CdpPageTarget[];
@@ -136,7 +150,7 @@ export class TraeworkCdpClient {
         `无法连接端口 ${this.port}（请确认 TraeWork 以 --remote-debugging-port=${this.port} 启动且窗口可见）：${(e as Error).message}`,
       );
     }
-    const page = targets.find((t) => t.type === "page");
+    const page = this.pickTarget(targets);
     if (!page) {
       throw new CdpUnavailableError(`端口 ${this.port} 上没有页面目标（TraeWork 可能仍在启动中）`);
     }

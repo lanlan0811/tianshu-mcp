@@ -66,6 +66,8 @@ function guiOf(resolved: ResolvedAgent): GuiProfile {
     freshSession: g?.freshSession ?? true,
     selectors: g?.selectors ?? {},
     modelRequired: g?.modelRequired ?? true,
+    activation: g?.activation ?? "spawn",
+    permissionMode: g?.permissionMode,
     defaultPermissionMode: g?.defaultPermissionMode ?? "完全访问",
     defaultAutoFixRounds: g?.defaultAutoFixRounds ?? 2,
   };

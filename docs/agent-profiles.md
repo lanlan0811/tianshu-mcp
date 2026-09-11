@@ -78,36 +78,79 @@ TraeWork 存活检测相关字段：`stableRounds` 仅确认 DOM 已稳定；随
 3. `fallbackCommand` / 相对 command 在 PATH 中查找
 4. 全失败 → `ok:false`，`get_profiles` 会显示原因
 
-> Codex 的 `<hash>` 版本目录更新：dirs 配到 `.../Codex/bin`、fileNames 配 `codex.exe`，每次 resolve 自动取最新目录；也可在 run 前手动重启 server 重探。
+> Codex 桌面端为 MSIX 应用：自 2026-09-11 起用 `codex-gui`（GUI 驱动，见 [codex-gui-cdp.md](codex-gui-cdp.md)），**不再走 `codex exec`**。早期内核 CLI 的 `<hash>` 目录探测结论保留于 adapter-matrix 的 C1 节。
 
-## 本机真实样例（M2 codex 真实冒烟已定稿，2026-09-07）
+## 本机真实样例
+
+### Codex 桌面端（GUI 驱动，2026-09-11 Windows 真机已验证）
 
 ```jsonc
 // ~/.tianshu-mcp/agent-profiles.json （Windows 示例）
 {
   "profiles": {
     "codex": {
-      "displayName": "Codex (桌面端 CLI)",
+      "displayName": "Codex (ChatGPT 桌面端 GUI)",
       "type": "cli",
+      "driver": "gui",
+      "adapter": "codex-gui",
       "status": "ready",
-      "command": "C:/Users/Lenovo/AppData/Local/OpenAI/Codex/bin/8e5b6932251c2c1c/codex.exe",
-      "argsTemplate": ["exec", "<prompt:arg>", "--skip-git-repo-check", "--sandbox", "workspace-write"],
+      "command": null,
+      "argsTemplate": [],
       "promptMode": "arg",
       "cwd": "task",
       "timeoutMs": 1800000,
       "killTree": "taskkill",
-      "authNote": "复用 ~/.codex 登录态；非交互保持 --sandbox workspace-write（勿与 --approve-for-me 同用，实测互斥）",
+      "authNote": "复用 ~/.codex 登录态（与用户手动打开的实例共享；受管实例使用专属 user-data-dir）",
       "executableDiscovery": {
-        "dirs": ["C:/Users/Lenovo/AppData/Local/OpenAI/Codex/bin"],
-        "fileNames": ["codex.exe", "codex"],
-        "fallbackCommand": "codex"
+        // Appx 查询优先（自动跟版本），失败回退扫盘；均动态，不含版本号/绝对路径
+        "appxPackageName": "OpenAI.Codex",
+        "installRelativeExe": ["app/ChatGPT.exe"],
+        "scanRoots": ["{SYSTEMDRIVE}/Program Files/WindowsApps"],
+        "scanPattern": "OpenAI.Codex_*_x64__*/app/ChatGPT.exe"
+      },
+      "gui": {
+        "activation": "msix-com",
+        "userDataDir": "{LOCALAPPDATA}/tianshu-mcp/codex-gui/profile",
+        "appxPackageName": "OpenAI.Codex",
+        "cdpPort": 9333,
+        "cdpPortAuto": true,
+        "permissionMode": "完全访问",
+        "fixPlanDir": ".zcode/plans",
+        "defaultAutoFixRounds": 5,
+        "launchTimeoutMs": 60000,
+        "pollIntervalMs": 3000,
+        "stableRounds": 4,
+        "idleTimeoutMs": 600000,
+        "selectors": {}
       }
     }
   }
 }
 ```
 
-> 实测详情见 [m2-smoke-record.md](m2-smoke-record.md)：run_task → verify_task 真实跑通；`<hash>` 版本目录随 Codex 更新，用 `executableDiscovery` 自动取最新即可。
+> **要点**：`activation: "msix-com"` 与 `userDataDir` 缺一不可——GUI 宿主 `ChatGPT.exe` 无法直启（策略拒绝），且复用默认 profile 时调试端口不会开启。详见 [codex-gui-cdp.md](codex-gui-cdp.md)。
+
+### 历史：Codex 内核 CLI（`codex exec`，已被 GUI 驱动取代）
+
+```jsonc
+{
+  "profiles": {
+    "codex": {
+      "displayName": "Codex (桌面端 CLI)",
+      "type": "cli",
+      "status": "ready",
+      "command": "C:/Users/<你>/AppData/Local/OpenAI/Codex/bin/<hash>/codex.exe",
+      "argsTemplate": ["exec", "<prompt:arg>", "--skip-git-repo-check", "--sandbox", "workspace-write"],
+      "promptMode": "arg",
+      "cwd": "task",
+      "killTree": "taskkill",
+      "executableDiscovery": { "dirs": ["{LOCALAPPDATA}/OpenAI/Codex/bin"], "fileNames": ["codex.exe"] }
+    }
+  }
+}
+```
+
+> 历史实测见 [m2-smoke-record.md](m2-smoke-record.md)；`<hash>` 目录随 Codex 更新，用 `executableDiscovery` 自动取最新。该路径已不作为内置默认。
 
 ## 状态与轮询语义
 
@@ -120,6 +163,8 @@ TraeWork 存活检测相关字段：`stableRounds` 仅确认 DOM 已稳定；随
 > `traework` 已于 2026-09-08 由 `unsupported` 改为 `ready` + `driver=gui`（CDP 驱动桌面 UI，见 [traework-cdp.md](traework-cdp.md)）。
 
 > `zcode` 使用 `driver=gui` + `adapter=zcode-gui`。`model` 必须是 `供应商/模型`，默认权限为“完全访问”、默认自动返修 2 轮。Windows 真机闭环已完成；macOS 真机证据完成前内置状态保持 `research`。
+
+> `codex` 使用 `driver=gui` + `adapter=codex-gui` + `activation=msix-com`。任务参数含 `model`（如 `GPT-5.6 Sol`）、`reasoningLevel`（低/中/高 或 low/medium/high）、`planDoc`、`designSystem`；默认权限“完全访问”、默认自动返修 5 轮。Windows 真机已验证；macOS 内置状态为 `research`。详见 [codex-gui-cdp.md](codex-gui-cdp.md)。
 
 ## 常见问题
 

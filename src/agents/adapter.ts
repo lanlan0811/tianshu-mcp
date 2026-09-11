@@ -5,6 +5,7 @@
  */
 import type { SpawnSpec } from "./spawn.js";
 import type { AgentProfile, TraeworkMode } from "../config/schema.js";
+import type { ReasoningLevel } from "../config/schema.js";
 
 export interface ResolvedAgent {
   id: string;
@@ -32,6 +33,12 @@ export interface TaskContext {
   taskTimeoutMs: number;
   /** GUI 类 agent（traework）使用的模型名；CLI 类忽略 */
   model?: string;
+  /** Codex GUI 思考等级（已归一 low/medium/high）；其他 agent 忽略 */
+  reasoningLevel?: ReasoningLevel;
+  /** Codex GUI 初始开发指令引用的计划文档路径；其他 agent 忽略 */
+  planDoc?: string;
+  /** Codex GUI 初始开发指令引用的设计系统目录路径；其他 agent 忽略 */
+  designSystem?: string;
   /** GUI 类 agent（traework）使用的面板模式；CLI 类忽略 */
   mode?: TraeworkMode;
   /** needs_user / 返修时恢复原 GUI 会话。 */

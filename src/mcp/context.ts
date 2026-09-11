@@ -21,25 +21,50 @@ export function makeBuildCtx(services: AppServices) {
     task: meta.task,
     context: meta.context,
     model: meta.model,
+    reasoningLevel: meta.reasoningLevel,
+    planDoc: meta.planDoc,
+    designSystem: meta.designSystem,
     mode: meta.mode,
     round,
     feedback,
     taskDir: services.store.dir(meta.taskId),
     workDir: meta.projectPath,
     taskTimeoutMs: meta.taskTimeoutMs,
-    resume:
-      meta.agentId === "zcode" && (meta.continueMessage !== undefined || round > 0)
-        ? {
-            kind: meta.continueMessage !== undefined ? "continue" : "rework",
-            message: meta.continueMessage,
-            sendMessage: meta.continueSendMessage ?? round > 0,
-            sessionId: meta.zcodeSessionId,
-            sessionTitle: meta.zcodeSessionTitle,
-            boundProjectPath: meta.boundProjectPath,
-            provider: meta.modelProvider,
-            model: meta.model,
-            permissionMode: meta.permissionMode,
-          }
-        : undefined,
+    resume: buildResume(meta, round),
   });
+}
+
+/**
+ * GUI agent 的会话恢复块。
+ * - zcode：需要显式回选原会话（sessionId/sessionTitle），轮次 > 0 或 continue_task 时启用。
+ * - codex：实例与当前对话常驻，只需「复用同一会话」意图，无需回选 id。
+ */
+function buildResume(meta: TaskMeta, round: number): TaskContext["resume"] {
+  const continuing = meta.continueMessage !== undefined;
+  if (meta.agentId === "zcode") {
+    if (!continuing && round <= 0) return undefined;
+    return {
+      kind: continuing ? "continue" : "rework",
+      message: meta.continueMessage,
+      sendMessage: meta.continueSendMessage ?? round > 0,
+      sessionId: meta.zcodeSessionId,
+      sessionTitle: meta.zcodeSessionTitle,
+      boundProjectPath: meta.boundProjectPath,
+      provider: meta.modelProvider,
+      model: meta.model,
+      permissionMode: meta.permissionMode,
+    };
+  }
+  if (meta.agentId === "codex") {
+    if (!continuing && round <= 0) return undefined;
+    return {
+      kind: continuing ? "continue" : "rework",
+      message: meta.continueMessage,
+      sendMessage: meta.continueSendMessage ?? round > 0,
+      boundProjectPath: meta.boundProjectPath,
+      model: meta.model,
+      permissionMode: meta.permissionMode,
+    };
+  }
+  return undefined;
 }

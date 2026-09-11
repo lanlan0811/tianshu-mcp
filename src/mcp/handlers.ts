@@ -118,6 +118,15 @@ function runTaskHandler(ctx: AppContext, defaults: Defaults): Handler {
         return errorResult(e instanceof Error ? e.message : String(e));
       }
     }
+    if (finalAgentId === "codex") {
+      if (args.mode !== undefined) return errorResult("Codex 不支持 mode 参数；请移除 mode 后重试");
+      try {
+        const refs = [args.planDoc, args.designSystem].filter((v): v is string => Boolean(v));
+        if (refs.length) validateTaskReferences(refs.map((r) => `\`${r}\``).join(" "), undefined, norm);
+      } catch (e) {
+        return errorResult(e instanceof Error ? e.message : String(e));
+      }
+    }
 
     const cfg = await dataHome.loadConfig();
     // 有效任务超时（R2）：调用参数 > profile > server 默认值，在提交时固化
@@ -130,6 +139,9 @@ function runTaskHandler(ctx: AppContext, defaults: Defaults): Handler {
       task: args.task,
       context: args.context,
       model: args.model,
+      reasoningLevel: args.reasoningLevel,
+      planDoc: args.planDoc,
+      designSystem: args.designSystem,
       mode: args.mode,
       autoVerify: args.autoVerify ?? defaults.defaultAutoVerify,
       autoFixRounds:

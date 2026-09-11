@@ -21,6 +21,9 @@ import { captureBaseline, type Baseline } from "../verify/git-baseline.js";
 import { AcceptanceEngine, type VerifyRequest } from "../verify/acceptance.js";
 import { summarizeReport } from "../verify/report.js";
 import { writeRepairPlan } from "./repair-plan.js";
+import { writeCodexFixPlan } from "../agents/codex/fixplan.js";
+import { buildFixPrompt } from "../agents/codex/input.js";
+import { extractFailureEvidence } from "../agents/codex/verify.js";
 import type { TaskMeta } from "../tasks/task.js";
 import { TaskStore } from "../tasks/task-store.js";
 import type { DataHome } from "../config/store.js";
@@ -121,10 +124,11 @@ export class TaskOrchestrator {
           return { status: "needs_user", meta, summary: meta.lastMessage };
         }
         if (
-          meta.agentId === "zcode" &&
+          (meta.agentId === "zcode" || meta.agentId === "codex") &&
           ["idle_timeout", "task_timeout", "cdp_disconnected"].includes(runRes.endReason ?? "")
         ) {
-          const message = runRes.error ?? `ZCode 执行中止：${runRes.endReason}`;
+          const label = meta.agentId === "codex" ? "Codex" : "ZCode";
+          const message = runRes.error ?? `${label} 执行中止：${runRes.endReason}`;
           meta.lastMessage = message;
           meta.errorType = runRes.endReason === "task_timeout" ? "timeout" : "agent_failed";
           await store.updateStatus(meta, "needs_attention", message);
@@ -184,6 +188,43 @@ export class TaskOrchestrator {
             `第 ${round} 轮验收失败，进入第 ${round + 1} 轮返修`,
           );
           round += 1;
+
+          if (meta.agentId === "codex") {
+            // 决策 11/12：Codex 的修复计划由 MCP 自动生成，落在**项目内** .zcode/plans/
+            // （文件名含轮次号 codex-fix-r<N>.md，不覆盖历史）；因文件名发送前已知，
+            // 可直接写进修复指令，无需从回复回读。
+            const roundNo = round - 1 + 1;
+            const plan = await writeCodexFixPlan({
+              taskId: meta.taskId,
+              round: round - 1,
+              projectPath: meta.projectPath,
+              displayPath: meta.displayPath,
+              taskText: meta.task,
+              report: verdict.report,
+              fixPlanDir: resolved.profile.gui?.fixPlanDir,
+              logger,
+            });
+            const [planReadable, reportReadable] = await Promise.all([
+              readTextSafe(plan.absPath),
+              readTextSafe(verdict.mdPath),
+            ]);
+            if (planReadable == null || reportReadable == null) {
+              return this.finish(
+                "failed",
+                "internal",
+                "Codex 修复计划或验收报告不可读，拒绝发送降级摘要",
+              );
+            }
+            feedback = buildFixPrompt({
+              summary: verdict.summary,
+              planRelPath: plan.relPath,
+              reportPath: verdict.mdPath,
+              evidence: extractFailureEvidence(verdict.report),
+            });
+            logger.info(`[codex] 第 ${roundNo} 轮返修指令已引用修复计划 ${plan.relPath}`);
+            continue;
+          }
+
           // 决策 17：验收不通过时先写修复计划文件，再把文件名写进返修消息
           const plan = await writeRepairPlan({
             taskId: meta.taskId,

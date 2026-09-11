@@ -36,9 +36,15 @@ describe("R5 源码无用户路径硬编码", () => {
     const { BUILTIN_PROFILES } = await import("../../src/agents/builtin.js");
     const codex = BUILTIN_PROFILES.codex!;
     expect(codex.command ?? "").not.toMatch(/^[A-Za-z]:\//); // command 不是绝对盘符路径
-    const dirsText = JSON.stringify(codex.executableDiscovery?.dirs ?? []);
-    expect(dirsText).not.toMatch(/C:\/Users\/[^/]+/i); // 不写死用户名
-    expect(dirsText).toMatch(/\{LOCALAPPDATA\}/); // 用占位符
+    const discoveryText = JSON.stringify(codex.executableDiscovery ?? {});
+    expect(discoveryText).not.toMatch(/C:\/Users\/[^/]+/i); // 不写死用户名
+    expect(discoveryText).not.toMatch(/OpenAI\.Codex_\d/); // 不写死版本号
+    // Codex 为 MSIX 应用：Appx 查询优先，扫盘用 {SYSTEMDRIVE} 占位符回退
+    expect(codex.executableDiscovery?.appxPackageName).toBe("OpenAI.Codex");
+    expect(JSON.stringify(codex.executableDiscovery?.scanRoots ?? [])).toMatch(/\{SYSTEMDRIVE\}/);
+    // 受管实例的 user-data-dir 用占位符，不写死用户名/盘符
+    expect(codex.gui?.userDataDir ?? "").toMatch(/\{LOCALAPPDATA\}|\{HOME\}/);
+    expect(codex.gui?.userDataDir ?? "").not.toMatch(/C:\/Users\/[^/]+/i);
   });
 });
 

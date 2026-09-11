@@ -56,6 +56,7 @@ export function expandEnvPath(tpl: string): string {
     USERPROFILE: process.env.USERPROFILE,
     PROGRAMFILES: process.env.PROGRAMFILES,
     "PROGRAMFILES(X86)": process.env["PROGRAMFILES(X86)"],
+    SYSTEMDRIVE: process.env.SYSTEMDRIVE ?? process.env.SystemDrive,
     XDG_DATA_HOME: process.env.XDG_DATA_HOME,
   };
   let out = tpl;
