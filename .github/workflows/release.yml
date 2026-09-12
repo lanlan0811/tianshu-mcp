@@ -21,7 +21,11 @@ jobs:
     name: Build, verify version & publish release
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 —— 需要完整 tag 历史，否则 git describe 找不到上一个 tag，
+      # Full Changelog 会退化成 commits/<tag> 而非 compare/<prev>...<tag>。
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
