@@ -117,7 +117,11 @@ export async function probeZcodePort(
   processes?: ZcodeProcess[],
 ): Promise<ZcodeReady | null> {
   const rows = processes ?? (await listZcodeProcesses());
-  const owner = rootZcodeProcesses(rows).find((p) => remoteDebugPort(p.commandLine) === port);
+  const roots = rootZcodeProcesses(rows);
+  let owner = roots.find((p) => remoteDebugPort(p.commandLine) === port);
+  // macOS 主进程启动完成后会改写进程标题（ps 只剩 "ZCode"，argv 中的调试端口被隐藏，实测 3.11.2）。
+  // 放宽归属判定：端口上确有 ZCode 页面且存在根进程即接管（pid 取根进程首个，仅供日志/对话框过滤）。
+  if (!owner && process.platform === "darwin" && roots.length) owner = roots[0];
   if (!owner) return null;
   try {
     const targets = await TraeworkCdpClient.listTargets(port, 1500);
@@ -140,21 +144,33 @@ export async function ensureZcodeInstance(
     roots = rootZcodeProcesses(await listZcodeProcessesAsync(options));
   }
   if (roots.length) {
-    if (!roots.some((proc) => remoteDebugPort(proc.commandLine))) return { needsClose: true };
-    const reuseDeadline = Math.min(options.deadline ?? Infinity, Date.now() + gui.launchTimeoutMs);
+    const argvPorts = roots
+      .map((p) => remoteDebugPort(p.commandLine))
+      .filter((x): x is number => x !== null);
+    // macOS：argv 被标题改写隐藏时，补扫配置端口段（有界快速扫描，多数端口 ECONNREFUSED 立即返回）；
+    // 扫描预算收窄到 10s——扫不到 ZCode 页面即确属「无 CDP 旧实例」，不必烧满 launchTimeoutMs。
+    const scanAll = process.platform === "darwin" && argvPorts.length === 0;
+    const ports = scanAll
+      ? Array.from({ length: gui.cdpPortRange }, (_, i) => gui.cdpPort + i)
+      : argvPorts;
+    if (!ports.length) return { needsClose: true };
+    const reuseDeadline = Math.min(
+      options.deadline ?? Infinity,
+      Date.now() + (scanAll ? Math.min(gui.launchTimeoutMs, 10_000) : gui.launchTimeoutMs),
+    );
     while (Date.now() < reuseDeadline) {
+      // 每个 tick 只枚举一次进程，快照传给本轮全部 probe
+      // eslint-disable-next-line no-await-in-loop
       roots = rootZcodeProcesses(await listZcodeProcessesAsync(options));
-      for (const proc of roots) {
-        const port = remoteDebugPort(proc.commandLine);
-        if (port) {
-          // eslint-disable-next-line no-await-in-loop
-          const ready = await probeZcodePort(port, roots);
-          if (ready) return { ready };
-        }
+      for (const port of ports) {
+        // eslint-disable-next-line no-await-in-loop
+        const ready = await probeZcodePort(port, roots);
+        if (ready) return { ready };
       }
       // eslint-disable-next-line no-await-in-loop
       await delay(500, undefined, { signal: options.signal });
     }
+    if (scanAll) return { needsClose: true };
     throw new Error(`等待既有 ZCode CDP 页面就绪超时（${gui.launchTimeoutMs}ms）`);
   }
   options.signal?.throwIfAborted();
@@ -176,7 +192,13 @@ export async function ensureZcodeInstance(
   } else if (!(await freePort(port))) throw new Error(`ZCode CDP 端口 ${port} 已被占用`);
   const args = gui.exeArgs.map((arg) => arg.replaceAll("<port>", String(port)));
   options.signal?.throwIfAborted();
-  const child = spawn(exePath, args, { detached: false, stdio: "ignore", windowsHide: false });
+  // POSIX（macOS）必须 detached：实测父进程退出时非 detached 子进程会被进程组连坐杀掉
+  //（codex-gui 同款问题，2026-09-13 真机结论）；detached 后自成进程组组长，实例跨 server 退出驻留。
+  const child = spawn(exePath, args, {
+    detached: process.platform !== "win32",
+    stdio: "ignore",
+    windowsHide: false,
+  });
   let launchError: Error | undefined;
   child.once("error", (error) => {
     launchError = error;

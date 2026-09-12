@@ -518,9 +518,6 @@ function depsFor(fake: FakeZcode): Partial<ZcodeRunDeps> {
     // 需要特定基线的用例在此默认之上显式覆盖。
     listDialogs: async () => [],
     sleep: async () => {},
-    // 桩掉真实对话框枚举（macOS 走 osascript、Windows 走 PowerShell，单次可达数秒），
-    // 否则在 taskTimeoutMs 墙钟预算内负载一抖就 flake。
-    listDialogs: async () => ["sheet-count:0"],
   };
 }
 
