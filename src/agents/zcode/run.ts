@@ -350,19 +350,25 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
     } else {
       const pids = deps.listProcesses().map((p) => p.pid);
       const before = await deps.listDialogs(pids);
-      if (!(await cdp.click("addProject")))
-        return result({
-          hardFailure: true,
-          error: "找不到 ZCode 添加项目入口",
-          endReason: "setup_failed",
-        });
-      await deps.sleep(300);
-      const folderOption = await clickAnyExactWhenReady(
-        cdp,
-        "chooseFolder",
-        ["打开文件夹", "Open Folder"],
-        deps,
-      );
+      let folderOption: ZcodeClickExactResult = {
+        clicked: false,
+        count: 0,
+        available: [],
+      };
+      for (let round = 0; round < 3 && !folderOption.clicked; round++) {
+        // ZCode 3.11.2 的工作区下拉会吞掉第一次 outside-click。每轮均先收起残留菜单再验证新菜单。
+        // eslint-disable-next-line no-await-in-loop
+        await cdp.dismissMenus();
+        // eslint-disable-next-line no-await-in-loop
+        if (!(await cdp.click("addProject"))) continue;
+        // eslint-disable-next-line no-await-in-loop
+        folderOption = await clickAnyExactWhenReady(
+          cdp,
+          "chooseFolder",
+          ["打开文件夹", "Open Folder"],
+          deps,
+        );
+      }
       if (!folderOption.clicked)
         return result({
           hardFailure: true,
