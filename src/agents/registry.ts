@@ -68,8 +68,10 @@ export class AgentAdapterRegistry {
     return this.adapters.get(id);
   }
 
-  listAgentIds(): string[] {
-    return Array.from(this.adapters.keys());
+  /** 全部可见 agentId：已注册 adapter 与 profile 键（内置 + 数据目录用户自定义）的并集。 */
+  async listProfileIds(): Promise<string[]> {
+    const profiles = await this.loadProfiles();
+    return [...new Set([...this.adapters.keys(), ...Object.keys(profiles)])];
   }
 
   /** 若 adapter 需要 prompt 文件（promptMode=file），调用其 prepare */

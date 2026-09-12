@@ -466,7 +466,8 @@ function continueTaskHandler(ctx: AppContext): Handler {
 function getProfilesHandler(ctx: AppContext): Handler {
   const { registry } = ctx;
   return async () => {
-    const ids = registry.listAgentIds();
+    // 用户自定义 profile 未 resolve 前没有注册 adapter，必须按 profile 键枚举，否则 get_profiles 漏列。
+    const ids = await registry.listProfileIds();
     // 并行探测；Promise.all 保持结果顺序与 ids 一致。resolve 不抛错（失败返回 ok:false），
     // 若底层异常 reject 则与旧串行版一样整体失败，错误处理语义不变。
     const rows = await Promise.all(
