@@ -57,3 +57,35 @@ npx -y tianshu-mcp   # 由官方 SDK client 连上 → initialize → tools/list
 | `ENEEDAUTH` / `401` | token 未生效：检查 `npm whoami --registry=https://registry.npmjs.org` 返回你的用户名 |
 | 想用 npmmirror 加速但发布到 npmjs | 镜像只读，发布必须走 `--registry=https://registry.npmjs.org` |
 | 包名被占 | 换 `tianshu-dev-agents-mcp` 并同步改 package.json/README |
+
+---
+
+## Gitee 发行版（镜像仓库需单独创建）
+
+GitHub Actions 的 `release.yml` 只作用于 GitHub；Gitee 作为镜像仓库**不会**自动生成发行版，
+历史上出现过「Gitee 只有 tag、没有发行版」的不一致。现由 `scripts/gitee-release.mjs` 幂等补齐。
+
+### 一次性配置（让 CI 自动建 Gitee 发行版）
+
+1. Gitee → 设置 → 私人令牌 → 生成新令牌，至少勾选 **projects** 权限，复制令牌。
+2. GitHub 仓库 → Settings → Secrets and variables → Actions → New repository secret：
+   名称 `GITEE_TOKEN`，值为上一步令牌。
+
+配置后，推 `v*` tag 时 `release.yml` 末尾会自动创建/更新对应 Gitee 发行版（正文取
+`docs/release-v<版本>.md`）。未配置 `GITEE_TOKEN` 时该步骤会**明确提示并跳过**，不会让工作流失败。
+
+### 手动补建某个版本
+
+```bash
+cd D:\Trae项目	ianshu-mcp
+GITEE_TOKEN=<你的私人令牌> node scripts/gitee-release.mjs 0.3.0
+# 正文默认取 docs/release-v0.3.0.md；也可显式指定：node scripts/gitee-release.mjs 0.3.0 docs/release-v0.3.0.md
+```
+
+脚本行为：已存在同 tag 发行版则**更新**正文，不存在则**创建**（`target_commitish` 默认 `master`，
+可用 `GITEE_BRANCH` 覆盖）。
+
+### 发布正文的构成
+
+GitHub 与 Gitee 的发行版正文均取 `docs/release-v<版本>.md`，并在末尾自动追加 `Full Changelog`
+比较链接。因此**发布前务必先写好该文档**，否则正文会退化为仅含 Full Changelog。

@@ -92,12 +92,56 @@ jobs:
             --expect-version "${{ steps.version.outputs.version }}" \
             --fixtures "$GITHUB_WORKSPACE/test/stub-agent"
 
+      # Release 正文优先取版本发布说明文档 docs/release-v<version>.md（双语、含亮点与验证结果），
+      # 缺失时回退为仅含 Full Changelog 的最小正文。避免只出自动生成的空壳 Changelog。
+      - name: Build release body (prefer docs/release-v<version>.md)
+        id: body
+        shell: bash
+        run: |
+          VER="${{ steps.version.outputs.version }}"
+          DOC="docs/release-v${VER}.md"
+          BODY="$RUNNER_TEMP/release-body.md"
+          PREV=$(git describe --tags --abbrev=0 "v${VER}^" 2>/dev/null || echo "")
+          if [ -f "$DOC" ]; then
+            cp "$DOC" "$BODY"
+            echo "使用发布说明文档: $DOC"
+          else
+            echo "未找到 $DOC，正文仅含 Full Changelog"
+            : > "$BODY"
+          fi
+          {
+            echo
+            echo "---"
+            echo
+            if [ -n "$PREV" ]; then
+              echo "**Full Changelog**: https://github.com/${GITHUB_REPOSITORY}/compare/${PREV}...v${VER}"
+            else
+              echo "**Full Changelog**: https://github.com/${GITHUB_REPOSITORY}/commits/v${VER}"
+            fi
+          } >> "$BODY"
+          echo "path=$BODY" >> "$GITHUB_OUTPUT"
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: tianshu-mcp v${{ steps.version.outputs.version }}
           draft: false
-          generate_release_notes: true
+          # 始终用上面组装的正文（含发布说明 + Full Changelog），不再依赖自动生成的空壳 notes
+          body_path: ${{ steps.body.outputs.path }}
+          generate_release_notes: false
           files: |
             ${{ steps.pack.outputs.tarball }}
+
+      # Gitee 是镜像仓库，其发行版不在 GitHub Actions 默认范围内：用 Gitee OpenAPI 幂等补齐，
+      # 避免出现「只有 tag、没有发行版」的不一致。
+      # 需要在仓库 Secrets 配置 GITEE_TOKEN（Gitee → 设置 → 私人令牌，勾选 projects 权限）；
+      # 未配置时脚本会明确提示并跳过，不使工作流失败。
+      - name: Create/Update Gitee release (mirror, needs GITEE_TOKEN secret)
+        shell: bash
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          node scripts/gitee-release.mjs \
+            "${{ steps.version.outputs.version }}" \
+            "docs/release-v${{ steps.version.outputs.version }}.md"

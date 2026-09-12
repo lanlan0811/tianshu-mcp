@@ -41,7 +41,7 @@
 | 门禁 | lint 0 warning、typecheck clean、build 成功、`check:stdio` 6/6 场景通过、`npm pack` 内容校验通过 |
 | CI | ubuntu/windows/macos × Node 20/22/24 + pack-check = **10/10 全绿**（随 v0.3.0 tag 再次校验） |
 | npm | 发布由维护者手动 `npm publish`（需 token）；详见 `docs/npm-publish-guide.md` |
-| Release | 推送 `v*` tag 触发 `.github/workflows/release.yml`，产出 GitHub Release 并附 `tianshu-mcp-<ver>.tgz` |
+| Release | 推送 `v*` tag 触发 `.github/workflows/release.yml`：产出 GitHub Release（正文取 `docs/release-v<ver>.md`）并附 `tianshu-mcp-<ver>.tgz`；Gitee 发行版由 `scripts/gitee-release.mjs` 用 `GITEE_TOKEN` 幂等补齐 |
 
 ### Agent 适配现状
 
