@@ -467,15 +467,16 @@ function getProfilesHandler(ctx: AppContext): Handler {
   const { registry } = ctx;
   return async () => {
     const ids = registry.listAgentIds();
-    const rows: string[] = [];
-    for (const id of ids) {
-      const r = await registry.resolve(id, true);
-      const mark = r.ok ? "[PASS] 可用" : "[FAIL] 不可用";
-      const version = r.discovered?.version ? ` version=${r.discovered.version}` : "";
-      rows.push(
-        `${mark}\t${id}\t${r.displayName}\tdriver=${r.profile.driver ?? "unknown"}\tprofileStatus=${r.profile.status ?? "unknown"}${version}\t${r.message}${r.discovered ? ` [探测来源: ${r.discovered.source}]` : ""}`,
-      );
-    }
+    // 并行探测；Promise.all 保持结果顺序与 ids 一致。resolve 不抛错（失败返回 ok:false），
+    // 若底层异常 reject 则与旧串行版一样整体失败，错误处理语义不变。
+    const rows = await Promise.all(
+      ids.map(async (id) => {
+        const r = await registry.resolve(id, true);
+        const mark = r.ok ? "[PASS] 可用" : "[FAIL] 不可用";
+        const version = r.discovered?.version ? ` version=${r.discovered.version}` : "";
+        return `${mark}\t${id}\t${r.displayName}\tdriver=${r.profile.driver ?? "unknown"}\tprofileStatus=${r.profile.status ?? "unknown"}${version}\t${r.message}${r.discovered ? ` [探测来源: ${r.discovered.source}]` : ""}`;
+      }),
+    );
     const head =
       "Agent 适配与可执行探测结果（列: 可用 / agentId / 名称 / driver / profileStatus/version / 说明）";
     return formatToolResult(`${head}\n${rows.join("\n")}`, {

@@ -201,7 +201,7 @@ export async function runCodexTask(args: RunCodexArgs): Promise<AgentRunResult> 
 
     // ---- 步骤 1/2：定位 + 启动受管实例 ----
     const spec = parseCodexModel(ctx.model, ctx.reasoningLevel);
-    const found = deps.discover(resolved.profile);
+    const found = await deps.discover(resolved.profile);
     const exePath = resolved.command || found?.path;
     const aumid = found?.aumid;
     if (!exePath)
@@ -218,7 +218,7 @@ export async function runCodexTask(args: RunCodexArgs): Promise<AgentRunResult> 
     // 这一步会先停受管实例再写状态文件，因此必须在 ensureInstance 之前执行。
     // 失败/不支持时返回 skipped，后续自动回退到界面「新建项目」路径。
     try {
-      const reg = deps.ensureRegistered(ctx.projectPath, gui, logger);
+      const reg = await deps.ensureRegistered(ctx.projectPath, gui, logger);
       logger.info(`[codex] 项目登记：${reg.status}（${reg.message}）`);
     } catch (e) {
       logger.warn(`[codex] 项目登记异常，回退界面新建路径：${e instanceof Error ? e.message : String(e)}`);
@@ -537,7 +537,7 @@ async function createProject(
   if (!(await waitFor(cdp, "sourceFolderArea", deps, 10_000)))
     return { ok: false, error: "「创建项目」对话框未出现（找不到源文件夹按钮）" };
 
-  const pids = deps.listProcesses()
+  const pids = (await deps.listProcesses())
     .filter((p) => !/--type=|crashpad/i.test(p.commandLine))
     .map((p) => p.pid);
   // 先清理残留原生对话框（上一轮失败可能留下，遮挡界面且会让本轮误判「无新对话框」）

@@ -88,7 +88,7 @@ describe("ZCode 安装与模型", () => {
         relativePaths: [],
       },
     });
-    expect(discoverZcode(profile)?.path).toBe(exe);
+    expect((await discoverZcode(profile))?.path).toBe(exe);
     await rmrf(root);
   });
   it("固定盘按可配置 D 优先并去重", () => {
@@ -154,7 +154,7 @@ describe("ZCode 安装与模型", () => {
       },
     });
     expect(
-      discoverZcode(profile, {
+      await discoverZcode(profile, {
         platform: "win32",
         fixedDrives: [],
         driveRoots: { "C:": cRoot, "D:": dRoot },
@@ -187,7 +187,7 @@ describe("ZCode 安装与模型", () => {
       },
     });
     expect(
-      discoverZcode(registryProfile, {
+      await discoverZcode(registryProfile, {
         platform: "win32",
         fixedDrives: [],
         registryDirs: [registryRoot],
@@ -203,7 +203,7 @@ describe("ZCode 安装与模型", () => {
       },
     });
     expect(
-      discoverZcode(standardProfile, {
+      await discoverZcode(standardProfile, {
         platform: "win32",
         fixedDrives: [],
         registryDirs: [],
@@ -238,12 +238,12 @@ describe("ZCode 安装与模型", () => {
         relativePaths: [],
       },
     });
-    expect(discoverZcode(profile, { platform: "darwin" })).toMatchObject({
+    expect(await discoverZcode(profile, { platform: "darwin" })).toMatchObject({
       path: path.join(userDir, "ZCode"),
       source: "bundle",
     });
     fs.writeFileSync(path.join(systemDir, "ZCode"), "");
-    expect(discoverZcode(profile, { platform: "darwin" })).toMatchObject({
+    expect(await discoverZcode(profile, { platform: "darwin" })).toMatchObject({
       path: path.join(systemDir, "ZCode"),
       source: "bundle",
     });

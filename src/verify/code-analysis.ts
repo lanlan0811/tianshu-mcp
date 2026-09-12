@@ -3,12 +3,11 @@
  * 变更清单 / diffstat / 可疑标记扫描 / 结构性核对，全部相对动工前 git 基线。
  * 基线前已存在且内容未变的脏文件从"任务新增变更"中扣除；agent 是否创建提交都不丢变更。
  */
-import fs from "node:fs";
 import path from "node:path";
+import fsp from "node:fs/promises";
 import { createHash } from "node:crypto";
 import type { AnalysisResult } from "../tasks/task.js";
 import { parsePorcelain, diffSinceBaseline, gitStatusPorcelain, type Baseline } from "./git-baseline.js";
-import { readTextSafe } from "../util/fs.js";
 import { scanChangedLinesForSignals } from "./signals.js";
 
 /** diffstat per-file 行（report.json analysis.diffstat.perFile） */
@@ -20,6 +19,10 @@ interface NumstatLike {
 }
 
 const BIG_FILE_THRESHOLD = 500;
+/** 内容 hash 上限：>4MiB 不哈希（与基线侧 fileHash 语义一致） */
+const HASH_MAX_BYTES = 4 * 1024 * 1024;
+/** 文件读取/探测的有界并发上限（worker 池，与 acceptance.ts 命令检查同构） */
+const FILE_IO_CONCURRENCY = 8;
 const LOCKFILE_PATTERN = /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock|go\.sum|Pipfile\.lock|poetry\.lock|composer\.lock)$/;
 const BINARY_EXT = new Set([
   ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".bmp",
@@ -51,14 +54,29 @@ export async function analyzeChanges(opts: AnalyzeOpts): Promise<AnalysisResult>
   const preChanged = new Set(baseline.preExistingChanged);
   const preUntracked = new Set(baseline.preExistingUntracked);
 
+  // 文件 IO 统一入口：预脏 tracked 文件（仅 hash）+ 全部未跟踪文件（单次读取派生全部判断），
+  // 有界并发执行。每个文件全程最多读一次；hash/二进制嗅探/行数/文本共用同一 buffer。
+  const preDirtyNowHashes = new Map<string, string | null>();
+  const untrackedProbes = new Map<string, FileProbe>();
+  await runWithConcurrency(
+    [
+      ...[...preChanged].map((f) => async () => {
+        preDirtyNowHashes.set(f, await fileHashQuick(path.join(opts.projectPath, f)));
+      }),
+      ...parsed.untracked.map((f) => async () => {
+        untrackedProbes.set(f, await probeFile(path.join(opts.projectPath, f)));
+      }),
+    ],
+    FILE_IO_CONCURRENCY,
+  );
+
   // S3：排除"基线前脏且任务期间内容未变化"的 tracked 文件（避免把用户原有改动归因给 agent）。
   // 对每个基线前脏文件，比较基线内容 hash 与当前工作树内容 hash；一致 = agent 未触碰 → 完全排除。
   const unchangedPreDirty = new Set<string>();
   for (const f of [...preChanged]) {
     const baseHash = baseDirtyHash(baseline, f);
     if (!baseHash) continue; // 无基线 hash（超大/删除等）不排除，交给 diff 判断
-    const nowHash = await fileHashQuick(path.join(opts.projectPath, f));
-    if (nowHash === baseHash) unchangedPreDirty.add(f);
+    if (preDirtyNowHashes.get(f) === baseHash) unchangedPreDirty.add(f);
   }
 
   // 相对基线 ref 的已跟踪差异（含 agent 提交前移 + 工作树）；排除未变化的预脏文件
@@ -76,16 +94,15 @@ export async function analyzeChanges(opts: AnalyzeOpts): Promise<AnalysisResult>
   // 新增未跟踪文件：基线前不存在 → 整文件计入；基线前已存在 → 内容 hash 变化才计入，未变则排除。
   for (const f of parsed.untracked) {
     if (trackedSeen.has(f)) continue;
-    const full = path.join(opts.projectPath, f);
+    const probe = untrackedProbes.get(f);
+    if (!probe) continue; // 上面已全量探测，不会缺；防御性跳过
     if (preUntracked.has(f)) {
       const baseHash = baseDirtyHash(baseline, f);
-      const nowHash = await fileHashQuick(full);
-      if (baseHash && nowHash && baseHash === nowHash) continue; // 基线前已有且未变：非任务改动
+      if (baseHash && probe.hash && baseHash === probe.hash) continue; // 基线前已有且未变：非任务改动
       notes.push(`未跟踪文件 ${f} 在动工前已存在但内容发生变化，已整文件计入本轮变更（无法按行精确归因）。`);
     }
-    const isBinary = BINARY_EXT.has(path.extname(f).toLowerCase()) || looksBinary(full);
-    const { add, del } = isBinary ? { add: 0, del: 0 } : countLines(full);
-    perFile.push({ file: f, add, del, binary: isBinary });
+    const { add, del } = probe.binary ? { add: 0, del: 0 } : { add: probe.lines, del: 0 };
+    perFile.push({ file: f, add, del, binary: probe.binary });
   }
 
   // 汇总
@@ -108,16 +125,14 @@ export async function analyzeChanges(opts: AnalyzeOpts): Promise<AnalysisResult>
   for (const arr of changedLinesPerFile.values()) allAdded.push(...arr);
   // 未跟踪且基线前不存在 → 全量扫描；基线前已有且内容没变 → 已排除
   for (const f of parsed.untracked) {
+    const probe = untrackedProbes.get(f);
+    if (!probe) continue;
     if (preUntracked.has(f)) {
-      const full = path.join(opts.projectPath, f);
       const baseHash = baseDirtyHash(baseline, f);
-      const nowHash = await fileHashQuick(full);
-      if (baseHash && nowHash && baseHash === nowHash) continue;
+      if (baseHash && probe.hash && baseHash === probe.hash) continue;
     }
-    const full = path.join(opts.projectPath, f);
-    if (!looksTextFile(full)) continue;
-    const text = await readTextSafe(full);
-    if (text) allAdded.push(...text.split("\n"));
+    if (!probe.textFile) continue;
+    if (probe.text) allAdded.push(...probe.text.split("\n"));
   }
   const scanRes = scanChangedLinesForSignals(allAdded);
   signals.todo = scanRes.todo;
@@ -129,9 +144,8 @@ export async function analyzeChanges(opts: AnalyzeOpts): Promise<AnalysisResult>
   const untrackedFiles = parsed.untracked.filter((f) => {
     if (!preUntracked.has(f)) return true;
     // 基线前已有：内容变了才作为本轮新增未跟踪
-    const full = path.join(opts.projectPath, f);
     const b = baseDirtyHash(baseline, f);
-    const n = fileHashSync(full);
+    const n = untrackedProbes.get(f)?.hash ?? null;
     return !(b && n && b === n);
   });
   const changedFiles = [...trackedFiles];
@@ -181,10 +195,64 @@ function emptyResult(): AnalysisResult {
   };
 }
 
+/** 有界并发执行异步任务（worker 池按声明顺序领取下标） */
+async function runWithConcurrency(tasks: (() => Promise<void>)[], concurrency: number): Promise<void> {
+  let cursor = 0;
+  const workerCount = Math.min(concurrency, tasks.length);
+  const workers = Array.from({ length: workerCount }, async () => {
+    for (;;) {
+      const task = tasks[cursor++];
+      if (!task) return;
+      await task();
+    }
+  });
+  await Promise.all(workers);
+}
+
+/** 单文件单次读取的派生信息：hash/二进制嗅探/行数/文本共用同一 buffer */
+interface FileProbe {
+  /** 内容 sha1；读取失败或 >4MiB 为 null（同旧 fileHashQuick） */
+  hash: string | null;
+  /** 二进制扩展名命中，或前 8000 字节 NUL 占比 >10%；读取失败按二进制（同旧 looksBinary 的 catch → true） */
+  binary: boolean;
+  /** utf8 文本 split("\n") 行数；读取失败为 0（同旧 countLines 的 catch） */
+  lines: number;
+  /** 非二进制扩展名且前 4000 字节无 NUL；读取失败按文本（同旧 looksTextFile 的 catch → true） */
+  textFile: boolean;
+  /** utf8 全文（仅 textFile 时保留；读取失败为 null，同旧 readTextSafe） */
+  text: string | null;
+}
+
+async function probeFile(full: string): Promise<FileProbe> {
+  const isBinaryExt = BINARY_EXT.has(path.extname(full).toLowerCase());
+  let buf: Buffer;
+  try {
+    buf = await fsp.readFile(full);
+  } catch {
+    return { hash: null, binary: true, lines: 0, textFile: !isBinaryExt, text: null };
+  }
+  const hash = buf.length > HASH_MAX_BYTES ? null : createHash("sha1").update(buf).digest("hex");
+  const sample = buf.subarray(0, 8000);
+  let suspicious = 0;
+  for (const b of sample) if (b === 0) suspicious++;
+  const binary = isBinaryExt || suspicious > sample.length * 0.1;
+  let textFile = !isBinaryExt;
+  if (textFile) {
+    for (const b of buf.subarray(0, 4000)) {
+      if (b === 0) {
+        textFile = false;
+        break;
+      }
+    }
+  }
+  const text = buf.toString("utf8");
+  return { hash, binary, lines: text.split("\n").length, textFile, text: textFile ? text : null };
+}
+
 async function fileHashQuick(p: string): Promise<string | null> {
   try {
-    const buf = fs.readFileSync(p);
-    if (buf.length > 4 * 1024 * 1024) return null;
+    const buf = await fsp.readFile(p);
+    if (buf.length > HASH_MAX_BYTES) return null;
     return createHash("sha1").update(buf).digest("hex");
   } catch {
     return null;
@@ -194,16 +262,6 @@ async function fileHashQuick(p: string): Promise<string | null> {
 /** 基线脏文件内容 hash：优先新字段 preDirtyHashes，兼容旧快照回退 preUntrackedHashes */
 function baseDirtyHash(baseline: Baseline, f: string): string | undefined {
   return baseline.preDirtyHashes?.[f] ?? baseline.preUntrackedHashes?.[f];
-}
-
-function fileHashSync(p: string): string | null {
-  try {
-    const buf = fs.readFileSync(p);
-    if (buf.length > 4 * 1024 * 1024) return null;
-    return createHash("sha1").update(buf).digest("hex");
-  } catch {
-    return null;
-  }
 }
 
 const SUGGESTED_EXTS_PATTERNS: [RegExp, string][] = [
@@ -228,37 +286,4 @@ function extractSuspiciousExtensions(taskText: string): string[] {
     if (re.test(taskText) && !found.includes(ext)) found.push(ext);
   }
   return found;
-}
-
-function countLines(file: string): { add: number; del: number } {
-  try {
-    const text = fs.readFileSync(file, "utf8");
-    const n = text.split("\n").length;
-    return { add: n, del: 0 };
-  } catch {
-    return { add: 0, del: 0 };
-  }
-}
-
-function looksBinary(file: string): boolean {
-  try {
-    const buf = fs.readFileSync(file);
-    const sample = buf.subarray(0, 8000);
-    let suspicious = 0;
-    for (const b of sample) if (b === 0) suspicious++;
-    return suspicious > sample.length * 0.1;
-  } catch {
-    return true;
-  }
-}
-
-function looksTextFile(fullPath: string): boolean {
-  if (BINARY_EXT.has(path.extname(fullPath).toLowerCase())) return false;
-  try {
-    const buf = fs.readFileSync(fullPath);
-    for (const b of buf.subarray(0, 4000)) if (b === 0) return false;
-    return true;
-  } catch {
-    return true;
-  }
 }

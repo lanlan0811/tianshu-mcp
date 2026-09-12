@@ -6,12 +6,13 @@
  */
 import net from "node:net";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
 import { TraeworkCdpClient } from "../traework/cdp/client.js";
 import type { GuiProfile } from "../../config/schema.js";
 import type { AgentRunLogger } from "../adapter.js";
 import { activateCodexApp, buildActivationArgs } from "./launcher.js";
 import { expandEnvPath } from "../../util/path.js";
+import { execFileAsync } from "../../verify/exec.js";
+import { TtlCache } from "../../util/ttl-cache.js";
 
 export interface CodexProcess {
   pid: number;
@@ -36,22 +37,22 @@ export function parseProcessRows(raw: string): CodexProcess[] {
   return out;
 }
 
-export function listCodexProcesses(): CodexProcess[] {
-  if (process.platform !== "win32") return [];
-  try {
+/** 进程枚举短缓存（1.5s）：就绪等待环每 tick 复用同一快照，避免重复 powershell 枚举冻结/抖动 */
+const processCache = new TtlCache<CodexProcess[]>(1_500);
+/** 无参枚举，缓存 key 为固定常量（参数集为空） */
+const PROCESS_CACHE_KEY = "win32-cim-chatgpt";
+
+export function listCodexProcesses(): Promise<CodexProcess[]> {
+  if (process.platform !== "win32") return Promise.resolve([]);
+  return processCache.get(PROCESS_CACHE_KEY, async () => {
     const script =
       'Get-CimInstance Win32_Process -Filter "Name=\'ChatGPT.exe\'" | ForEach-Object { "$($_.ProcessId)`t$($_.ExecutablePath)`t$($_.CommandLine)" }';
-    return parseProcessRows(
-      execFileSync("powershell.exe", ["-NoProfile", "-Command", script], {
-        encoding: "utf8",
-        windowsHide: true,
-        // Get-CimInstance 在繁忙机器上可能偏慢，放宽超时避免误判「无实例」
-        timeout: 30_000,
-      }),
-    );
-  } catch {
-    return [];
-  }
+    const res = await execFileAsync("powershell.exe", ["-NoProfile", "-Command", script], {
+      // Get-CimInstance 在繁忙机器上可能偏慢，放宽超时避免误判「无实例」
+      timeoutMs: 30_000,
+    });
+    return res.status === 0 ? parseProcessRows(res.stdout) : [];
+  });
 }
 
 /** 根进程：排除 renderer/gpu/utility/crashpad 等子进程 */
@@ -126,9 +127,10 @@ export function pickCodexPage<T extends { type: string; title?: string; url?: st
 
 export async function probeCodexPort(
   port: number,
-  processes = listCodexProcesses(),
+  processes?: CodexProcess[],
 ): Promise<CodexReady | null> {
-  const owner = rootCodexProcesses(processes).find((p) => remoteDebugPort(p.commandLine) === port);
+  const rows = processes ?? (await listCodexProcesses());
+  const owner = rootCodexProcesses(rows).find((p) => remoteDebugPort(p.commandLine) === port);
   if (!owner) return null;
   try {
     const targets = await TraeworkCdpClient.listTargets(port, 1500);
@@ -171,7 +173,7 @@ export async function ensureCodexInstance(
 ): Promise<{ ready?: CodexReady; needsClose?: boolean }> {
   const userDataDir = resolveUserDataDir(gui);
   const wanted = normalizeDir(userDataDir);
-  const roots = rootCodexProcesses(listCodexProcesses());
+  const roots = rootCodexProcesses(await listCodexProcesses());
 
   // 1) 复用：已有实例的 user-data-dir 属于本 MCP 且端口可用
   for (const proc of roots) {
@@ -197,8 +199,11 @@ export async function ensureCodexInstance(
         while (Date.now() < deadline) {
           // eslint-disable-next-line no-await-in-loop
           await new Promise((r) => setTimeout(r, 500));
+          // 每个 tick 只取一次进程快照传给 probe（快照本身带 1.5s TTL 缓存）
           // eslint-disable-next-line no-await-in-loop
-          const ready = await probeCodexPort(port);
+          const snapshot = await listCodexProcesses();
+          // eslint-disable-next-line no-await-in-loop
+          const ready = await probeCodexPort(port, snapshot);
           if (ready) return { ready: { ...ready, userDataDir } };
         }
       }
@@ -221,8 +226,11 @@ export async function ensureCodexInstance(
   while (Date.now() < deadline) {
     // eslint-disable-next-line no-await-in-loop
     await new Promise((r) => setTimeout(r, 500));
+    // 每个 tick 只取一次进程快照传给 probe（快照本身带 1.5s TTL 缓存）
     // eslint-disable-next-line no-await-in-loop
-    const ready = await probeCodexPort(port);
+    const snapshot = await listCodexProcesses();
+    // eslint-disable-next-line no-await-in-loop
+    const ready = await probeCodexPort(port, snapshot);
     if (ready) return { ready: { ...ready, userDataDir } };
   }
   throw new Error(`等待 Codex CDP 就绪超时（${gui.launchTimeoutMs}ms）`);

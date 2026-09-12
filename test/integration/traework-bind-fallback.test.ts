@@ -76,8 +76,13 @@ function makeDeps(state: FakeDomState, dialogFound: () => boolean): TraeworkRunD
       throw new Error("测试应复用实例");
     },
     waitReady: async (port) => ({ port, title: "TraeWork CN" }),
-    release: () => ({ released: true, reason: "已终止" }),
+    release: async () => ({ released: true, reason: "已终止" }),
     resolvePort: async (gui) => gui.cdpPort,
+    // 钳到 2ms 的真实 sleep：保留事件循环语义（纯微任务 no-op 会饿死 timers 阶段）
+    sleep: (ms) => new Promise((r) => setTimeout(r, Math.min(ms, 2))),
+    // findFolderDialog 桩恒为「未出现」时，waitDialogAppeared 的死线是 Date.now() 墙钟，
+    // no-op sleep 压不动；把生产 20s 的出现等待钳到 100ms
+    dialogWaitTimeoutMs: 100,
   };
   void dialogFound;
 }

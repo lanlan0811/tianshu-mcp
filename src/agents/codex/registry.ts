@@ -20,10 +20,10 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import type { AgentRunLogger } from "../adapter.js";
 import { listCodexProcesses, normalizeDir, remoteUserDataDir, resolveUserDataDir } from "./instance.js";
+import { execFileAsync } from "../../verify/exec.js";
 import type { GuiProfile } from "../../config/schema.js";
 
 /** Codex 全局状态文件路径 */
@@ -65,10 +65,10 @@ export function isProjectRegistered(state: CodexGlobalState, projectPath: string
 }
 
 /** 停止本 MCP 的受管 Codex 实例（绝不触碰默认 profile 实例） */
-function stopManagedInstances(gui: GuiProfile): void {
+async function stopManagedInstances(gui: GuiProfile): Promise<void> {
   if (process.platform !== "win32") return;
   const wanted = normalizeDir(resolveUserDataDir(gui), "win32");
-  const rows = listCodexProcesses().filter((p) => {
+  const rows = (await listCodexProcesses()).filter((p) => {
     if (/--type=|crashpad/i.test(p.commandLine)) return false;
     const udd = remoteUserDataDir(p.commandLine);
     return udd ? normalizeDir(udd, "win32") === wanted : false;
@@ -76,7 +76,8 @@ function stopManagedInstances(gui: GuiProfile): void {
   if (!rows.length) return;
   for (const p of rows) {
     try {
-      execFileSync("taskkill", ["/PID", String(p.pid), "/T", "/F"], { windowsHide: true, timeout: 15_000 });
+      // eslint-disable-next-line no-await-in-loop
+      await execFileAsync("taskkill", ["/PID", String(p.pid), "/T", "/F"], { timeoutMs: 15_000 });
     } catch {
       /* 已退出或权限不足：忽略，后续 ensureInstance 会重探 */
     }
@@ -94,12 +95,12 @@ export interface RegisterResult {
  * 确保目标目录已在 Codex 项目列表中登记。
  * 返回 skipped 时调用方应回退到界面「新建项目」路径。
  */
-export function ensureProjectRegistered(
+export async function ensureProjectRegistered(
   projectPath: string,
   gui: GuiProfile,
   logger: AgentRunLogger,
-  opts: { stateFile?: string; platform?: NodeJS.Platform; stopInstances?: (gui: GuiProfile) => void } = {},
-): RegisterResult {
+  opts: { stateFile?: string; platform?: NodeJS.Platform; stopInstances?: (gui: GuiProfile) => void | Promise<void> } = {},
+): Promise<RegisterResult> {
   const platform = opts.platform ?? process.platform;
   if (platform !== "win32")
     return { status: "skipped", message: "非 Windows，跳过 Codex 项目登记" };
@@ -120,7 +121,7 @@ export function ensureProjectRegistered(
   if (existingId) return { status: "already", projectId: existingId, message: `已在 Codex 项目列表：${existingId}` };
 
   // 写入前先停受管实例，避免运行中的 Codex 覆盖本次修改
-  (opts.stopInstances ?? stopManagedInstances)(gui);
+  await (opts.stopInstances ?? stopManagedInstances)(gui);
 
   const id = randomUUID();
   const now = Date.now();

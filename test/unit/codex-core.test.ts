@@ -123,7 +123,7 @@ describe("Codex 安装发现", () => {
         appxPackageName: "OpenAI.Codex",
       },
     });
-    const found = discoverCodex(profile, {
+    const found = await discoverCodex(profile, {
       platform: "win32",
       appx: {
         installLocation: install,
@@ -151,7 +151,7 @@ describe("Codex 安装发现", () => {
         scanPattern: "OpenAI.Codex_*_x64__*/app/ChatGPT.exe",
       },
     });
-    const found = discoverCodex(profile, { platform: "win32", appx: null });
+    const found = await discoverCodex(profile, { platform: "win32", appx: null });
     expect(found?.source).toBe("scan");
     expect(found?.path).toBe(path.join(install, "app", "ChatGPT.exe"));
     expect(found?.aumid).toBe("OpenAI.Codex_2p2nqsd0c76g0!App"); // publisher hash 段来自目录名
@@ -174,7 +174,7 @@ describe("Codex 安装发现", () => {
       gui: { exePath: exe },
       executableDiscovery: { installRelativeExe: ["app/ChatGPT.exe"] },
     });
-    expect(discoverCodex(profile, { platform: "win32", appx: null })?.source).toBe("explicit");
+    expect((await discoverCodex(profile, { platform: "win32", appx: null }))?.source).toBe("explicit");
     await rmrf(root);
   });
 
@@ -804,7 +804,7 @@ describe("Codex 项目登记", () => {
 
   it("非 Windows 直接 skipped（不写文件）", async () => {
     const { ensureProjectRegistered } = await import("../../src/agents/codex/registry.js");
-    const r = ensureProjectRegistered("D:PROJX", { activation: "msix-com" } as never, silentLogger, {
+    const r = await ensureProjectRegistered("D:PROJX", { activation: "msix-com" } as never, silentLogger, {
       platform: "linux",
     });
     expect(r.status).toBe("skipped");
@@ -819,7 +819,7 @@ describe("Codex 项目登记", () => {
     });
     fs.writeFileSync(stateFile, JSON.stringify(before), "utf8");
     let stopped = 0;
-    const r = ensureProjectRegistered("D:\\切水果小游戏", {} as never, silentLogger, {
+    const r = await ensureProjectRegistered("D:\\切水果小游戏", {} as never, silentLogger, {
       stateFile,
       platform: "win32",
       stopInstances: () => {
@@ -848,7 +848,7 @@ describe("Codex 项目登记", () => {
     );
     const before = fs.readFileSync(stateFile, "utf8");
     let stopped = 0;
-    const r = ensureProjectRegistered("D:\\切水果小游戏", {} as never, silentLogger, {
+    const r = await ensureProjectRegistered("D:\\切水果小游戏", {} as never, silentLogger, {
       stateFile,
       platform: "win32",
       stopInstances: () => { stopped += 1; },
@@ -864,7 +864,7 @@ describe("Codex 项目登记", () => {
     const root = await makeTmpRoot("codex-register-badjson");
     const stateFile = path.join(root, "state.json");
     fs.writeFileSync(stateFile, "{ not json", "utf8");
-    const r = ensureProjectRegistered("D:PROJX", {} as never, silentLogger, {
+    const r = await ensureProjectRegistered("D:PROJX", {} as never, silentLogger, {
       stateFile,
       platform: "win32",
       stopInstances: () => {},

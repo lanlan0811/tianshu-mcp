@@ -1,11 +1,13 @@
 import net from "node:net";
 import { promisify } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
-import { spawn, execFile, execFileSync, type ChildProcess } from "node:child_process";
+import { spawn, execFile, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { TraeworkCdpClient } from "../traework/cdp/client.js";
 import type { GuiProfile } from "../../config/schema.js";
 import type { AgentRunLogger } from "../adapter.js";
+import { execFileAsync } from "../../verify/exec.js";
+import { TtlCache } from "../../util/ttl-cache.js";
 
 export interface ZcodeProcess {
   pid: number;
@@ -28,34 +30,34 @@ export function parseProcessRows(raw: string): ZcodeProcess[] {
   return out;
 }
 
-export function listZcodeProcesses(): ZcodeProcess[] {
+/** 进程枚举短缓存（1.5s）：轮询环每 tick 复用同一快照，避免重复 powershell/ps 枚举 */
+const processCache = new TtlCache<ZcodeProcess[]>(1_500);
+/** 无参枚举，缓存 key 为固定常量（参数集为空） */
+const PROCESS_CACHE_KEY = "zcode-process-list";
+
+export function listZcodeProcesses(): Promise<ZcodeProcess[]> {
+  return processCache.get(PROCESS_CACHE_KEY, enumerateZcodeProcesses);
+}
+
+async function enumerateZcodeProcesses(): Promise<ZcodeProcess[]> {
   if (process.platform === "win32") {
+    const script =
+      'Get-CimInstance Win32_Process -Filter "Name=\'ZCode.exe\'" | ForEach-Object { "$($_.ProcessId)`t$($_.ExecutablePath)`t$($_.CommandLine)" }';
     for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const script =
-          'Get-CimInstance Win32_Process -Filter "Name=\'ZCode.exe\'" | ForEach-Object { "$($_.ProcessId)`t$($_.ExecutablePath)`t$($_.CommandLine)" }';
-        return parseProcessRows(
-          execFileSync("powershell.exe", ["-NoProfile", "-Command", script], {
-            encoding: "utf8",
-            windowsHide: true,
-            timeout: 15_000,
-          }),
-        );
-      } catch {
-        if (attempt === 1) return [];
-      }
+      // eslint-disable-next-line no-await-in-loop
+      const res = await execFileAsync("powershell.exe", ["-NoProfile", "-Command", script], {
+        timeoutMs: 15_000,
+      });
+      if (res.status === 0) return parseProcessRows(res.stdout);
     }
     return [];
   }
-  try {
-    const raw = execFileSync("ps", ["-axo", "pid=,command="], { encoding: "utf8", timeout: 5_000 });
-    return raw.split(/\r?\n/).flatMap((line) => {
-      const m = /^\s*(\d+)\s+(.*ZCode.*)$/.exec(line);
-      return m ? [{ pid: Number(m[1]), commandLine: m[2]! }] : [];
-    });
-  } catch {
-    return [];
-  }
+  const res = await execFileAsync("ps", ["-axo", "pid=,command="], { timeoutMs: 5_000 });
+  if (res.status !== 0) return [];
+  return res.stdout.split(/\r?\n/).flatMap((line) => {
+    const m = /^\s*(\d+)\s+(.*ZCode.*)$/.exec(line);
+    return m ? [{ pid: Number(m[1]), commandLine: m[2]! }] : [];
+  });
 }
 
 export interface ZcodeInstanceOptions {
@@ -112,9 +114,10 @@ function productTarget(title = "", url = ""): boolean {
 
 export async function probeZcodePort(
   port: number,
-  processes = listZcodeProcesses(),
+  processes?: ZcodeProcess[],
 ): Promise<ZcodeReady | null> {
-  const owner = rootZcodeProcesses(processes).find((p) => remoteDebugPort(p.commandLine) === port);
+  const rows = processes ?? (await listZcodeProcesses());
+  const owner = rootZcodeProcesses(rows).find((p) => remoteDebugPort(p.commandLine) === port);
   if (!owner) return null;
   try {
     const targets = await TraeworkCdpClient.listTargets(port, 1500);
