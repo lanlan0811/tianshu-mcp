@@ -36,7 +36,7 @@ Tianshu plays the role of the overall commander; this MCP server is the **schedu
 
 - **9 MCP tools**: `run_task / continue_task / query_task / list_tasks / get_task_report / cancel_task / verify_task / rework_task / get_profiles`.
 - **Async contract**: `run_task` returns a `taskId` immediately; long-running work is polled via `query_task` (never blocks `tools/call`).
-- **Objective acceptance**: automated command checks (typecheck/lint/test/build — skipped when absent, plus tech-stack derivation) + programmatic code analysis (changed-file list / diffstat / suspicious signals such as TODO, debugger, secret-like patterns), all relative to a **git baseline**; never auto-commits or stashes.
+- **Objective acceptance**: automated command checks (typecheck/lint/test/build — skipped when absent, plus tech-stack derivation) + programmatic code analysis (changed-file list / diffstat / suspicious signals such as TODO, debugger, secret-like patterns), all relative to a **git baseline**; never auto-commits or stashes. The acceptance engine is **fail-closed**: a test check fails when its output reports zero executed tests even if the exit code is 0; git projects must produce changes relative to the pre-work baseline by default (pure analysis tasks can opt out with `"requireChanges": false` in `.tianshu-mcp/acceptance.json`).
 - **Rework loop**: automatic rework (`autoFixRounds`) + manual `rework_task`; on verification failure a repair-plan file is generated and fed back to the agent; when rounds run out → `needs_attention` awaiting Tianshu's verdict.
 - **Execution surfaces**: `driver: "gui"` selects an explicit, isolated Codex/TraeWork/ZCode CDP adapter; `driver: "spawn"` runs an external CLI child process.
 - **Scheduling discipline**: per-project serial queue + global concurrency cap (default 2, configurable).
@@ -63,7 +63,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 340 tests across 39 files, including Codex/ZCode unit/fake-CDP/restart/repair coverage
+npm test             # 366 tests across 39 files, including Codex/ZCode unit/fake-CDP/restart/repair coverage
 ```
 
 ### Install the npm package
@@ -122,6 +122,11 @@ run_task(projectPath=D:/xxx/my-app, task=「…task brief…」, agentId=codex,
 > COM activation with a dedicated `--user-data-dir` before CDP can drive it. `planDoc` / `designSystem` are
 > appended to the initial instruction. See [docs/codex-gui-cdp.en.md](docs/codex-gui-cdp.en.md) and the
 > [hardware acceptance record](docs/codex-windows-smoke.en.md). Projects not yet registered on the Codex side are **registered automatically** — no manual project creation needed.
+> When Codex parks on a "waiting for user confirmation" screen (plan-confirmation card, subscription checkout, etc.),
+> the task turns `needs_user(user_confirmation)`; after handling it in the Codex window call `continue_task(taskId)`
+> to resume observation. `cancel_task` clicks the in-app stop control over CDP and bounded-waits for the GUI to go
+> idle; before dispatching, a still-running managed instance is stopped best-effort, and if it never goes idle the
+> dispatch is rejected with `instance_busy`.
 
 When driving TraeWork, `model` and `mode` are available:
 
@@ -140,18 +145,18 @@ run_task(projectPath=D:/xxx/my-app, agentId=zcode, task="Implement `./plan.md`",
          model=DeepSeek/deepseek-flash, autoVerify=true)
 ```
 
-Questions, login, an existing non-CDP instance, or system permission pause as `needs_user`; call `continue_task(taskId, message)` to resume the recorded session. See [docs/zcode-cdp.en.md](docs/zcode-cdp.en.md).
+Questions, login, an existing non-CDP instance, or system permission pause as `needs_user`; call `continue_task(taskId, message)` to resume the recorded session. Model selection is adapted to ZCode 3.11.2: flat models are selected directly first, with provider/family group expansion as a fallback — both new and legacy layouts are supported. See [docs/zcode-cdp.en.md](docs/zcode-cdp.en.md).
 
 ## Tool surface (9 tools)
 
 | Tool | Capability / approval | Purpose |
 |---|---|---|
 | `run_task` | write + approval | Dispatch work (optional auto-verify / auto-rework); returns `taskId` asynchronously |
-| `continue_task` | write + approval | Resume the original ZCode session from `needs_user` |
+| `continue_task` | write + approval | Resume the session behind `needs_user` (ZCode resumes the recorded session; Codex re-observes for `user_confirmation` / re-dispatches for `login_required`) |
 | `query_task` | read | Poll status / progress / log tail |
 | `list_tasks` | read | Filtered history of tasks |
 | `get_task_report` | read | Full text of a verification round's report (`report.md`) |
-| `cancel_task` | write + approval | Cancel a running task (kill process tree) |
+| `cancel_task` | write + approval | Cancel a running task: CLI agents kill the process tree; GUI agents click the in-app stop control over CDP and bounded-wait (`gui.cancelWaitMs`, default 15s) for the GUI to go idle, stating so explicitly in the final message when the stop is unconfirmed |
 | `verify_task` | read | Run one verification pass on a task/project path (no source changes) |
 | `rework_task` | write + approval | Manual rework (feed the failure report back to the same agent) |
 | `get_profiles` | read | Inspect agent adapters and executable discovery results |
@@ -182,6 +187,8 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 | [docs/zcode-windows-smoke.en.md](docs/zcode-windows-smoke.en.md) | ZCode Windows hardware record for development, same-session repair, and question continuation |
 | [docs/codex-gui-cdp.en.md](docs/codex-gui-cdp.en.md) | Codex desktop GUI driver: MSIX COM activation, CDP attach, selectors, run detection, verify/repair |
 | [docs/codex-windows-smoke.en.md](docs/codex-windows-smoke.en.md) | Codex Windows hardware record (incl. verify-fail → auto plan → repair-pass loop) |
+| [docs/release-v0.3.3.en.md](docs/release-v0.3.3.en.md) | v0.3.3 release notes (ZCode 3.11.2 adaptation + fail-closed acceptance engine) |
+| [docs/release-v0.3.2.en.md](docs/release-v0.3.2.en.md) | v0.3.2 release notes (Codex wait-user detection + cancel truly stops the GUI) |
 | [docs/release-v0.3.1.en.md](docs/release-v0.3.1.en.md) | v0.3.1 release notes (skill docs rewrite + release automation fixes) |
 | [docs/release-v0.3.0.en.md](docs/release-v0.3.0.en.md) | v0.3.0 release notes (Codex desktop GUI adapter, incl. BREAKING) |
 | [docs/release-v0.2.0.en.md](docs/release-v0.2.0.en.md) | v0.2.0 release notes (unified ZCode GUI loop) |
@@ -258,14 +265,21 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 - **M13 — Skill docs alignment + release automation fixes + v0.3.1** (2026-09-12, see [release-v0.3.1.en.md](docs/release-v0.3.1.en.md))
   - Self-installed skill docs (SKILL.md / usage-examples.md) rewritten item by item against the v0.3.0 tool surface (codex GUI params, needs_user handling, verify/list usage)
   - Bilingual release bodies, Full Changelog & CI link fixes, and automated Gitee releases
+- **M14 — Codex wait-user detection + cancel truly stops the GUI + v0.3.2** (2026-09-12, fixes issues #5 / #6, see [release-v0.3.2.en.md](docs/release-v0.3.2.en.md))
+  - Issue #5: Codex parked on a "waiting for user confirmation" screen no longer dead-locks in `running` — with the stop button visible and the conversation hash unchanged for `gui.stallTimeoutMs` (default 5 min), the task turns `needs_user(user_confirmation)`; added a configurable `gui.selectors.userGate` UI gate; `continue_task` now supports codex (`user_confirmation` re-observes / `login_required` re-dispatches)
+  - Issue #6: `cancel_task` for GUI agents clicks the in-app stop control over CDP and bounded-waits (`gui.cancelWaitMs`, default 15s) for the GUI to go idle before recording `cancelled`; dispatch-time liveness checks reject with `instance_busy` when a managed instance is still running, preventing overlapping turns
+- **M15 — ZCode 3.11.2 adaptation + fail-closed acceptance engine + v0.3.3** (2026-09-12, fixes issues #4 / #7, see [release-v0.3.3.en.md](docs/release-v0.3.3.en.md)) — **366 tests**
+  - Issue #4: the model menu supports both `group-provider` and 3.11.2 `group-family` groups, selecting flat models directly first with group expansion as a fallback; project binding now keys on the composer's `menuitemcheckbox` with read-back checking trigger text + full path and up to two idempotent retries; stale workspace menus are dismissed before adding a project
+  - Issue #7: a test check that exits 0 but reports zero executed tests fails; git projects must produce changes relative to the pre-work baseline by default (opt out with `requireChanges: false`) — zero tests and zero changes no longer pass silently
+  - `{PROGRAMFILES}` placeholders normalized to uppercase and environment-variable expansion made case-insensitive
 
 ## Agent support status
 
-| agentId | driver | status | Notes |
+| agentId | driver / adapter | status | Notes |
 |---|---|---|---|
-| `codex` | `gui` | **ready** | Desktop GUI over CDP (MSIX COM activation + dedicated profile); supports `model`/`reasoningLevel`/`planDoc`/`designSystem`; Windows machine-verified |
-| `zcode` | `zcode-gui` | **research** | CDP GUI adapter and Windows hardware loop passed; remains non-ready until macOS hardware passes |
-| `traework` | **`gui`** | **ready** | CDP-driven TRAE SOLO CN desktop UI; all three panel modes machine-verified |
+| `codex` | `gui` / `codex-gui` | **ready** | Desktop GUI over CDP (MSIX COM activation + dedicated profile); supports `model`/`reasoningLevel`/`planDoc`/`designSystem`; wait-user, cancel and dispatch-guard semantics machine-verified (v0.3.2); Windows machine-verified |
+| `zcode` | `gui` / `zcode-gui` | **research** | CDP GUI adapter with the Windows hardware loop passed; adapted to ZCode 3.11.2 model menu and project binding (v0.3.3); remains non-ready until macOS hardware passes |
+| `traework` | `gui` / `traework-gui` | **ready** | CDP-driven TRAE SOLO CN desktop UI; all three panel modes machine-verified |
 | `stub` | `spawn` | tests only | `test/stub-agent/stub-agent.mjs` with 3 playbooks (good/fix-on-first/never) |
 
 > Adding an agent usually needs only a profile — see [docs/agent-profiles.en.md](docs/agent-profiles.en.md) and [CONTRIBUTING.en.md](CONTRIBUTING.en.md).
@@ -280,7 +294,7 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 
 | Document | Content |
 |---|---|
-| [CHANGELOG.en.md](CHANGELOG.en.md) | Version history (v0.1.0 → v0.3.1) |
+| [CHANGELOG.en.md](CHANGELOG.en.md) | Version history (v0.1.0 → v0.3.3) |
 | [CONTRIBUTING.en.md](CONTRIBUTING.en.md) | Dev setup, conventions, commit/release flow, adding an agent |
 | [SECURITY.en.md](SECURITY.en.md) | Security model (zero credentials / command whitelist / process & desktop-automation boundaries) and private reporting |
 | [CODE_OF_CONDUCT.en.md](CODE_OF_CONDUCT.en.md) | Contributor Code of Conduct |

@@ -1,6 +1,6 @@
 # HANDOFF.md — 项目交接说明
 
-> 交接快照：**2026-09-12**（v0.3.0 Codex 桌面端 GUI 适配）。本文写给**接手本仓库的人**：先读「交接快照」了解当前状态，再按「从零搭环境」上手。
+> 交接快照：**2026-09-12**（v0.3.3：ZCode 3.11.2 适配 + 验收引擎 fail-closed）。本文写给**接手本仓库的人**：先读「交接快照」了解当前状态，再按「从零搭环境」上手。
 > 工作区规则见 `AGENTS.md`（gitignore 中，仅本地），安装/用法见 `README.md`，本文不重复，只做导览与状态记录。
 
 ---
@@ -15,11 +15,12 @@
 
 - **天枢官方仓库**：<https://github.com/huiliyi37/Tianshu-harness>（基于 harness 工程的终端编程智能体运行时，TUI × GUI；Apache-2.0）
 - **本仓库**：`github.com/lanlan0811/tianshu-mcp`（主）｜`gitee.com/lan0811/tianshu-mcp`（镜像）
-- **npm**：`tianshu-mcp`（当前发布目标 `0.3.0`）
+- **npm**：`tianshu-mcp`（当前发布版本 `0.3.3`）
+- **工具面**：9 个 MCP 工具（`run_task / continue_task / query_task / list_tasks / get_task_report / cancel_task / verify_task / rework_task / get_profiles`）
 
 ### 为什么是这样设计的（硬约束）
 
-本项目的形态由三个**实测硬约束**决定，改架构前必读：
+本项目的形态由四个**实测硬约束**决定，改架构前必读：
 
 1. **天枢的 MCP 工具只回文本**：MCP 响应里 `content[]` 的 `text` 项被拼成字符串，`isError` 透传。因此所有结果统一为「人类可读文本 + `---tianshu-mcp-meta---` JSON 块」，不依赖 resources/prompts。
 2. **天枢按次同步调用 `tools/call`**：长任务必须异步化 → `run_task` 秒回 `taskId`，用 `query_task` 轮询。
@@ -33,23 +34,23 @@
 | 项 | 状态 |
 |---|---|
 | 分支 | `master`（**只在此分支提交**，不建其他分支） |
-| 发布提交 | `dc471d2 修复 TraeWork 任务进行中检测并发布 v0.1.9`（v0.1.10 修复提交见本次交付记录） |
-| 版本 / 许可证 | `0.3.0` / Apache-2.0 |
-| 标签 | `v0.1.0` … `v0.3.0`（均已推双仓） |
-| 工作树 | 干净；`github/master` 与 `gitee/master` 均同步于 `e91fc47` |
-| 测试 | **340/340 通过**（39 个测试文件：单元 27 + 集成 11 + 协议 1） |
+| 发布提交 | `38fb47d chore(release): v0.3.3 版本号、双语 CHANGELOG 与文档更新`（tag `v0.3.3` 即此提交） |
+| 版本 / 许可证 | `0.3.3` / Apache-2.0 |
+| 标签 | `v0.1.0` … `v0.3.3`（均已推双仓） |
+| 工作树 | 干净；`github/master` 与 `gitee/master` 均同步于 `38fb47d` |
+| 测试 | **366/366 通过**（39 个测试文件：单元 24 + 集成 14 + 协议 1） |
 | 门禁 | lint 0 warning、typecheck clean、build 成功、`check:stdio` 6/6 场景通过、`npm pack` 内容校验通过 |
-| CI | ubuntu/windows/macos × Node 20/22/24 + pack-check = **10/10 全绿**（随 v0.3.0 tag 再次校验） |
+| CI | ubuntu/windows/macos × Node 20/22/24 + pack-check = **10/10 全绿**（随 v0.3.3 tag 再次校验） |
 | npm | 发布由维护者手动 `npm publish`（需 token）；详见 `docs/npm-publish-guide.md` |
-| Release | 推送 `v*` tag 触发 `.github/workflows/release.yml`：产出 GitHub Release（正文取 `docs/release-v<ver>.md`）并附 `tianshu-mcp-<ver>.tgz`；Gitee 发行版由 `scripts/gitee-release.mjs` 用 `GITEE_TOKEN` 幂等补齐 |
+| Release | 推送 `v*` tag 触发 `.github/workflows/release.yml`：正文由 `docs/release-v<ver>.md` + `.en.md` 双语合成（缺文档即报错，不产出空壳正文），`Full Changelog` 经 `git describe` 解析上一 tag，CI 链接解析同 SHA 运行，并附 `tianshu-mcp-<ver>.tgz`；Gitee 发行版由 `scripts/gitee-release.mjs` 用 `GITEE_TOKEN` 幂等补齐 |
 
 ### Agent 适配现状
 
-| agentId | driver | status | 说明 |
+| agentId | driver / adapter | status | 说明 |
 |---|---|---|---|
-| `codex` | **`gui`** | **ready** | Codex 桌面端 GUI（MSIX COM 激活 + CDP），支持 `model`/`reasoningLevel`/`planDoc`/`designSystem`；**已取代无头 CLI**（见 CHANGELOG 0.3.0 BREAKING） |
-| `zcode` | `zcode-gui` | **research** | CDP GUI adapter 与 Windows 真机闭环已完成；macOS 真机待补齐，见 `docs/zcode-cdp.md` |
-| `traework` | **`gui`** | **ready** | CDP 驱动 TRAE SOLO CN 桌面 UI；三种面板模式真机验证通过 |
+| `codex` | `gui` / `codex-gui` | **ready**（macOS 为 `research`） | Codex 桌面端 GUI（MSIX COM 激活 + CDP），支持 `model`/`reasoningLevel`/`planDoc`/`designSystem`；等待用户检测、取消真停、重派护栏均已真机验证（v0.3.2） |
+| `zcode` | `gui` / `zcode-gui` | **research** | CDP GUI adapter，Windows 真机闭环通过；已适配 ZCode 3.11.2 模型菜单与项目绑定（v0.3.3）；macOS 真机证据完成前不得改 `ready` |
+| `traework` | `gui` / `traework-gui` | **ready** | CDP 驱动 TRAE SOLO CN 桌面 UI；三种面板模式真机验证通过 |
 | `stub` | `spawn` | 仅测试 | `test/stub-agent/stub-agent.mjs` 三剧本（good/fix-on-first/never） |
 
 ---
@@ -69,6 +70,9 @@
 - **M10** stdio 日志污染修复（issue #1：Logger 全级别改走 stderr + 严格 stdio 门禁 + Node 24 + 安装包协议门禁）+ v0.1.10 — **202 测试**
 - **M11** ZCode GUI 统一闭环（独立 `zcode-gui` CDP adapter + 精确项目/模型/完全访问 + `needs_user`/`continue_task` + 同会话返修）+ v0.2.0 — **262 测试**
 - **M12** Codex 桌面端 GUI 适配（MSIX COM 激活 + CDP；模型 + 思考强度滑块；项目自动登记；验收失败自动生成计划并返修）+ v0.3.0 — **340 测试**（**破坏性**：`agentId=codex` 由无头 CLI 改为 GUI）
+- **M13** 技能文档对齐 + 发布自动化修复 + v0.3.1（无源码行为变更；SKILL/usage-examples 重写、双语 Release 正文、Full Changelog/CI 链接修复、Gitee 发行版自动化）
+- **M14** Codex 等待用户检测 + 取消真停 GUI + v0.3.2（issue #5/#6，详见 §8.4）
+- **M15** ZCode 3.11.2 适配 + 验收引擎 fail-closed + v0.3.3（issue #4/#7，详见 §8.5）— **366 测试**
 
 ### 实现期修复记录（重要）
 
@@ -88,6 +92,12 @@
    INFO/WARN/DEBUG 走 `console.log`，与 MCP JSON-RPC 共用 stdout → 严格客户端握手/调用失败。
    修复：全级别统一 stderr，stdout 只承载协议消息。回归：`test/unit/log.test.ts` +
    `scripts/check-stdio.mjs`（真实进程字节流校验，6 场景），ESLint `no-console` 兜底。详见 §8.3。
+8. **Codex 等待用户死锁 + 取消假停**（M14 / v0.3.2，issue #5/#6）：等待用户确认界面恒报 `running` 直到总超时；
+   `cancel_task` 只停 MCP 侧等待、不停 GUI 内运行。修复：stall 兜底转 `needs_user(user_confirmation)`、
+   `continue_task` 扩展支持 codex、取消经 CDP 点击停止 + 有界等待、派发前 `instance_busy` 护栏。详见 §8.4。
+9. **ZCode 3.11.2 选择器漂移 + 验收假绿**（M15 / v0.3.3，issue #4/#7）：模型菜单 provider 分组漂移为 family、
+   项目绑定入口/回读判据变化；测试零用例与 git 零变更曾判通过。修复：新旧布局双兼容 + 直选优先、
+   composer 复选项主判据 + 回读重试、验收引擎 fail-closed（零用例判失败、`requireChanges` 默认 true）。详见 §8.5。
 
 ---
 
@@ -101,27 +111,40 @@ src/
 │   ├── schema.ts         zod 全集（工具入参、profile、projects、验收配置、TraeworkMode）
 │   └── store.ts          数据目录读写 + last-known-good 热加载
 ├── mcp/
-│   ├── tools.ts          9 个工具的元数据（含 continue_task）
+│   ├── tools.ts          9 个工具的元数据
 │   ├── handlers.ts       工具实现
 │   ├── context.ts        meta → TaskContext
 │   └── formatter.ts      文本 + meta 块
 ├── tasks/                状态机、每项目串行队列、全局并发闸、事件流落盘
+│   ├── task.ts / task-manager.ts / task-store.ts
 ├── loop/
 │   ├── fix-loop.ts       单任务编排（自动返修循环）
 │   └── repair-plan.ts    验收失败时生成修复计划文件
 ├── agents/
 │   ├── adapter.ts        AgentAdapter 接口（含可选 run() 执行面）
-│   ├── registry.ts       按 profile.driver + adapter 构造 Cli/TraeWork/ZCode adapter
+│   ├── registry.ts       按 profile.adapter/driver 构造 Cli/TraeWork/ZCode/Codex adapter
 │   ├── cli.ts            通用 CLI adapter
 │   ├── spawn.ts          子进程封装（windowsHide/stdio 管道/超时/kill tree）
 │   ├── builtin.ts        内置 profiles（codex/zcode/traework）
-│   └── traework/         GUI 驱动
-│       ├── adapter.ts / run.ts / launcher.ts
-│       ├── cdp/{client,selectors}.ts
-│       ├── ui/{session,composer,model,reply}.ts
-│       └── computeruse/{guard,dialog}.ts
+│   ├── traework/         TraeWork GUI 驱动
+│   │   ├── adapter.ts / run.ts / launcher.ts
+│   │   ├── cdp/{client,selectors}.ts
+│   │   ├── ui/{session,composer,model,reply}.ts
+│   │   └── computeruse/{guard,dialog}.ts
+│   ├── zcode/            ZCode GUI 驱动（v0.2.0 起）
+│   │   ├── adapter.ts / run.ts / instance.ts
+│   │   ├── cdp.ts / selectors.ts / discovery.ts / dialog.ts
+│   │   ├── model.ts / project.ts / references.ts / liveness.ts
+│   └── codex/            Codex 桌面端 GUI 驱动（v0.3.0 起）
+│       ├── adapter.ts / run.ts
+│       ├── discovery.ts（Appx 查询 + 扫盘回退）/ launcher.ts（COM 激活）
+│       ├── cdp.ts / selectors.ts / input.ts / model.ts
+│       ├── project.ts（自动登记）/ registry.ts / instance.ts / liveness.ts
+│       ├── dialog.ts / fixplan.ts / verify.ts
 ├── verify/               验收引擎（命令检查 + 代码分析 + git 基线 + 报告）
-└── util/                 日志、路径、文件、超时、技能安装
+│   ├── acceptance.ts / runner.ts / exec.ts / signals.ts
+│   ├── code-analysis.ts / git-baseline.ts / report.ts
+└── util/                 日志、路径、文件、超时、id、技能安装
 ```
 
 ### 两条执行面（`driver`）
@@ -129,11 +152,13 @@ src/
 | driver | 执行方式 | 结果判定 |
 |---|---|---|
 | `spawn`（默认） | 拉起外部 CLI 子进程 | 退出码 |
-| `gui` | CDP 驱动桌面 UI，**不 spawn** | 运行信号优先 → DOM 完成标志 → 稳定确认后的空闲计时 → 任务超时 |
+| `gui` | CDP 驱动桌面 UI，**不 spawn**（Codex/ZCode 的进程启动除外——为注入调试端口而启动，但仍以 UI 信号判定） | 运行信号优先 → DOM 完成标志 → 稳定确认后的空闲计时 → stall/任务超时 |
 
 `TaskOrchestrator.runAgentOnce` 的分支逻辑：`adapter.run` 存在 → 调用它；否则走 `runChild`。**这是唯一需要理解的双路径接缝。**
 
-### TraeWork 执行顺序（实测结论，勿随意调整）
+### 三个 GUI adapter 的执行顺序（实测结论，勿随意调整）
+
+**TraeWork**（详见 §8.1/§8.2）：
 
 ```text
 确保实例可用 → 等待 UI 就绪 → 新建会话 → 切到目标模式 → 在目标模式内绑定项目 → 切模型 → 发送 → 轮询到完成
@@ -142,19 +167,41 @@ src/
 > **关键事实**：TraeWork 的 Work/Code/Design **各自维护独立的项目绑定**，切换模式会把输入栏项目换成该模式上次使用的项目。
 > 因此必须先切模式、再在目标模式里绑定项目；绑定后复核「模式 + 项目」双双就位，任一不符即响亮失败。
 
+**ZCode**（详见 `docs/zcode-cdp.md` 与 §8.5）：
+
+```text
+发现安装 → 启动/复用 CDP 实例 → 绑定项目（composer 复选项为主判据，旧版侧栏兜底） → 选模型（直选优先，provider/family 分组兜底） → 完全访问权限 → 发送 → 运行检测/提问检测 → 轮询到完成
+```
+
+> 提问、登录页、旧实例无 CDP、macOS 辅助功能权限分别转 `agent_question` / `login_required` /
+> `needs_user(close_existing_instance)` / `system_permission`，由 `continue_task` 恢复。
+
+**Codex**（详见 `docs/codex-gui-cdp.md` 与 §8.4）：
+
+```text
+MSIX 发现（Appx 查询优先 + 扫盘回退） → COM 激活 + 专属 user-data-dir + CDP 端口 → 项目登记/绑定 → 选模型与思考等级 → 发送（planDoc/designSystem 拼进初始指令） → 运行检测（停止按钮 + 对话哈希 stall） → 轮询到完成
+```
+
+> 停在「等待用户确认」界面（方案确认卡/订阅结账页）→ stall 判定转 `needs_user(user_confirmation)`；
+> 用户处理完后 `continue_task` 重新观察（不重发消息）；`login_required` 则复检环境后重派任务书。
+
 ---
 
 ## 5. 硬性红线（违反 = 运行时损坏或事故，改架构前必读）
 
 1. **绝不按进程树盲杀 TraeWork**：只终止本模块创建、且命令行核对通过的 PID，且不带 `/T`。
    事故来源：验证期 `taskkill /PID <pid> /T /F` 误杀用户正在使用的实例（数据完好，已恢复）。见 `docs/traework-cdp.md §6`。
-2. **默认复用用户实例**：`gui.windowMode="reuse"`，绝不新起第二个。
+2. **默认复用用户实例**：`gui.windowMode="reuse"`，绝不新起第二个（Codex/ZCode 以专属 user-data-dir 启动的受管实例除外，且不触碰用户手动打开的实例）。
 3. **computer-use 白名单**：仅允许 TraeWork 文件夹选择对话框（窗口标题 + 宿主进程双校验），其他窗口一律 `COMPUTER_USE_DENIED`。
-4. **凭证零管理**：不读取/解密/转发任何 agent 凭证；TraeWork 只驱动 UI。
+4. **凭证零管理**：不读取/解密/转发任何 agent 凭证；GUI adapter 只驱动 UI。
 5. **命令不拼 shell**：验收命令是结构化 argv，`shell:false`。
 6. **不自动 commit/stash/回滚**：动工前采集 git 基线，报告相对基线计算。
-7. **路径不硬编码**：机器路径/用户名/端口走 profile 或占位符（`{LOCALAPPDATA}` 等）。
-8. **只在 `master` 提交，commit 用中文**。
+7. **路径不硬编码**：机器路径/用户名/端口走 profile 或占位符（`{LOCALAPPDATA}`、`{PROGRAMFILES}` 等，展开大小写不敏感）。
+8. **GUI 取消不得谎报**：`cancel_task` 对 GUI agent 必须尽力点击停止 + 在 `gui.cancelWaitMs` 内有界等待确认；
+   未确认停止时终态必须明示「GUI 内运行未确认停止」。重派前必须确认受管实例空闲，否则以 `instance_busy` 拒绝（防 turn 交叠）。
+9. **验收 fail-closed**：测试命令退出码 0 但输出显示零用例 → 判失败；git 项目默认要求相对基线产生变更
+   （`requireChanges: false` 显式关闭）。不得为「让任务变绿」放松这两个门禁。
+10. **只在 `master` 提交，commit 用中文**。
 
 ---
 
@@ -165,7 +212,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 202 项
+npm test             # 366 项
 ```
 
 日常循环（改 `src/` 后）：
@@ -175,26 +222,41 @@ npm run typecheck && npm run lint && npm test && npm run build
 # 通过后：git add . && git commit -m "中文说明" && git push github master && git push gitee master
 ```
 
-### 本机环境事实（2026-09-08 探测，接手机器可能不同）
+### 本机环境事实（2026-09 探测，接手机器可能不同）
 
 | 项 | 值 |
 |---|---|
-| Node | v24.18.0（`engines: >=20`，CI 覆盖 20/22） |
+| Node | v24.18.0（`engines: >=20`，CI 覆盖 20/22/24） |
 | 天枢宿主 | `D:\Tianshu`（`tianshu-desktop.exe` + `rivet-runtime`） |
 | Codex 桌面端（现用） | MSIX 包 `OpenAI.Codex`：`...\WindowsApps\OpenAI.Codex_<版本>_x64__<pfn>\app\ChatGPT.exe`；版本目录随更新变化 → Appx 查询优先 + 扫盘回退取最新 |
 | Codex 内核 CLI（备用） | `%LOCALAPPDATA%\OpenAI\Codex\bin\<hash>\codex.exe`；如需无头执行，另建 `driver=spawn` profile |
 | TraeWork | `D:\TRAE Work CN\TRAE SOLO CN.exe`（v1.107.1）；CDP 需 `--remote-debugging-port=9222` 且窗口可见 |
+| ZCode | Electron 桌面端；Windows 验收样本 `D:\Z-Code\ZCode\ZCode.exe`（由「D 盘优先 + 相对路径模板」发现，非硬编码）；CDP 需 `--remote-debugging-port`；3.11.2 语义已适配 |
 | 参考实现 | `D:\Trae项目\oh-dsh-trae-api`（TraeWork CDP 驱动机制的来源，含 `HANDOFF.md`） |
 | 数据目录 | 默认 `~/.tianshu-mcp`（env `TIANSHU_MCP_HOME` 可覆盖） |
 | 技能安装 | `~/.rivet/skills/tianshu-mcp`（server 启动自检幂等安装） |
 
-### 真机验证（**不入 CI**，需真实客户端在跑）
+### 诊断探针与真机验证（**不入 CI**，需真实客户端在跑）
 
 ```bash
-node scripts/probe-traework.mjs selectors          # 选择器命中检查
-node scripts/probe-traework.mjs mode Code          # 切面板模式
-node scripts/probe-traework.mjs project <绝对路径>  # 新建会话 + 绑定项目
-node scripts/probe-traework.mjs send "任务书"       # 端到端发一条并取回复
+# TraeWork：选择器 / 模式 / 绑定 / 发送
+node scripts/probe-traework.mjs selectors
+node scripts/probe-traework.mjs mode Code
+node scripts/probe-traework.mjs project <绝对路径>
+node scripts/probe-traework.mjs send "任务书"
+
+# ZCode：只读诊断（install/process/cdp/selectors/ui/projects/models/permission/liveness/session）
+node scripts/probe-zcode.mjs all
+
+# Codex：只读诊断；--launch 才会以专属 user-data-dir 启动受管实例（不触碰用户实例）
+node scripts/probe-codex.mjs
+node scripts/probe-codex.mjs --launch --port 9333
+
+# ZCode 真机冒烟（需 --confirm-send/--model/--task 三者齐全才发送；隔离数据目录）
+npm run build && npm run smoke:zcode -- --confirm-send --model DeepSeek/deepseek-flash --project D:\repo\app --task "任务书"
+
+# stdio 协议门禁（真实进程字节流校验，6 场景）
+npm run check:stdio
 ```
 
 ---
@@ -203,12 +265,12 @@ node scripts/probe-traework.mjs send "任务书"       # 端到端发一条并�
 
 | 层级 | 位置 | 说明 |
 |---|---|---|
-| 单元 | `test/unit/` | 纯函数与组件逻辑（含 traework reply/selectors/launcher/guard/repair-plan/driver/session） |
-| 集成 | `test/integration/` | stub-agent 三剧本、取消/超时/基线、TraeWork 假 CDP（单轮 + 返修闭环）、rework 竞态回归 |
-| 协议 | `test/protocol/` | 官方 SDK 客户端断言 8 工具面与返回格式 |
-| 真机 | `scripts/probe-traework.mjs` | **手动**，需真实 TraeWork |
+| 单元 | `test/unit/`（24 文件） | 纯函数与组件逻辑：traework 全套（reply/selectors/launcher/guard/driver/session/liveness/dialog/cdp-client/repair-plan）、codex-core、zcode-core/zcode-handler、acceptance、baseline、atomic-write、log、config/profile 热加载等 |
+| 集成 | `test/integration/`（14 文件） | stub-agent 三剧本、取消/超时/基线、traework 假 CDP（单轮 + 返修 + 绑定兜底）、codex-flow、zcode-flow/restart/rework-loop、rework 竞态回归、verify-params |
+| 协议 | `test/protocol/`（1 文件） | 官方 SDK 客户端断言 9 工具面与返回格式 |
+| 真机 | `scripts/probe-*.mjs` / `scripts/smoke-zcode.mjs` | **手动**，需真实客户端 |
 
-假 CDP 桩在 `test/fake-cdp.ts`：**助手回复必须同步追加**（`autoReplyText`），不要改回定时器——轮询间隔小 + `stableRounds` 低时定时器会与稳定兜底抢跑（已在 CI 上翻车过一次）。
+假 CDP 桩在 `test/fake-cdp.ts`：**助手回复必须同步追加**（`autoReplyText`），不要改回定时器——轮询间隔小 + `stableRounds` 低时定时器会与稳定兜底抢跑（已在 CI 上翻车过一次）。ZCode 3.11.2 语义的假桩与回归用例见 `test/integration/zcode-flow.test.ts` / `test/unit/zcode-core.test.ts`（v0.3.3 同步）。
 
 ---
 
@@ -220,15 +282,22 @@ node scripts/probe-traework.mjs send "任务书"       # 端到端发一条并�
   `stableRounds` 只启动 `idleTimeoutMs`（默认 10 分钟）空闲计时，不再把约 36 秒静态直接当完成。
 - **异常结束保留实例**：`idle_no_completion` / `timeout` / `aborted` / `cdp_lost` 均不关闭现场；
   `query_task` meta 查看 `agentEndReason` / `keptInstance`。
-- **UI 升级会漂移**：选择器集中在 `src/agents/traework/cdp/selectors.ts`，可经 profile `gui.selectors` 覆盖；用探针诊断。
-- **macOS 未验证**：CDP 机制平台无关，但可执行探测与原生对话框驱动（AppleScript 路线）未实测；当前 macOS 分支 fail-closed。
+- **UI 升级会漂移**：三个 adapter 的选择器分别集中在
+  `src/agents/traework/cdp/selectors.ts`、`src/agents/zcode/selectors.ts`、`src/agents/codex/selectors.ts`，
+  均可经 profile `gui.selectors` 覆盖；用探针诊断。
+- **macOS 未验证**：TraeWork 的原生对话框驱动（AppleScript 路线）、ZCode 真机闭环、Codex GUI 的就绪判定均未在
+  macOS 实测；当前 macOS 分支 fail-closed（codex 内置 profile 在 darwin 上即为 `research`）。
 - **`mode` 仅 TraeWork 生效**：ZCode/Codex 会拒绝该参数（返回明确错误）。
+- **needs_user 状态下取消是已知边界**：MCP 侧无 CDP 连接，GUI 内等待中的会话停不掉；终态文案会提示。
+  经临时 CDP 连接尽力停止 GUI 内会话列在「未发布/计划中」。
+- **验收 fail-closed 对纯分析任务的影响**：git 项目默认要求产生变更；纯问答/分析任务必须在
+  `.tianshu-mcp/acceptance.json` 设 `"requireChanges": false`，否则验收判失败。
 - **原生对话框链路依赖桌面状态**：TraeWork 窗口必须可见，且不能有第三方工具（如 Snipaste 截图器）抢焦点。
 - **npm 上的 README 停留在发布时**：之后新增的文档只在仓库里；如需同步到 npm 需再发版本。
 
 ---
 
-## 8.1 TraeWork 项目文件夹绑定排障（M6 实战教训）
+## 8.1 TraeWork 项目文件夹绑定排障（M6/M7 实战教训）
 
 ### 事实：下拉项 ≠ 项目 map
 
@@ -309,20 +378,7 @@ hwnd 贯穿传递（只操作探测到的那个窗口）、下拉未命中时先
 - `idle_no_completion` / `timeout` / `aborted` / `cdp_lost` 均保留实例，结果与任务 meta 写入
   `agentEndReason` / `keptInstance`。超时文案不再错误声称「进程树已终止」。
 
-### 2026-09-09 真机与发布物证
-
-| 项 | 结果 |
-|---|---|
-| 活跃 DOM 探针 | `stopButton=true`、`taskTailLoading=true`，空闲后均恢复 false；thinking stream 仅诊断 |
-| 长任务 | `tsk_20260909073026_79600a` 持续生成约 92 秒；30 秒进度记录 stop，60 秒记录 stop+tail；最终 `completion_mark`，验收 2/2 通过 |
-| 极短超时 | `tsk_20260909073242_f81f0f`：`timeout=true`、`agentEndReason=timeout`、`keptInstance=true`；PID 16264 命令行与 9222 端口复核仍存活 |
-| 正常短任务 | `tsk_20260909073328_dd4dc8`：`completion_mark`，验收 2/2 通过 |
-| 本地门禁 | `typecheck`、`lint`、`build`、`pack:check` 全绿；30 文件 **196/196** 测试通过 |
-| GitHub CI | run `34292477632`：ubuntu/windows/macos × Node 20/22 + tarball，共 **7/7** 全绿 |
-| Release / npm | GitHub 与 Gitee `v0.1.9` 均正式发布并附 tarball；npm `tianshu-mcp@0.1.9`，`latest=0.1.9` |
-
-真机使用的独立项目、任务日志与报告均在仓库忽略目录 `.tianshu-mcp/` 下，不进入发布产物；验证实例在
-完成存活确认后按「PID + 可执行名 + 调试端口」核对，并以非树式方式安全关闭。
+---
 
 ## 8.3 stdio 日志污染修复（M10 / v0.1.10，issue #1）
 
@@ -343,27 +399,89 @@ hwnd 贯穿传递（只操作探测到的那个窗口）、下拉未命中时先
   损坏 `config.json`、stub 任务运行期日志、EOF 关闭 6 场景。消费者安装 tarball 后复用同一脚本。
 - 回归：`test/unit/log.test.ts` 以子进程探针断言四级通道、默认 INFO 过滤、文件阈值与 UTF-8。
 
-### 2026-09-10 本地门禁物证
+### 宿主复验物证
 
 | 项 | 结果 |
 |---|---|
-| 修复前 | `test/unit/log.test.ts` 4/6 失败；`check-stdio` 6/6 场景失败（证据已归档） |
 | 修复后 | 源码入口与 `dist` 入口 `check:stdio` 均 **6/6 通过**，stdout 非协议行 0 |
-| 安装包 | tarball 安装到干净消费者目录（不装 dev 依赖）后 6/6 通过 |
-| 门禁 | `typecheck` / `lint` / `build` / `check:stdio` / `pack:check` 全绿；31 文件 **202/202** 测试通过 |
-| CI | ubuntu/windows/macos × Node 20/22/24 + pack-check = **10/10 全绿**（随 v0.3.0 tag 再次校验） |
-| 发布产物 | npm `tianshu-mcp@0.1.10`（`latest=0.1.10`）；GitHub 与 Gitee `v0.1.10` Release 均附 `tianshu-mcp-0.1.10.tgz` |
-| 发布包复验 | 干净消费者目录安装 registry 上的 `0.1.10` 后 `check:stdio` 6/6 通过 |
 | 桌面宿主重连 | 天枢桌面端 v3.16.1：`2 servers connected, 10 tools`（本 server 8 个），无过滤包装器；会话内真实调用 `get_profiles` 成功。详见 `docs/issue-1-host-reconnect-record.md` |
-| 3.17.0 复验 | 宿主升级后 UI 显示 0/2；根因是天枢内嵌 npm 的 `minipass` 旧副本污染（与本 server 无关）。移开陈旧嵌套目录后 `GET /mcp/status` 显示 tianshu-mcp `connected` / `toolCount:8`，会话内 `mcp__tianshu-mcp__get_profiles` 调用成功 |
+| 3.17.0 复验 | 宿主升级后 UI 显示 0/2；根因是天枢内嵌 npm 的 `minipass` 旧副本污染（与本 server 无关）。移开陈旧嵌套目录后 `GET /mcp/status` 显示 tianshu-mcp `connected`，会话内 `mcp__tianshu-mcp__get_profiles` 调用成功 |
+
+---
+
+## 8.4 Codex GUI 状态脱节与取消（M14 / v0.3.2，issue #5/#6）
+
+### 等待用户检测（issue #5）
+
+- **现象**：Codex 停在「等待用户确认」界面（方案确认卡/订阅结账页等）时，turn 是暂停而非结束，
+  但停止按钮仍可见——旧判定把「停止按钮可见」当绝对运行信号 → 任务死锁在 `running` 直到 30 分钟总超时。
+- **stall 兜底**：停止按钮持续可见且对话哈希 `gui.stallTimeoutMs`（默认 5 分钟）不变 → 判定等待用户，
+  任务转 `needs_user(user_confirmation)` 并回传可操作的 `pendingQuestion`；对话内容恢复变化会重置计时。
+- **可配置界面检测**：`gui.selectors.userGate`（如结账页 `embedded-checkout`、确认卡选择器）命中即快速转
+  `needs_user`；默认未配置 = 禁用，不内置未真机验证的选择器。
+- **选择器收紧**：`stopButton` 移除 `aria-label*="取消"` 过匹配（等待用户界面的「取消」按钮曾被误判为运行信号）。
+
+### 恢复通道（`continue_task` 扩展支持 codex）
+
+| `needsUserKind` | 恢复行为 |
+|---|---|
+| `user_confirmation` | 用户在 Codex 窗口处理完后恢复；MCP 仅重新接入观察 GUI 内运行（**不发送消息**）；恢复前 turn 已完成也能正确判 `succeeded` |
+| `login_required` | 复检环境后重新派发任务书（新会话 + 项目绑定 + 完整初始指令） |
+
+ZCode 原有恢复行为不变；其他 agent 明确拒绝。
+
+### 取消真停 GUI（issue #6）
+
+- `cancel_task` 对 GUI agent 不再「请求即成功」：先经 CDP 尽力点击界面停止按钮，并在 `gui.cancelWaitMs`
+  （默认 15 秒）内有界等待 GUI 真正空闲后落 `cancelled`；未确认停止时终态文案明示
+  「GUI 内运行未确认停止，Codex 窗口中的任务可能仍在继续」。
+- **重派防交叠护栏**：派发前发现受管实例上仍有未停止的运行时，先尽力停止；仍不空闲则以
+  `instance_busy` 硬失败拒绝派发（取消后立刻重派曾实测踩中）。
+
+### 真机陷阱：trusted 点击 vs DOM click
+
+Windows + Codex 26.903.9818.0 真机模拟实测：模型菜单的 `menuitemradio` 对 trusted 鼠标点击
+**只收起菜单、不切换选中态** → `clickModelItem` 改为页面内 DOM `.click()`；而「项目选择触发器」相反，
+**需要 trusted 点击才能展开**。两个方向相反的行为都已注明在代码与 `docs/codex-gui-cdp.md`，
+后续改动选择器交互时必须真机复验。
+
+---
+
+## 8.5 ZCode 3.11.2 适配与验收 fail-closed（M15 / v0.3.3，issue #4/#7）
+
+### ZCode 3.11.2 选择器漂移（issue #4）
+
+- **模型菜单**：3.11.2 把供应商分组从 `chat-model-select-group-provider:` 漂移为
+  `chat-model-select-group-family:`。现两前缀均兼容；打开菜单后**直选平铺模型优先**，
+  直选失败才展开 provider/family 分组重试（新旧布局都覆盖）。
+- **项目绑定**：3.11.2 绑定入口在 composer 下拉，主判据为 `menuitemcheckbox`（按 NFKC/空白/大小写归一化后
+  的目录显示名精确唯一匹配），旧版侧栏项仅作回退；回读同时校验 composer 触发器文本与完整路径，
+  过滤中英文「选择项目」占位词；绑定失败最多两轮幂等重试。
+- **添加新项目**：首次 outside-click 会被吞 → 添加前先收起残留工作区菜单，再以最多三轮
+  「收起—点击—验证」闭环打开「打开文件夹」。
+- **诊断友好**：`model_unavailable` 与权限选择失败回传可见文本及 `data-testid` 候选，便于 CDP 定位下一次漂移。
+
+### 发现路径与占位符
+
+- ZCode/TraeWork 内置发现目录统一为 `{PROGRAMFILES}` / `{PROGRAMFILES(X86)}`（全大写）；
+  自定义 profile 的环境占位符按**大小写不敏感**展开，未知占位符保留原样。
+
+### 验收引擎 fail-closed（issue #7）
+
+- **零用例判失败**：测试检查进程退出码 0 但输出明确报告 0 个用例 → 改判失败（此前假绿）。
+- **零变更判失败**：git 项目默认要求相对动工前基线产生变更；纯问答/分析任务可在
+  `.tianshu-mcp/acceptance.json` 设 `"requireChanges": false` 显式关闭。
+- 回归覆盖：family 平铺模型、旧版分组兜底、testid 诊断、项目点击被吞、composer 绑定与回读重试、
+  零用例/零变更门禁（`test/unit/zcode-core.test.ts`、`test/integration/zcode-flow.test.ts` 等）。
 
 ---
 
 ## 9. 凭证与安全红线
 
 - 仓库内**不含任何 token**；`~/.npmrc`、`~/.git-credentials`、`GITEE_ACCESS_TOKEN` 均为本机凭证，勿入库。
-- `.gitignore` 隔离：`AGENTS.md`、`.zcode/*`、`.codex/*`、`.rivet/*`、`analysis-tools/*`、`/.tianshu-mcp/*`、`node_modules/*`、`dist/*`。
-- 发布需要：npm `_authToken`（账号 `lotteai`）、GitHub token（`~/.git-credentials`）、`GITEE_ACCESS_TOKEN`。
+- `.gitignore` 隔离：`AGENTS.md`、`.zcode/*`、`.codex/*`、`.rivet/*`、`tianshu-mcp-web/`（整目录，含内嵌 git 仓库）、
+  `analysis-tools/*`、`/.tianshu-mcp/*`、`node_modules/*`、`dist/*`、`*.tgz`、`.tmp-check/`。
+- 发布需要：npm `_authToken`（账号 `lotteai`）、GitHub token（`~/.git-credentials`）、`GITEE_ACCESS_TOKEN`（仓库 Secret，Gitee 发行版自动化用）。
 - 安全模型与私密报告渠道见 `SECURITY.md`。
 
 ---
@@ -373,26 +491,28 @@ hwnd 贯穿传递（只操作探测到的那个窗口）、下拉未命中时先
 | 文档 | 内容 |
 |---|---|
 | `README.md` / `README.en.md` | 项目总览、快速开始（含天枢界面配置）、文档索引 |
-| `CHANGELOG.md` / `.en.md` | 版本历史 v0.1.0 → v0.1.10 |
+| `CHANGELOG.md` / `.en.md` | 版本历史 v0.1.0 → v0.3.3（含比较链接） |
 | `CONTRIBUTING.md` / `.en.md` | 开发环境、门禁、规范、提交/发布流程、如何新增 agent |
 | `SECURITY.md` / `.en.md` | 安全模型与漏洞报告 |
 | `CODE_OF_CONDUCT.md` / `.en.md` | 行为准则 |
 | `docs/tianshu-integration.md` / `.en.md` | 接入配置、冒烟步骤、FAQ |
 | `docs/traework-cdp.md` / `.en.md` | TraeWork GUI 驱动原理、选择器、安全红线、踩坑记录 |
 | `docs/zcode-cdp.md` / `.en.md` | ZCode GUI adapter、暂停继续、返修闭环与双平台真机证据状态 |
-| `docs/agent-profiles.md` / `.en.md` | profile 字段说明（含 `driver`/`gui`） |
+| `docs/codex-gui-cdp.md` / `.en.md` | Codex 桌面端 GUI 驱动：MSIX COM 激活、CDP 接管、选择器、运行检测、验收返修 |
+| `docs/codex-windows-smoke.md` / `.en.md` | Codex Windows 真机验收记录（含失败→计划→返修闭环） |
+| `docs/zcode-windows-smoke.md` / `.en.md` | ZCode Windows 真机开发、同会话返修与提问续跑验收记录 |
+| `docs/agent-profiles.md` / `.en.md` | profile 字段说明（含 `driver`/`gui`/`stallTimeoutMs`/`cancelWaitMs`） |
 | `docs/adapter-matrix.md` / `.en.md` | 各 agent 能力调研矩阵 |
-| `docs/acceptance-config.md` / `.en.md` | 项目级验收配置规范 |
-| `docs/release-v0.1.10.md` / `.en.md` | v0.1.10 发布说明（stdio 日志污染修复，issue #1） |
+| `docs/acceptance-config.md` / `.en.md` | 项目级验收配置规范（含 `requireChanges`） |
+| `docs/release-v0.3.3.md` / `.en.md` | v0.3.3 发布说明（ZCode 3.11.2 适配 + 验收 fail-closed，issue #4/#7） |
+| `docs/release-v0.3.2.md` / `.en.md` | v0.3.2 发布说明（等待用户检测 + 取消真停 GUI，issue #5/#6） |
+| `docs/release-v0.3.1.md` / `.en.md` | v0.3.1 发布说明（技能文档重写 + 发布自动化修复） |
+| `docs/release-v0.3.0.md` / `.en.md` | v0.3.0 发布说明（Codex 桌面端 GUI 适配，含 BREAKING） |
+| `docs/release-v0.2.0.md` / `.en.md`、`docs/release-v0.1.5…v0.1.10.md` / `.en.md` | 历史版本发布说明 |
 | `docs/issue-1-host-reconnect-record.md` | issue #1 桌面宿主重连验收（v3.16.1：10 tools + 真实工具调用） |
-| `docs/release-v0.1.9.md` / `.en.md` | v0.1.9 发布说明（任务进行中检测与实例保留） |
-| `docs/release-v0.1.8.md` / `.en.md` | v0.1.8 发布说明（原子写并发缺陷修复） |
-| `docs/release-v0.1.7.md` / `.en.md` | v0.1.7 发布说明（绑定根因：原生路径形式） |
-| `docs/release-v0.1.6.md` / `.en.md` | v0.1.6 发布说明（项目文件夹绑定修复） |
-| `docs/release-v0.1.5.md` / `.en.md` | v0.1.5 发布说明与产物记录 |
 | `docs/npm-publish-guide.md` | npm 发布步骤与凭证 |
-| `docs/m2-*.md`、`docs/host-integration-record.md`、`docs/dod7/dod8-*` | 历史里程碑物证（中文，无英文版） |
-| `skills/tianshu-mcp/SKILL.md` | 教天枢编排本 MCP 的技能（随包分发、启动自检安装） |
+| `docs/m2-*.md`、`docs/host-integration-record.md`、`docs/dod7/dod8-*`、`docs/s7-session-recheck.md` | 历史里程碑物证（中文，无英文版） |
+| `skills/tianshu-mcp/SKILL.md` + `skills/tianshu-mcp/usage-examples.md` | 教天枢编排本 MCP 的技能与使用示例（随包分发、启动自检安装） |
 
 > **本地 only（gitignore，不在仓库）**：`.zcode/plans/tianshu-mcp-development-plan.md`（总开发计划）、
 > `.zcode/plans/traework-gui-adapter-plan.md`（TraeWork GUI 计划，M1–M5 已完成）、`.codex/review/`（验收报告）。
@@ -401,10 +521,15 @@ hwnd 贯穿传递（只操作探测到的那个窗口）、下拉未命中时先
 
 ## 11. 接手人下一步建议
 
-1. 先跑 `npm ci && npm run typecheck && npm run lint && npm test && npm run build`，确认基线绿。
-2. 读 `README.md`、`docs/traework-cdp.md` 和 `docs/zcode-cdp.md`（安全红线与平台证据），再动 GUI adapter 相关代码。
-   项目文件夹绑定出问题时，先看本文 §8.1 的排障顺序（下拉项 ≠ 项目 map、三处已修缺陷、两个定位陷阱）。
-3. 若 TraeWork 升级导致选择器失效：用 `scripts/probe-traework.mjs selectors` 诊断，优先用 profile `gui.selectors` 覆盖，不改代码。
-4. ZCode Windows 真机开发、同会话返修和提问续跑已通过；仍需 macOS 真机闭环，证据未齐前不得把 profile 从 `research` 改为 `ready`。
-5. 新增 agent：优先只加 profile（见 `docs/agent-profiles.md`）；需要特殊输出解析再写 adapter。
-6. 发版前务必确认 `src/version.generated.ts` 与 `package.json` 同步提交（CI 有「构建后无 tracked diff」门禁）。
+1. 先跑 `npm ci && npm run typecheck && npm run lint && npm test && npm run build`，确认基线绿（366/366）。
+2. 动 GUI adapter 相关代码前，先读对应文档与本文小节：
+   TraeWork → `docs/traework-cdp.md` + §8.1/§8.2；ZCode → `docs/zcode-cdp.md` + §8.5；Codex → `docs/codex-gui-cdp.md` + §8.4。
+   项目文件夹绑定出问题时，先看 §8.1 的排障顺序（下拉项 ≠ 项目 map、三处已修缺陷、两个定位陷阱）。
+3. **改任何选择器交互必须真机复验**：trusted 点击与 DOM click 的取舍因控件而异（§8.4 的模型菜单 vs 项目触发器就是反例）。
+4. 若客户端 UI 升级导致选择器失效：用 `scripts/probe-*.mjs` 诊断，优先用 profile `gui.selectors` 覆盖，不改代码。
+5. ZCode 与 Codex 的 macOS 真机闭环均未完成：证据未齐前不得把内置 profile 从 `research` 改为 `ready`。
+6. 新增 agent：优先只加 profile（见 `docs/agent-profiles.md`）；需要特殊输出解析再写 adapter。
+7. 发版前务必确认 `src/version.generated.ts` 与 `package.json` 同步提交（CI 有「构建后无 tracked diff」门禁）；
+   推 `v*` tag 即触发 Release（双语正文取 `docs/release-v<ver>.md` + `.en.md`，**缺文档会直接失败**）。
+8. 未发布计划（见 `CHANGELOG.md` [未发布] 节）：更多 agent 适配、TraeWork/ZCode/Codex macOS 验证、
+   项目级技能播种、`needs_user` 状态取消时经临时 CDP 连接尽力停止 GUI 内等待中的会话。

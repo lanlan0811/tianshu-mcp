@@ -36,7 +36,7 @@
 
 - **9 个 MCP 工具**：`run_task / continue_task / query_task / list_tasks / get_task_report / cancel_task / verify_task / rework_task / get_profiles`。
 - **异步契约**：`run_task` 秒回 `taskId`，长任务用 `query_task` 轮询（长任务不卡 `tools/call`）。
-- **客观验收**：自动命令检查（typecheck/lint/test/build，缺则跳过 + 技术栈推导）+ 程序化代码分析（变更清单/diffstat/TODO·debugger·密钥形态等可疑标记），全部相对 **git 基线**，不自动 commit/stash。
+- **客观验收**：自动命令检查（typecheck/lint/test/build，缺则跳过 + 技术栈推导）+ 程序化代码分析（变更清单/diffstat/TODO·debugger·密钥形态等可疑标记），全部相对 **git 基线**，不自动 commit/stash。验收引擎 **fail-closed**：测试命令退出码为 0 但输出显示零用例时判失败；git 项目默认要求相对动工前基线产生变更（纯分析任务可在 `.tianshu-mcp/acceptance.json` 设 `"requireChanges": false` 显式关闭）。
 - **失败返修闭环**：自动返修（`autoFixRounds`）+ 手动 `rework_task`；验收失败时自动生成修复计划文件并回填给 agent；轮次用尽 → `needs_attention` 等天枢裁决。
 - **执行面**：`driver: "gui"` 由显式 adapter 驱动桌面 UI（Codex / TraeWork / ZCode 各自使用隔离的 CDP 流程）；`driver: "spawn"` 走外部 CLI 子进程。
 - **调度纪律**：每项目串行队列 + 全局并发上限（默认 2，可配）。
@@ -63,7 +63,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 340 项测试：39 个文件，含 Codex/ZCode 单元/假 CDP/重启/返修闭环
+npm test             # 366 项测试：39 个文件，含 Codex/ZCode 单元/假 CDP/重启/返修闭环
 ```
 
 ### 安装 npm 包
@@ -120,6 +120,9 @@ run_task(projectPath=D:/xxx/my-app, task=「…任务书…」, agentId=codex,
 > 其 `ChatGPT.exe` 无法直接启动（被策略拒绝），须经 COM 激活并注入专属 `--user-data-dir` 后方可
 > 用 CDP 驱动。可传 `planDoc` / `designSystem` 拼进初始指令。详见 [docs/codex-gui-cdp.md](docs/codex-gui-cdp.md)
 > 与 [真机验收记录](docs/codex-windows-smoke.md)。项目未在 Codex 侧登记时会**自动登记**，无需手动建项目。
+> Codex 停在「等待用户确认」界面（方案确认卡/订阅结账页等）会转 `needs_user(user_confirmation)`，
+> 用户在 Codex 窗口处理完后调 `continue_task(taskId)` 恢复观察；`cancel_task` 会经 CDP 点击停止并
+> 有界等待 GUI 空闲，派发前若受管实例仍在运行会先尽力停止，仍不空闲则以 `instance_busy` 拒绝派发。
 
 驱动 TraeWork 时可用 `model` 与 `mode`：
 
@@ -138,18 +141,18 @@ run_task(projectPath=D:/xxx/my-app, agentId=zcode, task=「按 `./plan.md` 完�
          model=DeepSeek/deepseek-flash, autoVerify=true)
 ```
 
-ZCode 提问或需要用户处理登录、旧实例、系统权限时进入 `needs_user`；处理后调用 `continue_task(taskId, message)` 恢复原会话。完整约束见 [docs/zcode-cdp.md](docs/zcode-cdp.md)。
+ZCode 提问或需要用户处理登录、旧实例、系统权限时进入 `needs_user`；处理后调用 `continue_task(taskId, message)` 恢复原会话。模型选择已适配 ZCode 3.11.2：直选平铺模型优先，展开 provider/family 分组兜底，新旧布局均兼容。完整约束见 [docs/zcode-cdp.md](docs/zcode-cdp.md)。
 
 ## 工具面（9 个）
 
 | 工具 | 能力 / 审批 | 作用 |
 |---|---|---|
 | `run_task` | write + 审批 | 派活（可带自动验收/自动返修），异步返回 `taskId` |
-| `continue_task` | write + 审批 | 恢复 `needs_user` 的原 ZCode 会话 |
+| `continue_task` | write + 审批 | 恢复 `needs_user` 的原会话（ZCode 恢复原会话；Codex 按 `user_confirmation` 重新观察 / `login_required` 重派） |
 | `query_task` | read | 轮询状态 / 进度 / 日志尾 |
 | `list_tasks` | read | 历史任务过滤列表 |
 | `get_task_report` | read | 某轮验收报告全文（`report.md`） |
-| `cancel_task` | write + 审批 | 取消运行中任务（kill 进程树） |
+| `cancel_task` | write + 审批 | 取消运行中任务：CLI agent kill 进程树；GUI agent 经 CDP 点击停止并在 `gui.cancelWaitMs`（默认 15s）内有界等待 GUI 空闲，未确认停止时终态明示 |
 | `verify_task` | read | 对任务/项目路径做一次验收（不改源码） |
 | `rework_task` | write + 审批 | 手动返修（把失败报告喂回同一 agent） |
 | `get_profiles` | read | 查看 agent 适配与可执行探测结果 |
@@ -180,6 +183,8 @@ ZCode 提问或需要用户处理登录、旧实例、系统权限时进入 `nee
 | [docs/zcode-windows-smoke.md](docs/zcode-windows-smoke.md) | ZCode Windows 真机开发、同会话返修与提问续跑验收记录 |
 | [docs/codex-gui-cdp.md](docs/codex-gui-cdp.md) | Codex 桌面端 GUI 驱动：MSIX COM 激活、CDP 接管、选择器、运行检测、验收返修 |
 | [docs/codex-windows-smoke.md](docs/codex-windows-smoke.md) | Codex Windows 真机验收记录（含验收失败→自动生成计划→返修通过闭环） |
+| [docs/release-v0.3.3.md](docs/release-v0.3.3.md) | v0.3.3 发布说明（ZCode 3.11.2 适配 + 验收引擎 fail-closed） |
+| [docs/release-v0.3.2.md](docs/release-v0.3.2.md) | v0.3.2 发布说明（Codex 等待用户检测 + cancel 真停 GUI） |
 | [docs/release-v0.3.1.md](docs/release-v0.3.1.md) | v0.3.1 发布说明（技能文档重写 + 发布自动化修复） |
 | [docs/release-v0.3.0.md](docs/release-v0.3.0.md) | v0.3.0 发布说明（Codex 桌面端 GUI 适配，含 BREAKING） |
 | [docs/release-v0.2.0.md](docs/release-v0.2.0.md) | v0.2.0 发布说明（ZCode GUI 统一闭环） |
@@ -258,14 +263,21 @@ ZCode 提问或需要用户处理登录、旧实例、系统权限时进入 `nee
 - **M13 — 技能文档对齐 + 发布自动化修复 + v0.3.1**（2026-09-12，见 [release-v0.3.1.md](docs/release-v0.3.1.md)）
   - 技能自检安装文档（SKILL.md / usage-examples.md）对照 v0.3.0 工具面逐项重写（codex GUI 参数、needs_user 处理、verify/list 用法）
   - Release 正文双语合成、Full Changelog 与 CI 链接修复、Gitee 发行版纳入自动化
+- **M14 — Codex 等待用户检测 + 取消真停 GUI + v0.3.2**（2026-09-12，修复 issue #5 / #6，见 [release-v0.3.2.md](docs/release-v0.3.2.md)）
+  - issue #5：Codex 停在「等待用户确认」界面不再死锁在 `running`——停止按钮可见且对话哈希 `gui.stallTimeoutMs`（默认 5 分钟）不变 → 转 `needs_user(user_confirmation)`；新增可配置 `gui.selectors.userGate` 界面检测；`continue_task` 扩展支持 codex（`user_confirmation` 重新观察 / `login_required` 重派）
+  - issue #6：`cancel_task` 对 GUI agent 经 CDP 尽力点击停止并在 `gui.cancelWaitMs`（默认 15s）内有界等待 GUI 空闲后才落 `cancelled`；派发前检测受管实例运行态，仍运行则以 `instance_busy` 拒绝，杜绝新旧 turn 交叠
+- **M15 — ZCode 3.11.2 适配 + 验收引擎 fail-closed + v0.3.3**（2026-09-12，修复 issue #4 / #7，见 [release-v0.3.3.md](docs/release-v0.3.3.md)）— **366 测试**
+  - issue #4：模型菜单同时兼容 `group-provider` 与 3.11.2 `group-family` 分组，直选平铺模型优先、分组展开兜底；项目绑定改以 composer 复选项为主判据，回读校验触发器文本 + 完整路径，失败最多两轮幂等重试；添加项目前先收起残留菜单并重试
+  - issue #7：测试检查退出码 0 但输出零用例时改判失败；git 项目默认要求相对基线产生变更（`requireChanges: false` 可显式关闭），零用例与零变更不再假绿
+  - `{PROGRAMFILES}` 占位符统一大写且环境变量展开大小写不敏感
 
 ## Agent 适配现状
 
-| agentId | driver | status | 说明 |
+| agentId | driver / adapter | status | 说明 |
 |---|---|---|---|
-| `codex` | **`gui`** | **ready** | Codex 桌面端 GUI（MSIX COM 激活 + CDP）；支持 `model`/`reasoningLevel`/`planDoc`/`designSystem`；Windows 真机已验证 |
-| `zcode` | `zcode-gui` | **research** | CDP GUI adapter 已实现且 Windows 真机闭环通过；macOS 真机完成前不标 `ready` |
-| `traework` | **`gui`** | **ready** | CDP 驱动 TRAE SOLO CN 桌面 UI；三种面板模式真机验证通过 |
+| `codex` | `gui` / `codex-gui` | **ready** | Codex 桌面端 GUI（MSIX COM 激活 + CDP）；支持 `model`/`reasoningLevel`/`planDoc`/`designSystem`；等待用户确认、取消与重派护栏均已真机验证（v0.3.2）；Windows 真机已验证 |
+| `zcode` | `gui` / `zcode-gui` | **research** | CDP GUI adapter 已实现且 Windows 真机闭环通过；已适配 ZCode 3.11.2 模型菜单与项目绑定（v0.3.3）；macOS 真机完成前不标 `ready` |
+| `traework` | `gui` / `traework-gui` | **ready** | CDP 驱动 TRAE SOLO CN 桌面 UI；三种面板模式真机验证通过 |
 | `stub` | `spawn` | 仅测试 | `test/stub-agent/stub-agent.mjs` 三剧本（good/fix-on-first/never） |
 
 > 新增 agent 通常只需加一个 profile，详见 [docs/agent-profiles.md](docs/agent-profiles.md) 与 [CONTRIBUTING.md](CONTRIBUTING.md)。
@@ -281,7 +293,7 @@ ZCode 提问或需要用户处理登录、旧实例、系统权限时进入 `nee
 | 文档 | 内容 |
 |---|---|
 | [HANDOFF.md](HANDOFF.md) | 项目交接文档：当前状态快照、架构导览、硬性红线、已知限制、接手建议 |
-| [CHANGELOG.md](CHANGELOG.md) | 版本变更日志（v0.1.0 → v0.3.1） |
+| [CHANGELOG.md](CHANGELOG.md) | 版本变更日志（v0.1.0 → v0.3.3） |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 开发环境、工程规范、提交与发布流程、如何新增 agent |
 | [SECURITY.md](SECURITY.md) | 安全模型（凭证零管理/命令白名单/进程与桌面自动化边界）与私密报告渠道 |
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | 贡献者行为准则 |
