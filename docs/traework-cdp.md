@@ -106,7 +106,7 @@ node scripts/probe-traework.mjs send "任务书"       # 端到端发一条并�
       "executableDiscovery": {
         "dirs": [
           "D:/TRAE Work CN",
-          "{ProgramFiles}/TRAE WORK CN",
+          "{PROGRAMFILES}/TRAE WORK CN",
           "{LOCALAPPDATA}/Programs/TRAE WORK CN",
           "/Applications/TraeWork.app/Contents/MacOS"
         ],

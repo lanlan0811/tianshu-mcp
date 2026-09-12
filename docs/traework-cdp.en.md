@@ -111,7 +111,7 @@ Built-in defaults live in `src/agents/builtin.ts`; the user data directory
       "executableDiscovery": {
         "dirs": [
           "D:/TRAE Work CN",
-          "{ProgramFiles}/TRAE WORK CN",
+          "{PROGRAMFILES}/TRAE WORK CN",
           "{LOCALAPPDATA}/Programs/TRAE WORK CN",
           "/Applications/TraeWork.app/Contents/MacOS"
         ],

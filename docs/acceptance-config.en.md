@@ -13,6 +13,8 @@ Place this file at `<project>/.tianshu-mcp/acceptance.json` to define project-le
 
 ```jsonc
 {
+  // default true: fail a Git project when nothing changed from the pre-work baseline
+  "requireChanges": true,
   // each entry = one automated command check
   "checks": [
     {
@@ -40,6 +42,9 @@ Place this file at `<project>/.tianshu-mcp/acceptance.json` to define project-le
 Each check runs in the project root as structured argv (`shell:false`), stdout/stderr are appended to the round's `verify-N.log` with an output tail in the report.
 
 **Any non-optional failed check ⇒ this acceptance round fails**; skips and timeouts are flagged separately.
+
+- **Zero-test fail-closed:** a mandatory test check is failed even with exit code 0 when its output explicitly reports that no tests ran.
+- **Zero-change fail-closed:** with `requireChanges:true` (the default), a Git project gets a failing `no-changes` check when tracked files, untracked files, and diffstat are all unchanged from the pre-work baseline. Pure question/analysis tasks may set `"requireChanges": false`; non-Git projects skip this gate with a report note.
 
 Built-in extra check (not configurable off): `git-diff-check` = `git diff --check` relative to the pre-work baseline; auto-skipped for non-git projects.
 

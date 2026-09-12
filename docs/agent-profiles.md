@@ -73,6 +73,8 @@ TraeWork 存活检测相关字段：`stableRounds` 仅确认 DOM 已稳定；随
 
 ### 探测顺序（resolve）
 
+`executableDiscovery.dirs` 支持 `{LOCALAPPDATA}`、`{APPDATA}`、`{HOME}`、`{USERPROFILE}`、`{PROGRAMFILES}`、`{PROGRAMFILES(X86)}`、`{SYSTEMDRIVE}` 与 `{XDG_DATA_HOME}`。占位符大小写不敏感，文档和内置 profile 统一使用全大写；未知或当前环境未定义的占位符保留原样。
+
 1. `command` 是存在的绝对路径 → 直接使用
 2. `executableDiscovery.dirs` 里找 `fileNames`（**必须有 fileNames 才扫目录**），取修改时间最新的
 3. `fallbackCommand` / 相对 command 在 PATH 中查找

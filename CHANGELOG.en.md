@@ -21,6 +21,26 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.3.3] — 2026-09-12
+
+Fixes issues #4 / #7 by adapting the ZCode GUI driver to the 3.11.2 model-menu and project-binding semantics, while making acceptance fail closed for zero-test and zero-change outcomes.
+
+### Fixed
+
+- ZCode provider selectors now support both `group-provider` and the 3.11.2 `group-family` prefix. Model selection tries the visible model first and only expands a provider/family group as a fallback; failures include visible text and `data-testid` candidates.
+- New-project import dismisses the stale workspace menu before opening Add Project and uses a bounded three-round dismiss/click/verify loop, preventing the first click from being consumed as an outside click.
+- Project binding prioritizes the composer menu's `menuitemcheckbox`; the legacy sidebar item remains a compatibility fallback. Display-name matching normalizes NFKC, whitespace, and case.
+- Binding read-back combines the composer trigger text with the full-path fast path, rejects known unbound placeholders, and retries the idempotent bind operation for up to two rounds.
+- Built-in ZCode and TraeWork discovery paths use `{PROGRAMFILES}` / `{PROGRAMFILES(X86)}`. Environment placeholders in custom profiles are expanded case-insensitively while unknown placeholders remain unchanged.
+- A mandatory test check is failed when it exits with code 0 but its output reports zero executed tests.
+- Git projects now require a change relative to the pre-work baseline by default. Pure question/analysis tasks can explicitly opt out with `"requireChanges": false` in `.tianshu-mcp/acceptance.json`.
+
+### Tests
+
+- Regression coverage now models ZCode 3.11.2 flat family layouts, legacy provider fallback, testid diagnostics, swallowed project clicks, composer binding and read-back retries, plus zero-test/zero-change acceptance gates.
+
+---
+
 ## [0.3.2] — 2026-09-12
 
 Fixes for issues #5 / #6: **the MCP task model was disconnected from the state of the turn inside
@@ -494,7 +514,8 @@ project → pick model and reasoning level → send instructions → run detecti
 
 ---
 
-[Unreleased]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.2.0...v0.3.0

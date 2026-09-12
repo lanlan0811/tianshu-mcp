@@ -9,7 +9,7 @@ headless CLI/API **or a verified programmatic GUI driver**; agents without eithe
 | Agent | Interface | Status | Login | Notes |
 |---|---|---|---|---|
 | **Codex** (OpenAI desktop) | **MSIX GUI + CDP** (`codex-gui` adapter) | ✅ **Windows machine-verified** (COM activation + CDP + key selectors + verify/repair loop, 2026-09-11; see [codex-windows-smoke.en.md](codex-windows-smoke.en.md); macOS marked research) | reuses `~/.codex` (auth.json); shared with any instance the user opened | GUI host `app\ChatGPT.exe` cannot be launched directly (policy denies); must use `IApplicationActivationManager` with a dedicated `--user-data-dir` and injected `--remote-debugging-port`; see [codex-gui-cdp.en.md](codex-gui-cdp.en.md) |
-| **Zcode** (ZCode desktop) | Electron + dedicated `zcode-gui` CDP adapter | **research** (Windows hardware passed; macOS pending) | machine login | exact project/model/permission/session DOM read-back; see [zcode-cdp.en.md](zcode-cdp.en.md) and [zcode-windows-smoke.en.md](zcode-windows-smoke.en.md) |
+| **Zcode** (ZCode desktop) | Electron + dedicated `zcode-gui` CDP adapter | **research** (Windows 3.11.2 selectors adapted; macOS pending) | machine login | direct model selection with provider/family fallback; composer project checkbox and binding read-back; see [zcode-cdp.en.md](zcode-cdp.en.md) and [zcode-windows-smoke.en.md](zcode-windows-smoke.en.md) |
 | **TraeWork / TRAE SOLO CN** | desktop IDE + **CDP GUI driver** | ✅ **integrated & machine-verified** (2026-09-08; see T1 correction and [traework-cdp.en.md](traework-cdp.en.md)) | reuses TraeWork desktop login (this MCP reads no credentials) | no headless CLI; drives the chat UI via `--remote-debugging-port`; replies extracted from the DOM |
 
 ## Extending

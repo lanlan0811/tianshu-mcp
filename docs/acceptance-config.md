@@ -13,6 +13,8 @@
 
 ```jsonc
 {
+  // 默认 true：git 项目相对动工前基线零变更时验收失败
+  "requireChanges": true,
   // checks 数组：每条 = 一项自动命令检查
   "checks": [
     {
@@ -33,6 +35,8 @@
 
 - 每条命令在**项目根目录**、以结构化 argv 执行（`shell:false`，不拼接 shell 字符串），stdout/stderr 写入该轮 `verify-N.log`，报告附输出尾部。
 - **任一非 optional 检查失败 ⇒ 该轮验收失败**；跳过/超时各自标记。
+- **零用例 fail-closed**：非 optional 测试命令即使退出码为 0，只要输出明确表示未执行任何测试，仍判失败。
+- **零变更 fail-closed**：Git 项目在 `requireChanges:true`（默认）时，若相对动工前基线没有已跟踪、未跟踪或 diffstat 变更，新增 `no-changes` 失败项。纯问答/分析任务可显式设置 `"requireChanges": false`；非 Git 项目跳过该门禁并在报告中注明。
 - 内置额外检查（不经配置）：
   - `git-diff-check`：`git diff --check`（空白错误）；非 git 仓库自动跳过。
 - 若配置缺失/解析失败，自动落回更低优先级来源，最终为空则只有内置检查，并在报告注明。

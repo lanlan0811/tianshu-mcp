@@ -19,6 +19,26 @@
 
 ---
 
+## [0.3.3] — 2026-09-12
+
+修复 issue #4 / #7：适配 ZCode 3.11.2 的模型菜单与项目绑定语义，并将验收引擎收紧为 fail-closed，防止零用例、零变更任务假绿。
+
+### 修复
+
+- ZCode 供应商分组选择器同时兼容 `group-provider` 与 3.11.2 `group-family`；模型流程改为直选优先、供应商分组展开兜底，并在失败信息中附带可见文本与 `data-testid` 候选。
+- 添加新项目前收起残留工作区菜单，以最多三轮“收起—点击—验证”闭环消除首次点击被吞。
+- 项目选择优先点击 composer 菜单的 `menuitemcheckbox`，旧版侧栏项仅作回退；项目名称按 NFKC、空白和大小写归一化。
+- 项目绑定回读同时校验 composer 触发器文本与完整路径，未绑定占位词不再误判；绑定失败最多两轮幂等重试。
+- ZCode/TraeWork 内置发现目录统一为 `{PROGRAMFILES}` / `{PROGRAMFILES(X86)}`；自定义 profile 的环境占位符按大小写不敏感方式展开，未知占位符保留原样。
+- 非 optional 测试检查在退出码为 0 但输出显示零用例时改判失败。
+- Git 项目默认要求相对动工前基线产生变更；纯问答/分析任务可在 `.tianshu-mcp/acceptance.json` 设置 `"requireChanges": false` 显式关闭。
+
+### 测试
+
+- 回归覆盖 ZCode 3.11.2 family 平铺模型、旧版分组兜底、testid 诊断、项目点击被吞、composer 绑定与回读重试，以及零用例/零变更门禁。
+
+---
+
 ## [0.3.2] — 2026-09-12
 
 修复 issue #5 / #6：**MCP 任务模型与 Codex GUI 内 turn 的状态脱节**。
@@ -431,7 +451,8 @@ Codex 桌面端改为 **GUI 驱动**：新增 `codex-gui` adapter，通过 MSIX 
 
 ---
 
-[未发布]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.2...HEAD
+[未发布]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.2.0...v0.3.0

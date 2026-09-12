@@ -60,7 +60,7 @@ retain the instance and expose `agentEndReason` / `keptInstance` in metadata.
 
 ## Discovery semantics (R5)
 
-- `dirs` supports `{LOCALAPPDATA}` `{APPDATA}` `{HOME}` `{USERPROFILE}` `{PROGRAMFILES}` placeholders; empty `dirs` falls back to platform-standard locations (via PATH/OS rules, no hardcoded user names).
+- `dirs` supports `{LOCALAPPDATA}` `{APPDATA}` `{HOME}` `{USERPROFILE}` `{PROGRAMFILES}` `{PROGRAMFILES(X86)}` `{SYSTEMDRIVE}` and `{XDG_DATA_HOME}` placeholders. Matching is case-insensitive, while docs and built-in profiles use uppercase consistently. Unknown or unavailable placeholders remain unchanged. Empty `dirs` falls back to platform-standard locations (via PATH/OS rules, no hardcoded user names).
 - Scanning only happens when `fileNames` is non-empty (avoids misclassifying arbitrary files).
 - Resolution order: explicit existing `command` → discovery dirs (newest mtime) → PATH fallback → failure message.
 
