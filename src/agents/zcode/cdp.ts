@@ -5,7 +5,7 @@ import {
 } from "../traework/cdp/client.js";
 import { candidateExpr, type ZcodeSelectorKey } from "./selectors.js";
 import type { ZcodePoll } from "./liveness.js";
-import type { ZcodeProjectItem } from "./project.js";
+import { projectDisplayName, type ZcodeProjectItem } from "./project.js";
 import { normalizeZcodeModelSelection } from "./model.js";
 
 export { CdpDisconnectedError, CdpUnavailableError };
@@ -134,10 +134,7 @@ export class ZcodeCdpClient {
     await this.clickAt(point.x, point.y);
     return true;
   }
-  async clickExact(
-    key: ZcodeSelectorKey,
-    value: string,
-  ): Promise<ZcodeClickExactResult> {
+  async clickExact(key: ZcodeSelectorKey, value: string): Promise<ZcodeClickExactResult> {
     const found = await this.evaluate<{
       count: number;
       available: string[];
@@ -178,18 +175,20 @@ export class ZcodeCdpClient {
     );
   }
   async clickProject(id: string | undefined, projectPath: string | undefined): Promise<boolean> {
+    const displayName = projectPath ? projectDisplayName(projectPath) : "";
     const point = await this.evaluate<{ x: number; y: number } | null>(
-      `(async function(){const matches=[];for(const s of ${candidateExpr("projectItem", this.selectors)})for(const e of document.querySelectorAll(s)){const testid=e.getAttribute('data-testid')||'';const id=e.getAttribute('data-project-id')||e.getAttribute('data-id')||testid;const p=e.getAttribute('data-project-path')||e.querySelector('[data-project-path]')?.getAttribute('data-project-path')||(testid.startsWith('workspace-item-')?testid.slice('workspace-item-'.length):'')||e.getAttribute('title')||'';if((${JSON.stringify(id ?? "")}&&id===${JSON.stringify(id ?? "")})||(${JSON.stringify(projectPath ?? "")}&&p===${JSON.stringify(projectPath ?? "")}))matches.push(e)}if(matches.length!==1)return null;matches[0].scrollIntoView({block:'center'});await new Promise(r=>setTimeout(r,50));const r=matches[0].getBoundingClientRect();return r.width&&r.height&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth?{x:r.left+r.width/2,y:r.top+r.height/2}:null})()`,
+      `(async function(){const norm=s=>(s||'').normalize('NFKC').trim().toLocaleLowerCase();const visible=e=>{const r=e.getBoundingClientRect();return r.width&&r.height&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth};const targetName=norm(${JSON.stringify(displayName)});const triggers=[];for(const s of ${candidateExpr("projectTrigger", this.selectors)})for(const e of document.querySelectorAll(s))if(visible(e)&&!triggers.includes(e))triggers.push(e);const trigger=triggers.length===1?triggers[0]:null;let containers=[];const controlledId=trigger?.getAttribute('aria-controls')||'';if(controlledId){const controlled=document.getElementById(controlledId);if(controlled&&visible(controlled))containers.push(controlled)}if(trigger){let parent=trigger.parentElement;while(parent&&!containers.length){if(parent.querySelector('[role="menuitemcheckbox"]'))containers.push(parent);parent=parent.parentElement}}if(!containers.length)containers=[...document.querySelectorAll('[role="menu"]')].filter(e=>visible(e)&&e.querySelector('[role="menuitemcheckbox"]'));const checkboxMatches=[];for(const container of containers)for(const e of container.querySelectorAll('[role="menuitemcheckbox"]'))if(visible(e)&&norm(e.getAttribute('aria-label')||e.getAttribute('data-value')||e.textContent||'')===targetName&&!checkboxMatches.includes(e))checkboxMatches.push(e);let selected=checkboxMatches.length===1?checkboxMatches[0]:null;if(!selected){const matches=[];for(const s of ${candidateExpr("projectItem", this.selectors)})for(const e of document.querySelectorAll(s)){const testid=e.getAttribute('data-testid')||'';const itemId=e.getAttribute('data-project-id')||e.getAttribute('data-id')||testid;const p=e.getAttribute('data-project-path')||e.querySelector('[data-project-path]')?.getAttribute('data-project-path')||(testid.startsWith('workspace-item-')?testid.slice('workspace-item-'.length):'')||e.getAttribute('title')||'';if((${JSON.stringify(id ?? "")}&&itemId===${JSON.stringify(id ?? "")})||(${JSON.stringify(projectPath ?? "")}&&p===${JSON.stringify(projectPath ?? "")}))matches.push(e)}if(matches.length===1)selected=matches[0]}if(!selected)return null;selected.scrollIntoView({block:'center'});await new Promise(r=>setTimeout(r,50));const r=selected.getBoundingClientRect();return visible(selected)?{x:r.left+r.width/2,y:r.top+r.height/2}:null})()`,
     );
     if (!point) return false;
     await this.clickAt(point.x, point.y);
     return true;
   }
   async boundProjectPath(): Promise<string> {
-    return (
-      (await this.evaluate<string>(
-        `(function(){for(const s of ${candidateExpr("projectPath", this.selectors)})for(const e of document.querySelectorAll(s)){const p=e.getAttribute('data-project-path')||e.getAttribute('title')||(e.textContent||'').trim();if(p)return p}const trigger=document.querySelector('[data-testid="composer-workspace-trigger"]');const name=(trigger?.textContent||'').trim();if(name){const matches=[...document.querySelectorAll('[data-testid^="workspace-item-"]')].filter(e=>(e.textContent||'').trim()===name);if(matches.length===1)return (matches[0].getAttribute('data-testid')||'').slice('workspace-item-'.length)}return window.__ZCODE_PROJECT_PATH__||''})()`,
-      )) || ""
+    return (await this.workspaceBinding()).projectPath;
+  }
+  async workspaceBinding(): Promise<{ triggerText: string; projectPath: string }> {
+    return this.evaluate(
+      `(function(){let projectPath='';for(const s of ${candidateExpr("projectPath", this.selectors)})for(const e of document.querySelectorAll(s)){const p=e.getAttribute('data-project-path')||e.getAttribute('title')||(e.textContent||'').trim();if(p){projectPath=p;break}}const triggers=[];for(const s of ${candidateExpr("projectTrigger", this.selectors)})for(const e of document.querySelectorAll(s)){const r=e.getBoundingClientRect();if(r.width&&r.height&&!triggers.includes(e))triggers.push(e)}const triggerText=triggers.length===1?(triggers[0].textContent||'').normalize('NFKC').trim():'';if(!projectPath&&triggerText){const matches=[...document.querySelectorAll('[data-testid^="workspace-item-"]')].filter(e=>(e.textContent||'').normalize('NFKC').trim()===triggerText);if(matches.length===1)projectPath=(matches[0].getAttribute('data-testid')||'').slice('workspace-item-'.length)}return {triggerText,projectPath:projectPath||window.__ZCODE_PROJECT_PATH__||''}})()`,
     );
   }
   async session(): Promise<{ id?: string; title?: string }> {
@@ -264,8 +263,7 @@ export class ZcodeCdpClient {
     >(
       `(function(){const visible=e=>{const r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>0&&r.height>0&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth&&s.display!=='none'&&s.visibility!=='hidden'};const boxes=[...document.querySelectorAll('[role="listbox"][aria-label]:has([role="option"])')].filter(visible);if(boxes.length===0)return {answered:true};if(boxes.length!==1)return {answered:false,error:'问题卡片数量不唯一'};let scope=boxes[0],buttons=[];while(scope.parentElement){scope=scope.parentElement;buttons=[...scope.querySelectorAll('button:not([role="option"])')].filter(visible);if(buttons.length)break}const enabled=buttons.filter(e=>!e.disabled&&e.getAttribute('aria-disabled')!=='true');const submits=enabled.filter(e=>e.type==='submit');const newlyEnabled=buttons.filter((e,i)=>!e.disabled&&e.getAttribute('aria-disabled')!=='true'&&${JSON.stringify(located.buttonStates)}[i]===true);const candidates=submits.length===1?submits:newlyEnabled.length===1?newlyEnabled:enabled.length===1?enabled:[];if(candidates.length!==1)return {answered:false,error:'无法唯一定位问题提交按钮'};const r=candidates[0].getBoundingClientRect();return {answered:false,point:{x:r.left+r.width/2,y:r.top+r.height/2}}})()`,
     );
-    if (submit.answered)
-      return { answered: true, count: 1, available: located.available };
+    if (submit.answered) return { answered: true, count: 1, available: located.available };
     if (!("point" in submit))
       return { answered: false, count: 1, available: located.available, error: submit.error };
     await this.clickAt(submit.point.x, submit.point.y);

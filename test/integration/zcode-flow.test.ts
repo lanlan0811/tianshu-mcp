@@ -19,10 +19,7 @@ import { AcceptanceEngine } from "../../src/verify/acceptance.js";
 import { TaskManager } from "../../src/tasks/task-manager.js";
 import { makeBuildCtx } from "../../src/mcp/context.js";
 import { normPath } from "../../src/util/path.js";
-import {
-  CdpDisconnectedError,
-  CdpUnavailableError,
-} from "../../src/agents/zcode/cdp.js";
+import { CdpDisconnectedError, CdpUnavailableError } from "../../src/agents/zcode/cdp.js";
 import type { ZcodeProjectItem } from "../../src/agents/zcode/project.js";
 
 const logger = new Logger(null, "error");
@@ -88,6 +85,12 @@ class FakeZcode {
   }
   async boundProjectPath() {
     return this.projectPath;
+  }
+  async workspaceBinding() {
+    return {
+      triggerText: path.basename(this.projectPath),
+      projectPath: await this.boundProjectPath(),
+    };
   }
   async clickExact(key: string, value: string) {
     if (key === "providerOption") {
@@ -296,6 +299,9 @@ class AmbiguousProjectZcode extends FakeZcode {
 class WrongBoundProjectZcode extends FakeZcode {
   override async boundProjectPath() {
     return path.join(await super.boundProjectPath(), "wrong");
+  }
+  override async workspaceBinding() {
+    return { triggerText: "选择项目", projectPath: await this.boundProjectPath() };
   }
 }
 
