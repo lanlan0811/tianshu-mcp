@@ -51,13 +51,17 @@ interface CodexGlobalState {
   [k: string]: unknown;
 }
 
-/** 是否已在 Codex 项目列表中登记该目录（Windows 路径大小写不敏感） */
-export function isProjectRegistered(state: CodexGlobalState, projectPath: string): string | null {
-  const want = normalizeDir(projectPath, "win32");
+/** 是否已在 Codex 项目列表中登记该目录（按当前平台语义归一：Windows 大小写不敏感，POSIX 保留大小写） */
+export function isProjectRegistered(
+  state: CodexGlobalState,
+  projectPath: string,
+  platform: NodeJS.Platform = process.platform,
+): string | null {
+  const want = normalizeDir(projectPath, platform);
   const projects = state["local-projects"] ?? {};
   for (const [id, entry] of Object.entries(projects)) {
     if (!entry || !Array.isArray(entry.rootPaths)) continue;
-    if (entry.rootPaths.some((rp) => typeof rp === "string" && normalizeDir(rp, "win32") === want)) {
+    if (entry.rootPaths.some((rp) => typeof rp === "string" && normalizeDir(rp, platform) === want)) {
       return entry.id ?? id;
     }
   }
@@ -66,18 +70,22 @@ export function isProjectRegistered(state: CodexGlobalState, projectPath: string
 
 /** 停止本 MCP 的受管 Codex 实例（绝不触碰默认 profile 实例） */
 async function stopManagedInstances(gui: GuiProfile): Promise<void> {
-  if (process.platform !== "win32") return;
-  const wanted = normalizeDir(resolveUserDataDir(gui), "win32");
+  const wanted = normalizeDir(resolveUserDataDir(gui));
   const rows = (await listCodexProcesses()).filter((p) => {
     if (/--type=|crashpad/i.test(p.commandLine)) return false;
     const udd = remoteUserDataDir(p.commandLine);
-    return udd ? normalizeDir(udd, "win32") === wanted : false;
+    return udd ? normalizeDir(udd) === wanted : false;
   });
   if (!rows.length) return;
   for (const p of rows) {
     try {
-      // eslint-disable-next-line no-await-in-loop
-      await execFileAsync("taskkill", ["/PID", String(p.pid), "/T", "/F"], { timeoutMs: 15_000 });
+      if (process.platform === "win32") {
+        // eslint-disable-next-line no-await-in-loop
+        await execFileAsync("taskkill", ["/PID", String(p.pid), "/T", "/F"], { timeoutMs: 15_000 });
+      } else {
+        // POSIX（macOS）：受管实例是独立 profile 的子进程，SIGTERM 即可（Electron 会自行带走 Helper）
+        process.kill(p.pid, "SIGTERM");
+      }
     } catch {
       /* 已退出或权限不足：忽略，后续 ensureInstance 会重探 */
     }
@@ -102,8 +110,9 @@ export async function ensureProjectRegistered(
   opts: { stateFile?: string; platform?: NodeJS.Platform; stopInstances?: (gui: GuiProfile) => void | Promise<void> } = {},
 ): Promise<RegisterResult> {
   const platform = opts.platform ?? process.platform;
-  if (platform !== "win32")
-    return { status: "skipped", message: "非 Windows，跳过 Codex 项目登记" };
+  // 状态文件位于 ~/.codex（跨平台同构），Windows 与 macOS 均可直接登记
+  if (platform !== "win32" && platform !== "darwin")
+    return { status: "skipped", message: "非 Windows/macOS，跳过 Codex 项目登记" };
   const stateFile = opts.stateFile ?? codexStatePath();
   if (!fs.existsSync(stateFile))
     return { status: "skipped", message: `未找到 Codex 状态文件：${stateFile}` };
@@ -117,7 +126,7 @@ export async function ensureProjectRegistered(
     return { status: "skipped", message: `Codex 状态文件不可解析：${e instanceof Error ? e.message : String(e)}` };
   }
 
-  const existingId = isProjectRegistered(state, projectPath);
+  const existingId = isProjectRegistered(state, projectPath, platform);
   if (existingId) return { status: "already", projectId: existingId, message: `已在 Codex 项目列表：${existingId}` };
 
   // 写入前先停受管实例，避免运行中的 Codex 覆盖本次修改

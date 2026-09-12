@@ -52,6 +52,14 @@ export function buildActivationArgs(userDataDir: string, port: number): string {
 }
 
 /**
+ * macOS spawn 启动参数（与 buildActivationArgs 同义，argv 形式）。
+ * 不经 shell，路径含空格/中文无需引号。
+ */
+export function buildSpawnArgs(userDataDir: string, port: number): string[] {
+  return [`--user-data-dir=${userDataDir}`, `--remote-debugging-port=${port}`];
+}
+
+/**
  * 构造 PowerShell 激活脚本。
  * 所有外部字符串经单引号转义后内联，避免注入；AUMID/args 均来自内部构造。
  */

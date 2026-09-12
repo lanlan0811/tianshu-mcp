@@ -49,6 +49,11 @@ export interface CodexDiscoveryInput {
 
 const DEFAULT_APPX_NAME = "OpenAI.Codex";
 const DEFAULT_PFN_SUFFIX = "2p2nqsd0c76g0";
+/** macOS 标准 .app 位置（dirs 留空时注入；.app 包内可执行文件目录） */
+export const DEFAULT_MACOS_BUNDLE_BIN_DIRS = [
+  "/Applications/ChatGPT.app/Contents/MacOS",
+  "{HOME}/Applications/ChatGPT.app/Contents/MacOS",
+];
 
 function isExecutableFile(p: string): boolean {
   try {
@@ -216,9 +221,9 @@ export async function discoverCodex(
     return null;
   }
 
-  // 4) macOS：普通 .app，直接可执行（本轮 research，不参与就绪判定）
+  // 4) macOS：普通 .app，直接可执行（activation=spawn 直启包内 Mach-O）
   if (platform === "darwin") {
-    const dirs = (disc?.dirs ?? []).map(expandEnvPath);
+    const dirs = (disc?.dirs?.length ? disc.dirs : DEFAULT_MACOS_BUNDLE_BIN_DIRS).map(expandEnvPath);
     for (const d of dirs) {
       const full = path.join(d, "ChatGPT");
       const alt = path.join(d, "Codex");
