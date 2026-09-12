@@ -9,6 +9,15 @@
 
 ## [未发布]
 
+### 新增
+
+- Codex GUI 驱动支持 macOS：spawn ChatGPT.app 包内可执行（activation 按平台默认 spawn/msix-com），
+  detached+unref 实例驻留；POSIX 进程枚举与 SIGTERM 停止；darwin 安装发现默认目录；
+  项目登记状态文件（`~/.codex/.codex-global-state.json`）darwin 直写；运行观察环对
+  renderer 瞬时无响应/target 替换做 CDP 重连（连续 5 次才判断开）。2026-09-13 macOS arm64
+  真机闭环验证（发现→登记→绑定→发送→运行证据→验收 PASS→succeeded）；取消/返修矩阵
+  补齐前 macOS 保持 `research`。
+
 ### 修复
 
 - `get_profiles` 列出数据目录 `agent-profiles.json` 中的用户自定义 profile（此前未 resolve 不显示，`run_task` 却可用，探测反馈不一致）。

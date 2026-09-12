@@ -10,6 +10,17 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ## [Unreleased]
 
+### Added
+
+- Codex GUI driver supports macOS: spawns the ChatGPT.app bundle executable directly
+  (per-platform `activation` default spawn/msix-com) with detached+unref instance persistence;
+  POSIX process enumeration and SIGTERM stop; default discovery dirs on darwin; project
+  registration writes the shared state file (`~/.codex/.codex-global-state.json`) on darwin too;
+  the observation loop reconnects CDP across transient renderer hangs / target replacement
+  (only 5 consecutive failures count as disconnected). Machine-verified closed loop on
+  2026-09-13 (macOS arm64: discover → register → bind → send → run evidence → acceptance PASS
+  → succeeded); macOS stays `research` until the cancel/rework matrix is covered.
+
 ### Fixed
 
 - `get_profiles` now lists user-defined profiles from the data-directory `agent-profiles.json`

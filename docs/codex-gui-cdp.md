@@ -4,8 +4,8 @@ tianshu-mcp 的 Codex 适配器：驱动 OpenAI Codex 桌面端（ChatGPT 桌面
 
 - 实现：`src/agents/codex/**`
 - 计划：`.zcode/plans/codex-gui-adapter-plan.md`
-- 状态：Windows 已真机验证；macOS 标 `research`（未验证，不参与就绪判定）
-- 真机验收记录：[codex-windows-smoke.md](codex-windows-smoke.md)
+- 状态：Windows 已真机验证；macOS 基本闭环已真机验证（2026-09-13，未发布），取消/返修矩阵补齐前标 `research`
+- 真机验收记录：[codex-windows-smoke.md](codex-windows-smoke.md)（Windows）、§14（macOS）
 - 关联：[adapter-matrix.md](adapter-matrix.md)、[agent-profiles.md](agent-profiles.md)、[acceptance-config.md](acceptance-config.md)
 
 ---
@@ -40,7 +40,7 @@ CDP 调试端口只有在**专属 user-data-dir** 下才会开启：
 独立 profile **不丢数据**：项目列表、会话、登录态存于 `~/.codex/`（`.codex-global-state.json`、`config.toml`、`auth.json`），跨 profile 共享。受管实例默认 profile 目录：
 
 - Windows：`%LOCALAPPDATA%\tianshu-mcp\codex-gui\profile`
-- macOS（未启用）：`~/.tianshu-mcp/codex-gui/profile`
+- macOS：`~/.tianshu-mcp/codex-gui/profile`
 
 ## 3. 安装发现
 
@@ -52,7 +52,7 @@ CDP 调试端口只有在**专属 user-data-dir** 下才会开启：
    `AUMID = <PackageFamilyName>!App`（实测 `OpenAI.Codex_2p2nqsd0c76g0!App`）。
 3. **扫盘回退**：`{SYSTEMDRIVE}\Program Files\WindowsApps\OpenAI.Codex_*_x64__*/app/ChatGPT.exe`，
    多版本共存时**按包版本降序取最新**（本机实测存在 `26.903.8094.0` 与 `26.903.9818.0` 两个版本目录）。
-4. macOS：`dirs` 下 `ChatGPT`/`Codex` 可执行（`research`）。
+4. macOS：`/Applications/ChatGPT.app/Contents/MacOS` 与 `~/Applications/...` 默认目录下 `ChatGPT`/`Codex` 可执行（`dirs` 留空时注入，`source=macos`）。
 
 **绝不硬编码**：版本号、`WindowsApps` 绝对位置、内核 `bin\<hash>` 目录。全部动态获取或通配匹配。
 
@@ -256,7 +256,7 @@ node scripts/probe-codex.mjs --launch   # 完整：激活受管实例 + 连 CDP 
 
 ## 13. 已知限制
 
-- macOS 全流程未验证（`status: research`），相关代码不参与就绪判定。
+- macOS 取消/返修/continue_task 矩阵未验证（`status: research`）；基本闭环已真机通过（§14）。
 - **新建项目依赖窗口前台**：原生文件夹选择器只在应用前台时弹出。各步骤已分步真机验证通过，
   但完全无人值守下若系统阻止窗口置前，可能返回 `project_create_failed`。既有项目绑定与
   验收/返修闭环不受影响（已稳定真机通过）。
@@ -265,3 +265,44 @@ node scripts/probe-codex.mjs --launch   # 完整：激活受管实例 + 连 CDP 
   失败时 fail-closed，不会误操作既有窗口。
 - 受管实例与用户手动打开的实例互不干扰；但**同一时刻只应有一个受管实例**（adapter 内置串行门）。
 - 本适配器取代了早期 `codex exec` CLI 无头路径（见计划决策 19）；如需无头执行需另立 profile。
+
+## 14. macOS 支持（2026-09-13 真机验证）
+
+macOS 无 MSIX，`activation=spawn`（profile 按平台给默认值）：直接 spawn
+`/Applications/ChatGPT.app/Contents/MacOS/ChatGPT`（Electron 与 Windows 同构，接受
+`--user-data-dir` / `--remote-debugging-port`；专属 profile 是 CDP 前提，同 §2）。
+
+真机环境：macOS arm64，ChatGPT.app `26.901.51231`（Codex Framework 152.0.7977.83）。
+
+### macOS 特有结论（与 Windows 的差异点）
+
+1. **登录态**：受管实例（专属 user-data-dir）复用 `~/.codex` 登录态，首启即为已登录，
+   项目列表/会话可见（与 §2「跨 profile 共享」一致）。
+2. **实例驻留**：spawn 必须 `detached + unref`（POSIX 进程组）。实测不 detached 时
+   父进程（server/探针）退出会把受管主进程连坐杀掉（crashpad 等已 setsid 的 Helper 存活）。
+3. **项目登记**：状态文件 `~/.codex/.codex-global-state.json` 跨平台同构，darwin 同样
+   直写登记（先 SIGTERM 受管实例再原子写 + 备份）；路径比较按 POSIX 语义（保留大小写）。
+   **macOS 因此不依赖原生文件夹对话框**（UIA 路线是 Windows 专属）。
+4. **target 替换**：turn 完成/页面切换瞬间 renderer 会瞬时无响应甚至被替换——单次
+   `Runtime.evaluate` 挂起（15s 超时）不等于 CDP 死亡。轮询与发送确认环对
+   `CdpUnavailable/CdpDisconnected` 做重连（连续 5 次才判 `cdp_disconnected`）。
+   此前曾因此把「实际 40s 后成功」的任务误判 `needs_attention`。
+5. **首次消息排队**：受管 profile 首次发送曾排队约 4.5 分钟（疑似首启环境初始化），
+   输入框显示 queued 状态；第二次起发送即时（输入清空 + stop_button 立现）。
+
+### 验证记录（run_task 全闭环）
+
+| 步骤 | 结果 |
+|---|---|
+| 发现（默认目录注入） | ✓ `/Applications/ChatGPT.app/Contents/MacOS/ChatGPT`（`source=macos`） |
+| 登记（darwin 直写状态文件） | ✓ `performed`；第二轮 `already` 命中 |
+| spawn + CDP 就绪 | ✓ 端口 2s 内监听，`app://-/index.html` |
+| 静息选择器 | ✓ chatInput/sendButton/newChat/addProject/projectPickerTrigger/modelTrigger/permissionTrigger/messageArea 等 11 键全命中 |
+| 项目绑定 + 模型（5.6 Luna/中）+ 权限（完全访问）回读 | ✓ |
+| 发送→运行证据→完成 | ✓ `stop_button` 证据 → `reply_stable`（第二轮 40s） |
+| 自动验收（git-diff-check + 代码分析） | ✓ PASS（diffstat +2 -0） |
+| 终态 | ✓ `succeeded` |
+| 实例驻留 | ✓ server 退出后受管实例存活，下一轮直接复用 |
+
+未覆盖（保持 `research` 的原因）：`cancel_task` 真停 GUI、`rework_task` 同会话返修、
+`continue_task`（needs_user 恢复）、新建项目（不经状态文件的 UI 路径）。

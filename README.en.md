@@ -277,7 +277,7 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 
 | agentId | driver / adapter | status | Notes |
 |---|---|---|---|
-| `codex` | `gui` / `codex-gui` | **ready** | Desktop GUI over CDP (MSIX COM activation + dedicated profile); supports `model`/`reasoningLevel`/`planDoc`/`designSystem`; wait-user, cancel and dispatch-guard semantics machine-verified (v0.3.2); Windows machine-verified |
+| `codex` | `gui` / `codex-gui` | **ready** (`research` on macOS) | Desktop GUI over CDP (Windows: MSIX COM activation; macOS: spawn .app binary + CDP); supports `model`/`reasoningLevel`/`planDoc`/`designSystem`; wait-user, cancel and dispatch-guard semantics machine-verified (v0.3.2); Windows machine-verified; macOS basic closed loop machine-verified (unreleased) — stays `research` until the cancel/rework matrix is covered |
 | `zcode` | `gui` / `zcode-gui` | **research** | CDP GUI adapter with the Windows hardware loop passed; adapted to ZCode 3.11.2 model menu and project binding (v0.3.3); remains non-ready until macOS hardware passes |
 | `traework` | `gui` / `traework-gui` | **ready** | CDP-driven TRAE SOLO CN desktop UI; all three panel modes machine-verified |
 | `stub` | `spawn` | tests only | `test/stub-agent/stub-agent.mjs` with 3 playbooks (good/fix-on-first/never) |
@@ -286,7 +286,7 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 
 ## macOS headless path: codex-cli (user profile)
 
-The built-in `codex` drives the desktop GUI and stays `research` on macOS until hardware verification lands — but **the headless Codex CLI works end-to-end on macOS**. No server changes needed: add a `driver=spawn` user profile in the data directory (these are the M2-finalized arguments used by the built-in codex before v0.3.0).
+The built-in `codex` drives the desktop GUI; the macOS channel is now wired up (spawn .app + CDP, basic closed loop machine-verified — see "Agent support status") and stays `research` until the cancel/rework matrix is covered. If you'd rather not depend on GUI automation, **the headless Codex CLI works end-to-end on macOS** — no server changes needed: add a `driver=spawn` user profile in the data directory (these are the M2-finalized arguments used by the built-in codex before v0.3.0).
 
 Prerequisites:
 
