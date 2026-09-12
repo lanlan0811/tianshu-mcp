@@ -96,6 +96,23 @@ jobs:
             --expect-version "${{ steps.version.outputs.version }}" \
             --fixtures "$GITHUB_WORKSPACE/test/stub-agent"
 
+      # 解析本次提交对应的 CI 运行 ID（正文里的 **CI** 链接应指向 CI，而不是本 Release 运行）。
+      # 找不到同 SHA 的 CI 运行（如手动 dispatch 且尚未跑过 CI）时回退为本 Release 运行 ID。
+      - name: Resolve CI run id for this commit
+        id: ci
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ID=$(gh run list --workflow=ci.yml --commit "${GITHUB_SHA}" --limit 1 --json databaseId -q '.[0].databaseId' 2>/dev/null || true)
+          if [ -z "$ID" ]; then
+            echo "未找到 ${GITHUB_SHA} 的 CI 运行，正文 CI 链接回退为本 Release 运行"
+            ID="${{ github.run_id }}"
+          else
+            echo "CI 运行 ID: $ID"
+          fi
+          echo "id=$ID" >> "$GITHUB_OUTPUT"
+
       # Release 正文由发布说明文档合成（双语 + 绝对链接 + npm/CI/Changelog）：
       # 正文取自 docs/release-v<version>.md 与 .en.md，相对链接改写为该 tag 的绝对链接。
       # 缺文档时脚本会明确报错，避免再产出只有 Full Changelog 的空壳正文。
@@ -107,7 +124,7 @@ jobs:
           PREV=$(git describe --tags --abbrev=0 "v${VER}^" 2>/dev/null | sed 's/^v//' || echo "")
           BODY="$RUNNER_TEMP/release-body.md"
           node scripts/release-body.mjs \
-            "$VER" github "${{ github.repository }}" tianshu-mcp "${{ github.run_id }}" "$PREV" > "$BODY"
+            "$VER" github "${{ github.repository }}" tianshu-mcp "${{ steps.ci.outputs.id }}" "$PREV" > "$BODY"
           echo "path=$BODY" >> "$GITHUB_OUTPUT"
 
       - name: Publish GitHub Release
