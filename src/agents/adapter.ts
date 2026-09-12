@@ -46,6 +46,11 @@ export interface TaskContext {
     kind: "continue" | "rework";
     message?: string;
     sendMessage: boolean;
+    /**
+     * 重新接入观察（不发送任何消息）：codex user_confirmation 恢复专用。
+     * 用户在 GUI 处理完等待项后 turn 自行继续，MCP 只需重连 CDP 观察到终态。
+     */
+    reobserve?: boolean;
     sessionId?: string;
     sessionTitle?: string;
     boundProjectPath?: string;
@@ -77,8 +82,18 @@ export interface AgentRunResult {
   /** GUI 实例是否因任务未真正完成而被保留 */
   keptInstance?: boolean;
   needsUserKind?:
-    "agent_question" | "close_existing_instance" | "login_required" | "system_permission";
+    | "agent_question"
+    | "close_existing_instance"
+    | "login_required"
+    | "system_permission"
+    | "user_confirmation";
   pendingQuestion?: string;
+  /**
+   * 取消路径的 GUI 侧停止结果（GUI agent 专用）：
+   * clicked=是否点击了界面停止按钮；idle=等待窗口内 GUI 是否真正空闲。
+   * idle=false 时编排方必须在终态文案中明示「GUI 内运行未停止」。
+   */
+  guiStop?: { clicked: boolean; idle: boolean };
   session?: {
     id?: string;
     title?: string;

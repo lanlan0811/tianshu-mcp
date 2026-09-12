@@ -40,6 +40,13 @@ export interface NewTaskInput {
   taskTimeoutMs: number;
 }
 
+/**
+ * cancel_task 有界等待任务落终态的上限（issue #6）。
+ * 必须大于 GUI agent 侧"点击停止 + gui.cancelWaitMs（默认 15s）等待"的预算，
+ * 再加轮询与快照写入余量；两处约束需同步调整。
+ */
+const CANCEL_SETTLE_TIMEOUT_MS = 30_000;
+
 export class TaskManager {
   private tasks = new Map<string, TaskMeta>();
   private queue = new Map<string, string[]>();
@@ -173,7 +180,12 @@ export class TaskManager {
     return { found: true, meta };
   }
 
-  /** 仅恢复 needs_user；原任务/基线/会话配置全部复用。 */
+  /**
+   * 仅恢复 needs_user；按 agent 分派恢复语义（issue #5 修复）：
+   * - zcode：原行为保留（agent_question 回发答案；其余类型 message 仅作已处理确认）。
+   * - codex：user_confirmation → 重观察恢复（不发送消息）；login_required → 复检环境后
+   *   全新派发并重发任务书。其余等待类型不支持。
+   */
   async continueTask(
     taskId: string,
     message: string,
@@ -182,17 +194,38 @@ export class TaskManager {
     if (!meta) return { found: false, reason: `任务不存在: ${taskId}` };
     if (meta.status !== "needs_user")
       return { found: false, reason: `任务状态为 ${meta.status}，只允许恢复 needs_user` };
-    if (meta.agentId !== "zcode")
-      return { found: false, reason: "continue_task 当前只用于 ZCode needs_user 会话" };
-    if (
-      meta.needsUserKind === "agent_question" &&
-      !meta.zcodeSessionId &&
-      !meta.zcodeSessionTitle
-    ) {
-      return { found: false, reason: "原 ZCode 会话定位信息丢失，拒绝打开最近会话" };
+    if (meta.agentId === "zcode") {
+      if (
+        meta.needsUserKind === "agent_question" &&
+        !meta.zcodeSessionId &&
+        !meta.zcodeSessionTitle
+      ) {
+        return { found: false, reason: "原 ZCode 会话定位信息丢失，拒绝打开最近会话" };
+      }
+      meta.continueMessage = message.trim();
+      meta.continueSendMessage = meta.needsUserKind === "agent_question";
+    } else if (meta.agentId === "codex") {
+      if (meta.needsUserKind === "user_confirmation") {
+        // GUI 内 turn 暂停等待用户；恢复后不发送消息，仅重连 CDP 观察至终态
+        meta.continueMessage = message.trim();
+        meta.continueSendMessage = false;
+        meta.continueReobserve = true;
+      } else if (meta.needsUserKind === "login_required") {
+        // 登录前任务尚未发送、项目尚未绑定：恢复后走全新派发并重发任务书
+        meta.continueMessage = message.trim();
+        meta.continueSendMessage = false;
+      } else {
+        return {
+          found: false,
+          reason: `codex 任务等待类型为 ${meta.needsUserKind ?? "unknown"}，仅支持 login_required / user_confirmation`,
+        };
+      }
+    } else {
+      return {
+        found: false,
+        reason: `continue_task 当前仅支持 zcode/codex 任务（agentId=${meta.agentId}）`,
+      };
     }
-    meta.continueMessage = message.trim();
-    meta.continueSendMessage = meta.needsUserKind === "agent_question";
     meta.status = "queued";
     meta.updatedAt = nowIso();
     meta.finishedAt = undefined;
@@ -210,8 +243,16 @@ export class TaskManager {
     return { found: true, meta };
   }
 
-  /** cancel：仅取消目标任务 */
-  async cancel(taskId: string, reason?: string): Promise<{ found: boolean; reason?: string }> {
+  /**
+   * cancel：仅取消目标任务。
+   * 返回 settled 表示任务是否已在本调用内落终态（issue #6）：活动中任务会 abort 编排
+   * 协程，GUI agent 侧 run 协程先尽力点击界面停止按钮并等待空闲（gui.cancelWaitMs，
+   * 默认 15s），本方法有界等待其落终态后再返回，取消结果不再"请求即成功"。
+   */
+  async cancel(
+    taskId: string,
+    reason?: string,
+  ): Promise<{ found: boolean; reason?: string; settled?: boolean }> {
     const meta = await this.getMeta(taskId);
     if (!meta) return { found: false, reason: `任务不存在: ${taskId}` };
     if (meta.status === "queued") {
@@ -239,27 +280,41 @@ export class TaskManager {
       // 但 AbortController 已注册。此时也必须中止，否则任务会在 cancelled 后继续执行。
       this.abortControllers.get(taskId)?.abort();
       await this.store.updateStatus(meta, "cancelled", meta.lastMessage);
-      return { found: true };
+      return { found: true, settled: true };
     }
     if (meta.status === "needs_user") {
       meta.cancelRequestedAt = nowIso();
       meta.abortSource = "user";
       meta.errorType = "cancelled";
       meta.cancelReason = reason;
+      // needs_user 时 run 协程已退出、CDP 已断开，MCP 侧无连接可点 GUI 停止按钮；
+      // GUI 内可能仍有等待中的会话，必须如实提示人工检查。
       meta.lastMessage = reason
-        ? `已取消（等待用户处理时）：${reason}`
-        : "已取消（等待用户处理时）";
+        ? `已取消（等待用户处理时）：${reason}；GUI 内可能仍有等待中的会话，请人工检查。`
+        : "已取消（等待用户处理时）；GUI 内可能仍有等待中的会话，请人工检查。";
       await this.store.appendEvent(meta.taskId, "cancel_requested", "needs_user", meta.lastMessage);
       await this.store.updateStatus(meta, "cancelled", meta.lastMessage);
-      return { found: true };
+      return { found: true, settled: true };
     }
     if (ACTIVE_STATUSES.includes(meta.status)) {
       // queued 之外的活动中任务：记 cancel_requested（含 cancelReason）再 abort
       await this.store.markCancelRequested(meta, reason);
       this.abortControllers.get(taskId)?.abort();
-      return { found: true };
+      // 有界等待编排侧落终态：上限必须覆盖 GUI 侧"点击停止 + cancelWaitMs 等待"预算
+      // （cancelWaitMs 默认 15s）+ 轮询与快照写入余量。超时仍返回（任务会自行落终态）。
+      const deadline = Date.now() + CANCEL_SETTLE_TIMEOUT_MS;
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 100));
+        const snap = await this.store.readSnapshot(taskId).catch(() => null);
+        if (snap && isTerminal(snap.status)) return { found: true, settled: true };
+      }
+      return {
+        found: true,
+        settled: false,
+        reason: "已请求取消，但任务尚未在本调用内落终态（GUI 侧停止可能未完成）；请稍后 query_task 复核",
+      };
     }
-    return { found: true, reason: `任务已处于终态（${meta.status}），无需取消` };
+    return { found: true, reason: `任务已处于终态（${meta.status}），无需取消`, settled: true };
   }
 
   /** server 退出：终止全部活动任务并标 interrupted（排队中任务也归档） */

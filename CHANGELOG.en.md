@@ -10,17 +10,68 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ## [Unreleased]
 
-### Fixed
-
-- The startup log no longer hardcodes the tool count as `8`; it reports the actual registry size
-  (`TOOL_DEFS.length`, currently 9).
-
 ### Planned
 
 - More external AI-Agent adapters (a new agent = one profile + an optional adapter file).
 - TraeWork executable discovery and native-dialog driving on macOS (currently fail-closed).
 - Optional project-level skill seeding (by default nothing is written into target repos).
 - macOS hardware verification for the Codex GUI adapter (built-in status remains `research`).
+- Best-effort stop of a GUI-side pending session (via a temporary CDP connection) when cancelling
+  a task in the `needs_user` state.
+
+---
+
+## [0.3.2] — 2026-09-12
+
+Fixes for issues #5 / #6: **the MCP task model was disconnected from the state of the turn inside
+the Codex GUI**. The former is the completion-detection deadlock that kept reporting `running`
+while Codex waited for user confirmation; the latter is `cancel_task` only aborting the MCP-side
+wait loop, never stopping the in-GUI run, with a misleading description. Both share the same root
+cause and are resolved together.
+
+### Fixed
+
+- **Waiting-for-user detection (issue #5)**:
+  - `judgeCodexPoll` gains a stall fallback: while the stop button stays visible and the
+    conversation hash is unchanged for `gui.stallTimeoutMs` (default 5 minutes), the task
+    transitions to `needs_user` (`needsUserKind=user_confirmation`) instead of deadlocking in
+    `running` until the overall timeout; the stall timer resets as soon as content changes again.
+  - New configurable UI detection `gui.selectors.userGate` (e.g. the embedded-checkout page or
+    approval cards): when configured and matched, transitions to `needs_user` immediately.
+    Unset by default (disabled) — no unverified selectors are built in.
+  - Tightened the `stopButton` selector: removed the `aria-label*="取消"` over-match (the Cancel
+    button on waiting-for-user screens used to be mistaken for a running signal).
+- **Recovery path (issue #5 fallout)**: `continue_task` now supports codex —
+  - `user_confirmation`: after the user completes the action in the Codex window, resume by
+    re-attaching as an observer of the in-GUI run (no message is sent); if the turn already
+    finished before resuming, the task is still judged `succeeded` correctly;
+  - `login_required`: after login, re-checks the environment and re-dispatches the task brief
+    (fresh session + project binding + full initial prompt);
+  - zcode recovery behaviour is unchanged; other agents are rejected explicitly.
+- **Cancel actually stops the GUI (issue #6)**:
+  - `cancel_task` no longer succeeds on request alone for GUI agents: it first best-effort clicks
+    the in-app stop button over CDP, then waits (bounded by `gui.cancelWaitMs`, default 15s) for
+    the GUI to become idle before settling `cancelled`; if the stop could not be confirmed the
+    terminal message states "GUI 内运行未确认停止…" (the in-GUI run may still be going);
+  - process-tree termination for CLI agents is unchanged;
+  - cancelling from `needs_user` now notes that a pending session may remain in the GUI
+    (no CDP connection exists at that point — documented limitation).
+- **Re-dispatch anti-overlap guard (issue #6 chain risk)**: when dispatching, if the managed
+  instance still has an unstopped run, MCP first tries to stop it; if it cannot, the dispatch
+  fails hard with `instance_busy`, preventing old and new turns from overlapping inside the same
+  app (observed in the wild when re-dispatching right after a cancel).
+- The startup log no longer hardcodes the tool count as `8`; it reports the actual registry size
+  (`TOOL_DEFS.length`, currently 9).
+
+### Changed
+
+- Tool descriptions match actual semantics: `cancel_task` distinguishes CLI (kill process tree)
+  from GUI (best-effort stop click + bounded wait); `continue_task` no longer claims to be
+  ZCode-only.
+- `GuiProfile` gains two configurable options, `stallTimeoutMs` (default 300000) and
+  `cancelWaitMs` (default 15000), both overridable via agent-profiles.json.
+- Skill docs (SKILL.md §4/§5, usage-examples.md §7) document the codex `user_confirmation` /
+  `login_required` recovery flows, GUI cancel semantics and the new options.
 
 ---
 
@@ -443,7 +494,8 @@ project → pick model and reasoning level → send instructions → run detecti
 
 ---
 
-[Unreleased]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.10...v0.2.0

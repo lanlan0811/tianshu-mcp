@@ -204,6 +204,14 @@ export const GuiProfileSchema = z.object({
     .int()
     .nonnegative()
     .default(10 * 60_000),
+  /**
+   * 停止按钮可见且对话文本无变化持续此时长 → 判定 agent 在等待用户
+   * （needs_user/user_confirmation），打破"停止按钮恒可见 → 恒报 running"死锁。
+   * 长命令型任务（大依赖安装/构建）建议调大，避免把合法静默误判为等待用户。
+   */
+  stallTimeoutMs: z.number().int().positive().default(300_000),
+  /** 取消任务时点击 GUI 停止按钮后等待界面真正空闲的上限（ms） */
+  cancelWaitMs: z.number().int().positive().default(15_000),
   /** 单次 CDP 命令等待响应的超时（ms） */
   cdpSendTimeoutMs: z.number().int().positive().default(15_000),
   /** 轮询期间向任务事件流报告进度的间隔（ms） */

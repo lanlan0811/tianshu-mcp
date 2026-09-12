@@ -59,6 +59,8 @@ function guiOf(resolved: ResolvedAgent): GuiProfile {
     pollIntervalMs: g?.pollIntervalMs ?? 3_000,
     stableRounds: g?.stableRounds ?? 4,
     idleTimeoutMs: g?.idleTimeoutMs ?? 600_000,
+    stallTimeoutMs: g?.stallTimeoutMs ?? 300_000,
+    cancelWaitMs: g?.cancelWaitMs ?? 15_000,
     cdpSendTimeoutMs: g?.cdpSendTimeoutMs ?? 15_000,
     progressIntervalMs: g?.progressIntervalMs ?? 30_000,
     modelSwitch: g?.modelSwitch ?? true,

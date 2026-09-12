@@ -408,6 +408,72 @@ describe("Codex 运行判定", () => {
     const s3 = judgeCodexPoll({ ...base, conversationText: "reply-growing" }, s2, 2, 1000, 30).state;
     expect(s3.stable).toBe(0);
   });
+
+  it("等待用户界面检测（userGate）命中 → needs_user，优先于停止按钮", () => {
+    const v = judgeCodexPoll(
+      { ...base, userGateVisible: true, stopVisible: true },
+      initialCodexState(),
+      2,
+      1000,
+      10,
+      1000,
+    );
+    expect(v.kind).toBe("needs_user");
+    expect(v.evidence).toBe("user_gate");
+  });
+
+  it("登录指示优先于 userGate", () => {
+    const v = judgeCodexPoll(
+      { ...base, loginVisible: true, userGateVisible: true },
+      initialCodexState(),
+      2,
+      1000,
+      10,
+      1000,
+    );
+    expect(v.kind).toBe("needs_login");
+  });
+
+  it("stall 兜底：停止按钮持续可见 + 对话哈希超过 stallTimeout 不变 → needs_user", () => {
+    const stall = 100;
+    // 第一轮开始计时（hash 与初始态不同 → stallSince=now）
+    let state = judgeCodexPoll({ ...base, stopVisible: true }, initialCodexState(), 2, 1000, 1000, stall).state;
+    expect(state.stallSince).toBe(1000);
+    // 50ms 仍在窗口内 → running
+    expect(judgeCodexPoll({ ...base, stopVisible: true }, state, 2, 1000, 1050, stall).kind).toBe("running");
+    // 101ms 哈希冻结 → needs_user（打破 issue #5 死锁）
+    const v = judgeCodexPoll({ ...base, stopVisible: true }, state, 2, 1000, 1101, stall);
+    expect(v.kind).toBe("needs_user");
+    expect(v.evidence).toBe("stop_button+stall");
+  });
+
+  it("stall 计时会被对话内容变化重置（流式输出/长命令不动）", () => {
+    const stall = 100;
+    let state = judgeCodexPoll({ ...base, stopVisible: true }, initialCodexState(), 2, 1000, 1000, stall).state;
+    // 内容变化 → stallSince 后移至变化时刻
+    const s2 = judgeCodexPoll(
+      { ...base, stopVisible: true, conversationText: "more text" },
+      state,
+      2,
+      1000,
+      1200,
+      stall,
+    ).state;
+    expect(s2.stallSince).toBe(1200);
+    // 变化后 50ms：仍在 stall 窗口内 → running
+    expect(
+      judgeCodexPoll({ ...base, stopVisible: true, conversationText: "more text" }, s2, 2, 1000, 1250, stall).kind,
+    ).toBe("running");
+    // 变化后 800ms 仍冻结 → needs_user
+    expect(
+      judgeCodexPoll({ ...base, stopVisible: true, conversationText: "more text" }, s2, 2, 1000, 2000, stall).kind,
+    ).toBe("needs_user");
+  });
+
+  it("停止按钮短暂可见（<stallTimeout）仍判 running（回归）", () => {
+    const v = judgeCodexPoll({ ...base, stopVisible: true }, initialCodexState(), 2, 1000, 10, 300_000);
+    expect(v.kind).toBe("running");
+  });
 });
 
 /* ---------------- 步骤 4/8：提示词与修复计划 ---------------- */
@@ -566,6 +632,23 @@ describe("Codex 选择器规范", () => {
   it("profile 覆盖可热修复选择器", () => {
     const css = cssCandidates("sendButton", { sendButton: "#my-send" });
     expect(css[0]).toBe("#my-send");
+  });
+
+  it("stopButton 不含「取消」过匹配（issue #5：等待用户界面会误命中）", () => {
+    const args = JSON.parse(specArgs("stopButton")) as unknown[];
+    const css = (args[0] as string[]).join(" ");
+    expect(css).not.toContain("取消");
+    // 主候选（停止/Stop）仍在
+    expect(css).toContain("停止");
+    // 文本/aria 候选也不含「取消」
+    expect(JSON.stringify(args[1])).not.toContain("取消");
+    expect(JSON.stringify(args[2])).not.toContain("取消");
+  });
+
+  it("userGate 默认候选为空（禁用），配置 gui.selectors.userGate 后启用", () => {
+    expect(cssCandidates("userGate")).toHaveLength(0);
+    const enabled = cssCandidates("userGate", { userGate: '[class*="embedded-checkout"]' });
+    expect(enabled).toEqual(['[class*="embedded-checkout"]']);
   });
 
   it("specArgs 输出 [css, texts, ariaLabels, patterns, excludes, scope]", () => {

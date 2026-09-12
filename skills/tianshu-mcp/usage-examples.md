@@ -123,7 +123,7 @@ run_task(projectPath=D:/repo/app, agentId=traework,
 | `status` | queued/running/verify_start/fixing/needs_user/succeeded/failed/needs_attention/cancelled/interrupted |
 | `message` | 状态摘要/失败原因，最先读 |
 | `errorType` | 失败归类：timeout/spawn/agent_failed/verify_failed/cancelled/interrupted/agent_unresolved/internal |
-| `needsUserKind` | needs_user 时的等待类型：agent_question/close_existing_instance/login_required/system_permission |
+| `needsUserKind` | needs_user 时的等待类型：agent_question/close_existing_instance/login_required/system_permission/user_confirmation（codex 等待用户确认界面） |
 | `pendingQuestion` | needs_user 时 agent 提出的问题原文 |
 | `round` / `roundsUsed` | 已进行的 agent 轮次 |
 | `changedFiles` | 相对 git 基线的变更清单（含未跟踪新增） |
@@ -197,7 +197,58 @@ parameter of type 'number' (src/run.ts:42)。请只修这一处类型问题并�
 
 补充：自动返修（autoFixRounds）路径下，server 会先把失败证据写成修复计划文档（codex 写到项目 `.zcode/plans/`），并在下一轮指令中引用该文档；手动 `rework_task` 的 feedback 则按上面的针对性模板书写。
 
-## 7. 汇报模板
+## 7. needs_user 恢复与取消示例（v0.3.2 起）
+
+### 7.1 codex 停在等待用户确认（user_confirmation）
+
+轮询时看到任务转为 `needs_user`、`needsUserKind=user_confirmation`（Codex 停止按钮持续可见且对话长时间未变化，如方案确认卡/订阅确认页）：
+
+```text
+1) 提示用户：请在 Codex 窗口完成该确认（点确认/继续/订阅按钮等）。
+2) 用户确认已处理后：continue_task(taskId, message="已在 Codex 窗口确认")
+3) 恢复后 MCP 只重新接入观察（不会向 Codex 发送消息），继续 query_task 轮询到终态。
+```
+
+注意：若用户尚未处理就调 continue_task，任务会再次转 `needs_user`（如实反映 GUI 状态），稍后再试即可。
+
+### 7.2 codex 需要登录（login_required）
+
+```text
+在 Codex 窗口完成登录 → continue_task(taskId, message="已登录")
+MCP 复检环境后重新派发任务书（新会话 + 项目绑定 + 完整初始指令）。
+```
+
+### 7.3 取消 GUI agent 任务（cancel_task）
+
+```text
+cancel_task(taskId, reason="用户要求停止")
+→ 返回 meta.message：
+  "已取消：…；GUI 内运行已停止。"                      ← 已确认停止，可安全重派
+  "已取消：…；GUI 内运行未确认停止，Codex 窗口中的任务可能仍在继续。" ← 需人工检查
+  "已请求取消，但任务尚未在本调用内落终态…"            ← 稍后 query_task 复核
+```
+
+GUI agent 取消语义：尽力点击界面停止按钮并等待 GUI 空闲（有界超时）；**未确认停止前不要重派同项目任务**——重派护栏会以 `instance_busy` 拒绝派发（防止新旧 turn 交叠），宁可等人工确认。
+
+### 7.4 agent-profiles.json 相关配置（可选）
+
+```json
+{
+  "codex": {
+    "gui": {
+      "stallTimeoutMs": 300000,
+      "cancelWaitMs": 15000,
+      "selectors": { "userGate": "[class*=\"embedded-checkout\"]" }
+    }
+  }
+}
+```
+
+- `stallTimeoutMs`：停止按钮持续可见 + 对话无变化持续此时长 → 判定等待用户（默认 300000=5 分钟）。长命令型任务（大依赖安装/构建）建议调大。
+- `cancelWaitMs`：取消时点击停止按钮后等待 GUI 空闲的上限（默认 15000=15 秒）。
+- `selectors.userGate`：等待用户界面的检测选择器（如结账页 `embedded-checkout`、确认卡），配置后命中即快速转 `needs_user`；默认未配置=禁用，配置前请真机核对。
+
+## 8. 汇报模板
 
 `get_task_report` 拿全文后向用户汇报建议包含：
 

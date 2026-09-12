@@ -565,3 +565,364 @@ describe("Codex fix-loop 分支", () => {
     expect(fake.sent).toBe(2); // 初始 + 返修
   }, 60_000);
 });
+
+/* ---------------- issue #5：等待用户检测 / 重观察恢复 ---------------- */
+
+/** 等待用户卡死（issue #5 场景）：发送后 turn 暂停在等待确认界面，停止按钮恒可见、对话冻结 */
+class GatedTurnCodex extends FakeCodex {
+  /** 模拟用户在 Codex 窗口处理完等待项（turn 自动继续并完成） */
+  gateCleared = false;
+  constructor(project: string) {
+    super(project, true);
+  }
+  override async sendMessage() {
+    await super.sendMessage();
+    this.stopRemaining = 1_000_000; // 永不自行结束
+  }
+  override async poll() {
+    if (this.gateCleared)
+      return {
+        stopVisible: false,
+        sendVisible: false,
+        composerText: "",
+        conversationText: `${this.conversation}Codex已完成开发`,
+        loginVisible: false,
+      };
+    return super.poll();
+  }
+}
+
+/** 界面检测命中（gui.selectors.userGate 配置后启用）：等待用户快速路径 */
+class UserGateCodex extends GatedTurnCodex {
+  override async poll() {
+    return { ...(await super.poll()), userGateVisible: true };
+  }
+}
+
+describe("Codex 等待用户检测（issue #5）", () => {
+  it("停止按钮恒可见 + 对话冻结超过 stallTimeoutMs → needs_user(user_confirmation)", async () => {
+    const project = await makeTmpRoot("codex-stall");
+    cleanup.push(project);
+    const fake = new GatedTurnCodex(project);
+    const result = await runCodexTask({
+      ctx: ctx(project),
+      resolved: resolved({ stallTimeoutMs: 50 }),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.endReason).toBe("needs_user");
+    expect(result.needsUserKind).toBe("user_confirmation");
+    expect(result.pendingQuestion).toContain("continue_task");
+    expect(fake.sent).toBe(1); // 只发送一次，不重发
+  });
+
+  it("userGate 界面检测命中 → 立即 needs_user（无需等 stall 超时）", async () => {
+    const project = await makeTmpRoot("codex-usergate");
+    cleanup.push(project);
+    const fake = new UserGateCodex(project);
+    const result = await runCodexTask({
+      ctx: ctx(project),
+      resolved: resolved({ stallTimeoutMs: 60_000 }),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.endReason).toBe("needs_user");
+    expect(result.needsUserKind).toBe("user_confirmation");
+    expect(fake.sent).toBe(1);
+  });
+
+  it("重观察恢复（reobserve）：不发送消息，GUI 空闲后判 finished", async () => {
+    const project = await makeTmpRoot("codex-reobserve");
+    cleanup.push(project);
+    const fake = new GatedTurnCodex(project);
+    fake.gateCleared = true; // 用户已处理：GUI 空闲、回复稳定
+    fake.boundProject = path.basename(project);
+    const result = await runCodexTask({
+      ctx: ctx(project, {
+        resume: {
+          kind: "continue",
+          message: "已在 GUI 确认",
+          sendMessage: false,
+          reobserve: true,
+          boundProjectPath: project,
+          model: "GPT-5.6 Sol",
+          permissionMode: "完全访问",
+        },
+      }),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.ok).toBe(true);
+    expect(result.endReason).toBe("reply_stable");
+    expect(fake.sent).toBe(0); // 重观察轮不发送任何消息
+    expect(fake.typed).toBe("");
+    // 不点「新对话」、不改绑定
+    expect(fake.clicked).not.toContain("newChat");
+  });
+});
+
+/* ---------------- issue #6：取消真停 GUI / 防交叠护栏 ---------------- */
+
+/** 取消可生效：点击停止按钮后 GUI 真正空闲 */
+class CancelableCodex extends GatedTurnCodex {
+  stopClicked = false;
+  override async click(key: string) {
+    const r = await super.click(key);
+    if (key === "stopButton") {
+      this.stopClicked = true;
+      this.stopRemaining = 0;
+    }
+    return r;
+  }
+}
+
+/** 取消不生效：停止按钮点击后仍恒可见（旧 turn 未停止的受管实例） */
+class BusyInstanceCodex extends FakeCodex {
+  constructor(project: string) {
+    super(project, true);
+    this.sent = 1;
+    this.conversation = "旧任务内容";
+    this.stopRemaining = 1_000_000;
+  }
+}
+
+describe("Codex 取消与防交叠（issue #6）", () => {
+  it("abort 路径：点击 GUI 停止按钮并等待空闲，guiStop 如实上报", async () => {
+    const project = await makeTmpRoot("codex-abort");
+    cleanup.push(project);
+    const fake = new CancelableCodex(project);
+    const ac = new AbortController();
+    setTimeout(() => ac.abort(), 30);
+    const result = await runCodexTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: { logger, onProgress: () => {}, signal: ac.signal },
+      logFile: path.join(project, "agent.log"),
+      // 纯微任务 no-op sleep 会饿死事件循环的 timers 阶段（abort 定时器永不触发），
+      // 这里注入真实让出事件循环的 sleep，保证 setTimeout 的 abort 能被观察到。
+      deps: depsFor(fake, {
+        sleep: (ms: number) => new Promise((r) => setTimeout(r, Math.min(ms, 2))),
+      }),
+    });
+    expect(result.killed).toBe(true);
+    expect(result.endReason).toBe("aborted");
+    expect(result.guiStop).toEqual({ clicked: true, idle: true });
+    expect(fake.stopClicked).toBe(true);
+  });
+
+  it("重派护栏：受管实例仍有未停止的运行且停止无效 → instance_busy 拒绝派发", async () => {
+    const project = await makeTmpRoot("codex-busy");
+    cleanup.push(project);
+    const fake = new BusyInstanceCodex(project);
+    const result = await runCodexTask({
+      ctx: ctx(project),
+      resolved: resolved({ cancelWaitMs: 30 }),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.hardFailure).toBe(true);
+    expect(result.endReason).toBe("instance_busy");
+    expect(result.error).toContain("未停止的运行");
+    // 未输入、未发送（防交叠：新旧 turn 不交叠）
+    expect(fake.typed).toBe("");
+    expect(fake.conversation).toBe("旧任务内容");
+  });
+});
+
+/* ---------------- manager 级：needs_user 恢复矩阵 + 取消落终态 ---------------- */
+
+describe("Codex TaskManager 恢复与取消", () => {
+  async function makeCodexManager(fake: FakeCodex, guiOverrides: Record<string, unknown> = {}) {
+    const { TaskManager } = await import("../../src/tasks/task-manager.js");
+    const { TaskStore } = await import("../../src/tasks/task-store.js");
+    const { DataHome } = await import("../../src/config/store.js");
+    const { AgentAdapterRegistry } = await import("../../src/agents/registry.js");
+    const { AcceptanceEngine } = await import("../../src/verify/acceptance.js");
+    const { makeBuildCtx } = await import("../../src/mcp/context.js");
+    const { normPath } = await import("../../src/util/path.js");
+    const { CodexGuiAdapter } = await import("../../src/agents/codex/adapter.js");
+
+    const home = await makeTmpRoot("codex-mgr-home");
+    cleanup.push(home);
+    const dh = new DataHome(home, logger, { codex: resolved(guiOverrides).profile });
+    await dh.init();
+    const store = new TaskStore(home, logger);
+    const reg = new AgentAdapterRegistry(() => dh.loadProfiles(), logger);
+    const adapter = new CodexGuiAdapter("codex");
+    adapter.run = (c, r, o) =>
+      runCodexTask({
+        ctx: c,
+        resolved: r,
+        opts: o,
+        logFile: path.join(c.taskDir, `agent-${c.round}.log`),
+        deps: depsFor(fake),
+      });
+    reg.register("codex", adapter);
+    const manager = new TaskManager(store, dh, reg, new AcceptanceEngine(store, logger), logger, makeBuildCtx({ store, dataHome: dh }));
+    await manager.initialize(1);
+    return { manager, normPath };
+  }
+
+  async function waitStatus<M extends { status: string }>(
+    manager: { getMeta: (taskId: string) => Promise<M | null> },
+    taskId: string,
+    statuses: readonly string[],
+    timeoutMs: number,
+  ): Promise<M | null> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const meta = await manager.getMeta(taskId);
+      if (meta && statuses.includes(meta.status)) return meta;
+      if (Date.now() > deadline) return meta;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  }
+
+  it("stall → needs_user(user_confirmation) → continue 重观察 → succeeded 全链路", async () => {
+    const project = await makeTmpRoot("codex-mgr-recover");
+    cleanup.push(project);
+    const fake = new GatedTurnCodex(project);
+    fake.boundProject = path.basename(project);
+    const { manager, normPath } = await makeCodexManager(fake, { stallTimeoutMs: 50 });
+
+    const meta = await manager.submit({
+      projectPath: normPath(project),
+      displayPath: project,
+      agentId: "codex",
+      task: "等待用户确认的任务",
+      model: "GPT-5.6 Sol",
+      reasoningLevel: "high",
+      autoVerify: false,
+      autoFixRounds: 0,
+      taskTimeoutMs: 20_000,
+    });
+
+    const nu = await waitStatus(manager, meta.taskId, ["needs_user"], 20_000);
+    expect(nu?.status).toBe("needs_user");
+    expect(nu?.needsUserKind).toBe("user_confirmation");
+    expect(nu?.pendingQuestion).toContain("continue_task");
+    expect(fake.sent).toBe(1);
+
+    // 用户在 GUI 处理完 → continue_task 重观察恢复
+    fake.gateCleared = true;
+    const c = await manager.continueTask(meta.taskId, "已在 Codex 窗口确认");
+    expect(c.found).toBe(true);
+
+    const final = await waitStatus(
+      manager,
+      meta.taskId,
+      ["succeeded", "failed", "needs_attention", "cancelled", "interrupted"],
+      30_000,
+    );
+    expect(final?.status).toBe("succeeded");
+    expect(fake.sent).toBe(1); // 重观察轮没有第二次发送
+  }, 60_000);
+
+  it("运行中取消：点击 GUI 停止按钮、有界等待落终态，文案明示 GUI 已停止", async () => {
+    const project = await makeTmpRoot("codex-mgr-cancel");
+    cleanup.push(project);
+    const fake = new CancelableCodex(project);
+    fake.boundProject = path.basename(project);
+    const { manager, normPath } = await makeCodexManager(fake);
+
+    const meta = await manager.submit({
+      projectPath: normPath(project),
+      displayPath: project,
+      agentId: "codex",
+      task: "供取消的任务",
+      model: "GPT-5.6 Sol",
+      reasoningLevel: "high",
+      autoVerify: false,
+      autoFixRounds: 0,
+      taskTimeoutMs: 20_000,
+    });
+    await waitStatus(manager, meta.taskId, ["running"], 20_000);
+
+    const c = await manager.cancel(meta.taskId, "测试取消");
+    expect(c.found).toBe(true);
+    expect(c.settled).toBe(true);
+
+    const final = await manager.getMeta(meta.taskId);
+    expect(final?.status).toBe("cancelled");
+    expect(final?.lastMessage).toContain("GUI 内运行已停止");
+    expect(final?.finishedAt).toBeTruthy();
+    expect(fake.stopClicked).toBe(true);
+    expect(fake.sent).toBe(1);
+  }, 60_000);
+
+  it("continueTask 矩阵：codex 两种等待类型可恢复，其余拒绝", async () => {
+    const project = await makeTmpRoot("codex-mgr-matrix");
+    cleanup.push(project);
+    const fake = new FakeCodex(project, true);
+    const { manager, normPath } = await makeCodexManager(fake);
+
+    const base = {
+      projectPath: normPath(project),
+      displayPath: project,
+      task: "矩阵测试",
+      model: "GPT-5.6 Sol",
+      reasoningLevel: "high" as const,
+      autoVerify: false,
+      autoFixRounds: 0,
+      taskTimeoutMs: 10_000,
+      round: 0,
+      roundsUsed: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    const now = () => new Date().toISOString();
+    const nextId = () => `tsk_matrix_${Math.random().toString(36).slice(2, 8)}`;
+
+    // codex + user_confirmation → 接受，reobserve=true
+    const m1 = { ...base, taskId: nextId(), agentId: "codex", status: "needs_user" as const, needsUserKind: "user_confirmation" as const };
+    m1.createdAt = m1.updatedAt = now();
+    await manager.persistMetaUpdate(m1);
+    const r1 = await manager.continueTask(m1.taskId, "已确认");
+    expect(r1.found).toBe(true);
+    expect(r1.meta?.continueReobserve).toBe(true);
+    expect(r1.meta?.continueSendMessage).toBe(false);
+
+    // codex + login_required → 接受，复检后重发任务书（不 reobserve）
+    const m2 = { ...base, taskId: nextId(), agentId: "codex", status: "needs_user" as const, needsUserKind: "login_required" as const };
+    m2.createdAt = m2.updatedAt = now();
+    await manager.persistMetaUpdate(m2);
+    const r2 = await manager.continueTask(m2.taskId, "已登录");
+    expect(r2.found).toBe(true);
+    expect(r2.meta?.continueReobserve).toBeUndefined();
+    expect(r2.meta?.continueSendMessage).toBe(false);
+
+    // codex + 其他等待类型 → 拒绝
+    const m3 = { ...base, taskId: nextId(), agentId: "codex", status: "needs_user" as const, needsUserKind: "close_existing_instance" as const };
+    m3.createdAt = m3.updatedAt = now();
+    await manager.persistMetaUpdate(m3);
+    const r3 = await manager.continueTask(m3.taskId, "x");
+    expect(r3.found).toBe(false);
+
+    // zcode + agent_question 且会话定位缺失 → 拒绝（原行为保留）
+    const m4 = { ...base, taskId: nextId(), agentId: "zcode", status: "needs_user" as const, needsUserKind: "agent_question" as const };
+    m4.createdAt = m4.updatedAt = now();
+    await manager.persistMetaUpdate(m4);
+    const r4 = await manager.continueTask(m4.taskId, "答案");
+    expect(r4.found).toBe(false);
+    expect(r4.reason).toContain("会话定位信息丢失");
+
+    // 其他 agent → 拒绝
+    const m5 = { ...base, taskId: nextId(), agentId: "stub", status: "needs_user" as const, needsUserKind: "agent_question" as const };
+    m5.createdAt = m5.updatedAt = now();
+    await manager.persistMetaUpdate(m5);
+    const r5 = await manager.continueTask(m5.taskId, "x");
+    expect(r5.found).toBe(false);
+    expect(r5.reason).toContain("zcode/codex");
+
+    // r1/r2 已重新入队（后台跑完无碍断言，但必须等它们落终态再收尾，
+    // 否则 Windows 下 afterAll 清理临时目录会因日志句柄未关闭而 EBUSY）
+    await waitStatus(manager, m1.taskId, ["succeeded", "failed", "needs_attention", "cancelled", "interrupted"], 30_000);
+    await waitStatus(manager, m2.taskId, ["succeeded", "failed", "needs_attention", "cancelled", "interrupted"], 30_000);
+  }, 60_000);
+});

@@ -80,6 +80,8 @@ export function codexGuiOf(resolved: ResolvedAgent): GuiProfile {
     pollIntervalMs: g?.pollIntervalMs ?? 3_000,
     stableRounds: g?.stableRounds ?? 4,
     idleTimeoutMs: g?.idleTimeoutMs ?? 10 * 60_000,
+    stallTimeoutMs: g?.stallTimeoutMs ?? 5 * 60_000,
+    cancelWaitMs: g?.cancelWaitMs ?? 15_000,
     cdpSendTimeoutMs: g?.cdpSendTimeoutMs ?? 15_000,
     progressIntervalMs: g?.progressIntervalMs ?? 30_000,
     modelSwitch: g?.modelSwitch ?? true,
@@ -237,8 +239,29 @@ export async function runCodexTask(args: RunCodexArgs): Promise<AgentRunResult> 
 
     await cdp.dismissMenus();
 
-    const resuming = Boolean(ctx.resume && (ctx.resume.sessionId || ctx.resume.kind !== undefined));
-    const isContinueConfirm = ctx.resume?.kind === "continue" && !ctx.resume.sendMessage;
+    const resumeKind = ctx.resume?.kind;
+    // 重观察恢复（user_confirmation）：用户在 GUI 处理完等待项后 turn 自行继续，
+    // 本轮不发送任何消息，只重连 CDP 观察 GUI 内运行至终态。
+    const isReobserve = resumeKind === "continue" && ctx.resume?.reobserve === true;
+    const isContinueConfirm = resumeKind === "continue" && !ctx.resume?.sendMessage;
+    // continue-confirm 仅出现在 login_required 恢复：登录前任务尚未发送、项目尚未绑定，
+    // 须走全新派发（新会话 + 绑定项目 + 发送初始任务书）；其余恢复轮复用当前会话。
+    const resuming = isReobserve || (resumeKind !== undefined && !isContinueConfirm);
+
+    // 重派护栏（issue #6 连锁风险）：受管实例上仍有未停止的运行时先尽力停止；
+    // 仍不空闲则拒绝派发——宁可 fail-closed，也不让新旧 turn 在同一应用内交叠。
+    // 重观察轮例外：停止按钮可见正是被观察 turn 暂停的表现。
+    if (!isReobserve) {
+      const busyStop = await stopGuiTurn(cdp, gui, deps, logger);
+      if (busyStop.clicked) logger.warn("[codex] 派发前发现实例仍有运行，已点击停止并恢复空闲");
+      if (!busyStop.idle)
+        return result({
+          hardFailure: true,
+          endReason: "instance_busy",
+          error:
+            "受管 Codex 实例上存在未停止的运行（已尝试点击停止未果）；请在 Codex 窗口人工处理后重试，避免新旧任务交叠",
+        });
+    }
 
     // ---- 步骤 3：创建会话 + 绑定/新建项目 ----
     if (!resuming) {
@@ -295,73 +318,87 @@ export async function runCodexTask(args: RunCodexArgs): Promise<AgentRunResult> 
     if (!permOk.ok)
       return result({ hardFailure: true, error: permOk.error, endReason: "permission_unknown" });
 
-    // ---- 步骤 4/5：输入指令 + 发送 ----
-    if (isContinueConfirm) logger.info("[codex] 用户确认文本不发送给模型；环境复检通过后发送原始任务书");
+    // ---- 步骤 4/5：输入指令 + 发送（重观察轮跳过：不发送任何消息）----
+    if (isReobserve) {
+      logger.info("[codex] 重观察恢复（user_confirmation）：跳过输入与发送，直接观察 GUI 内运行至终态");
+    } else {
+      if (isContinueConfirm) logger.info("[codex] 用户确认文本不发送给模型；环境复检通过后发送原始任务书");
 
-    // 返修轮：ctx.feedback 即 fix-loop 生成的修复指令（引用 codex-fix-r<N>.md）；
-    // 续答轮：ctx.resume.message 是用户答复。两者都不应退回重发原始任务书。
-    const message = resuming
-      ? ctx.resume?.sendMessage
-        ? (ctx.resume.message?.trim() || ctx.feedback?.trim() || ctx.task)
-        : ctx.task
-      : buildInitialPrompt({
-          task: ctx.task,
-          context: ctx.context,
-          planDoc: ctx.planDoc,
-          designSystem: ctx.designSystem,
-          refs: safeRefs(ctx),
+      // 返修轮：ctx.feedback 即 fix-loop 生成的修复指令（引用 codex-fix-r<N>.md）；
+      // 续答轮：ctx.resume.message 是用户答复。两者都不应退回重发原始任务书。
+      const message = resuming
+        ? ctx.resume?.sendMessage
+          ? (ctx.resume.message?.trim() || ctx.feedback?.trim() || ctx.task)
+          : ctx.task
+        : buildInitialPrompt({
+            task: ctx.task,
+            context: ctx.context,
+            planDoc: ctx.planDoc,
+            designSystem: ctx.designSystem,
+            refs: safeRefs(ctx),
+          });
+
+      const attempt =
+        ctx.resume?.kind === "continue"
+          ? `continue:${createHash("sha256").update(ctx.resume.message ?? "confirmed").digest("hex").slice(0, 8)}`
+          : (ctx.resume?.kind ?? "initial");
+      const marker = `【tianshu:${ctx.taskId}:r${ctx.round}:${attempt}】`;
+      const beforeText = (await cdp.poll()).conversationText;
+
+      await cdp.typeText(marker + message);
+      const typed = await cdp.inputText();
+      if (!typed.includes(marker))
+        return result({ hardFailure: true, error: "Codex 输入框回读不一致，未发送", endReason: "input_mismatch" });
+
+      await cdp.sendMessage();
+
+      // 发送确认：任一直接证据成立即认定已提交——
+      //   a) 输入框不再含标记（文本已离开输入框）
+      //   b) 对话区出现标记
+      //   c) 出现运行信号（停止按钮）
+      // 注意：无论确认与否都**不会重发**（重发风险高于误判），故宁可放宽确认条件；
+      // 真机教训：对话区选择器曾命中空壳 main，导致明明发送成功却报 send_unknown。
+      let seenMessage = beforeText.includes(marker);
+      let seenCleared = false;
+      let seenRunning = false;
+      const confirmAttempts = Math.ceil(Math.min(60_000, Math.max(5_000, ctx.taskTimeoutMs)) / 250);
+      const confirmed = (): boolean => seenCleared || seenMessage || seenRunning;
+      for (let i = 0; i < confirmAttempts && !confirmed(); i++) {
+        // eslint-disable-next-line no-await-in-loop
+        await deps.sleep(250);
+        // eslint-disable-next-line no-await-in-loop
+        const [poll, input] = await Promise.all([cdp.poll(), cdp.inputText()]);
+        seenMessage ||= poll.conversationText.includes(marker);
+        seenCleared ||= !input.includes(marker);
+        seenRunning ||= poll.stopVisible;
+      }
+      if (!confirmed())
+        return result({
+          hardFailure: true,
+          error: `Codex 发送结果无法确认（用户消息=${seenMessage}，输入清空=${seenCleared}，运行信号=${seenRunning}）；不重复发送`,
+          endReason: "send_unknown",
         });
-
-    const attempt =
-      ctx.resume?.kind === "continue"
-        ? `continue:${createHash("sha256").update(ctx.resume.message ?? "confirmed").digest("hex").slice(0, 8)}`
-        : (ctx.resume?.kind ?? "initial");
-    const marker = `【tianshu:${ctx.taskId}:r${ctx.round}:${attempt}】`;
-    const beforeText = (await cdp.poll()).conversationText;
-
-    await cdp.typeText(marker + message);
-    const typed = await cdp.inputText();
-    if (!typed.includes(marker))
-      return result({ hardFailure: true, error: "Codex 输入框回读不一致，未发送", endReason: "input_mismatch" });
-
-    await cdp.sendMessage();
-
-    // 发送确认：任一直接证据成立即认定已提交——
-    //   a) 输入框不再含标记（文本已离开输入框）
-    //   b) 对话区出现标记
-    //   c) 出现运行信号（停止按钮）
-    // 注意：无论确认与否都**不会重发**（重发风险高于误判），故宁可放宽确认条件；
-    // 真机教训：对话区选择器曾命中空壳 main，导致明明发送成功却报 send_unknown。
-    let seenMessage = beforeText.includes(marker);
-    let seenCleared = false;
-    let seenRunning = false;
-    const confirmAttempts = Math.ceil(Math.min(60_000, Math.max(5_000, ctx.taskTimeoutMs)) / 250);
-    const confirmed = (): boolean => seenCleared || seenMessage || seenRunning;
-    for (let i = 0; i < confirmAttempts && !confirmed(); i++) {
-      // eslint-disable-next-line no-await-in-loop
-      await deps.sleep(250);
-      // eslint-disable-next-line no-await-in-loop
-      const [poll, input] = await Promise.all([cdp.poll(), cdp.inputText()]);
-      seenMessage ||= poll.conversationText.includes(marker);
-      seenCleared ||= !input.includes(marker);
-      seenRunning ||= poll.stopVisible;
+      logger.info(
+        `[codex] 指令已确认发送（对话区=${seenMessage}，输入清空=${seenCleared}，运行信号=${seenRunning}）`,
+      );
     }
-    if (!confirmed())
-      return result({
-        hardFailure: true,
-        error: `Codex 发送结果无法确认（用户消息=${seenMessage}，输入清空=${seenCleared}，运行信号=${seenRunning}）；不重复发送`,
-        endReason: "send_unknown",
-      });
-    logger.info(
-      `[codex] 指令已确认发送（对话区=${seenMessage}，输入清空=${seenCleared}，运行信号=${seenRunning}）`,
-    );
 
     // ---- 步骤 6：运行检测 ----
     const deadline = started + ctx.taskTimeoutMs;
     let state: CodexPollState = initialCodexState();
+    if (isReobserve) {
+      // 重观察轮：被观察的 turn 此前已确认在运行。种子 sawRunning 规避
+      // 「turn 在恢复前已完成 → 从未见运行信号 → 判不了 finished → 误落 idle_timeout」。
+      state.sawRunning = true;
+    }
     let lastProgress = 0;
     for (;;) {
-      if (opts.signal?.aborted) return result({ killed: true, endReason: "aborted" });
+      // 取消（issue #6）：不止退出 MCP 等待循环，还要尽力点击 GUI 停止按钮并等待空闲，
+      // 结果经 guiStop 上报，由编排方在终态文案中如实反映。
+      if (opts.signal?.aborted) {
+        const guiStop = await stopGuiTurn(cdp, gui, deps, logger);
+        return result({ killed: true, endReason: "aborted", guiStop });
+      }
       if (Date.now() >= deadline)
         return result({
           timeout: true,
@@ -372,7 +409,7 @@ export async function runCodexTask(args: RunCodexArgs): Promise<AgentRunResult> 
       await deps.sleep(gui.pollIntervalMs);
       // eslint-disable-next-line no-await-in-loop
       const poll: CodexPoll = await cdp.poll();
-      const verdict = judgeCodexPoll(poll, state, gui.stableRounds, gui.idleTimeoutMs);
+      const verdict = judgeCodexPoll(poll, state, gui.stableRounds, gui.idleTimeoutMs, Date.now(), gui.stallTimeoutMs);
       state = verdict.state;
       if (Date.now() - lastProgress >= gui.progressIntervalMs) {
         const note = `Codex 进度：${verdict.kind}；运行证据=${verdict.evidence}；对话哈希=${state.hash}；稳定轮=${state.stable}`;
@@ -385,6 +422,14 @@ export async function runCodexTask(args: RunCodexArgs): Promise<AgentRunResult> 
           endReason: "needs_user",
           needsUserKind: "login_required",
           pendingQuestion: "Codex 需要登录，请在窗口中完成登录后调用 continue_task 确认。",
+          session: { boundProjectPath: ctx.projectPath, model: spec.model, permissionMode: gui.defaultPermissionMode },
+        });
+      if (verdict.kind === "needs_user")
+        return result({
+          endReason: "needs_user",
+          needsUserKind: "user_confirmation",
+          pendingQuestion:
+            "Codex 停止按钮持续可见且对话内容长时间未变化，疑似在等待用户确认（方案确认/订阅确认等）。请在 Codex 窗口完成处理后调用 continue_task(taskId, message=已处理说明) 恢复；恢复后仅重新接入观察，不会发送消息。",
           session: { boundProjectPath: ctx.projectPath, model: spec.model, permissionMode: gui.defaultPermissionMode },
         });
       if (verdict.kind === "idle_timeout")
@@ -421,6 +466,38 @@ function safeRefs(ctx: TaskContext): ReturnType<typeof validateTaskReferences> {
   } catch {
     // 引用校验由 handler 预先拦截；此处仅用于拼装补充说明，失败不阻断
     return [];
+  }
+}
+
+/**
+ * 尽力停止 GUI 内正在运行的 turn（issue #6）：
+ * 点击界面停止按钮（trusted 点击），并在 cancelWaitMs 内轮询确认停止按钮消失（GUI 空闲）。
+ * 不抛异常：CDP 不可用等情况下返回 clicked=false/idle=false，由调用方如实落文案。
+ * idle=false 时 GUI 内运行可能仍在继续——终态文案必须明示，不得谎报已停止。
+ */
+async function stopGuiTurn(
+  cdp: CodexCdpClient,
+  gui: GuiProfile,
+  deps: CodexRunDeps,
+  logger: AgentRunLogger,
+): Promise<{ clicked: boolean; idle: boolean }> {
+  try {
+    const first = await cdp.poll();
+    if (!first.stopVisible) return { clicked: false, idle: true };
+    const clicked = await cdp.click("stopButton");
+    logger.info(
+      `[codex] 取消：${clicked ? "已点击" : "未能点击"} GUI 停止按钮，等待界面空闲（≤${gui.cancelWaitMs}ms）`,
+    );
+    const deadline = Date.now() + gui.cancelWaitMs;
+    for (;;) {
+      await deps.sleep(500);
+      if (Date.now() >= deadline) return { clicked, idle: false };
+      const poll = await cdp.poll();
+      if (!poll.stopVisible) return { clicked, idle: true };
+    }
+  } catch (e) {
+    logger.warn(`[codex] 取消时停止 GUI 运行失败：${e instanceof Error ? e.message : String(e)}`);
+    return { clicked: false, idle: false };
   }
 }
 

@@ -9,16 +9,57 @@
 
 ## [未发布]
 
-### 修复
-
-- 启动日志的工具数由硬编码 `8` 改为按注册表实际数量（`TOOL_DEFS.length`，当前为 9）输出。
-
 ### 计划中
 
 - 更多外部 AI-Agent 适配（新 agent = 一个 profile +（如需）一个 adapter 文件）。
 - TraeWork 在 macOS 下的可执行探测与原生对话框驱动（当前 macOS 分支 fail-closed）。
 - 可选的项目级技能播种（默认不写入目标项目仓库）。
 - Codex GUI 的 macOS 真机验证（当前内置状态为 `research`）。
+- needs_user 状态下取消任务时经临时 CDP 连接尽力停止 GUI 内等待中的会话。
+
+---
+
+## [0.3.2] — 2026-09-12
+
+修复 issue #5 / #6：**MCP 任务模型与 Codex GUI 内 turn 的状态脱节**。
+前者是"等用户确认时恒报 running"的完成判定死锁，后者是 `cancel_task` 只停 MCP 侧等待、
+不停 GUI 内运行且描述失实。同根问题一并收敛。
+
+### 修复
+
+- **等待用户检测（issue #5）**：
+  - `judgeCodexPoll` 新增 stall 兜底：停止按钮持续可见且对话哈希 `gui.stallTimeoutMs`
+    （默认 5 分钟）不变 → 判定等待用户，任务转 `needs_user`（`needsUserKind=user_confirmation`），
+    不再死锁在 `running` 直到总超时；对话内容恢复变化会重置 stall 计时。
+  - 新增可配置界面检测 `gui.selectors.userGate`（如结账页 `embedded-checkout`、确认卡）：
+    命中即快速转 `needs_user`；默认未配置 = 禁用，不内置未真机验证的选择器。
+  - 收紧 `stopButton` 选择器：移除 `aria-label*="取消"` 过匹配（等待用户界面的"取消"
+    按钮曾被误判为运行信号）。
+- **恢复通道（issue #5 牵连）**：`continue_task` 扩展支持 codex——
+  - `user_confirmation`：用户在 Codex 窗口处理完后恢复，MCP 仅重新接入观察 GUI 内运行
+    （不发送消息）；恢复前 turn 已完成也能正确判 `succeeded`；
+  - `login_required`：复检环境后重新派发任务书（新会话 + 项目绑定 + 完整初始指令）；
+  - zcode 原有恢复行为不变；其他 agent 明确拒绝。
+- **取消真停 GUI（issue #6）**：
+  - `cancel_task` 对 GUI agent 不再"请求即成功"：先经 CDP 尽力点击界面停止按钮，
+    并在 `gui.cancelWaitMs`（默认 15 秒）内有界等待 GUI 真正空闲后落 `cancelled`；
+    未确认停止时终态文案明示"GUI 内运行未确认停止，Codex 窗口中的任务可能仍在继续"；
+  - CLI agent 的进程树终止语义不变；
+  - `needs_user` 状态取消的文案提示"GUI 内可能仍有等待中的会话"（此时 MCP 侧无 CDP 连接，
+    列为已知边界）。
+- **重派防交叠护栏（issue #6 连锁）**：派发前发现受管实例上仍有未停止的运行时，
+  先尽力停止；仍不空闲则以 `instance_busy` 硬失败拒绝派发，杜绝新旧 turn 在同一
+  应用内交叠（取消后立刻重派曾实测踩中）。
+- 启动日志的工具数由硬编码 `8` 改为按注册表实际数量（`TOOL_DEFS.length`，当前为 9）输出。
+
+### 变更
+
+- 工具描述对齐实际语义：`cancel_task` 区分 CLI（kill 进程树）与 GUI（尽力点击停止 +
+  有界等待）；`continue_task` 去掉"只用于 ZCode"限定。
+- `GuiProfile` 新增 `stallTimeoutMs`（默认 300000）与 `cancelWaitMs`（默认 15000）配置项，
+  均可由 agent-profiles.json 覆盖。
+- 技能文档（SKILL.md §4/§5、usage-examples.md §7）补齐 codex `user_confirmation` /
+  `login_required` 恢复方式、GUI 取消语义与相关配置示例。
 
 ---
 
@@ -390,7 +431,8 @@ Codex 桌面端改为 **GUI 驱动**：新增 `codex-gui` adapter，通过 MSIX 
 
 ---
 
-[未发布]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.1...HEAD
+[未发布]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.10...v0.2.0

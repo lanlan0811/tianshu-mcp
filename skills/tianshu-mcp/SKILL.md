@@ -45,8 +45,10 @@ triggers: '开发|编码|写代码|改代码|实现功能|加功能|修复|重�
 
 meta 块中 `needsUserKind` 给出等待类型、`pendingQuestion` 给出问题原文：
 
-- `agent_question`：agent 提了问题 → 用 `continue_task(taskId, message=<答案>)`，message 会发到原会话。
-- `close_existing_instance` / `login_required` / `system_permission`：需用户先处理（关闭旧实例 / 登录 / 授系统权限）→ 用户处理完后调 `continue_task(taskId, message=<已处理说明>)`，message 仅作为已处理的确认。
+- `agent_question`（zcode）：agent 提了问题 → 用 `continue_task(taskId, message=<答案>)`，message 会发到原会话。
+- `close_existing_instance` / `system_permission`（zcode）：需用户先处理（关闭旧实例 / 授系统权限）→ 用户处理完后调 `continue_task(taskId, message=<已处理说明>)`，message 仅作为已处理的确认。
+- `user_confirmation`（codex）：Codex 停在等待用户确认界面（方案确认卡/订阅确认等），turn 暂停而非结束 → 用户在 **Codex 窗口**完成处理后调 `continue_task(taskId, message=<已处理说明>)`；恢复后仅重新接入观察 GUI 内运行（**不发送消息**），turn 完成/失败由观察得出。
+- `login_required`（codex/zcode）：Codex 需要登录 → 在窗口完成登录后 `continue_task(taskId, message=<已处理说明>)`；codex 会复检环境后重新派发任务书。
 
 禁止新开会话冒充恢复。
 
@@ -55,7 +57,7 @@ meta 块中 `needsUserKind` 给出等待类型、`pendingQuestion` 给出问题�
 - `succeeded`：用 `get_task_report(taskId, round?)`（round 为 0-based 报告轮次，缺省最新）取 changedFiles / diffstat / checks，向用户汇报变更与结论。
 - `failed`：**未开自动返修或硬失败**。读 meta 的 `errorType` 与 `get_task_report` 定位失败 checks；如可修 → `rework_task(taskId, feedback=失败摘要)` 手动续修（feedback 会作为追加指示给下一轮 agent）；再轮询或 `verify_task`。
 - `needs_attention`：自动返修轮次已用尽仍失败。同样先读报告，给**针对性** feedback 调 `rework_task`（不要无脑重复同样的话）。多次仍不过或不可修：如实向用户汇报并给建议（人工看报告 / 换 agent / 缩小任务），**不要反复空转重试**。
-- `cancelled` / `interrupted`：用户取消或超时/中断（meta 的 `abortSource` 区分 user/shutdown/timeout/internal）。`running` 卡死可用 `cancel_task(taskId, reason)` 终止（kill 进程树）。
+- `cancelled` / `interrupted`：用户取消或超时/中断（meta 的 `abortSource` 区分 user/shutdown/timeout/internal）。`running` 卡死可用 `cancel_task(taskId, reason)` 终止：CLI agent 终止进程树；GUI agent（codex 等）尽力点击界面停止按钮并等待 GUI 空闲（有界超时），取消文案会如实标注 GUI 侧是否已停止——若标注"未确认停止"，Codex 窗口内的运行可能仍在继续，需人工检查，**不要在确认停止前重派同项目任务**（会新旧交叠；重派护栏也会直接拒绝派发）。
 
 ## 6. 验收报告解读要点
 

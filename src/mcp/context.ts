@@ -61,6 +61,8 @@ function buildResume(meta: TaskMeta, round: number): TaskContext["resume"] {
       kind: continuing ? "continue" : "rework",
       message: meta.continueMessage,
       sendMessage: meta.continueSendMessage ?? round > 0,
+      // user_confirmation 恢复：重连 CDP 观察至终态，不发送任何消息
+      ...(meta.continueReobserve ? { reobserve: true } : {}),
       boundProjectPath: meta.boundProjectPath,
       model: meta.model,
       permissionMode: meta.permissionMode,

@@ -29,6 +29,8 @@ export interface CodexPoll {
   conversationText: string;
   /** 登录/引导页可见 */
   loginVisible: boolean;
+  /** 「等待用户」界面检测命中（gui.selectors.userGate 配置后启用） */
+  userGateVisible: boolean;
 }
 
 export class CodexCdpClient {
@@ -452,6 +454,7 @@ export class CodexCdpClient {
           sendButton: specArgs("sendButton", this.selectors),
           chatInput: specArgs("chatInput", this.selectors),
           loginIndicator: specArgs("loginIndicator", this.selectors),
+          userGate: specArgs("userGate", this.selectors),
           messageArea: specArgs("messageArea", this.selectors),
         })};${this.visibleFilter}
         const resolve=(k)=>__codexResolve(JSON.parse(sels[k]));
@@ -462,7 +465,8 @@ export class CodexCdpClient {
           sendVisible:visAny('sendButton'),
           composerText:(textOf('chatInput')||'').trim(),
           conversationText:(textOf('messageArea')||'').trim().slice(0,20000),
-          loginVisible:visAny('loginIndicator')
+          loginVisible:visAny('loginIndicator'),
+          userGateVisible:visAny('userGate')
         };`,
       ),
     );

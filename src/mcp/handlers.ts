@@ -276,7 +276,12 @@ function cancelTaskHandler(ctx: AppContext): Handler {
     const res = await manager.cancel(args.taskId, args.reason);
     const meta = await manager.getMeta(args.taskId);
     if (meta) {
-      return formatToolResult(res.reason ?? `已请求取消 ${args.taskId}。`, metaFromTask(meta));
+      // settled=false：GUI 侧停止尚未确认（issue #6 语义），明示编排方稍后复核
+      const note =
+        res.settled === false
+          ? "（尚未落终态：GUI 侧停止可能未完成，请稍后 query_task 复核）"
+          : "";
+      return formatToolResult((res.reason ?? `已取消 ${args.taskId}。`) + note, metaFromTask(meta));
     }
     return errorResult(res.reason ?? `任务不存在: ${args.taskId}`);
   };

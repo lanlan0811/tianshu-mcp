@@ -53,6 +53,7 @@ export type CodexSelectorKey =
   | "permissionTrigger"
   | "permissionOption"
   | "loginIndicator"
+  | "userGate"
   | "messageArea";
 
 export const CODEX_SELECTORS: Record<CodexSelectorKey, CodexSelectorSpec> = {
@@ -72,10 +73,25 @@ export const CODEX_SELECTORS: Record<CodexSelectorKey, CodexSelectorSpec> = {
   },
   stopButton: {
     primary: 'button[aria-label*="停止"]',
-    fallbacks: ['button[aria-label*="Stop" i]', 'button[aria-label*="取消"]'],
+    fallbacks: ['button[aria-label*="Stop" i]'],
     ariaLabels: ["停止", "Stop"],
     verifiedVersion: "26.903.x",
-    note: "权威运行信号；生成期间替代发送按钮（待真机运行确认）",
+    // issue #5 实测教训：fallback 曾含 button[aria-label*="取消"]，但「等待用户确认」
+    // （方案确认卡/订阅结账页）界面自带「取消」按钮，会把 turn 暂停误判为运行中，
+    // 造成完成判定死锁——已移除该过匹配。若某版本停止按钮文案漂移，用
+    // gui.selectors.stopButton 热修复。
+    note: "权威运行信号；生成期间替代发送按钮。不要加入「取消」等宽泛文案（等待用户界面会误命中）",
+  },
+  userGate: {
+    // issue #5：等待用户界面检测（结账页/方案确认卡等）。默认候选为空 = 禁用；
+    // 仅当 agent-profiles.json 配置 gui.selectors.userGate 后启用（覆盖优先）。
+    // 参考值（2026-09 实测版式，未内置）：[class*="embedded-checkout"]、
+    // [class*="approval"]、[role="dialog"][class*="confirm"]——配置前请真机核对，
+    // 误配会把正常运行误判为 needs_user（可恢复，非终态）。
+    primary: "",
+    fallbacks: [],
+    verifiedVersion: "未内置（按配置启用）",
+    note: "「等待用户」界面检测；默认禁用，配置 gui.selectors.userGate 后 poll().userGateVisible 才可能为真",
   },
   newChat: {
     primary: 'button.sidebar-item',

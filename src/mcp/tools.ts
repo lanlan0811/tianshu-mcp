@@ -27,7 +27,7 @@ export const TOOL_DEFS: ToolDef[] = [
   {
     name: "continue_task",
     description:
-      "恢复处于 needs_user 的 ZCode 任务。agent_question 时 message 会发往原会话；关闭旧实例、登录或系统权限场景中 message 仅作为已处理确认。",
+      "恢复处于 needs_user 的任务。zcode：agent_question 时 message 发往原会话，关闭旧实例/登录/系统权限场景中 message 仅作已处理确认。codex：user_confirmation 时重新接入观察 GUI 内运行（不发送消息）；login_required 时复检环境后重发任务书。",
     inputSchema: ContinueTaskParamsSchema,
     capability: "write",
     requireApproval: true,
@@ -64,7 +64,8 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "cancel_task",
-    description: "取消运行中任务（kill 进程树）。排队中任务直接移除；终态任务无动作。",
+    description:
+      "取消运行中任务：CLI agent 终止进程树；GUI agent（codex 等）尽力点击界面停止按钮并等待 GUI 空闲（有界超时），未确认停止时结果中明示。排队中任务直接移除；终态任务无动作。",
     inputSchema: CancelTaskParamsSchema,
     capability: "write",
     requireApproval: true,

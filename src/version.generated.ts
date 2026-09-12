@@ -4,4 +4,4 @@
  * 本文件由 scripts/sync-version.mjs 在每次 build 前重新生成。
  */
 // generated: 勿手改 —— 运行 `npm run build` 自动同步
-export const MCP_SERVER_VERSION = "0.3.1";
+export const MCP_SERVER_VERSION = "0.3.2";

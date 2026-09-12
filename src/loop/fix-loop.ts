@@ -91,6 +91,7 @@ export class TaskOrchestrator {
         if (meta.continueMessage !== undefined) {
           delete meta.continueMessage;
           delete meta.continueSendMessage;
+          delete meta.continueReobserve;
           await store.writeSnapshot(meta);
         }
         const runRes = await this.runAgentOnce(ctx, resolved);
@@ -149,7 +150,7 @@ export class TaskOrchestrator {
           );
         }
         if (runRes.killed) {
-          return this.abortTerminal();
+          return this.abortTerminal(runRes.guiStop);
         }
         if (!runRes.ok && !meta.autoVerify) {
           return this.finish(
@@ -297,8 +298,12 @@ export class TaskOrchestrator {
    * - 用户取消（cancelRequestedAt 已置位 / abortSource=user / 排队中）→ cancelled
    * - server 关闭/EOF/未显式取消的中止 → interrupted
    * - 超时 → failed(timeout) + timeout_killed（委托 timeoutTerminal）
+   * guiStop（issue #6）：取消时 GUI agent 的界面停止结果，如实写进终态文案——
+   * idle=false 时必须明示「GUI 内运行未停止」，编排方不得误以为已停。
    */
-  private async abortTerminal(): Promise<OrchestrateResult> {
+  private async abortTerminal(
+    guiStop?: { clicked: boolean; idle: boolean },
+  ): Promise<OrchestrateResult> {
     if (this.done)
       return { status: this.meta.status, meta: this.meta, reason: this.meta.lastMessage };
     if (this.meta.abortSource === "timeout") {
@@ -313,6 +318,11 @@ export class TaskOrchestrator {
       meta.errorType = "cancelled";
       meta.abortSource = "user";
       meta.lastMessage = meta.cancelReason ? `已取消：${meta.cancelReason}` : "已取消";
+      if (guiStop) {
+        meta.lastMessage += guiStop.idle
+          ? "；GUI 内运行已停止。"
+          : "；GUI 内运行未确认停止，Codex 窗口中的任务可能仍在继续。";
+      }
       await this.deps.store.updateStatus(meta, "cancelled", meta.lastMessage);
     } else {
       meta.errorType = "interrupted";

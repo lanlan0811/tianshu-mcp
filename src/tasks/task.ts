@@ -169,7 +169,11 @@ export interface TaskMeta {
   /** 最近一次 GUI agent 结束后是否保留实例 */
   keptInstance?: boolean;
   needsUserKind?:
-    "agent_question" | "close_existing_instance" | "login_required" | "system_permission";
+    | "agent_question"
+    | "close_existing_instance"
+    | "login_required"
+    | "system_permission"
+    | "user_confirmation";
   pendingQuestion?: string;
   zcodeSessionId?: string;
   zcodeSessionTitle?: string;
@@ -181,6 +185,8 @@ export interface TaskMeta {
   /** continue_task 待消费的数据，重启后保留。 */
   continueMessage?: string;
   continueSendMessage?: boolean;
+  /** continue_task 待消费：codex user_confirmation 恢复走「重新接入观察」，不发送消息 */
+  continueReobserve?: boolean;
 }
 
 /** manager 记录任务所需最小信息（内存态），与 TaskMeta 解耦 */
