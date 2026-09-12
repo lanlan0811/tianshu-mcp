@@ -15,6 +15,78 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 - More external AI-Agent adapters (a new agent = one profile + an optional adapter file).
 - TraeWork executable discovery and native-dialog driving on macOS (currently fail-closed).
 - Optional project-level skill seeding (by default nothing is written into target repos).
+- macOS hardware verification for the Codex GUI adapter (built-in status remains `research`).
+
+---
+
+## [0.3.0] — 2026-09-12
+
+The Codex desktop app now runs through a **GUI driver**: a new `codex-gui` adapter uses MSIX COM activation
+plus CDP to drive the ChatGPT desktop app through the full loop (locate install → launch GUI → bind/create
+project → pick model and reasoning level → send instructions → run detection → verify → auto-repair).
+
+### BREAKING CHANGES
+
+- **`agentId=codex` now executes via the desktop GUI instead of the headless CLI**: a new `driver=gui` +
+  `adapter=codex-gui` + `activation=msix-com`, with the previous **`codex exec` headless path removed**.
+  After upgrading, `run_task(agentId="codex")` launches and drives the Codex desktop window rather than a
+  headless child process. To keep headless execution, add a separate `driver=spawn` profile
+  (`argsTemplate: ["exec", "<prompt:arg>", "--skip-git-repo-check", "--sandbox", "workspace-write"]`) as
+  documented in `docs/agent-profiles.en.md`.
+- This path requires the Codex desktop app (MSIX store package) to be installed; CLI-only environments are
+  no longer directly supported.
+
+### Added
+
+- `codex-gui` adapter (`src/agents/codex/**`): Appx-first install discovery (scan fallback taking the newest
+  version), MSIX COM activation with a dedicated `user-data-dir` and dynamic debug port, plus CDP attach and
+  target convergence (excluding the overlay secondary window).
+- Task parameters: `reasoningLevel` (low/medium/high, bilingual), `planDoc`, `designSystem`.
+- Model and reasoning level: models are `menuitemradio` candidates while **reasoning strength is a slider**
+  (0–4: 轻度/中/高/极高/极高), set precisely with arrow keys and read back for verification; level
+  comparison is exact to avoid matching "高" against "极高".
+- **Automatic project registration**: a target directory not yet registered on the Codex side is written
+  directly into Codex project state (idempotent, backup-before-write, atomic write, only while the
+  MCP-managed instance is stopped), so it takes the stable bound-project path instead of the brittle native
+  folder dialog; on failure it falls back to UI creation.
+- Verification and repair: reuses the existing AcceptanceEngine (defaults derived from `package.json`, with
+  weak-verification labelling); on failure the MCP generates an in-project
+  `.zcode/plans/codex-fix-r<N>.md` (one per round, never overwritten) and cites it in the repair instruction,
+  up to 5 rounds by default (`defaultAutoFixRounds`).
+- Run detection: the stop button is the authoritative running signal, and text stability counts as completion
+  evidence only after it; without a running signal it fails open to `idle_timeout` while keeping the instance
+  (never a false completion).
+- `scripts/probe-codex.mjs` hardware diagnostic script; 67 Codex unit tests plus integration coverage of the
+  verify-fail → generated plan → repair-pass loop.
+- Docs: `docs/codex-gui-cdp.en.md`, `docs/codex-windows-smoke.en.md` (including the round-2 real business task
+  acceptance) and their Chinese counterparts.
+
+### Changed
+
+- `GuiProfile` gains `activation` / `userDataDir` / `appxPackageName` / `permissionMode` / `fixPlanDir`;
+  existing `spawn` profiles are unaffected.
+- `ExecutableDiscovery` gains `appxPackageName` / `installRelativeExe` / `scanRoots` / `scanPattern`.
+
+### Fixed (exposed by hardware testing)
+
+- The model trigger mis-matched the sibling permission chip (4 chips share `aria-haspopup`; only the model chip
+  lacks `aria-label`).
+- Reasoning strength was clicked like a menu item and could never be set (it is actually a slider).
+- Menus/popovers only open on **trusted** mouse events (DOM `.click()` is ignored).
+- A transient empty model read during toolbar re-render after binding was treated as a "model mismatch".
+- Model/reasoning trigger selectors now exclude the top menu bar and the mode switcher.
+- Cold-start readiness budget widened to 150s (registration stops the instance first; cold start measured ~85s).
+- CI: fixed a `normalizeDir` assertion that depended on the host platform, which failed on ubuntu/macos.
+- Fixed integration tests polluting real Codex project state by not injecting `ensureRegistered`.
+
+### Verification
+
+- Windows 10 x64 hardware: full loop for a registered project, and the verify-fail → generated plan →
+  repair-pass loop; an unregistered project completed the full loop after automatic registration.
+- Real business task: drove Codex to build a "Fruit Ninja" mini-game in HTML+CSS+JS (`GPT-5.6 Sol` with
+  reasoning strength "高"); the artifacts passed acceptance and were verified playable in a headless browser
+  (score rises, lives decrement, Game Over and restart work, no JS exceptions).
+- macOS unverified: the built-in Codex GUI status is `research` and is excluded from readiness.
 
 ---
 

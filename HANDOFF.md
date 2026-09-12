@@ -1,6 +1,6 @@
 # HANDOFF.md — 项目交接说明
 
-> 交接快照：**2026-09-11**（v0.2.0 ZCode GUI 统一闭环）。本文写给**接手本仓库的人**：先读「交接快照」了解当前状态，再按「从零搭环境」上手。
+> 交接快照：**2026-09-12**（v0.3.0 Codex 桌面端 GUI 适配）。本文写给**接手本仓库的人**：先读「交接快照」了解当前状态，再按「从零搭环境」上手。
 > 工作区规则见 `AGENTS.md`（gitignore 中，仅本地），安装/用法见 `README.md`，本文不重复，只做导览与状态记录。
 
 ---
@@ -15,7 +15,7 @@
 
 - **天枢官方仓库**：<https://github.com/huiliyi37/Tianshu-harness>（基于 harness 工程的终端编程智能体运行时，TUI × GUI；Apache-2.0）
 - **本仓库**：`github.com/lanlan0811/tianshu-mcp`（主）｜`gitee.com/lan0811/tianshu-mcp`（镜像）
-- **npm**：`tianshu-mcp`（当前发布目标 `0.2.0`）
+- **npm**：`tianshu-mcp`（当前发布目标 `0.3.0`）
 
 ### 为什么是这样设计的（硬约束）
 
@@ -24,6 +24,7 @@
 1. **天枢的 MCP 工具只回文本**：MCP 响应里 `content[]` 的 `text` 项被拼成字符串，`isError` 透传。因此所有结果统一为「人类可读文本 + `---tianshu-mcp-meta---` JSON 块」，不依赖 resources/prompts。
 2. **天枢按次同步调用 `tools/call`**：长任务必须异步化 → `run_task` 秒回 `taskId`，用 `query_task` 轮询。
 3. **TraeWork 的 agent 请求在 TTNet 层 TDE 加密**，无法在客户端外构造 → 唯一可行路径是 CDP 驱动其桌面 UI，从 DOM 提取结果。
+4. **Codex 桌面端是 MSIX 商店包**：GUI 宿主无法 `CreateProcess` 直启（AppX 策略拒绝），必须经 `IApplicationActivationManager` COM 激活并注入专属 `--user-data-dir` 才能开 CDP 端口 → 见 `docs/codex-gui-cdp.md`。
 
 ---
 
@@ -33,20 +34,20 @@
 |---|---|
 | 分支 | `master`（**只在此分支提交**，不建其他分支） |
 | 发布提交 | `dc471d2 修复 TraeWork 任务进行中检测并发布 v0.1.9`（v0.1.10 修复提交见本次交付记录） |
-| 版本 / 许可证 | `0.2.0` / Apache-2.0 |
-| 标签 | `v0.1.0` … `v0.1.10`（均已推双仓） |
+| 版本 / 许可证 | `0.3.0` / Apache-2.0 |
+| 标签 | `v0.1.0` … `v0.3.0`（均已推双仓） |
 | 工作树 | 干净；`github/master` 与 `gitee/master` 均同步于 `e91fc47` |
-| 测试 | **202/202 通过**（31 个测试文件：单元 20 + 集成 10 + 协议 1） |
+| 测试 | **340/340 通过**（39 个测试文件：单元 27 + 集成 11 + 协议 1） |
 | 门禁 | lint 0 warning、typecheck clean、build 成功、`check:stdio` 6/6 场景通过、`npm pack` 内容校验通过 |
-| CI | run `34435434742`（commit `e91fc47`）：ubuntu/windows/macos × Node 20/22/24 + pack-check = **10/10 全绿** |
-| npm | `tianshu-mcp@0.1.10` 已发布，`dist-tags.latest = 0.1.10` |
-| Release | GitHub `v0.1.10` 与 Gitee `v0.1.10` 均已发布并附 `tianshu-mcp-0.1.10.tgz` |
+| CI | ubuntu/windows/macos × Node 20/22/24 + pack-check = **10/10 全绿**（随 v0.3.0 tag 再次校验） |
+| npm | 发布由维护者手动 `npm publish`（需 token）；详见 `docs/npm-publish-guide.md` |
+| Release | 推送 `v*` tag 触发 `.github/workflows/release.yml`，产出 GitHub Release 并附 `tianshu-mcp-<ver>.tgz` |
 
 ### Agent 适配现状
 
 | agentId | driver | status | 说明 |
 |---|---|---|---|
-| `codex` | `spawn` | **ready** | 复用 `~/.codex` 登录态；`codex exec` 无头执行；M2 真实冒烟通过 |
+| `codex` | **`gui`** | **ready** | Codex 桌面端 GUI（MSIX COM 激活 + CDP），支持 `model`/`reasoningLevel`/`planDoc`/`designSystem`；**已取代无头 CLI**（见 CHANGELOG 0.3.0 BREAKING） |
 | `zcode` | `zcode-gui` | **research** | CDP GUI adapter 与 Windows 真机闭环已完成；macOS 真机待补齐，见 `docs/zcode-cdp.md` |
 | `traework` | **`gui`** | **ready** | CDP 驱动 TRAE SOLO CN 桌面 UI；三种面板模式真机验证通过 |
 | `stub` | `spawn` | 仅测试 | `test/stub-agent/stub-agent.mjs` 三剧本（good/fix-on-first/never） |
@@ -66,6 +67,8 @@
 - **M8** 原子写并发缺陷修复（临时文件名唯一化 + rename 退避重试，CI windows/Node20 真根因）+ v0.1.8 — **181 测试**
 - **M9** TraeWork 任务进行中检测（权威运行信号 + 空闲计时 + CDP 断线收敛 + 异常保留实例）+ v0.1.9 — **196 测试**
 - **M10** stdio 日志污染修复（issue #1：Logger 全级别改走 stderr + 严格 stdio 门禁 + Node 24 + 安装包协议门禁）+ v0.1.10 — **202 测试**
+- **M11** ZCode GUI 统一闭环（独立 `zcode-gui` CDP adapter + 精确项目/模型/完全访问 + `needs_user`/`continue_task` + 同会话返修）+ v0.2.0 — **262 测试**
+- **M12** Codex 桌面端 GUI 适配（MSIX COM 激活 + CDP；模型 + 思考强度滑块；项目自动登记；验收失败自动生成计划并返修）+ v0.3.0 — **340 测试**（**破坏性**：`agentId=codex` 由无头 CLI 改为 GUI）
 
 ### 实现期修复记录（重要）
 
@@ -178,7 +181,8 @@ npm run typecheck && npm run lint && npm test && npm run build
 |---|---|
 | Node | v24.18.0（`engines: >=20`，CI 覆盖 20/22） |
 | 天枢宿主 | `D:\Tianshu`（`tianshu-desktop.exe` + `rivet-runtime`） |
-| Codex CLI | `C:\Users\Lenovo\AppData\Local\OpenAI\Codex\bin\<hash>\codex.exe`（哈希目录随更新变化 → 用 `executableDiscovery`） |
+| Codex 桌面端（现用） | MSIX 包 `OpenAI.Codex`：`...\WindowsApps\OpenAI.Codex_<版本>_x64__<pfn>\app\ChatGPT.exe`；版本目录随更新变化 → Appx 查询优先 + 扫盘回退取最新 |
+| Codex 内核 CLI（备用） | `%LOCALAPPDATA%\OpenAI\Codex\bin\<hash>\codex.exe`；如需无头执行，另建 `driver=spawn` profile |
 | TraeWork | `D:\TRAE Work CN\TRAE SOLO CN.exe`（v1.107.1）；CDP 需 `--remote-debugging-port=9222` 且窗口可见 |
 | 参考实现 | `D:\Trae项目\oh-dsh-trae-api`（TraeWork CDP 驱动机制的来源，含 `HANDOFF.md`） |
 | 数据目录 | 默认 `~/.tianshu-mcp`（env `TIANSHU_MCP_HOME` 可覆盖） |
@@ -218,7 +222,7 @@ node scripts/probe-traework.mjs send "任务书"       # 端到端发一条并�
   `query_task` meta 查看 `agentEndReason` / `keptInstance`。
 - **UI 升级会漂移**：选择器集中在 `src/agents/traework/cdp/selectors.ts`，可经 profile `gui.selectors` 覆盖；用探针诊断。
 - **macOS 未验证**：CDP 机制平台无关，但可执行探测与原生对话框驱动（AppleScript 路线）未实测；当前 macOS 分支 fail-closed。
-- **`mode` 仅 GUI 类 agent 生效**：CLI 类（codex）忽略该参数。
+- **`mode` 仅 TraeWork 生效**：ZCode/Codex 会拒绝该参数（返回明确错误）。
 - **原生对话框链路依赖桌面状态**：TraeWork 窗口必须可见，且不能有第三方工具（如 Snipaste 截图器）抢焦点。
 - **npm 上的 README 停留在发布时**：之后新增的文档只在仓库里；如需同步到 npm 需再发版本。
 
@@ -347,7 +351,7 @@ hwnd 贯穿传递（只操作探测到的那个窗口）、下拉未命中时先
 | 修复后 | 源码入口与 `dist` 入口 `check:stdio` 均 **6/6 通过**，stdout 非协议行 0 |
 | 安装包 | tarball 安装到干净消费者目录（不装 dev 依赖）后 6/6 通过 |
 | 门禁 | `typecheck` / `lint` / `build` / `check:stdio` / `pack:check` 全绿；31 文件 **202/202** 测试通过 |
-| CI | run `34435434742`（commit `e91fc47`）：ubuntu/windows/macos × Node 20/22/24 + pack-check = **10/10 全绿** |
+| CI | ubuntu/windows/macos × Node 20/22/24 + pack-check = **10/10 全绿**（随 v0.3.0 tag 再次校验） |
 | 发布产物 | npm `tianshu-mcp@0.1.10`（`latest=0.1.10`）；GitHub 与 Gitee `v0.1.10` Release 均附 `tianshu-mcp-0.1.10.tgz` |
 | 发布包复验 | 干净消费者目录安装 registry 上的 `0.1.10` 后 `check:stdio` 6/6 通过 |
 | 桌面宿主重连 | 天枢桌面端 v3.16.1：`2 servers connected, 10 tools`（本 server 8 个），无过滤包装器；会话内真实调用 `get_profiles` 成功。详见 `docs/issue-1-host-reconnect-record.md` |

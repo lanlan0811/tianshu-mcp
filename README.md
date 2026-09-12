@@ -63,7 +63,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 332 项测试：39 个文件，含 Codex/ZCode 单元/假 CDP/重启/返修闭环
+npm test             # 340 项测试：39 个文件，含 Codex/ZCode 单元/假 CDP/重启/返修闭环
 ```
 
 ### 安装 npm 包
@@ -180,6 +180,7 @@ ZCode 提问或需要用户处理登录、旧实例、系统权限时进入 `nee
 | [docs/zcode-windows-smoke.md](docs/zcode-windows-smoke.md) | ZCode Windows 真机开发、同会话返修与提问续跑验收记录 |
 | [docs/codex-gui-cdp.md](docs/codex-gui-cdp.md) | Codex 桌面端 GUI 驱动：MSIX COM 激活、CDP 接管、选择器、运行检测、验收返修 |
 | [docs/codex-windows-smoke.md](docs/codex-windows-smoke.md) | Codex Windows 真机验收记录（含验收失败→自动生成计划→返修通过闭环） |
+| [docs/release-v0.3.0.md](docs/release-v0.3.0.md) | v0.3.0 发布说明（Codex 桌面端 GUI 适配，含 BREAKING） |
 | [docs/release-v0.2.0.md](docs/release-v0.2.0.md) | v0.2.0 发布说明（ZCode GUI 统一闭环） |
 | [docs/acceptance-config.md](docs/acceptance-config.md) | 项目级 `.tianshu-mcp/acceptance.json` 验收配置规范 |
 | [docs/release-v0.1.9.md](docs/release-v0.1.9.md) | v0.1.9 发布说明（TraeWork 任务进行中检测与实例保留） |
@@ -248,12 +249,17 @@ ZCode 提问或需要用户处理登录、旧实例、系统权限时进入 `nee
 - **M11 — ZCode GUI 统一闭环 + v0.2.0**（2026-09-11，见 [release-v0.2.0.md](docs/release-v0.2.0.md)）— **262 测试**
   - Windows 真机通过开发、受控失败后同会话返修、`AskUserQuestion → continue_task` 三个场景；[验收记录](docs/zcode-windows-smoke.md)
   - macOS 真机未补齐，内置 profile 依计划保持 `research`
+- **M12 — Codex 桌面端 GUI 适配 + v0.3.0**（2026-09-12，见 [release-v0.3.0.md](docs/release-v0.3.0.md)）— **340 测试**
+  - **破坏性**：`agentId=codex` 由 `codex exec` 无头改为桌面端 GUI 驱动（COM 激活 + CDP）
+  - 真机通过：已登记项目全链路、未登记项目自动登记全链路、验收失败→自动生成计划→返修通过闭环
+  - 真实业务验收：驱动 Codex 开发「切水果小游戏」并通过验收，无头浏览器实测可玩；[验收记录](docs/codex-windows-smoke.md)
+  - macOS 未验证，内置状态 `research`
 
 ## Agent 适配现状
 
 | agentId | driver | status | 说明 |
 |---|---|---|---|
-| `codex` | `spawn` | **ready** | 复用 `~/.codex` 登录态；`codex exec` 无头执行；M2 真实冒烟通过 |
+| `codex` | **`gui`** | **ready** | Codex 桌面端 GUI（MSIX COM 激活 + CDP）；支持 `model`/`reasoningLevel`/`planDoc`/`designSystem`；Windows 真机已验证 |
 | `zcode` | `zcode-gui` | **research** | CDP GUI adapter 已实现且 Windows 真机闭环通过；macOS 真机完成前不标 `ready` |
 | `traework` | **`gui`** | **ready** | CDP 驱动 TRAE SOLO CN 桌面 UI；三种面板模式真机验证通过 |
 | `stub` | `spawn` | 仅测试 | `test/stub-agent/stub-agent.mjs` 三剧本（good/fix-on-first/never） |
@@ -271,7 +277,7 @@ ZCode 提问或需要用户处理登录、旧实例、系统权限时进入 `nee
 | 文档 | 内容 |
 |---|---|
 | [HANDOFF.md](HANDOFF.md) | 项目交接文档：当前状态快照、架构导览、硬性红线、已知限制、接手建议 |
-| [CHANGELOG.md](CHANGELOG.md) | 版本变更日志（v0.1.0 → v0.2.0） |
+| [CHANGELOG.md](CHANGELOG.md) | 版本变更日志（v0.1.0 → v0.3.0） |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 开发环境、工程规范、提交与发布流程、如何新增 agent |
 | [SECURITY.md](SECURITY.md) | 安全模型（凭证零管理/命令白名单/进程与桌面自动化边界）与私密报告渠道 |
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | 贡献者行为准则 |

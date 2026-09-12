@@ -63,7 +63,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 332 tests across 39 files, including Codex/ZCode unit/fake-CDP/restart/repair coverage
+npm test             # 340 tests across 39 files, including Codex/ZCode unit/fake-CDP/restart/repair coverage
 ```
 
 ### Install the npm package
@@ -182,6 +182,7 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 | [docs/zcode-windows-smoke.en.md](docs/zcode-windows-smoke.en.md) | ZCode Windows hardware record for development, same-session repair, and question continuation |
 | [docs/codex-gui-cdp.en.md](docs/codex-gui-cdp.en.md) | Codex desktop GUI driver: MSIX COM activation, CDP attach, selectors, run detection, verify/repair |
 | [docs/codex-windows-smoke.en.md](docs/codex-windows-smoke.en.md) | Codex Windows hardware record (incl. verify-fail → auto plan → repair-pass loop) |
+| [docs/release-v0.3.0.en.md](docs/release-v0.3.0.en.md) | v0.3.0 release notes (Codex desktop GUI adapter, incl. BREAKING) |
 | [docs/release-v0.2.0.en.md](docs/release-v0.2.0.en.md) | v0.2.0 release notes (unified ZCode GUI loop) |
 | [docs/acceptance-config.en.md](docs/acceptance-config.en.md) | Project-level `.tianshu-mcp/acceptance.json` acceptance config spec |
 | [docs/release-v0.1.9.en.md](docs/release-v0.1.9.en.md) | v0.1.9 release notes (TraeWork task liveness and instance retention) |
@@ -248,6 +249,11 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 - **M11 — ZCode GUI unified loop + v0.2.0** (2026-09-11, see [release-v0.2.0.en.md](docs/release-v0.2.0.en.md)) — **262 tests**
   - Windows hardware passed real development, same-session repair after a controlled failure, and `AskUserQuestion → continue_task`; see the [acceptance record](docs/zcode-windows-smoke.en.md)
   - macOS hardware is pending, so the built-in profile remains `research` as required by the plan
+- **M12 — Codex desktop GUI adapter + v0.3.0** (2026-09-12, see [release-v0.3.0.en.md](docs/release-v0.3.0.en.md)) — **340 tests**
+  - **Breaking**: `agentId=codex` moves from the `codex exec` headless CLI to the desktop GUI driver (COM activation + CDP)
+  - Hardware-verified: full loop for a registered project, full loop for an unregistered project after automatic registration, and the verify-fail → generated plan → repair-pass loop
+  - Real business acceptance: drove Codex to build a "Fruit Ninja" mini-game, passed acceptance, verified playable in a headless browser; [acceptance record](docs/codex-windows-smoke.en.md)
+  - macOS unverified; built-in status `research`
 
 ## Agent support status
 
@@ -270,7 +276,7 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 
 | Document | Content |
 |---|---|
-| [CHANGELOG.en.md](CHANGELOG.en.md) | Version history (v0.1.0 → v0.2.0) |
+| [CHANGELOG.en.md](CHANGELOG.en.md) | Version history (v0.1.0 → v0.3.0) |
 | [CONTRIBUTING.en.md](CONTRIBUTING.en.md) | Dev setup, conventions, commit/release flow, adding an agent |
 | [SECURITY.en.md](SECURITY.en.md) | Security model (zero credentials / command whitelist / process & desktop-automation boundaries) and private reporting |
 | [CODE_OF_CONDUCT.en.md](CODE_OF_CONDUCT.en.md) | Contributor Code of Conduct |

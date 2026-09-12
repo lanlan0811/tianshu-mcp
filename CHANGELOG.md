@@ -14,6 +14,67 @@
 - 更多外部 AI-Agent 适配（新 agent = 一个 profile +（如需）一个 adapter 文件）。
 - TraeWork 在 macOS 下的可执行探测与原生对话框驱动（当前 macOS 分支 fail-closed）。
 - 可选的项目级技能播种（默认不写入目标项目仓库）。
+- Codex GUI 的 macOS 真机验证（当前内置状态为 `research`）。
+
+---
+
+## [0.3.0] — 2026-09-12
+
+Codex 桌面端改为 **GUI 驱动**：新增 `codex-gui` adapter，通过 MSIX COM 激活 + CDP 接管，
+驱动 ChatGPT 桌面端完成「定位安装 → 启动 GUI → 绑定/新建项目 → 选模型与思考等级 →
+发指令开发 → 运行检测 → 验收 → 自动返修」全流程。
+
+### 破坏性变更（BREAKING）
+
+- **`agentId=codex` 的执行方式由无头 CLI 改为桌面端 GUI**：新增 `driver=gui` +
+  `adapter=codex-gui` + `activation=msix-com`，**移除了原 `codex exec` 无头路径**。
+  升级后 `run_task(agentId="codex")` 会启动并驱动 Codex 桌面窗口，不再是无头子进程。
+  如需保留无头执行，请按 `docs/agent-profiles.md` 另建一个 `driver=spawn` 的 profile
+  （`argsTemplate: ["exec", "<prompt:arg>", "--skip-git-repo-check", "--sandbox", "workspace-write"]`）。
+- 该路径要求本机已安装 Codex 桌面端（MSIX 商店包）；纯 CLI 环境不再直接可用。
+
+### 新增
+
+- `codex-gui` adapter（`src/agents/codex/**`）：Appx 优先的安装发现（回退扫盘取最新版本）、
+  MSIX COM 激活 + 专属 `user-data-dir` + 动态调试端口、CDP 接管与页面收敛（排除 overlay 次级窗口）。
+- 任务参数扩展：`reasoningLevel`（低/中/高，中英双语）、`planDoc`、`designSystem`。
+- 模型与思考等级：模型为 `menuitemradio` 候选，**思考强度为滑块**（0–4 档：轻度/中/高/极高/极高），
+  用方向键精确设置并回读校验；等级比较采用精确匹配（避免「高」误命中「极高」）。
+- **项目自动登记**：未在 Codex 侧登记的目标目录会直接写入 Codex 项目状态
+  （幂等、写前备份、原子写、仅在本 MCP 受管实例停止时写），从而走稳定的已绑定路径，
+  不再依赖脆弱的原生文件夹对话框；失败时自动回退界面新建路径。
+- 验收与返修：复用既有 AcceptanceEngine（`package.json` 推导默认集，含弱验收标注）；
+  验收失败由 MCP 自动生成项目内 `.zcode/plans/codex-fix-r<N>.md`（每轮独立、不覆盖）并写入返修指令，
+  默认最多 5 轮（`defaultAutoFixRounds`）。
+- 运行检测：停止按钮为权威运行信号，文本稳定仅在其后作为完成证据；无运行信号时失败开放为
+  `idle_timeout` 且保留实例（不会误判完成）。
+- `scripts/probe-codex.mjs` 真机诊断脚本；Codex 单测 67 项与集成测试（含验收失败→生成计划→返修通过闭环）。
+- 文档：`docs/codex-gui-cdp.md`、`docs/codex-windows-smoke.md`（含第二轮真实业务任务验收）及英文版。
+
+### 变更
+
+- `GuiProfile` 新增 `activation` / `userDataDir` / `appxPackageName` / `permissionMode` / `fixPlanDir`；
+  既有 `spawn` profile 不受影响。
+- `ExecutableDiscovery` 新增 `appxPackageName` / `installRelativeExe` / `scanRoots` / `scanPattern`。
+
+### 修复（真机实测暴露）
+
+- 模型触发器误命中同组权限 chip（4 个 chip 均带 `aria-haspopup`，仅模型 chip 无 `aria-label`）。
+- 思考强度原按菜单项点击，永远无法设置（实为滑块）。
+- 菜单/弹层需 **trusted** 鼠标事件才会展开（DOM `.click()` 无效）。
+- 绑定项目后工具条重渲染期间模型 chip 空读被误判为「模型不符」。
+- 模型/思考强度触发器选择器排除顶部菜单栏与模式切换器。
+- 冷启动就绪等待放宽到 150s（登记会先停实例，实测冷启动约 85s）。
+- CI：修复 `normalizeDir` 断言依赖宿主平台导致 ubuntu/macos 失败。
+- 修复集成测试未注入 `ensureRegistered` 而污染真实 Codex 项目状态的问题。
+
+### 验收
+
+- Windows 10 x64 真机：已登记项目的全链路、验收失败→自动生成计划→返修通过闭环；
+  未登记项目经自动登记后全链路通过。
+- 真实业务任务：驱动 Codex 用 HTML+CSS+JS 开发「切水果小游戏」（`GPT-5.6 Sol` + 思考强度「高」），
+  产物通过验收标准，并在无头浏览器中实测可玩（得分上升、生命扣减、Game Over 与重开正常、无 JS 异常）。
+- macOS 未验证：Codex GUI 内置状态为 `research`，不参与就绪判定。
 
 ---
 
