@@ -284,6 +284,56 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 
 > Adding an agent usually needs only a profile — see [docs/agent-profiles.en.md](docs/agent-profiles.en.md) and [CONTRIBUTING.en.md](CONTRIBUTING.en.md).
 
+## macOS headless path: codex-cli (user profile)
+
+The built-in `codex` drives the desktop GUI and stays `research` on macOS until hardware verification lands — but **the headless Codex CLI works end-to-end on macOS**. No server changes needed: add a `driver=spawn` user profile in the data directory (these are the M2-finalized arguments used by the built-in codex before v0.3.0).
+
+Prerequisites:
+
+- Codex CLI (`npm i -g @openai/codex`). ⚠️ **Keep it current**: ≤0.130.0 is signed with a revoked certificate — macOS Gatekeeper SIGKILLs it at exec (`Killed: 9`); ≥0.154.0 is verified working.
+- Signed in via `codex login` (reuses the `~/.codex` login state).
+
+`~/.tianshu-mcp/agent-profiles.json`:
+
+```json
+{
+  "profiles": {
+    "codex-cli": {
+      "displayName": "Codex CLI (OpenAI headless)",
+      "type": "cli",
+      "driver": "spawn",
+      "status": "ready",
+      "command": null,
+      "argsTemplate": ["exec", "<prompt:arg>", "--skip-git-repo-check", "--sandbox", "workspace-write"],
+      "promptMode": "arg",
+      "cwd": "task",
+      "env": {},
+      "timeoutMs": 1800000,
+      "killTree": "taskkill",
+      "authNote": "Reuses ~/.codex login state; do not combine with --approve-for-me (mutually exclusive, machine-verified)",
+      "executableDiscovery": {
+        "dirs": ["/opt/homebrew/bin", "/usr/local/bin"],
+        "fileNames": ["codex"],
+        "fallbackCommand": "codex"
+      }
+    }
+  }
+}
+```
+
+Usage is identical to built-in agents:
+
+```text
+run_task(projectPath=/path/to/project, agentId=codex-cli, task="task brief", autoVerify=true, autoFixRounds=2)
+```
+
+Behavior and limits:
+
+- `get_profiles` lists `codex-cli` and probes the `codex` executable on PATH (from the unreleased build onward; before that, user-defined profiles worked but were not displayed).
+- The `model` parameter has no effect on spawn agents — the CLI uses the default model from `~/.codex/config.toml`; to pin one, append `"-m", "<model>"` to `argsTemplate`.
+- Writes are confined to the project directory by the `workspace-write` sandbox; on POSIX, cancel/timeout SIGTERM→SIGKILLs the process group (the `killTree` value is ignored off Windows).
+- Machine-verified: 2026-09-13 macOS arm64 closed loop (`run_task` → `codex exec` → acceptance PASS → `succeeded`).
+
 ## Recommended phrasing (for Tianshu)
 
 > "In project D:\xxx, implement 『task』 with codex. First run run_task(autoVerify:true, autoFixRounds:2), then check with query_task; if the report says needs_attention, feed the failed items from get_task_report as feedback into rework_task and verify again; when everything passes, report changedFiles and diffstat."

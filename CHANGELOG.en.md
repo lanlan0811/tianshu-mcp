@@ -10,6 +10,36 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ## [Unreleased]
 
+### Fixed
+
+- `get_profiles` now lists user-defined profiles from the data-directory `agent-profiles.json`
+  (previously hidden until first resolve, even though `run_task` could already use them — inconsistent discovery feedback).
+- zcode-flow test stubs now cover `listDialogs`, removing a flake where real osascript/PowerShell
+  calls blew the `taskTimeoutMs` wall-clock budget under full-suite load.
+- CDP `connect()` failure paths now dispose of the WebSocket themselves (no longer relying on
+  callers to disconnect); the `send()` timeout timer is unref'd.
+
+### Performance
+
+- All `execFileSync`/`spawnSync` calls across GUI instance probing, discovery and registration
+  are now async; ready-wait loops reuse a per-tick process snapshot with a 1.5s TTL cache —
+  eliminating event-loop freezes during Windows polling (up to 30s per call).
+- Acceptance command checks run with bounded parallelism: new `verifyConcurrency` (server-level
+  default 2, range 1–4; project-level `.tianshu-mcp/acceptance.json` overrides, 1 = fully serial);
+  logs are concatenated in declaration order with unchanged format; cancellation interrupts both
+  in-flight and pending checks.
+- Git baseline hashing is single-pass with bounded async concurrency (untracked cap 5000);
+  code analysis reads each file at most once, sniffing only a prefix of large files.
+- `get_profiles` and task snapshot reads now use `Promise.all`.
+- Test suite 267s → 51s: traework UI-layer sleeps are injectable (production defaults unchanged);
+  vitest split into parallel unit / serial integration projects.
+- `tsconfig.build.json` no longer emits declarations — 70 `.d.ts` files dropped (140 → 71 files).
+
+### Documentation
+
+- README (both languages) gains "macOS headless path: codex-cli (user profile)" — including the
+  revoked-certificate warning for ≤0.130.0 and a complete profile example.
+
 ### Planned
 
 - More external AI-Agent adapters (a new agent = one profile + an optional adapter file).

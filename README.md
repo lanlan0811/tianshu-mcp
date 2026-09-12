@@ -282,6 +282,56 @@ ZCode 提问或需要用户处理登录、旧实例、系统权限时进入 `nee
 
 > 新增 agent 通常只需加一个 profile，详见 [docs/agent-profiles.md](docs/agent-profiles.md) 与 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
+## macOS 无头路径：codex-cli（用户 profile）
+
+内置 `codex` 走桌面端 GUI 驱动，macOS 真机验证完成前保持 `research`；但 **codex CLI 无头模式在 macOS 全程可用**——无需改 server 代码，在数据目录加一个 `driver=spawn` 的用户 profile 即可（即 v0.3.0 前内置 codex 的 M2 定稿参数）。
+
+前置条件：
+
+- codex CLI（`npm i -g @openai/codex`）。⚠️ **请保持最新**：≤0.130.0 的签名证书已被吊销，macOS Gatekeeper 在执行时直接 SIGKILL（`Killed: 9`）；≥0.154.0 实测正常。
+- 已 `codex login`（复用 `~/.codex` 登录态）。
+
+`~/.tianshu-mcp/agent-profiles.json`：
+
+```json
+{
+  "profiles": {
+    "codex-cli": {
+      "displayName": "Codex CLI (OpenAI 无头)",
+      "type": "cli",
+      "driver": "spawn",
+      "status": "ready",
+      "command": null,
+      "argsTemplate": ["exec", "<prompt:arg>", "--skip-git-repo-check", "--sandbox", "workspace-write"],
+      "promptMode": "arg",
+      "cwd": "task",
+      "env": {},
+      "timeoutMs": 1800000,
+      "killTree": "taskkill",
+      "authNote": "复用 ~/.codex 登录态；勿与 --approve-for-me 同用（实测互斥）",
+      "executableDiscovery": {
+        "dirs": ["/opt/homebrew/bin", "/usr/local/bin"],
+        "fileNames": ["codex"],
+        "fallbackCommand": "codex"
+      }
+    }
+  }
+}
+```
+
+用法与内置 agent 一致：
+
+```text
+run_task(projectPath=/path/to/项目, agentId=codex-cli, task="任务书", autoVerify=true, autoFixRounds=2)
+```
+
+行为与限制：
+
+- `get_profiles` 会列出 `codex-cli` 并探测 PATH 上的 `codex` 可执行（未发布版起；此前用户自定义 profile 可用但不显示）。
+- `model` 参数对 spawn agent 不生效——CLI 使用 `~/.codex/config.toml` 的默认模型；要锁模型可在 `argsTemplate` 追加 `"-m", "<模型名>"`。
+- 写入被 `workspace-write` 沙箱限制在项目目录内；POSIX 下取消/超时自动对进程组 SIGTERM→SIGKILL（`killTree` 值在非 Windows 平台被忽略）。
+- 已实测：2026-09-13 macOS arm64 真机闭环（`run_task` → `codex exec` → 自动验收 PASS → `succeeded`）。
+
 ## 推荐用法（给天枢的提示语）
 
 > "在项目 D:\xxx 用 codex 实现『任务』。先跑 run_task(autoVerify:true, autoFixRounds:2)，完成后用 query_task 看结果；若报告显示 needs_attention，把 get_task_report 的失败项摘要作为 feedback 调 rework_task 再验一轮；全部通过后向我汇报 changedFiles 与 diffstat。"

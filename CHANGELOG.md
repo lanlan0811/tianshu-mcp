@@ -9,6 +9,25 @@
 
 ## [未发布]
 
+### 修复
+
+- `get_profiles` 列出数据目录 `agent-profiles.json` 中的用户自定义 profile（此前未 resolve 不显示，`run_task` 却可用，探测反馈不一致）。
+- zcode-flow 测试桩补 `listDialogs`，消除真实 osascript/PowerShell 调用在全量负载下撞 `taskTimeoutMs` 墙钟导致的 flake。
+- CDP `connect()` 失败分支自清理 WebSocket（不再依赖调用方兜底 disconnect）；`send()` 超时定时器 unref。
+
+### 性能
+
+- GUI 实例探测、发现、注册全链路 `execFileSync`/`spawnSync` 异步化；就绪等待环每 tick 复用进程快照，进程枚举加 1.5s TTL 缓存——消除 Windows 轮询期事件循环冻结（单次最坏 30s）。
+- 验收命令检查有界并行：新增 `verifyConcurrency`（server 级默认 2、范围 1–4；项目级 `.tianshu-mcp/acceptance.json` 可覆盖，=1 完全退化串行）；日志按声明顺序拼接、格式不变；取消信号可中断在途与未启动检查。
+- git 基线哈希两遍并一遍 + 异步有界并发（untracked 上限 5000 截断）；代码分析每文件只读一次，大文件嗅探只读前缀。
+- `get_profiles` 与任务快照读改 `Promise.all`。
+- 测试套件 267s → 51s：traework UI 层 sleep 改依赖注入（生产默认值不变），vitest 拆 unit 并行 / integration 串行双 project。
+- `tsconfig.build.json` 关闭 declaration，dist 去除 70 个 `.d.ts`（140 → 71 文件）。
+
+### 文档
+
+- README（中英）新增「macOS 无头路径：codex-cli（用户 profile）」——含 ≤0.130.0 签名证书吊销的警示与完整 profile 示例。
+
 ### 计划中
 
 - 更多外部 AI-Agent 适配（新 agent = 一个 profile +（如需）一个 adapter 文件）。
