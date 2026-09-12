@@ -304,5 +304,6 @@ export type ProjectsFile = z.infer<typeof ProjectsFileSchema>;
 
 export const AcceptanceConfigSchema = z.object({
   checks: z.array(AcceptanceCheckSchema).default([]),
+  requireChanges: z.boolean().default(true),
 });
 export type AcceptanceConfig = z.infer<typeof AcceptanceConfigSchema>;

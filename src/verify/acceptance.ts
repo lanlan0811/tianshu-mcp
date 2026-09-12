@@ -38,11 +38,37 @@ export interface VerifyRequest {
 
 const SCRIPT_NAMES = ["typecheck", "lint", "test", "build"] as const;
 
+const ZERO_TEST_CASE_PATTERNS = [
+  /#\s+tests\s+0\b/i,
+  /\bno tests (?:were )?found\b/i,
+  /\bno tests ran\b/i,
+  /\b0 tests (?:ran|executed|found)\b/i,
+] as const;
+
+export function detectZeroTestCases(output: string): boolean {
+  return ZERO_TEST_CASE_PATTERNS.some((pattern) => pattern.test(output));
+}
+
+function isTestCheck(name: string, cmd: string[]): boolean {
+  const normalizedName = name.toLocaleLowerCase();
+  const normalizedCmd = cmd.join(" ").toLocaleLowerCase();
+  return (
+    normalizedName.includes("test") ||
+    /\bnode\s+--test\b/.test(normalizedCmd) ||
+    /\bnpm\s+run\s+test(?:\b|:)/.test(normalizedCmd) ||
+    /\bpytest\b|\bgo\s+test\b|\bcargo\s+test\b|\bvitest\b|\bjest\b|\bmocha\b/.test(normalizedCmd)
+  );
+}
+
 /** 从项目内容推导默认检查集（开发计划 §8.2） */
-export async function deriveDefaultChecks(projectPath: string): Promise<{ checks: AcceptanceCheckDef[]; notes: string[] }> {
+export async function deriveDefaultChecks(
+  projectPath: string,
+): Promise<{ checks: AcceptanceCheckDef[]; notes: string[] }> {
   const checks: AcceptanceCheckDef[] = [];
   const notes: string[] = [];
-  const pkgJson = await readJsonSafe<{ scripts?: Record<string, string> }>(path.join(projectPath, "package.json"));
+  const pkgJson = await readJsonSafe<{ scripts?: Record<string, string> }>(
+    path.join(projectPath, "package.json"),
+  );
   const hasTsconfig = await exists(path.join(projectPath, "tsconfig.json"));
   const hasPytest = await exists(path.join(projectPath, "pytest.ini"));
   const hasGoMod = await exists(path.join(projectPath, "go.mod"));
@@ -84,20 +110,25 @@ export class AcceptanceEngine {
   /** 组装一轮验收要跑的检查项（含 git diff --check 内置） */
   private async resolveChecks(
     req: VerifyRequest,
-  ): Promise<{ checks: AcceptanceCheckDef[]; notes: string[] }> {
+  ): Promise<{ checks: AcceptanceCheckDef[]; notes: string[]; requireChanges: boolean }> {
     const notes: string[] = [];
     const out: AcceptanceCheckDef[] = [];
     const mode = req.checksMode ?? "append";
     const hasExtra = !!req.extraChecks?.length;
+    const inProject = await this.readProjectAcceptance(req.projectPath);
+    const requireChanges = inProject?.requireChanges ?? true;
 
     // 先取基础集（项目/默认），除非 replace 模式只用 extraChecks
     if (!(mode === "replace" && hasExtra)) {
-      const inProject = await this.readProjectAcceptance(req.projectPath);
       if (inProject) {
-        notes.push(`使用项目内验收配置 <project>/.tianshu-mcp/acceptance.json（${inProject.length} 项）。`);
-        out.push(...inProject);
+        notes.push(
+          `使用项目内验收配置 <project>/.tianshu-mcp/acceptance.json（${inProject.checks.length} 项）。`,
+        );
+        out.push(...inProject.checks);
       } else if (req.projectVerify?.length) {
-        notes.push(`使用 server 数据目录 projects.json 补录的验收配置（${req.projectVerify.length} 项）。`);
+        notes.push(
+          `使用 server 数据目录 projects.json 补录的验收配置（${req.projectVerify.length} 项）。`,
+        );
         out.push(...req.projectVerify);
       } else {
         const def = await deriveDefaultChecks(req.projectPath);
@@ -116,10 +147,12 @@ export class AcceptanceEngine {
       }
       out.push(...(req.extraChecks ?? []));
     }
-    return { checks: out, notes };
+    return { checks: out, notes, requireChanges };
   }
 
-  private async readProjectAcceptance(projectPath: string): Promise<AcceptanceCheckDef[] | null> {
+  private async readProjectAcceptance(
+    projectPath: string,
+  ): Promise<{ checks: AcceptanceCheckDef[]; requireChanges: boolean } | null> {
     const p = path.join(projectPath, ".tianshu-mcp", "acceptance.json");
     const raw = await readJsonSafe<unknown>(p);
     if (raw == null) return null;
@@ -128,7 +161,11 @@ export class AcceptanceEngine {
       this.logger.warn(`项目 ${projectPath} 的 acceptance.json 解析失败: ${r.error.message}`);
       return null;
     }
-    return (r.data as AcceptanceConfig).checks.map((c) => toAcceptanceDef(c));
+    const config = r.data as AcceptanceConfig;
+    return {
+      checks: config.checks.map((c) => toAcceptanceDef(c)),
+      requireChanges: config.requireChanges,
+    };
   }
 
   /** 执行一轮完整验收。返回 report + 是否 pass。 */
@@ -137,10 +174,12 @@ export class AcceptanceEngine {
     const config = req.config ?? { verifyCommandTimeoutMs: 5 * 60_000 };
     const timeoutMs = config.verifyCommandTimeoutMs ?? 5 * 60_000;
     const baseline = req.baseline ?? (await captureBaseline(req.projectPath));
-    if (req.baseline) this.logger.debug(`使用 run_task 动工前基线（HEAD=${baseline.head ?? "n/a"}）`);
+    if (req.baseline)
+      this.logger.debug(`使用 run_task 动工前基线（HEAD=${baseline.head ?? "n/a"}）`);
 
-    const { checks: rawChecks, notes } = await this.resolveChecks(req);
+    const { checks: rawChecks, notes, requireChanges } = await this.resolveChecks(req);
     const checks: CheckResult[] = [];
+    const zeroTestChecks: string[] = [];
 
     // 内置 git diff --check（相对动工前基线；非 git 仓库跳过并标注）
     if (baseline.isRepo) {
@@ -179,6 +218,20 @@ export class AcceptanceEngine {
         logFile: verifyLog,
         env: {},
       });
+      if (
+        !c.optional &&
+        res.exitCode === 0 &&
+        res.passed &&
+        isTestCheck(c.name, argv) &&
+        detectZeroTestCases(res.outputTail)
+      ) {
+        res.passed = false;
+        res.outputTail = `${res.outputTail}\n[fail-closed] 命令退出码 0 但未执行任何测试用例`.slice(
+          -4000,
+        );
+        res.reason = "fail-closed：命令退出码 0 但未执行任何测试用例";
+        zeroTestChecks.push(c.name);
+      }
       if (c.optional) res.optional = true;
       checks.push(res);
     }
@@ -191,6 +244,30 @@ export class AcceptanceEngine {
     });
     for (const n of notes) analysis.notes.push(n);
 
+    const hasChanges =
+      analysis.changedFiles.length > 0 ||
+      analysis.untrackedFiles.length > 0 ||
+      analysis.diffstat.totalAdd > 0 ||
+      analysis.diffstat.totalDel > 0;
+    if (baseline.isRepo && !hasChanges) {
+      if (requireChanges) {
+        checks.push({
+          name: "no-changes",
+          cmd: "requireChanges 门禁",
+          passed: false,
+          durationMs: 0,
+          exitCode: null,
+          outputTail: "fail-closed：相对动工前基线零文件变更",
+          timeout: false,
+          reason: "requireChanges 默认开启，但未检测到任务产出",
+        });
+      } else {
+        analysis.notes.push("requireChanges=false：相对动工前基线零变更，仅提示不拦截。");
+      }
+    } else if (!baseline.isRepo && requireChanges) {
+      analysis.notes.push("requireChanges=true，但项目不是 git 仓库，零变更门禁已跳过。");
+    }
+
     // optional:true 的失败只记 warning，不使本轮 verdict 失败（R4）
     const failed = checks.filter((c) => !c.passed && !c.skipped && !c.optional);
     const optFailed = checks.filter((c) => !c.passed && !c.skipped && c.optional);
@@ -201,8 +278,16 @@ export class AcceptanceEngine {
     if (failed.length) {
       summaryBits.push(`未通过检查: ${failed.map((c) => c.name).join(", ")}`);
     }
+    if (zeroTestChecks.length) {
+      summaryBits.push(`测试命令零用例: ${zeroTestChecks.join(", ")}`);
+    }
+    if (failed.some((check) => check.name === "no-changes")) {
+      summaryBits.push("相对动工前基线未检测到文件变更");
+    }
     if (optFailed.length) {
-      summaryBits.push(`optional 检查未通过（不影响结论）: ${optFailed.map((c) => c.name).join(", ")}`);
+      summaryBits.push(
+        `optional 检查未通过（不影响结论）: ${optFailed.map((c) => c.name).join(", ")}`,
+      );
     }
     if (analysis.signals.consoleDebug || analysis.signals.todo) {
       summaryBits.push("存在可疑标记，建议人工查看报告");
@@ -224,7 +309,9 @@ export class AcceptanceEngine {
       message,
     };
     await this.store.saveReport(req.taskId, report);
-    this.logger.info(`任务 ${req.taskId} 第 ${req.round} 轮验收: ${passed ? "通过" : "失败"}（${checks.length} 项检查）`);
+    this.logger.info(
+      `任务 ${req.taskId} 第 ${req.round} 轮验收: ${passed ? "通过" : "失败"}（${checks.length} 项检查）`,
+    );
     return { report, passed };
   }
 }
