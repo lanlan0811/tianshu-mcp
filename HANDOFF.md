@@ -49,7 +49,7 @@
 | agentId | driver / adapter | status | 说明 |
 |---|---|---|---|
 | `codex` | `gui` / `codex-gui` | **ready**（macOS 为 `research`） | Codex 桌面端 GUI（Windows：MSIX COM 激活 + CDP；macOS：spawn .app + CDP），支持 `model`/`reasoningLevel`/`planDoc`/`designSystem`；等待用户检测、取消真停、重派护栏均已真机验证（v0.3.2）；macOS 基本闭环已真机验证（2026-09-13，见 `docs/codex-gui-cdp.md` §14），取消/返修矩阵未齐保持 `research` |
-| `zcode` | `gui` / `zcode-gui` | **research** | CDP GUI adapter，Windows 真机闭环通过；已适配 ZCode 3.11.2 模型菜单与项目绑定（v0.3.3）、项目/模型回读加固与初始化恢复（v0.3.4）；macOS 真机证据完成前不得改 `ready` |
+| `zcode` | `gui` / `zcode-gui` | **research** | CDP GUI adapter，Windows 真机闭环通过；已适配 ZCode 3.11.2 模型菜单与项目绑定（v0.3.3）、项目/模型回读加固与初始化恢复（v0.3.4）；macOS 基本闭环已真机验证（2026-09-13，`docs/zcode-cdp.md`「macOS 特有结论」），取消/返修/新建项目矩阵未齐保持 `research` |
 | `traework` | `gui` / `traework-gui` | **ready** | CDP 驱动 TRAE SOLO CN 桌面 UI；三种面板模式真机验证通过 |
 | `stub` | `spawn` | 仅测试 | `test/stub-agent/stub-agent.mjs` 三剧本（good/fix-on-first/never） |
 
@@ -286,9 +286,10 @@ npm run check:stdio
 - **UI 升级会漂移**：三个 adapter 的选择器分别集中在
   `src/agents/traework/cdp/selectors.ts`、`src/agents/zcode/selectors.ts`、`src/agents/codex/selectors.ts`，
   均可经 profile `gui.selectors` 覆盖；用探针诊断。
-- **macOS 部分验证**：Codex GUI 的 macOS 基本闭环（发现/登记/spawn/绑定/发送/观察/验收）已真机通过
-  （2026-09-13，`docs/codex-gui-cdp.md` §14），但取消/返修/continue_task 矩阵未覆盖，darwin 仍标 `research`；
-  TraeWork 的原生对话框驱动（AppleScript 路线）与 ZCode 真机闭环仍未在 macOS 实测，二者 macOS 分支保持 fail-closed。
+- **macOS 部分验证**：Codex 与 ZCode 的 macOS 基本闭环（发现/启动/绑定/发送/观察/验收）均已真机通过
+  （2026-09-13，分别见 `docs/codex-gui-cdp.md` §14 与 `docs/zcode-cdp.md`「macOS 特有结论」），
+  但取消/返修/continue_task/新建项目矩阵未覆盖，二者 darwin 仍标 `research`；
+  TraeWork 的原生对话框驱动（AppleScript 路线）与真机闭环仍未在 macOS 实测，macOS 分支保持 fail-closed。
 - **`mode` 仅 TraeWork 生效**：ZCode/Codex 会拒绝该参数（返回明确错误）。
 - **needs_user 状态下取消是已知边界**：MCP 侧无 CDP 连接，GUI 内等待中的会话停不掉；终态文案会提示。
   经临时 CDP 连接尽力停止 GUI 内会话列在「未发布/计划中」。
@@ -565,8 +566,9 @@ macOS 本次仅有自动化与 CI 验证，**无真机端到端验证**；ZCode 
    项目文件夹绑定出问题时，先看 §8.1 的排障顺序（下拉项 ≠ 项目 map、三处已修缺陷、两个定位陷阱）。
 3. **改任何选择器交互必须真机复验**：trusted 点击与 DOM click 的取舍因控件而异（§8.4 的模型菜单 vs 项目触发器就是反例）。
 4. 若客户端 UI 升级导致选择器失效：用 `scripts/probe-*.mjs` 诊断，优先用 profile `gui.selectors` 覆盖，不改代码。
-5. Codex macOS 基本闭环已真机验证（2026-09-13，`docs/codex-gui-cdp.md` §14）；取消/返修/continue_task
-   矩阵未补齐前不得把 darwin 从 `research` 改为 `ready`。ZCode 的 macOS 真机闭环仍未完成，同理不得改。
+5. Codex 与 ZCode 的 macOS 基本闭环均已真机验证（2026-09-13，`docs/codex-gui-cdp.md` §14、
+   `docs/zcode-cdp.md`「macOS 特有结论」）；取消/返修/continue_task/新建项目矩阵未补齐前
+   不得把 darwin 从 `research` 改为 `ready`。
 6. 新增 agent：优先只加 profile（见 `docs/agent-profiles.md`）；需要特殊输出解析再写 adapter。
 7. 发版前务必确认 `src/version.generated.ts` 与 `package.json` 同步提交（CI 有「构建后无 tracked diff」门禁）；
    推 `v*` tag 即触发 Release（双语正文取 `docs/release-v<ver>.md` + `.en.md`，**缺文档会直接失败**）。

@@ -11,6 +11,11 @@
 
 ### 新增
 
+- ZCode GUI 驱动支持 macOS：适配主进程标题改写（argv 隐藏后端口探测放宽 + 配置端口段补扫）、
+  spawn detached+unref 实例驻留；文件夹面板按 macOS 窗口形态重写（NSOpenPanel 独立窗口 +
+  go-to 字段 AX 直写，免疫中文输入法截获）。2026-09-13 macOS arm64 + ZCode 3.11.2 真机闭环
+  验证（绑定→回读→发送→运行证据→验收 PASS→succeeded）；取消/返修/新建项目矩阵补齐前
+  macOS 保持 `research`。
 - Codex GUI 驱动支持 macOS：spawn ChatGPT.app 包内可执行（activation 按平台默认 spawn/msix-com），
   detached+unref 实例驻留；POSIX 进程枚举与 SIGTERM 停止；darwin 安装发现默认目录；
   项目登记状态文件（`~/.codex/.codex-global-state.json`）darwin 直写；运行观察环对
@@ -20,6 +25,11 @@
 
 ### 修复
 
+- `normalizeProjectPath` 解析符号链接：macOS `/tmp`→`/private/tmp` 曾使项目路径匹配失败
+  退化为名称匹配，误报 `project_ambiguous`；realpath 失败退回词法归一。
+- zcode macOS 面板失败的 `needsPermission` 误报：execFile message 内嵌脚本文本（含
+  `ACCESSIBILITY_PERMISSION_REQUIRED` 字面量）把一切失败报成权限问题，改判 stderr 的
+  execution error 行。
 - `get_profiles` 列出数据目录 `agent-profiles.json` 中的用户自定义 profile（此前未 resolve 不显示，`run_task` 却可用，探测反馈不一致）。
 - zcode-flow 测试桩补 `listDialogs`，消除真实 osascript/PowerShell 调用在全量负载下撞 `taskTimeoutMs` 墙钟导致的 flake。
 - CDP `connect()` 失败分支自清理 WebSocket（不再依赖调用方兜底 disconnect）；`send()` 超时定时器 unref。

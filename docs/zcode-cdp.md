@@ -2,7 +2,7 @@
 
 ## 状态
 
-ZCode 已从无头 CLI 占位升级为独立的 `zcode-gui` adapter。它通过 Electron 的本地 CDP 页面驱动 ZCode 主界面；Windows/macOS 原生自动化只处理由 ZCode 新打开的文件夹选择面板。内置 profile 当前仍为 `research`：Windows 10 已完成安装发现、版本读取和既有非 CDP 实例保护验证；macOS 真机完整闭环证据尚未录入，因此不得标为 `ready`。
+ZCode 已从无头 CLI 占位升级为独立的 `zcode-gui` adapter。它通过 Electron 的本地 CDP 页面驱动 ZCode 主界面；Windows/macOS 原生自动化只处理由 ZCode 新打开的文件夹选择面板。内置 profile 当前仍为 `research`：Windows 10 已完成安装发现、版本读取和既有非 CDP 实例保护验证；macOS 基本闭环已真机验证（2026-09-13，见「真机证据状态」），取消/返修/新建项目（自动化面板）矩阵补齐前不得标为 `ready`。
 
 ## 安装发现顺序
 
@@ -95,9 +95,31 @@ continue_task(taskId=tsk_..., message=选择 PostgreSQL)
 | 平台 | 已验证 | 未完成 |
 |---|---|---|
 | Windows 10 x64 | 自动发现 `D:\Z-Code\ZCode\ZCode.exe`、版本 `3.11.2.6792`、既有无 CDP 实例保护、CDP 启动、原生文件夹面板导入与完整路径回读、`DeepSeek/deepseek-flash` 显示/内部 ID 回读、“完全访问”回读、真实文件开发与 2/2 验收、受控首轮失败后同会话返修通过、`AskUserQuestion → needs_user → continue_task(PASS)` 同会话续跑并 2/2 验收通过 | 无；详见 [Windows 真机验收记录](zcode-windows-smoke.md) |
-| macOS | 跨平台实现与 CI 单元/假 CDP 路径 | 真实设备安装、Accessibility、完整端到端证据 |
+| macOS arm64 | 安装发现（`/Applications/ZCode.app`，3.11.2）、CDP 启动与复用（进程标题改写适配 + 端口段补扫）、静息选择器全命中、既存项目绑定回读、`bigmodel/GLM-5.3-Flash` 与「完全访问」回读、发送 → `stop_button` 运行证据 → `reply_stable`、真实文件开发与验收 PASS（diffstat +2 -0）、`succeeded`；手动驱动「打开文件夹」面板全流程（窗口形态 + AX 直写路径 → 确认 → 绑定成功） | 取消真停、同会话返修、`continue_task`、新项目（自动化面板）端到端；详见下节「macOS 特有结论」 |
 
-Windows 闭环已完成；在 macOS 真机证据补齐之前，内置 profile 必须保持 `research`。
+Windows 闭环已完成；macOS 基本闭环已验证（2026-09-13），取消/返修/新建项目矩阵补齐之前，内置 profile 必须保持 `research`。
+
+## macOS 特有结论（2026-09-13 真机）
+
+1. **进程标题改写**：ZCode 主进程启动完成后把标题改写为 `ZCode`（`ps` 不再显示
+   `--remote-debugging-port`）——端口归属判定从「argv 匹配」放宽为「端口上有 ZCode 页面 +
+   根进程存在」，argv 无端口时补扫配置端口段（10s 有界），扫不到才判 `needsClose`。
+   运维注意：`pkill -f` 按路径也匹配不到主进程，须按 pid 终止。
+2. **spawn 驻留**：与 codex 同款——不 `detached+unref` 时父进程退出会连坐杀掉主进程。
+3. **面板形态**：macOS 的 NSOpenPanel 是**独立窗口**（标题 `Open`，文案随 app 语言漂移），
+   不是 sheet；基线/等待/确认全部按窗口计数（保留 `sheet-count:N` 线格式，语义为面板窗口数）。
+4. **IME 截获**：`keystroke` 在中文输入法下会把 ASCII 路径改写成乱码（实测拼音 IME 下
+   `/tmp/zcode-gui-e2e` 变成 `/特没谱/自从的-归-🤔e`）——go-to 字段必须
+   `set value of text field ... to ...` AX 直写（同时免疫字段残留的旧路径）。
+5. **符号链接**：`/tmp`→`/private/tmp` 使「同一目录」出现两个字符串，路径匹配失败退化为
+   名称匹配并误报 `project_ambiguous`；`normalizeProjectPath` 已改 realpath 优先。
+6. **needsPermission 误报**：execFile 报错 message 内嵌完整脚本文本（含
+   `ACCESSIBILITY_PERMISSION_REQUIRED` 字面量），一切面板失败都被误判为权限问题；
+   现改判 stderr 的 execution error 行（真实权限错误为 `-1743`/not authorized）。
+7. **应用状态文件不可手改**：向 `~/.zcode/v2/setting.json` 的 `lastWorkspaceSession`/`recentProjects`
+   播种项目经证伪——下拉不读 recentProjects；播种 lastWorkspaceSession 会让
+   `restoreSession=true` 的启动卡死渲染（后端未分配 workspace 句柄）。项目只能经 UI 流程
+   （面板或 composer）正规登记。
 
 ## 无会话锚点的环境恢复（#9）
 

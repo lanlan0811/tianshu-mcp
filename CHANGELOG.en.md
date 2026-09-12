@@ -12,6 +12,13 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ### Added
 
+- ZCode GUI driver supports macOS: adapts to the main process rewriting its title (relaxed port
+  attribution + bounded scan of the configured port range when argv hides the debug port) and
+  detached+unref instance persistence; the folder-panel driver is rewritten for the macOS window
+  form (NSOpenPanel as a standalone window + AX value write into the go-to field, immune to IME
+  interception). Machine-verified closed loop on 2026-09-13 (macOS arm64, ZCode 3.11.2: bind →
+  readback → send → run evidence → acceptance PASS → succeeded); macOS stays `research` until
+  the cancel/rework/new-project matrix is covered.
 - Codex GUI driver supports macOS: spawns the ChatGPT.app bundle executable directly
   (per-platform `activation` default spawn/msix-com) with detached+unref instance persistence;
   POSIX process enumeration and SIGTERM stop; default discovery dirs on darwin; project
@@ -23,6 +30,12 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ### Fixed
 
+- `normalizeProjectPath` resolves symlinks: macOS `/tmp`→`/private/tmp` used to fail project
+  path matching and degrade into a name match, falsely reporting `project_ambiguous`;
+  falls back to lexical normalization when realpath fails.
+- zcode macOS panel failures no longer misreport `needsPermission`: the execFile message embeds
+  the full script text (containing the `ACCESSIBILITY_PERMISSION_REQUIRED` literal), so every
+  failure looked like a permission problem — the check now reads the stderr execution-error line.
 - `get_profiles` now lists user-defined profiles from the data-directory `agent-profiles.json`
   (previously hidden until first resolve, even though `run_task` could already use them — inconsistent discovery feedback).
 - zcode-flow test stubs now cover `listDialogs`, removing a flake where real osascript/PowerShell
