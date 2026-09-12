@@ -10,16 +10,9 @@ import type {
 } from "../adapter.js";
 import type { GuiProfile } from "../../config/schema.js";
 import { mkdirp } from "../../util/fs.js";
-import { parseZcodeModel, exactUiName } from "./model.js";
+import { parseZcodeModel, exactUiName, ZcodeModelReadbackError } from "./model.js";
 import { validateTaskReferences } from "./references.js";
-import {
-  isUnboundTriggerText,
-  matchZcodeProject,
-  normalizeProjectPath,
-  projectDisplayName,
-  sameDisplayName,
-  type ZcodeProjectItem,
-} from "./project.js";
+import { matchZcodeProject, normalizeProjectPath, type ZcodeProjectItem } from "./project.js";
 import { judgeZcodePoll, type ZcodePollState } from "./liveness.js";
 import {
   ZcodeCdpClient,
@@ -121,15 +114,12 @@ async function waitBound(
   target: string,
   deps: ZcodeRunDeps,
 ): Promise<boolean> {
-  const targetName = projectDisplayName(target);
   for (let i = 0; i < 30; i++) {
     const binding = await cdp.workspaceBinding();
     if (
-      (binding.projectPath &&
-        normalizeProjectPath(binding.projectPath) === normalizeProjectPath(target)) ||
-      (binding.triggerText &&
-        !isUnboundTriggerText(binding.triggerText) &&
-        sameDisplayName(binding.triggerText, targetName))
+      !binding.ambiguous &&
+      binding.projectPath &&
+      normalizeProjectPath(binding.projectPath) === normalizeProjectPath(target)
     )
       return true;
     await deps.sleep(300);
@@ -654,6 +644,8 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    if (e instanceof ZcodeModelReadbackError)
+      return result({ hardFailure: true, error: msg, endReason: "model_mismatch" });
     if (e instanceof CdpDisconnectedError || e instanceof CdpUnavailableError)
       return result({ hardFailure: true, error: msg, endReason: "cdp_disconnected" });
     return result({ hardFailure: true, error: msg, endReason: "internal" });

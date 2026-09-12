@@ -265,7 +265,7 @@ describe("ZCode 安装与模型", () => {
         currentValue: "custom:provider-id:deepseek-flash",
         legacyInternal: "stale-value",
       }),
-    ).toEqual({ display: "DeepSeek/deepseek-flash", internal: "deepseek-flash" });
+    ).toEqual({ display: "deepseek-flash", internal: "deepseek-flash" });
     expect(
       normalizeZcodeModelSelection({
         display: "Select modelDeepSeek/deepseek-flash",

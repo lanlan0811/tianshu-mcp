@@ -308,7 +308,10 @@ class WrongBoundProjectZcode extends FakeZcode {
     return path.join(await super.boundProjectPath(), "wrong");
   }
   override async workspaceBinding() {
-    return { triggerText: "选择项目", projectPath: await this.boundProjectPath() };
+    return {
+      triggerText: path.basename(await super.boundProjectPath()),
+      projectPath: await this.boundProjectPath(),
+    };
   }
 }
 

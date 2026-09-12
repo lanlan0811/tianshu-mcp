@@ -80,11 +80,7 @@ export const ZCODE_SELECTORS: Record<ZcodeSelectorKey, ZcodeSelectorSpec> = {
   },
   questionCard: {
     primary: '[role="listbox"][aria-label]:has([role="option"])',
-    fallbacks: [
-      '[data-testid*="question"]',
-      '[class*="ask-user"]',
-      '[class*="question-card"]',
-    ],
+    fallbacks: ['[data-testid*="question"]', '[class*="ask-user"]', '[class*="question-card"]'],
     verifiedVersion: "3.11.x",
     note: "AskUserQuestion 待用户回答控件；优先使用可访问语义，不依赖本地化按钮文本",
   },
@@ -114,25 +110,23 @@ export const ZCODE_SELECTORS: Record<ZcodeSelectorKey, ZcodeSelectorSpec> = {
   },
   projectTrigger: {
     primary: '[data-testid="composer-workspace-trigger"]',
-    fallbacks: ['button[aria-label*="项目"]', 'button[aria-label*="Project"]'],
+    fallbacks: [
+      'button[aria-label="选择项目"]',
+      'button[aria-label="Select project"]',
+      'button[aria-label="Choose project"]',
+    ],
     verifiedVersion: "3.11.x",
     note: "项目菜单",
   },
   addProject: {
     primary: 'button[data-testid="project-add"]',
-    fallbacks: [
-      'button[aria-label*="添加项目"]',
-      'button[aria-label*="Add project"]',
-    ],
+    fallbacks: ['button[aria-label*="添加项目"]', 'button[aria-label*="Add project"]'],
     verifiedVersion: "3.11.x",
     note: "打开添加项目菜单",
   },
   chooseFolder: {
     primary: '[role="menu"] [role="menuitem"]',
-    fallbacks: [
-      'button[aria-label*="选择文件夹"]',
-      'button[aria-label*="Choose folder"]',
-    ],
+    fallbacks: ['button[aria-label*="选择文件夹"]', 'button[aria-label*="Choose folder"]'],
     verifiedVersion: "3.11.x",
     note: "添加项目菜单中的打开文件夹项；必须按本地化标签唯一匹配",
   },

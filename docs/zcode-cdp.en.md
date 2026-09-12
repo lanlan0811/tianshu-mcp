@@ -80,3 +80,9 @@ After completion, the shared acceptance engine runs. A failed round writes one p
 | macOS | Cross-platform implementation and CI/mock coverage | Real installation, Accessibility, and full end-to-end evidence |
 
 The Windows loop is complete. The built-in profile must remain `research` until the macOS hardware evidence is complete.
+
+## Project and model readback (issues #8/#10)
+
+Project triggers resolve by profile override, stable testid, then exact localized labels. Multiple visible matches in a tier stop resolution; fallback results are not merged. Add, move and detach actions are excluded. Binding paths come from the composer or its uniquely associated project row, not arbitrary sidebar paths. A matching name never overrides a conflicting path.
+
+Model readback decodes data-model-current-value and checks the visible model label, excluding hidden stale values and accessibility hints. Without a current attribute it uses a visible label/title, then legacy markup. Conflicting evidence, ambiguous labels or malformed encoding produce model_mismatch before submission.
