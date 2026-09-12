@@ -5,7 +5,8 @@ AGENTS.md
 .rivet/*
 
 # tianshu-mcp-web目录是开发tianshu-mcp官网的目录，进行开发mcp时请勿修改官网开发目录代码
-tianshu-mcp-web/*
+# 整目录忽略（含目录本身），防止 git add . 把内嵌 git 仓库再次当作 gitlink 提交
+tianshu-mcp-web/
 
 analysis-tools/*
 
