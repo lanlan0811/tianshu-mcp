@@ -10,6 +10,11 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ## [Unreleased]
 
+### Fixed
+
+- The startup log no longer hardcodes the tool count as `8`; it reports the actual registry size
+  (`TOOL_DEFS.length`, currently 9).
+
 ### Planned
 
 - More external AI-Agent adapters (a new agent = one profile + an optional adapter file).

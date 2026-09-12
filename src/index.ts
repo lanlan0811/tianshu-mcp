@@ -6,6 +6,7 @@
  */
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { buildServer } from "./server.js";
+import { TOOL_DEFS } from "./mcp/tools.js";
 import path from "node:path";
 import { resolveDataHome } from "./config/store.js";
 import { Logger } from "./util/log.js";
@@ -19,7 +20,7 @@ async function main(): Promise<void> {
   const assembly = await buildServer({ logger, skipSkillInstall });
   const transport = new StdioServerTransport();
   await assembly.server.connect(transport);
-  logger.info(`tianshu-mcp 已连接（stdio）。数据目录: ${home}，工具数: 8`);
+  logger.info(`tianshu-mcp 已连接（stdio）。数据目录: ${home}，工具数: ${TOOL_DEFS.length}`);
 
   let closing = false;
   const shutdown = async (why: string): Promise<void> => {
