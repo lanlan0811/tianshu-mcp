@@ -13,3 +13,7 @@ analysis-tools/*
 
 node_modules/*
 dist/*
+
+# 发布/调试产物：npm pack 会在仓库根目录生成 tarball；本地临时校验目录不入库
+*.tgz
+.tmp-check/
