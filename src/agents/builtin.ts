@@ -80,8 +80,8 @@ export const BUILTIN_PROFILES: Record<string, AgentProfile> = {
     authNote: "复用本机 ZCode 登录态",
     executableDiscovery: {
       dirs: [
-        "{ProgramFiles}/ZCode",
-        "{ProgramFiles(x86)}/ZCode",
+        "{PROGRAMFILES}/ZCode",
+        "{PROGRAMFILES(X86)}/ZCode",
         "{LOCALAPPDATA}/Programs/ZCode",
         "{LOCALAPPDATA}/ZCode",
         "/Applications/ZCode.app/Contents/MacOS",
@@ -136,8 +136,8 @@ export const BUILTIN_PROFILES: Record<string, AgentProfile> = {
     executableDiscovery: {
       dirs: [
         "D:/TRAE Work CN",
-        "{ProgramFiles}/TRAE WORK CN",
-        "{ProgramFiles(x86)}/TRAE WORK CN",
+        "{PROGRAMFILES}/TRAE WORK CN",
+        "{PROGRAMFILES(X86)}/TRAE WORK CN",
         "{LOCALAPPDATA}/Programs/TRAE WORK CN",
         "{LOCALAPPDATA}/TRAE WORK CN",
         "{APPDATA}/TRAE SOLO CN",

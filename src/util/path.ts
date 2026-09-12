@@ -59,10 +59,10 @@ export function expandEnvPath(tpl: string): string {
     SYSTEMDRIVE: process.env.SYSTEMDRIVE ?? process.env.SystemDrive,
     XDG_DATA_HOME: process.env.XDG_DATA_HOME,
   };
-  let out = tpl;
-  for (const [k, v] of Object.entries(envMap)) {
-    if (v) out = out.split(`{${k}}`).join(v);
-  }
+  let out = tpl.replace(/\{([^{}]+)\}/g, (placeholder, key: string) => {
+    const value = envMap[key.toUpperCase()];
+    return value || placeholder;
+  });
   // Windows 下把模板里的正斜杠统一为平台分隔符（env 值本身已是平台分隔）
   if (process.platform === "win32") out = out.split("/").join("\\");
   return out;
