@@ -66,6 +66,7 @@ class FakeZcode {
   dismissedMenus = 0;
   projectClicks = 0;
   projectClickTarget = "";
+  selectedSession?: string;
   constructor(
     private projectPath: string,
     private question?: string,
@@ -120,7 +121,8 @@ class FakeZcode {
   async selection() {
     return { display: this.model, internal: this.model };
   }
-  async session() {
+  async session(): Promise<{ id?: string; title?: string }> {
+    if (this.selectedSession) return { id: this.selectedSession, title: "任务一" };
     return this.sent ? { id: "session-1", title: "任务一" } : {};
   }
   async sessions() {
@@ -131,7 +133,8 @@ class FakeZcode {
       ? { id: "session-1", title: "任务一" }
       : undefined;
   }
-  async selectSession() {
+  async selectSession(id?: string) {
+    this.selectedSession = id;
     return true;
   }
   async conversationText() {
@@ -1081,28 +1084,26 @@ class PausingAdapter extends ZcodeGuiAdapter {
 
 class EnvironmentPauseAdapter extends ZcodeGuiAdapter {
   calls: TaskContext[] = [];
+  fake?: DelayedSessionRegistrationZcode;
   override async run(
     ctx: TaskContext,
     _resolved: ResolvedAgent,
     _opts: AgentRunOptions,
   ): Promise<AgentRunResult> {
     this.calls.push(structuredClone(ctx));
-    const common = {
-      exitCode: 0,
-      timeout: false,
-      killed: false,
-      durationMs: 1,
+    this.fake ??= new DelayedSessionRegistrationZcode(ctx.projectPath);
+    const deps = depsFor(this.fake);
+    return runZcodeTask({
+      ctx,
+      resolved: _resolved,
+      opts: _opts,
       logFile: path.join(ctx.taskDir, `agent-${ctx.round}.log`),
-      keptInstance: true,
-    };
-    if (this.calls.length === 1)
-      return {
-        ok: false,
-        ...common,
-        needsUserKind: "close_existing_instance",
-        pendingQuestion: "请关闭旧实例",
-      };
-    return { ok: true, ...common };
+      deps: {
+        ...deps,
+        ensureInstance:
+          this.calls.length === 1 ? async () => ({ needsClose: true }) : deps.ensureInstance,
+      },
+    });
   }
 }
 
@@ -1192,7 +1193,8 @@ describe("needs_user → continue_task", () => {
       projectPath: normPath(project),
       displayPath: project,
       agentId: "zcode",
-      task: "原始开发任务",
+      task: "原始开发任务，读取 `./README.md`",
+      context: "必须保留的上下文",
       model: "DeepSeek/deepseek-flash",
       autoVerify: false,
       autoFixRounds: 2,
@@ -1208,7 +1210,72 @@ describe("needs_user → continue_task", () => {
       message: "已关闭旧实例",
       sendMessage: false,
     });
-    expect(adapter.calls[1]?.task).toBe("原始开发任务");
+    expect(adapter.calls[1]?.task).toBe("原始开发任务，读取 `./README.md`");
+    expect((await manager.getMeta(meta.taskId))?.status).toBe("succeeded");
+    expect((await manager.getMeta(meta.taskId))?.zcodeSessionId).toBe("delayed-session");
+    expect(adapter.fake?.sent).toBe(1);
+    expect(adapter.fake?.conversation).toContain("必须保留的上下文");
+    expect(adapter.fake?.conversation).toContain("【已验证项目引用】");
+    expect(adapter.fake?.conversation).not.toContain("已关闭旧实例");
     await manager.shutdownInterrupt();
+  });
+});
+
+describe("anchorless resume and session identity", () => {
+  it.each([DelayedSessionRegistrationZcode, StaleActiveSessionZcode])(
+    "takes a real baseline and waits for a new session on confirmation: %s",
+    async (Fake) => {
+      const project = await makeTmpRoot("zcode-resume-delta");
+      cleanup.push(project);
+      const fake = new Fake(project);
+      const result = await runZcodeTask({
+        ctx: {
+          ...ctx(project),
+          resume: { kind: "continue", sendMessage: false, message: "已处理" },
+        },
+        resolved: resolved(),
+        opts: opts(),
+        logFile: path.join(project, "agent.log"),
+        deps: depsFor(fake),
+      });
+      expect(result.ok).toBe(true);
+      expect(result.session?.id).toBe(
+        Fake === DelayedSessionRegistrationZcode ? "delayed-session" : "new-session",
+      );
+      expect(fake.sent).toBe(1);
+    },
+  );
+  it("does not select the active pane from multiple new sessions", async () => {
+    const project = await makeTmpRoot("zcode-resume-ambiguous");
+    cleanup.push(project);
+    class ActiveButAmbiguous extends AmbiguousSessionZcode {
+      override async session() {
+        return this.sent ? { id: "session-a" } : {};
+      }
+    }
+    const fake = new ActiveButAmbiguous(project);
+    const result = await runZcodeTask({
+      ctx: { ...ctx(project), resume: { kind: "continue", sendMessage: false } },
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.endReason).toBe("session_lost");
+    expect(fake.sent).toBe(1);
+  });
+  it("rejects anchorless rework before sending", async () => {
+    const project = await makeTmpRoot("zcode-rework-no-anchor");
+    cleanup.push(project);
+    const fake = new FakeZcode(project);
+    const result = await runZcodeTask({
+      ctx: { ...ctx(project), resume: { kind: "rework", sendMessage: false } },
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.endReason).toBe("session_lost");
+    expect(fake.sent).toBe(0);
   });
 });

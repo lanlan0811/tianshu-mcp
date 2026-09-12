@@ -97,13 +97,17 @@ function fileLogger(
   };
 }
 
-function prompt(ctx: TaskContext, refs: ReturnType<typeof validateTaskReferences>): string {
+function prompt(
+  ctx: TaskContext,
+  refs: ReturnType<typeof validateTaskReferences>,
+  initialDispatch: boolean,
+): string {
   let out =
     ctx.resume?.kind === "continue" && ctx.resume.sendMessage
       ? (ctx.resume.message ?? "")
       : ctx.task;
-  if (ctx.context?.trim() && !ctx.resume) out += `\n\n【上下文与约束】\n${ctx.context}`;
-  if (refs.length && !ctx.resume)
+  if (ctx.context?.trim() && initialDispatch) out += `\n\n【上下文与约束】\n${ctx.context}`;
+  if (refs.length && initialDispatch)
     out += `\n\n【已验证项目引用】\n${refs.map((r) => `- ${r.directory ? "目录" : "文件"}: ${r.source} => ${r.absolutePath}`).join("\n")}`;
   if (ctx.feedback?.trim()) out += `\n\n【自动验收返修】\n${ctx.feedback}`;
   return out;
@@ -253,9 +257,13 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
 
     await cdp.dismissMenus();
 
-    const sessionsBefore = ctx.resume ? [] : await cdp.sessions();
-
-    if (ctx.resume?.sendMessage || ctx.resume?.sessionId || ctx.resume?.sessionTitle) {
+    const initialDispatch =
+      !ctx.resume ||
+      (ctx.resume.kind === "continue" &&
+        !ctx.resume.sendMessage &&
+        !ctx.resume.sessionId &&
+        !ctx.resume.sessionTitle);
+    if (!initialDispatch && ctx.resume) {
       if (!ctx.resume.sessionId && !ctx.resume.sessionTitle)
         return result({
           hardFailure: true,
@@ -275,11 +283,18 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
         endReason: "setup_failed",
       });
     await deps.sleep(500);
-    const activeSession = ctx.resume
-      ? { id: ctx.resume.sessionId, title: ctx.resume.sessionTitle }
-      : await cdp.session();
+    const activeSession = initialDispatch ? {} : await cdp.session();
+    if (
+      !initialDispatch &&
+      (!activeSession.id || (ctx.resume?.sessionId && activeSession.id !== ctx.resume.sessionId))
+    )
+      return result({
+        hardFailure: true,
+        endReason: "session_lost",
+        error: "ZCode 原会话回选后身份回读不一致，不发送任务",
+      });
 
-    let session = ctx.resume ? activeSession : {};
+    let session = activeSession;
     let permission = ctx.resume?.permissionMode ?? gui.defaultPermissionMode ?? "完全访问";
     let answeredQuestion = false;
     const ensureProjectBound = async (
@@ -493,7 +508,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
       // until ZCode accepts the first message. Never carry that stale id into a
       // newly submitted task; identify the new session from the marker or the
       // post-send session-list delta instead.
-      const message = prompt(ctx, refs);
+      const message = prompt(ctx, refs, initialDispatch);
       {
         if (ctx.resume?.kind === "continue" && !ctx.resume.sendMessage) {
           logger.info("[zcode] 用户确认文本不发送给模型；环境复检通过后发送原始任务书");
@@ -508,6 +523,16 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
         const marker = `【tianshu:${ctx.taskId}:r${ctx.round}:${attempt}】`;
         const before = await cdp.conversationText();
         const beforePoll = await cdp.poll();
+        const previousIds = new Set(
+          initialDispatch ? (await cdp.sessions()).map((item) => item.id) : [],
+        );
+        if (opts.signal?.aborted) return result({ killed: true, endReason: "aborted" });
+        if (Date.now() >= started + ctx.taskTimeoutMs)
+          return result({
+            timeout: true,
+            endReason: "task_timeout",
+            error: "ZCode 任务总时限已到，未发送任务",
+          });
         await cdp.typeText(marker + message);
         const typed = await cdp.inputText();
         if (!typed.includes(marker))
@@ -516,22 +541,26 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
             error: "ZCode 输入框回读不一致，未发送",
             endReason: "input_mismatch",
           });
+        if (opts.signal?.aborted) return result({ killed: true, endReason: "aborted" });
         await cdp.sendMessage();
         let seenMessage = before.includes(marker);
         let seenStateChange = false;
         let seenRunning = false;
         let markedSession: Awaited<ReturnType<ZcodeCdpClient["sessionForMarker"]>> = undefined;
+        const confirmationDeadline = Math.min(started + ctx.taskTimeoutMs, Date.now() + 60_000);
         const confirmationAttempts = Math.ceil(
-          Math.min(60_000, Math.max(5_000, ctx.taskTimeoutMs)) / 250,
+          Math.max(0, confirmationDeadline - Date.now()) / 250,
         );
         for (
           let i = 0;
           i < confirmationAttempts &&
-          !(seenMessage && (seenStateChange || seenRunning || markedSession));
+          Date.now() < confirmationDeadline &&
+          !(session.id && seenMessage && (seenStateChange || seenRunning || markedSession));
           i++
         ) {
           // eslint-disable-next-line no-await-in-loop
-          await deps.sleep(250);
+          if (opts.signal?.aborted) return result({ killed: true, endReason: "aborted" });
+          await deps.sleep(Math.min(250, Math.max(0, confirmationDeadline - Date.now())));
           // eslint-disable-next-line no-await-in-loop
           const [after, input, polled] = await Promise.all([
             cdp.conversationText(),
@@ -545,31 +574,31 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
             seenRunning = true;
           // eslint-disable-next-line no-await-in-loop
           markedSession ||= await cdp.sessionForMarker(marker);
+          if (markedSession) {
+            if (!initialDispatch && markedSession.id !== activeSession.id)
+              return result({
+                hardFailure: true,
+                endReason: "session_lost",
+                error: "任务标记出现在其他 ZCode 会话；不重复发送",
+              });
+            session = markedSession;
+          } else if (initialDispatch) {
+            const added = (await cdp.sessions()).filter((item) => !previousIds.has(item.id));
+            session = added.length === 1 ? added[0]! : {};
+          }
         }
+        if (Date.now() >= started + ctx.taskTimeoutMs)
+          return result({
+            timeout: true,
+            endReason: "task_timeout",
+            error: "ZCode 发送观察达到任务总时限；保留现场且不重复发送",
+          });
         if (!(seenMessage && (seenStateChange || seenRunning || markedSession))) {
           return result({
             hardFailure: true,
             error: `发送结果无法确认（用户消息=${seenMessage}，输入状态变化=${seenStateChange}，运行信号=${seenRunning}，标记会话=${!!markedSession}）；不重复发送`,
             endReason: "send_unknown",
           });
-        }
-        if (markedSession) session = markedSession;
-        if (!ctx.resume) {
-          const previousIds = new Set(sessionsBefore.map((item) => item.id));
-          let added: Awaited<ReturnType<ZcodeCdpClient["sessions"]>> = [];
-          for (let i = 0; i < confirmationAttempts; i++) {
-            // eslint-disable-next-line no-await-in-loop
-            const current = await cdp.sessions();
-            added = current.filter((item) => !previousIds.has(item.id));
-            if (added.length === 1) break;
-            // eslint-disable-next-line no-await-in-loop
-            await deps.sleep(250);
-          }
-          if (!session.id && added.length === 1) session = added[0]!;
-          else if (!session.id) {
-            const current = await cdp.session();
-            if (current.id && !previousIds.has(current.id)) session = current;
-          }
         }
         if (!session.id)
           return result({

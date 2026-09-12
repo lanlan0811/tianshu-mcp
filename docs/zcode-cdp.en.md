@@ -48,7 +48,7 @@ run_task(projectPath=D:/repo/app, agentId=zcode,
 
 `model` is required and must be an exact `provider/model` value. ZCode rejects TraeWork's `mode` parameter. Path-like references in `task/context` are resolved before submission; each must exist and remain inside `projectPath`.
 
-Initial runs create a new session. Automatic repair, `rework_task`, and `continue_task` can only resume the recorded session. Before sending, the adapter confirms the exact project path, provider/model, and Full Access permission. ZCode defaults to automatic verification and two repair rounds unless explicitly overridden.
+Initial runs create a new session. Automatic repair, `rework_task`, and existing-session answers can only resume the recorded session. Pre-send environment confirmation without an anchor continues initial dispatch. Before sending, the adapter confirms the exact project path, provider/model, and Full Access permission. ZCode defaults to automatic verification and two repair rounds unless explicitly overridden.
 
 ## `needs_user` and continuation
 
@@ -86,3 +86,9 @@ The Windows loop is complete. The built-in profile must remain `research` until 
 Project triggers resolve by profile override, stable testid, then exact localized labels. Multiple visible matches in a tier stop resolution; fallback results are not merged. Add, move and detach actions are excluded. Binding paths come from the composer or its uniquely associated project row, not arbitrary sidebar paths. A matching name never overrides a conflicting path.
 
 Model readback decodes data-model-current-value and checks the visible model label, excluding hidden stale values and accessibility hints. Without a current attribute it uses a visible label/title, then legacy markup. Conflicting evidence, ambiguous labels or malformed encoding produce model_mismatch before submission.
+
+## Environment confirmation without a session anchor (#9)
+
+After closing an old instance, signing in or granting permissions, an unsent task takes a pre-send session baseline and sends its complete task, context and validated references. Confirmation text is never sent to the model. Existing-session answers and rework still select and verify the original session.
+
+Submission and identity share one observation window of at most 60 seconds, bounded by remaining task time. Prefer the task marker, then the unique new-session delta for initial dispatch. Multiple new sessions never justify guessing the active pane. Unresolved evidence preserves the scene and reports send_unknown or session_lost without automatic resubmission.
