@@ -41,6 +41,13 @@ export interface ZcodeQuestionAnswerResult {
   error?: string;
 }
 
+export interface ZcodeClickExactResult {
+  clicked: boolean;
+  count: number;
+  available: string[];
+  testids?: string[];
+}
+
 export class ZcodeCdpClient {
   private readonly inner: TraeworkCdpClient;
   constructor(
@@ -130,17 +137,29 @@ export class ZcodeCdpClient {
   async clickExact(
     key: ZcodeSelectorKey,
     value: string,
-  ): Promise<{ clicked: boolean; count: number; available: string[] }> {
+  ): Promise<ZcodeClickExactResult> {
     const found = await this.evaluate<{
       count: number;
       available: string[];
+      testids?: string[];
       point?: { x: number; y: number };
     }>(
-      `(async function(){const norm=s=>(s||'').normalize('NFKC').trim().toLocaleLowerCase();const target=norm(${JSON.stringify(value)});const sels=${candidateExpr(key, this.selectors)};const visible=e=>{const r=e.getBoundingClientRect();if(!(r.width>0&&r.height>0&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth))return false;const x=Math.max(0,Math.min(innerWidth-1,r.left+r.width/2)),y=Math.max(0,Math.min(innerHeight-1,r.top+r.height/2)),hit=document.elementFromPoint(x,y);return !!hit&&(hit===e||e.contains(hit))};const items=()=>{const out=[];for(const s of sels)for(const e of document.querySelectorAll(s))if(visible(e)&&!out.includes(e))out.push(e);return out};const leafTexts=e=>[...e.querySelectorAll('*')].filter(n=>n.children.length===0).map(n=>(n.textContent||'').trim()).filter(Boolean);const label=e=>(e.getAttribute('data-value')||e.getAttribute('data-model')||e.getAttribute('data-provider')||leafTexts(e)[0]||e.textContent||'').trim();let nodes=items();let scroller=nodes[0];while(scroller&&scroller!==document.body&&scroller.scrollHeight<=scroller.clientHeight)scroller=scroller.parentElement;const start=scroller?.scrollTop||0;if(scroller)scroller.scrollTop=0;const seen=new Map(),matches=new Map();for(let i=0;i<60;i++){await new Promise(r=>setTimeout(r,25));nodes=items();for(const e of nodes){const text=label(e);if(!text)continue;const id=e.getAttribute('data-id')||e.getAttribute('data-model-id')||e.getAttribute('data-value')||e.getAttribute('data-model')||e.getAttribute('data-provider')||e.getAttribute('data-testid')||text;seen.set(norm(id)+'|'+norm(text),text);if(norm(text)===target)matches.set(norm(id)+'|'+norm(text),{top:scroller?.scrollTop||0,text})}if(!scroller||scroller.scrollTop+scroller.clientHeight>=scroller.scrollHeight-1)break;const before=scroller.scrollTop;scroller.scrollTop=Math.min(scroller.scrollTop+Math.max(100,scroller.clientHeight*.8),scroller.scrollHeight);if(scroller.scrollTop===before)break}const matchesFound=[...matches.values()];if(matchesFound.length===1){if(scroller)scroller.scrollTop=matchesFound[0].top;await new Promise(r=>setTimeout(r,50));const exact=items().filter(e=>norm(label(e))===target);if(exact.length===1){exact[0].scrollIntoView({block:'center'});const r=exact[0].getBoundingClientRect();return {count:1,available:[...seen.values()],point:{x:r.left+r.width/2,y:r.top+r.height/2}}}}if(scroller)scroller.scrollTop=start;return {count:matchesFound.length,available:[...seen.values()]}})()`,
+      `(async function(){const norm=s=>(s||'').normalize('NFKC').trim().toLocaleLowerCase();const target=norm(${JSON.stringify(value)});const sels=${candidateExpr(key, this.selectors)};const visible=e=>{const r=e.getBoundingClientRect();if(!(r.width>0&&r.height>0&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth))return false;const x=Math.max(0,Math.min(innerWidth-1,r.left+r.width/2)),y=Math.max(0,Math.min(innerHeight-1,r.top+r.height/2)),hit=document.elementFromPoint(x,y);return !!hit&&(hit===e||e.contains(hit))};const items=()=>{const out=[];for(const s of sels)for(const e of document.querySelectorAll(s))if(visible(e)&&!out.includes(e))out.push(e);return out};const leafTexts=e=>[...e.querySelectorAll('*')].filter(n=>n.children.length===0).map(n=>(n.textContent||'').trim()).filter(Boolean);const label=e=>(e.getAttribute('data-value')||e.getAttribute('data-model')||e.getAttribute('data-provider')||leafTexts(e)[0]||e.textContent||'').trim();let nodes=items();let scroller=nodes[0];while(scroller&&scroller!==document.body&&scroller.scrollHeight<=scroller.clientHeight)scroller=scroller.parentElement;const start=scroller?.scrollTop||0;if(scroller)scroller.scrollTop=0;const seen=new Map(),seenTestids=new Map(),matches=new Map();for(let i=0;i<60;i++){await new Promise(r=>setTimeout(r,25));nodes=items();for(const e of nodes){const text=label(e);const testid=e.getAttribute('data-testid')||'';const id=e.getAttribute('data-id')||e.getAttribute('data-model-id')||e.getAttribute('data-value')||e.getAttribute('data-model')||e.getAttribute('data-provider')||testid||text;const key=norm(id)+'|'+norm(text);if(testid)seenTestids.set(key,testid);if(!text)continue;seen.set(key,text);if(norm(text)===target)matches.set(key,{top:scroller?.scrollTop||0,text})}if(!scroller||scroller.scrollTop+scroller.clientHeight>=scroller.scrollHeight-1)break;const before=scroller.scrollTop;scroller.scrollTop=Math.min(scroller.scrollTop+Math.max(100,scroller.clientHeight*.8),scroller.scrollHeight);if(scroller.scrollTop===before)break}const result={available:[...seen.values()],testids:[...seenTestids.values()]};const matchesFound=[...matches.values()];if(matchesFound.length===1){if(scroller)scroller.scrollTop=matchesFound[0].top;await new Promise(r=>setTimeout(r,50));const exact=items().filter(e=>norm(label(e))===target);if(exact.length===1){exact[0].scrollIntoView({block:'center'});const r=exact[0].getBoundingClientRect();return {count:1,...result,point:{x:r.left+r.width/2,y:r.top+r.height/2}}}}if(scroller)scroller.scrollTop=start;return {count:matchesFound.length,...result}})()`,
     );
-    if (!found.point) return { clicked: false, count: found.count, available: found.available };
+    if (!found.point)
+      return {
+        clicked: false,
+        count: found.count,
+        available: found.available,
+        testids: found.testids,
+      };
     await this.clickAt(found.point.x, found.point.y);
-    return { clicked: true, count: found.count, available: found.available };
+    return {
+      clicked: true,
+      count: found.count,
+      available: found.available,
+      testids: found.testids,
+    };
   }
   async selection(key: ZcodeSelectorKey): Promise<{ display: string; internal: string }> {
     const raw = await this.evaluate<{

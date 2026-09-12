@@ -14,7 +14,12 @@ import { parseZcodeModel, exactUiName } from "./model.js";
 import { validateTaskReferences } from "./references.js";
 import { matchZcodeProject, normalizeProjectPath } from "./project.js";
 import { judgeZcodePoll, type ZcodePollState } from "./liveness.js";
-import { ZcodeCdpClient, CdpDisconnectedError, CdpUnavailableError } from "./cdp.js";
+import {
+  ZcodeCdpClient,
+  CdpDisconnectedError,
+  CdpUnavailableError,
+  type ZcodeClickExactResult,
+} from "./cdp.js";
 import { ensureZcodeInstance, listZcodeProcesses, type ZcodeReady } from "./instance.js";
 import { listOwnedDialogs, selectZcodeFolder } from "./dialog.js";
 
@@ -157,7 +162,7 @@ async function clickExactWhenReady(
   value: string,
   deps: ZcodeRunDeps,
 ): ReturnType<ZcodeCdpClient["clickExact"]> {
-  let last = { clicked: false, count: 0, available: [] as string[] };
+  let last: ZcodeClickExactResult = { clicked: false, count: 0, available: [] };
   for (let i = 0; i < 15; i++) {
     // eslint-disable-next-line no-await-in-loop
     last = await cdp.clickExact(key, value);
@@ -174,7 +179,7 @@ async function clickAnyExactWhenReady(
   values: string[],
   deps: ZcodeRunDeps,
 ): ReturnType<ZcodeCdpClient["clickExact"]> {
-  let last = { clicked: false, count: 0, available: [] as string[] };
+  let last: ZcodeClickExactResult = { clicked: false, count: 0, available: [] };
   for (let i = 0; i < 15; i++) {
     for (const value of values) {
       // eslint-disable-next-line no-await-in-loop
@@ -411,19 +416,17 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
           endReason: "setup_failed",
         });
       await deps.sleep(250);
-      const provider = await clickExactWhenReady(cdp, "providerOption", spec.provider, deps);
-      if (!provider.clicked)
-        return result({
-          hardFailure: true,
-          error: `供应商不存在或同名歧义：${spec.provider}（匹配 ${provider.count}${provider.available?.length ? `；可见候选=${provider.available.slice(0, 20).join("、")}` : ""}）`,
-          endReason: "model_unavailable",
-        });
-      await deps.sleep(250);
-      const model = await clickExactWhenReady(cdp, "modelOption", spec.model, deps);
+      let model = await clickExactWhenReady(cdp, "modelOption", spec.model, deps);
+      let provider: ZcodeClickExactResult = { clicked: false, count: 0, available: [] };
+      if (!model.clicked) {
+        provider = await clickExactWhenReady(cdp, "providerOption", spec.provider, deps);
+        if (provider.clicked) await deps.sleep(250);
+        model = await clickExactWhenReady(cdp, "modelOption", spec.model, deps);
+      }
       if (!model.clicked)
         return result({
           hardFailure: true,
-          error: `模型不存在或同名歧义：${spec.provider}/${spec.model}（匹配 ${model.count}${model.available?.length ? `；可见候选=${model.available.slice(0, 20).join("、")}` : ""}）`,
+          error: `模型不存在或同名歧义：${spec.provider}/${spec.model}（模型匹配 ${model.count}${model.available?.length ? `；模型候选=${model.available.slice(0, 20).join("、")}` : ""}${model.testids?.length ? `；模型 testid=${model.testids.slice(0, 20).join("、")}` : ""}；供应商匹配 ${provider.count}${provider.available?.length ? `；供应商候选=${provider.available.slice(0, 20).join("、")}` : ""}${provider.testids?.length ? `；供应商 testid=${provider.testids.slice(0, 20).join("、")}` : ""}）`,
           endReason: "model_unavailable",
         });
       await deps.sleep(300);
@@ -451,7 +454,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
       if (!perm.clicked)
         return result({
           hardFailure: true,
-          error: `无法唯一选择权限模式：${permission}`,
+          error: `无法唯一选择权限模式：${permission}（匹配 ${perm.count}${perm.available?.length ? `；可见候选=${perm.available.slice(0, 20).join("、")}` : ""}${perm.testids?.length ? `；可见 testid=${perm.testids.slice(0, 20).join("、")}` : ""}）`,
           endReason: "permission_unknown",
         });
       await deps.sleep(250);

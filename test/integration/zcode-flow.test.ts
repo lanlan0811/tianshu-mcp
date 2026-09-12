@@ -94,7 +94,10 @@ class FakeZcode {
       if (this.badProvider) return { clicked: false, count: 0 };
       this.provider = value;
     }
-    if (key === "modelOption") this.model = value;
+    if (key === "modelOption") {
+      if (this.badProvider) return { clicked: false, count: 0 };
+      this.model = value;
+    }
     if (key === "permissionOption") this.permission = value;
     return { clicked: true, count: 1 };
   }
@@ -544,7 +547,7 @@ describe("ZCode 假 CDP 单轮", () => {
     });
     expect(result.ok).toBe(true);
     expect(fake.sent).toBe(1);
-    expect(fake.provider).toBe("DeepSeek");
+    expect(fake.provider).toBe("");
     expect(fake.model).toBe("deepseek-flash");
     expect(fake.permission).toBe("完全访问");
     expect(result.session?.id).toBe("session-1");

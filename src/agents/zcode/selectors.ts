@@ -144,15 +144,18 @@ export const ZCODE_SELECTORS: Record<ZcodeSelectorKey, ZcodeSelectorSpec> = {
   },
   providerOption: {
     primary: '[data-testid^="chat-model-select-group-provider:"]',
-    fallbacks: ['[role="option"][data-provider]'],
+    fallbacks: [
+      '[data-testid^="chat-model-select-group-family:"]',
+      '[role="option"][data-provider]',
+    ],
     verifiedVersion: "3.11.x",
-    note: "供应商候选",
+    note: "3.11.2 分组前缀漂移为 family；家族标签可能不可点，仅作兜底展开",
   },
   modelOption: {
     primary: '[data-testid^="chat-model-select-item-"][role="menuitemradio"]',
-    fallbacks: ['[role="option"][data-model]'],
+    fallbacks: ['[data-testid^="chat-model-select-item-"]', '[role="option"][data-model]'],
     verifiedVersion: "3.11.x",
-    note: "模型候选",
+    note: "3.11.2 模型平铺于家族标签下，testid 形如 chat-model-select-item-custom:…",
   },
   modelValue: {
     primary: '[data-testid="chat-model-select-trigger"]',
