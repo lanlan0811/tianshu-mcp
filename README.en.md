@@ -182,6 +182,7 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 | [docs/zcode-windows-smoke.en.md](docs/zcode-windows-smoke.en.md) | ZCode Windows hardware record for development, same-session repair, and question continuation |
 | [docs/codex-gui-cdp.en.md](docs/codex-gui-cdp.en.md) | Codex desktop GUI driver: MSIX COM activation, CDP attach, selectors, run detection, verify/repair |
 | [docs/codex-windows-smoke.en.md](docs/codex-windows-smoke.en.md) | Codex Windows hardware record (incl. verify-fail → auto plan → repair-pass loop) |
+| [docs/release-v0.3.1.en.md](docs/release-v0.3.1.en.md) | v0.3.1 release notes (skill docs rewrite + release automation fixes) |
 | [docs/release-v0.3.0.en.md](docs/release-v0.3.0.en.md) | v0.3.0 release notes (Codex desktop GUI adapter, incl. BREAKING) |
 | [docs/release-v0.2.0.en.md](docs/release-v0.2.0.en.md) | v0.2.0 release notes (unified ZCode GUI loop) |
 | [docs/acceptance-config.en.md](docs/acceptance-config.en.md) | Project-level `.tianshu-mcp/acceptance.json` acceptance config spec |
@@ -254,6 +255,9 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
   - Hardware-verified: full loop for a registered project, full loop for an unregistered project after automatic registration, and the verify-fail → generated plan → repair-pass loop
   - Real business acceptance: drove Codex to build a "Fruit Ninja" mini-game, passed acceptance, verified playable in a headless browser; [acceptance record](docs/codex-windows-smoke.en.md)
   - macOS unverified; built-in status `research`
+- **M13 — Skill docs alignment + release automation fixes + v0.3.1** (2026-09-12, see [release-v0.3.1.en.md](docs/release-v0.3.1.en.md))
+  - Self-installed skill docs (SKILL.md / usage-examples.md) rewritten item by item against the v0.3.0 tool surface (codex GUI params, needs_user handling, verify/list usage)
+  - Bilingual release bodies, Full Changelog & CI link fixes, and automated Gitee releases
 
 ## Agent support status
 
@@ -276,7 +280,7 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 
 | Document | Content |
 |---|---|
-| [CHANGELOG.en.md](CHANGELOG.en.md) | Version history (v0.1.0 → v0.3.0) |
+| [CHANGELOG.en.md](CHANGELOG.en.md) | Version history (v0.1.0 → v0.3.1) |
 | [CONTRIBUTING.en.md](CONTRIBUTING.en.md) | Dev setup, conventions, commit/release flow, adding an agent |
 | [SECURITY.en.md](SECURITY.en.md) | Security model (zero credentials / command whitelist / process & desktop-automation boundaries) and private reporting |
 | [CODE_OF_CONDUCT.en.md](CODE_OF_CONDUCT.en.md) | Contributor Code of Conduct |

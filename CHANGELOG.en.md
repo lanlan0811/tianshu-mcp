@@ -19,6 +19,43 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.3.1] — 2026-09-12
+
+Post-v0.3.0 housekeeping for docs and release automation: **no source-level behavior changes**.
+The focus is a full rewrite of the self-installed skill docs plus GitHub/Gitee release-body
+composition and link fixes.
+
+### Changed
+
+- **Skill docs (`skills/tianshu-mcp/`) fully rewritten to match the actual v0.3.0 tool surface**:
+  - Corrected the `codex` description from "headless CLI" to the ChatGPT desktop GUI adapter
+    (MSIX + COM activation + CDP); documents the required `model`, optional `reasoningLevel` /
+    `planDoc` / `designSystem`, and that `mode` is not supported;
+  - Documented the `run_task` `context` parameter and the send-time validation of path references
+    inside task/context; corrected the `autoFixRounds` default precedence
+    (call argument > codex 5 / zcode 2 > server default 0);
+  - Added usage for `list_tasks`, `query_task(tailLines)`, `get_task_report(round)` and
+    `verify_task` (`extraChecks` / `checksMode` / `baselineRef`) plus the four-level acceptance
+    command precedence;
+  - Documented the four `needs_user` kinds and meta fields such as `needsUserKind` /
+    `pendingQuestion` / `errorType` / `reportRound` / `verificationSource`;
+  - Added `continue_task` to the approval list; replaced emoji status markers with plain text
+    (PASS / warning) in the usage examples.
+- **Release automation fixes (exposed by the v0.3.0 tag)**:
+  - The release body is now composed bilingually from `docs/release-v<version>.md` and `.en.md`,
+    with in-document relative links rewritten to tag-absolute links; a missing doc fails the
+    workflow loudly instead of producing a shell-only body;
+  - `Full Changelog` resolves the previous tag via `git describe` into a `compare/<prev>...<tag>`
+    link instead of degrading to a commits link;
+  - The body's `CI` link resolves the CI run for the same SHA instead of pointing at the Release run;
+  - Gitee releases are automated in `release.yml`: `scripts/gitee-release.mjs` idempotently
+    creates/updates the mirrored release (requires the `GITEE_TOKEN` secret; skipped loudly when unset).
+- `.gitignore` now ignores npm pack artifacts and local temporary verification directories.
+- Added the missing `[0.1.10]` / `[0.2.0]` / `[0.3.0]` / `[0.3.1]` compare links at the bottom of
+  this file and its Chinese counterpart.
+
+---
+
 ## [0.3.0] — 2026-09-12
 
 The Codex desktop app now runs through a **GUI driver**: a new `codex-gui` adapter uses MSIX COM activation
@@ -401,7 +438,11 @@ project → pick model and reasoning level → send instructions → run detecti
 
 ---
 
-[Unreleased]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.9...HEAD
+[Unreleased]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.10...v0.2.0
+[0.1.10]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.6...v0.1.7

@@ -180,6 +180,7 @@ ZCode 提问或需要用户处理登录、旧实例、系统权限时进入 `nee
 | [docs/zcode-windows-smoke.md](docs/zcode-windows-smoke.md) | ZCode Windows 真机开发、同会话返修与提问续跑验收记录 |
 | [docs/codex-gui-cdp.md](docs/codex-gui-cdp.md) | Codex 桌面端 GUI 驱动：MSIX COM 激活、CDP 接管、选择器、运行检测、验收返修 |
 | [docs/codex-windows-smoke.md](docs/codex-windows-smoke.md) | Codex Windows 真机验收记录（含验收失败→自动生成计划→返修通过闭环） |
+| [docs/release-v0.3.1.md](docs/release-v0.3.1.md) | v0.3.1 发布说明（技能文档重写 + 发布自动化修复） |
 | [docs/release-v0.3.0.md](docs/release-v0.3.0.md) | v0.3.0 发布说明（Codex 桌面端 GUI 适配，含 BREAKING） |
 | [docs/release-v0.2.0.md](docs/release-v0.2.0.md) | v0.2.0 发布说明（ZCode GUI 统一闭环） |
 | [docs/acceptance-config.md](docs/acceptance-config.md) | 项目级 `.tianshu-mcp/acceptance.json` 验收配置规范 |
@@ -254,6 +255,9 @@ ZCode 提问或需要用户处理登录、旧实例、系统权限时进入 `nee
   - 真机通过：已登记项目全链路、未登记项目自动登记全链路、验收失败→自动生成计划→返修通过闭环
   - 真实业务验收：驱动 Codex 开发「切水果小游戏」并通过验收，无头浏览器实测可玩；[验收记录](docs/codex-windows-smoke.md)
   - macOS 未验证，内置状态 `research`
+- **M13 — 技能文档对齐 + 发布自动化修复 + v0.3.1**（2026-09-12，见 [release-v0.3.1.md](docs/release-v0.3.1.md)）
+  - 技能自检安装文档（SKILL.md / usage-examples.md）对照 v0.3.0 工具面逐项重写（codex GUI 参数、needs_user 处理、verify/list 用法）
+  - Release 正文双语合成、Full Changelog 与 CI 链接修复、Gitee 发行版纳入自动化
 
 ## Agent 适配现状
 
@@ -277,7 +281,7 @@ ZCode 提问或需要用户处理登录、旧实例、系统权限时进入 `nee
 | 文档 | 内容 |
 |---|---|
 | [HANDOFF.md](HANDOFF.md) | 项目交接文档：当前状态快照、架构导览、硬性红线、已知限制、接手建议 |
-| [CHANGELOG.md](CHANGELOG.md) | 版本变更日志（v0.1.0 → v0.3.0） |
+| [CHANGELOG.md](CHANGELOG.md) | 版本变更日志（v0.1.0 → v0.3.1） |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 开发环境、工程规范、提交与发布流程、如何新增 agent |
 | [SECURITY.md](SECURITY.md) | 安全模型（凭证零管理/命令白名单/进程与桌面自动化边界）与私密报告渠道 |
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | 贡献者行为准则 |

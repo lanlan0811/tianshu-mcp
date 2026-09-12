@@ -18,6 +18,36 @@
 
 ---
 
+## [0.3.1] — 2026-09-12
+
+v0.3.0 发布后的文档与发布自动化收口：**无源码行为变更**，重点是技能自检安装文档全面重写、
+GitHub/Gitee 发行版正文合成与链接修复。
+
+### 变更
+
+- **技能文档（`skills/tianshu-mcp/`）全面重写并对齐 v0.3.0 实际工具面**：
+  - 修正 `codex` 描述：由「无头 CLI」更正为 ChatGPT 桌面端 GUI adapter（MSIX + COM 激活 + CDP），
+    标注 `model` 必填、`reasoningLevel` / `planDoc` / `designSystem` 用法、不支持 `mode`；
+  - 补齐 `run_task` 的 `context` 参数语义与 task/context 路径引用发送前校验说明；
+    修正 `autoFixRounds` 默认值优先级（调用参数 > codex 5 / zcode 2 > server 默认 0）；
+  - 补齐 `list_tasks`、`query_task(tailLines)`、`get_task_report(round)` 与
+    `verify_task`（`extraChecks` / `checksMode` / `baselineRef`）的用法与验收命令四级优先级；
+  - 补充 `needs_user` 四种等待类型与 meta 块 `needsUserKind` / `pendingQuestion` / `errorType` /
+    `reportRound` / `verificationSource` 等字段解读；
+  - 审批清单补上 `continue_task`；使用示例中的 emoji 状态标记改为文字（PASS / 告警）。
+- **发布自动化修复（v0.3.0 tag 实测暴露）**：
+  - Release 正文改为由 `docs/release-v<版本>.md` 与 `.en.md` 双语合成，文档内相对链接改写为
+    该 tag 的绝对链接，缺文档时工作流明确报错（不再产出空壳正文）；
+  - `Full Changelog` 经 `git describe` 解析上一 tag，生成 `compare/<prev>...<tag>` 比较链接，
+    不再退化为 commits 链接；
+  - 正文 `CI` 链接解析同 SHA 的 CI 运行，避免误指 Release 自身运行；
+  - Gitee 发行版纳入 `release.yml` 自动化：`scripts/gitee-release.mjs` 幂等创建/更新
+    （需仓库 Secret `GITEE_TOKEN`，未配置时明确提示并跳过）。
+- `.gitignore` 忽略 npm pack 产物与本地临时校验目录。
+- 补齐本文件与英文版底部缺失的 `[0.1.10]` / `[0.2.0]` / `[0.3.0]` / `[0.3.1]` 比较链接。
+
+---
+
 ## [0.3.0] — 2026-09-12
 
 Codex 桌面端改为 **GUI 驱动**：新增 `codex-gui` adapter，通过 MSIX COM 激活 + CDP 接管，
@@ -356,7 +386,11 @@ Codex 桌面端改为 **GUI 驱动**：新增 `codex-gui` adapter，通过 MSIX 
 
 ---
 
-[未发布]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.9...HEAD
+[未发布]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.10...v0.2.0
+[0.1.10]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.1.6...v0.1.7
