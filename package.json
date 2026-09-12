@@ -27,7 +27,9 @@
     "README.en.md",
     "CHANGELOG.md",
     "CHANGELOG.en.md",
-    "LICENSE"
+    "LICENSE",
+    "scripts/gitee-release.mjs",
+    "scripts/release-body.mjs"
   ],
   "main": "dist/index.js",
   "exports": {

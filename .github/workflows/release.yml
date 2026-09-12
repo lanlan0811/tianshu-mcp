@@ -92,33 +92,18 @@ jobs:
             --expect-version "${{ steps.version.outputs.version }}" \
             --fixtures "$GITHUB_WORKSPACE/test/stub-agent"
 
-      # Release 正文优先取版本发布说明文档 docs/release-v<version>.md（双语、含亮点与验证结果），
-      # 缺失时回退为仅含 Full Changelog 的最小正文。避免只出自动生成的空壳 Changelog。
-      - name: Build release body (prefer docs/release-v<version>.md)
+      # Release 正文由发布说明文档合成（双语 + 绝对链接 + npm/CI/Changelog）：
+      # 正文取自 docs/release-v<version>.md 与 .en.md，相对链接改写为该 tag 的绝对链接。
+      # 缺文档时脚本会明确报错，避免再产出只有 Full Changelog 的空壳正文。
+      - name: Compose release body (docs/release-v<version>.md + .en.md)
         id: body
         shell: bash
         run: |
           VER="${{ steps.version.outputs.version }}"
-          DOC="docs/release-v${VER}.md"
+          PREV=$(git describe --tags --abbrev=0 "v${VER}^" 2>/dev/null | sed 's/^v//' || echo "")
           BODY="$RUNNER_TEMP/release-body.md"
-          PREV=$(git describe --tags --abbrev=0 "v${VER}^" 2>/dev/null || echo "")
-          if [ -f "$DOC" ]; then
-            cp "$DOC" "$BODY"
-            echo "使用发布说明文档: $DOC"
-          else
-            echo "未找到 $DOC，正文仅含 Full Changelog"
-            : > "$BODY"
-          fi
-          {
-            echo
-            echo "---"
-            echo
-            if [ -n "$PREV" ]; then
-              echo "**Full Changelog**: https://github.com/${GITHUB_REPOSITORY}/compare/${PREV}...v${VER}"
-            else
-              echo "**Full Changelog**: https://github.com/${GITHUB_REPOSITORY}/commits/v${VER}"
-            fi
-          } >> "$BODY"
+          node scripts/release-body.mjs \
+            "$VER" github "${{ github.repository }}" tianshu-mcp "${{ github.run_id }}" "$PREV" > "$BODY"
           echo "path=$BODY" >> "$GITHUB_OUTPUT"
 
       - name: Publish GitHub Release
@@ -127,7 +112,7 @@ jobs:
           tag_name: v${{ steps.version.outputs.version }}
           name: tianshu-mcp v${{ steps.version.outputs.version }}
           draft: false
-          # 始终用上面组装的正文（含发布说明 + Full Changelog），不再依赖自动生成的空壳 notes
+          # 用上面合成的正文，不再依赖自动生成的空壳 notes
           body_path: ${{ steps.body.outputs.path }}
           generate_release_notes: false
           files: |
@@ -140,8 +125,7 @@ jobs:
       - name: Create/Update Gitee release (mirror, needs GITEE_TOKEN secret)
         shell: bash
         env:
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_ACCESS_TOKEN: ${{ secrets.GITEE_TOKEN }}
         run: |
-          node scripts/gitee-release.mjs \
-            "${{ steps.version.outputs.version }}" \
-            "docs/release-v${{ steps.version.outputs.version }}.md"
+          PREV=$(git describe --tags --abbrev=0 "v${{ steps.version.outputs.version }}^" 2>/dev/null | sed 's/^v//' || echo "")
+          node scripts/gitee-release.mjs "${{ steps.version.outputs.version }}" "$PREV"
