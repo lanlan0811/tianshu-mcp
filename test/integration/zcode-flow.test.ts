@@ -63,6 +63,9 @@ class FakeZcode {
   model = "";
   permission = "";
   polls = 0;
+  dismissedMenus = 0;
+  projectClicks = 0;
+  projectClickTarget = "";
   constructor(
     private projectPath: string,
     private question?: string,
@@ -70,7 +73,9 @@ class FakeZcode {
   ) {}
   async connect() {}
   disconnect() {}
-  async dismissMenus() {}
+  async dismissMenus() {
+    this.dismissedMenus++;
+  }
   async exists(key: string) {
     return key === "chatInput";
   }
@@ -81,6 +86,8 @@ class FakeZcode {
     return [{ name: path.basename(this.projectPath), path: this.projectPath, id: "p1" }];
   }
   async clickProject() {
+    this.projectClicks++;
+    this.projectClickTarget = "menuitemcheckbox";
     return true;
   }
   async boundProjectPath() {
@@ -318,6 +325,46 @@ class OptionFailureZcode extends FakeZcode {
   }
 }
 
+class FamilyFallbackZcode extends FakeZcode {
+  modelAttempts = 0;
+  override async clickExact(key: string, value: string) {
+    if (key === "modelOption") {
+      this.modelAttempts++;
+      if (!this.provider) return { clicked: false, count: 0, available: [] };
+    }
+    return super.clickExact(key, value);
+  }
+}
+
+class DiagnosticOptionFailureZcode extends FakeZcode {
+  override async clickExact(key: string, value: string) {
+    if (key === "modelOption")
+      return {
+        clicked: false,
+        count: 0,
+        available: [],
+        testids: ["chat-model-select-item-custom:builtin%3Abigmodel:OTHER"],
+      };
+    if (key === "providerOption")
+      return {
+        clicked: false,
+        count: 0,
+        available: [],
+        testids: ["chat-model-select-group-family:bigmodel"],
+      };
+    return super.clickExact(key, value);
+  }
+}
+
+class DelayedProjectBindingZcode extends FakeZcode {
+  bindingReads = 0;
+  override async workspaceBinding() {
+    this.bindingReads++;
+    if (this.projectClicks < 2) return { triggerText: "选择项目", projectPath: "" };
+    return super.workspaceBinding();
+  }
+}
+
 class ModelMismatchZcode extends FakeZcode {
   override async selection() {
     return { display: "deepseek-flash", internal: "another-model" };
@@ -418,6 +465,22 @@ class MissingProjectZcode extends FakeZcode {
   }
   override async boundProjectPath() {
     return this.folderSelected ? super.boundProjectPath() : "";
+  }
+}
+
+class SwallowedAddProjectZcode extends MissingProjectZcode {
+  addProjectClicks = 0;
+  override async click(key: string) {
+    if (key === "addProject") {
+      this.addProjectClicks++;
+      return true;
+    }
+    return super.click(key);
+  }
+  override async clickExact(key: string, value: string) {
+    if (key === "chooseFolder" && this.addProjectClicks < 2)
+      return { clicked: false, count: 0, available: [] };
+    return super.clickExact(key, value);
   }
 }
 
@@ -540,7 +603,7 @@ describe("ZCode 假 CDP 单轮", () => {
     expect(clientsCreated).toBe(2);
     expect(stable.sent).toBe(1);
   });
-  it("项目、供应商、模型、完全访问回读成功后仅发送一次", async () => {
+  it("模型直选成功时不点击供应商，项目与完全访问回读后仅发送一次", async () => {
     const project = await makeTmpRoot("zcode-fake");
     cleanup.push(project);
     const fake = new FakeZcode(project);
@@ -556,7 +619,24 @@ describe("ZCode 假 CDP 单轮", () => {
     expect(fake.provider).toBe("");
     expect(fake.model).toBe("deepseek-flash");
     expect(fake.permission).toBe("完全访问");
+    expect(fake.projectClickTarget).toBe("menuitemcheckbox");
     expect(result.session?.id).toBe("session-1");
+  });
+  it("模型直选为 0 时展开 family/provider 分组后重试成功", async () => {
+    const project = await makeTmpRoot("zcode-family-fallback");
+    cleanup.push(project);
+    const fake = new FamilyFallbackZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.ok).toBe(true);
+    expect(fake.provider).toBe("DeepSeek");
+    expect(fake.model).toBe("deepseek-flash");
+    expect(fake.modelAttempts).toBeGreaterThan(15);
   });
   it("目标项目不存在时只操作新出现的 ZCode 文件夹对话框并回读绑定路径", async () => {
     const project = await makeTmpRoot("zcode-folder-import");
@@ -591,6 +671,27 @@ describe("ZCode 假 CDP 单轮", () => {
     expect(baseline).toEqual(["existing-dialog"]);
     expect(clientsCreated).toBe(2);
     expect(fake.sent).toBe(1);
+  });
+  it("添加项目首次点击被吞时收起菜单并在第二轮成功", async () => {
+    const project = await makeTmpRoot("zcode-folder-import-swallowed");
+    cleanup.push(project);
+    const fake = new SwallowedAddProjectZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: {
+        ...depsFor(fake),
+        selectFolder: async () => {
+          fake.folderSelected = true;
+          return { ok: true, message: "selected" };
+        },
+      },
+    });
+    expect(result.ok).toBe(true);
+    expect(fake.addProjectClicks).toBe(2);
+    expect(fake.dismissedMenus).toBeGreaterThanOrEqual(3);
   });
   it("供应商不存在时不发送", async () => {
     const project = await makeTmpRoot("zcode-provider");
@@ -635,6 +736,21 @@ describe("ZCode 假 CDP 单轮", () => {
     expect(result.endReason).toBe("project_mismatch");
     expect(fake.sent).toBe(0);
   });
+  it("项目绑定首轮回读失败时重新打开菜单并幂等重试成功", async () => {
+    const project = await makeTmpRoot("zcode-project-binding-retry");
+    cleanup.push(project);
+    const fake = new DelayedProjectBindingZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.ok).toBe(true);
+    expect(fake.projectClicks).toBe(2);
+    expect(fake.bindingReads).toBeGreaterThan(30);
+  });
   it("模型不存在或同名歧义时停止且不发送", async () => {
     const project = await makeTmpRoot("zcode-model-missing");
     cleanup.push(project);
@@ -647,6 +763,22 @@ describe("ZCode 假 CDP 单轮", () => {
       deps: depsFor(fake),
     });
     expect(result.endReason).toBe("model_unavailable");
+    expect(fake.sent).toBe(0);
+  });
+  it("模型直选与供应商兜底均失败时返回可见 testid 诊断", async () => {
+    const project = await makeTmpRoot("zcode-model-diagnostic");
+    cleanup.push(project);
+    const fake = new DiagnosticOptionFailureZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.endReason).toBe("model_unavailable");
+    expect(result.error).toContain("chat-model-select-item-custom:");
+    expect(result.error).toContain("chat-model-select-group-family:");
     expect(fake.sent).toBe(0);
   });
   it("模型显示值或内部 ID 回读不一致时停止且不发送", async () => {

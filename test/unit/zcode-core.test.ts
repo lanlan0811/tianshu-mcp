@@ -14,11 +14,14 @@ import {
   CdpUnavailableError,
   retryZcodeEvaluation,
 } from "../../src/agents/zcode/cdp.js";
+import { normalizeZcodeModelSelection, parseZcodeModel } from "../../src/agents/zcode/model.js";
 import {
-  normalizeZcodeModelSelection,
-  parseZcodeModel,
-} from "../../src/agents/zcode/model.js";
-import { matchZcodeProject, normalizeProjectPath } from "../../src/agents/zcode/project.js";
+  isUnboundTriggerText,
+  matchZcodeProject,
+  normalizeProjectPath,
+  projectDisplayName,
+  sameDisplayName,
+} from "../../src/agents/zcode/project.js";
 import { validateTaskReferences } from "../../src/agents/zcode/references.js";
 import { judgeZcodePoll } from "../../src/agents/zcode/liveness.js";
 import { parseMacSheetBaseline, validateMacSheetBaseline } from "../../src/agents/zcode/dialog.js";
@@ -288,6 +291,17 @@ describe("ZCode macOS 文件夹面板基线", () => {
 });
 
 describe("ZCode 项目路径与引用", () => {
+  it("项目显示名支持中文、空格、大小写与 NFKC 归一化", () => {
+    expect(projectDisplayName("D:\\项目\\Ｄｅｍｏ 中文\\", "win32")).toBe("Demo 中文");
+    expect(sameDisplayName("  DEMO 中文 ", "Ｄｅｍｏ 中文")).toBe(true);
+    expect(sameDisplayName("demo-a", "demo-b")).toBe(false);
+  });
+  it("精确识别中英文未绑定占位词", () => {
+    expect(isUnboundTriggerText("选择 项目")).toBe(true);
+    expect(isUnboundTriggerText(" Select a Project ")).toBe(true);
+    expect(isUnboundTriggerText("ChooseProject")).toBe(true);
+    expect(isUnboundTriggerText("选择项目-演示")).toBe(false);
+  });
   it("Windows 路径大小写、斜杠和尾分隔符归一化", () => {
     expect(normalizeProjectPath("D:\\项目\\Demo\\", "win32")).toBe("d:/项目/demo");
     expect(

@@ -29,6 +29,18 @@ describe("R5 env 占位符展开", () => {
   it("平台默认候选目录非空", () => {
     expect(platformDefaultDiscoveryDirs().length).toBeGreaterThan(0);
   });
+
+  it("ProgramFiles 占位符大小写不敏感，未知占位符保留原样", () => {
+    const original = process.env.PROGRAMFILES;
+    process.env.PROGRAMFILES = path.join(path.parse(process.cwd()).root, "Program Files");
+    try {
+      expect(expandEnvPath("{ProgramFiles}/ZCode")).toBe(expandEnvPath("{PROGRAMFILES}/ZCode"));
+      expect(expandEnvPath("{UnknownPlaceholder}/ZCode")).toContain("{UnknownPlaceholder}");
+    } finally {
+      if (original === undefined) delete process.env.PROGRAMFILES;
+      else process.env.PROGRAMFILES = original;
+    }
+  });
 });
 
 describe("R5 源码无用户路径硬编码", () => {
@@ -53,7 +65,16 @@ describe("R5 profile 热加载", () => {
     const home = await makeTmpRoot("r5-home");
     const dh = new DataHome(home, silentLogger, {
       stub: {
-        displayName: "stub", type: "cli", status: "ready", command: "node", argsTemplate: ["-v"], promptMode: "arg", cwd: "task", env: {}, timeoutMs: 1000, killTree: "taskkill",
+        displayName: "stub",
+        type: "cli",
+        status: "ready",
+        command: "node",
+        argsTemplate: ["-v"],
+        promptMode: "arg",
+        cwd: "task",
+        env: {},
+        timeoutMs: 1000,
+        killTree: "taskkill",
       } as AgentProfile,
     });
     await dh.init();
@@ -67,7 +88,18 @@ describe("R5 profile 热加载", () => {
       path.join(home, "agent-profiles.json"),
       JSON.stringify({
         profiles: {
-          stub: { displayName: "stub", type: "cli", status: "ready", command: "node", argsTemplate: ["--version"], promptMode: "arg", cwd: "task", env: {}, timeoutMs: 1000, killTree: "taskkill" },
+          stub: {
+            displayName: "stub",
+            type: "cli",
+            status: "ready",
+            command: "node",
+            argsTemplate: ["--version"],
+            promptMode: "arg",
+            cwd: "task",
+            env: {},
+            timeoutMs: 1000,
+            killTree: "taskkill",
+          },
         },
       }),
     );

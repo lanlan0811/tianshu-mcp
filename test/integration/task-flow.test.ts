@@ -29,6 +29,13 @@ async function projectFor(playbook: Playbook): Promise<string> {
   return p;
 }
 
+async function disableRequireChanges(projectPath: string): Promise<void> {
+  const acceptancePath = path.join(projectPath, ".tianshu-mcp", "acceptance.json");
+  const acceptance = JSON.parse(await fs.readFile(acceptancePath, "utf8"));
+  acceptance.requireChanges = false;
+  await fs.writeFile(acceptancePath, JSON.stringify(acceptance, null, 2), "utf8");
+}
+
 beforeAll(async () => {
   ts = await startTestServer();
 }, 60_000);
@@ -116,7 +123,8 @@ describe("needs_attention（never 剧本）", () => {
 
 describe("手动 rework_task（入口 B）", () => {
   it("验收失败(failed) → rework_task 带反馈 → 再次验收通过", async () => {
-    const proj = await projectFor("fix-on-first");
+    const proj = await makeGitProject("fix-on-first");
+    tempDirs.push(proj);
     const { text } = await callTool(ts.client, "run_task", {
       projectPath: proj,
       agentId: "stub",
@@ -144,6 +152,7 @@ describe("手动 rework_task（入口 B）", () => {
 describe("verify_task 手动验收（独立工具）", () => {
   it("对已完成项目做验收：PASS → succeeded", async () => {
     const proj = await projectFor("good");
+    await disableRequireChanges(proj);
     // 先让 stub 产出 PASS
     await fs.writeFile(path.join(proj, "done.txt"), "PASS\n", "utf8");
     const { text } = await callTool(ts.client, "verify_task", {

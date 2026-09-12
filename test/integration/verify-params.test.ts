@@ -123,6 +123,10 @@ describe("R4 extraChecks / optional 语义", () => {
   it("optional 检查失败不影响 verdict（passed=true）", async () => {
     const proj = await makeGitProject("good");
     tempDirs.push(proj);
+    const acceptancePath = path.join(proj, ".tianshu-mcp", "acceptance.json");
+    const acceptance = JSON.parse(await fsp.readFile(acceptancePath, "utf8"));
+    acceptance.requireChanges = false;
+    await fsp.writeFile(acceptancePath, JSON.stringify(acceptance, null, 2), "utf8");
     await fsp.writeFile(path.join(proj, "done.txt"), "PASS\n", "utf8");
     const { text } = await callTool(ts.client, "verify_task", {
       projectPath: proj,
@@ -148,7 +152,10 @@ describe("R4 baselineRef", () => {
     const proj = await makeGitProject("good");
     tempDirs.push(proj);
     // 无效 ref
-    const bad = await callTool(ts.client, "verify_task", { projectPath: proj, baselineRef: "no-such-ref-xyz" });
+    const bad = await callTool(ts.client, "verify_task", {
+      projectPath: proj,
+      baselineRef: "no-such-ref-xyz",
+    });
     expect(bad.res.isError).toBe(true);
     expect(bad.text).toContain("baselineRef");
     // 有效 ref：当前 HEAD
