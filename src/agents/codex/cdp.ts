@@ -343,7 +343,7 @@ export class CodexCdpClient {
 
   /** 点击模型菜单内的模型项（menuitemradio），按可见文本精确匹配 */
   async clickModelItem(modelName: string): Promise<{ clicked: boolean; count: number; available: string[] }> {
-    const found = await this.evaluate<{ count: number; available: string[]; point?: { x: number; y: number } }>(
+    const found = await this.evaluate<{ count: number; available: string[]; clicked?: boolean }>(
       this.withResolve(
         `const norm=(s)=>(s||'').normalize('NFKC').replace(/\\s+/g,' ').trim().toLocaleLowerCase();
          const target=norm(${JSON.stringify(modelName)});
@@ -351,12 +351,17 @@ export class CodexCdpClient {
          const els=__codexResolve(${specArgs("modelMenuItem", this.selectors)}).filter(vis);
          const available=els.map((e)=>(e.innerText||'').replace(/\\s+/g,' ').trim()).filter(Boolean);
          const hits=els.filter((e)=>norm(e.innerText)===target);
-         if(hits.length===1){const e=hits[0];const r=e.getBoundingClientRect();return {count:1,available,point:{x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}}}
+         if(hits.length===1){
+           // 真机实测（26.903.9818.0）：模型 radio 对 trusted 鼠标点击只收起菜单、不切换选中态，
+           // DOM .click() 才会真正生效（aria-checked 翻转）且菜单保持打开（后续调滑块依赖它）。
+           // 与「项目选择触发器需要 trusted 才能展开」相反——菜单项选择用 DOM click。
+           hits[0].click();
+           return {count:1,available,clicked:true};
+         }
          return {count:hits.length,available};`,
       ),
     );
-    if (!found.point) return { clicked: false, count: found.count, available: found.available };
-    await this.clickAt(found.point.x, found.point.y);
+    if (!found.clicked) return { clicked: false, count: found.count, available: found.available };
     return { clicked: true, count: found.count, available: found.available };
   }
 
