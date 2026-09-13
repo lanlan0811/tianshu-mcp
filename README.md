@@ -63,7 +63,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 366 项测试：39 个文件，含 Codex/ZCode 单元/假 CDP/重启/返修闭环
+npm test             # 403 项测试：42 个文件，含 Codex/ZCode 单元/假 CDP/重启/返修闭环
 ```
 
 ### 安装 npm 包
@@ -269,6 +269,12 @@ ZCode 提问或需要用户处理登录、旧实例、系统权限时进入 `nee
   - issue #5：Codex 停在「等待用户确认」界面不再死锁在 `running`——停止按钮可见且对话哈希 `gui.stallTimeoutMs`（默认 5 分钟）不变 → 转 `needs_user(user_confirmation)`；新增可配置 `gui.selectors.userGate` 界面检测；`continue_task` 扩展支持 codex（`user_confirmation` 重新观察 / `login_required` 重派）
   - issue #6：`cancel_task` 对 GUI agent 经 CDP 尽力点击停止并在 `gui.cancelWaitMs`（默认 15s）内有界等待 GUI 空闲后才落 `cancelled`；派发前检测受管实例运行态，仍运行则以 `instance_busy` 拒绝，杜绝新旧 turn 交叠
 - **M15 — ZCode 3.11.2 适配 + 验收引擎 fail-closed + v0.3.3**（2026-09-12，修复 issue #4 / #7，见 [release-v0.3.3.md](docs/release-v0.3.3.md)）— **366 测试**
+- **未发布**（2026-09-13）— **403 测试**
+  - **macOS 打通**：`codex`（spawn .app + CDP）与 `zcode`（进程标题改写适配 + macOS 窗口面板驱动）GUI 基本闭环均真机验证通过（发现 → 绑定 → 发送 → 运行证据 → 验收 PASS → `succeeded`）；取消/返修/continue_task/新建项目矩阵补齐前 macOS 保持 `research`
+  - **codex-cli 无头路径**：macOS 经 `driver=spawn` 用户 profile 走 `codex exec`（⚠️ ≤0.130.0 签名证书已被吊销，需 ≥0.154.0）——见「macOS 无头路径：codex-cli」
+  - **projectPath 安全闸门**：realpath 归一 + 主目录/系统根目录拒绝 + 脏仓共处警示——见「路径安全闸门」
+  - **修复**：`get_profiles` 漏列用户自定义 profile；zcode macOS `needsPermission` 误报；`normalizeProjectPath` 符号链接歧义；CDP 轮询在 renderer 替换/瞬时无响应时重连
+  - **工程**：`execFileSync`/`spawnSync` 全量异步化（消除 Windows 轮询期事件循环冻结）；验收命令有界并行（`verifyConcurrency`）；测试套件 267s → 51s
   - issue #4：模型菜单同时兼容 `group-provider` 与 3.11.2 `group-family` 分组，直选平铺模型优先、分组展开兜底；项目绑定改以 composer 复选项为主判据，回读校验触发器文本 + 完整路径，失败最多两轮幂等重试；添加项目前先收起残留菜单并重试
   - issue #7：测试检查退出码 0 但输出零用例时改判失败；git 项目默认要求相对基线产生变更（`requireChanges: false` 可显式关闭），零用例与零变更不再假绿
   - `{PROGRAMFILES}` 占位符统一大写且环境变量展开大小写不敏感

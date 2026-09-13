@@ -63,7 +63,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 366 tests across 39 files, including Codex/ZCode unit/fake-CDP/restart/repair coverage
+npm test             # 403 tests across 42 files, including Codex/ZCode unit/fake-CDP/restart/repair coverage
 ```
 
 ### Install the npm package
@@ -274,6 +274,12 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
   - Issue #4: the model menu supports both `group-provider` and 3.11.2 `group-family` groups, selecting flat models directly first with group expansion as a fallback; project binding now keys on the composer's `menuitemcheckbox` with read-back checking trigger text + full path and up to two idempotent retries; stale workspace menus are dismissed before adding a project
   - Issue #7: a test check that exits 0 but reports zero executed tests fails; git projects must produce changes relative to the pre-work baseline by default (opt out with `requireChanges: false`) — zero tests and zero changes no longer pass silently
   - `{PROGRAMFILES}` placeholders normalized to uppercase and environment-variable expansion made case-insensitive
+- **Unreleased** (2026-09-13) — **403 tests**
+  - **macOS wired up**: both `codex` (spawn .app + CDP) and `zcode` (process-title-rewrite adaptation + macOS window-form panel driving) GUI basic closed loops machine-verified (discover → bind → send → run evidence → acceptance PASS → `succeeded`); macOS stays `research` until the cancel/rework/continue_task/new-project matrix is covered
+  - **codex-cli headless path**: on macOS, run `codex exec` via a `driver=spawn` user profile (⚠️ ≤0.130.0 is signed with a revoked certificate — use ≥0.154.0) — see "macOS headless path: codex-cli"
+  - **projectPath safety gate**: realpath canonicalization + home/system-root rejection + dirty-repo coexistence warning — see "Path safety gate"
+  - **Fixes**: `get_profiles` missing user-defined profiles; zcode macOS `needsPermission` false positives; `normalizeProjectPath` symlink ambiguity; CDP polling now reconnects across renderer replacement/transient hangs
+  - **Engineering**: all `execFileSync`/`spawnSync` calls async (no more event-loop freezes during Windows polling); bounded-parallel acceptance checks (`verifyConcurrency`); test suite 267s → 51s
 
 ## Agent support status
 
