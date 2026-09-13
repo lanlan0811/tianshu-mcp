@@ -173,6 +173,7 @@ export interface TaskMeta {
     | "close_existing_instance"
     | "login_required"
     | "system_permission"
+    | "setup_recovery"
     | "user_confirmation";
   pendingQuestion?: string;
   zcodeSessionId?: string;

@@ -1,3 +1,4 @@
+import { ZCODE_SETUP_DEFAULTS } from "../../config/schema.js";
 /**
  * Codex GUI 任务编排（开发计划 §4，对应需求 9 步）。
  *
@@ -70,6 +71,7 @@ const DEFAULT_DEPS: CodexRunDeps = {
 export function codexGuiOf(resolved: ResolvedAgent): GuiProfile {
   const g = resolved.profile.gui;
   return {
+    ...ZCODE_SETUP_DEFAULTS,
     cdpPort: g?.cdpPort ?? 9333,
     cdpPortAuto: g?.cdpPortAuto ?? true,
     cdpPortRange: g?.cdpPortRange ?? 30,

@@ -14,29 +14,38 @@ function fixture(html: string, overrides: Record<string, string> = {}) {
           x: 0,
           y: 0,
           left: 0,
-          top: 0,
+          top: Number(element.getAttribute("data-top") || 0),
           width: hidden ? 0 : 100,
           height: hidden ? 0 : 20,
           right: 100,
-          bottom: 20,
+          bottom: Number(element.getAttribute("data-top") || 0) + 20,
         };
       },
       scrollIntoView: () => {},
     });
   }
   const client = new ZcodeCdpClient(1, 100, overrides);
+  document.elementFromPoint = () =>
+    document.querySelector('[data-cover], [data-testid="v4-composer-send"]')!;
   vi.spyOn(client, "evaluate").mockImplementation(
     async <T>(expression: string): Promise<T> =>
       runInNewContext(expression, {
         document,
         innerWidth: 1000,
         innerHeight: 1000,
-        getComputedStyle: () => ({ display: "block", visibility: "visible" }),
+        getComputedStyle: (e: {
+          style: { display?: string; visibility?: string; opacity?: string; overflow?: string };
+        }) => ({
+          display: e.style.display || "block",
+          visibility: e.style.visibility || "visible",
+          opacity: e.style.opacity || "1",
+          overflow: e.style.overflow || "visible",
+        }),
         setTimeout: (callback: () => void) => callback(),
       }) as T,
   );
   const send = vi.spyOn(client, "send").mockResolvedValue({});
-  return { client, send };
+  return { client, send, document };
 }
 
 const row = '<div data-testid="workspace-item-D:/项目/Demo">Demo</div>';
@@ -44,6 +53,37 @@ const primary =
   '<button data-testid="composer-workspace-trigger" aria-label="选择项目">Demo</button>';
 
 describe("ZCode real CDP expressions against DOM", () => {
+  it("waits for the send button to become enabled and submits exactly once", async () => {
+    const { client, send, document } = fixture(
+      '<button data-testid="v4-composer-send" disabled>Send</button>',
+    );
+    const evaluate = vi.mocked(client.evaluate).getMockImplementation()!;
+    let probes = 0;
+    vi.spyOn(client, "evaluate").mockImplementation(async <T>(expression: string): Promise<T> => {
+      if (expression.includes("elementFromPoint") && ++probes === 3)
+        document.querySelector("button")!.removeAttribute("disabled");
+      return evaluate(expression) as Promise<T>;
+    });
+    await client.sendMessage();
+    expect(probes).toBe(3);
+    expect(send.mock.calls.map((call) => call[1]?.type)).toEqual([
+      "mouseMoved",
+      "mousePressed",
+      "mouseReleased",
+    ]);
+  });
+  it.each(["disabled", 'aria-disabled="true"', "data-cover"])(
+    "does not submit a disabled or covered send button (%s)",
+    async (attribute) => {
+      const html =
+        attribute === "data-cover"
+          ? '<div data-cover></div><button data-testid="v4-composer-send">Send</button>'
+          : `<button data-testid="v4-composer-send" ${attribute}>Send</button>`;
+      const { client, send } = fixture(html);
+      await expect(client.sendMessage()).rejects.toThrow(/未发送/);
+      expect(send).not.toHaveBeenCalled();
+    },
+  );
   it("uses current attributes over concatenated stale text and rejects malformed evidence", () => {
     expect(
       normalizeZcodeModelSelection({
@@ -123,11 +163,29 @@ describe("ZCode real CDP expressions against DOM", () => {
       internal: "current",
     });
   });
+  it("excludes transparent ancestors and clipped animation text", async () => {
+    const { client } = fixture(
+      '<button data-testid="chat-model-select-trigger" data-model-current-value="custom:provider:current"><span style="opacity:0"><span>old-transparent</span></span><span style="overflow:hidden"><span data-top="30">old-clipped</span><span>current</span></span></button>',
+    );
+    expect(await client.selection("modelValue")).toEqual({
+      display: "current",
+      internal: "current",
+    });
+  });
   it("rejects conflicting visible model evidence", async () => {
     const { client } = fixture(
       '<button data-testid="chat-model-select-trigger" data-model-current-value="custom:provider:current"><span>other</span></button>',
     );
     await expect(client.selection("modelValue")).rejects.toThrow(/冲突/);
+  });
+  it("reads provider/model labels split across sibling spans", async () => {
+    const { client } = fixture(
+      '<button data-testid="chat-model-select-trigger" data-model-current-value="custom:provider:current"><span title="Vendor/current"><span>Vendor/</span><span>current</span></span></button>',
+    );
+    expect(await client.selection("modelValue")).toEqual({
+      display: "Vendor/current",
+      internal: "current",
+    });
   });
   it("uses a visible label when the current attribute is missing", async () => {
     const { client } = fixture(

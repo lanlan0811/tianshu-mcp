@@ -7,7 +7,12 @@ import { candidateExpr, type ZcodeSelectorKey } from "./selectors.js";
 import type { ZcodePoll } from "./liveness.js";
 import { projectDisplayName, type ZcodeProjectItem } from "./project.js";
 import { normalizeZcodeModelSelection, type ZcodeModelSelectionRaw } from "./model.js";
-import { projectTriggerDom, workspaceBindingExpression, modelSelectionExpression } from "./dom.js";
+import {
+  projectTriggerDom,
+  workspaceBindingExpression,
+  modelSelectionExpression,
+  sendButtonPointExpression,
+} from "./dom.js";
 
 export { CdpDisconnectedError, CdpUnavailableError };
 
@@ -234,20 +239,18 @@ export class ZcodeCdpClient {
     await this.send("Input.insertText", { text });
   }
   async sendMessage(): Promise<void> {
-    if (!(await this.click("sendButton"))) {
-      await this.send("Input.dispatchKeyEvent", {
-        type: "rawKeyDown",
-        key: "Enter",
-        code: "Enter",
-        windowsVirtualKeyCode: 13,
-      });
-      await this.send("Input.dispatchKeyEvent", {
-        type: "keyUp",
-        key: "Enter",
-        code: "Enter",
-        windowsVirtualKeyCode: 13,
-      });
+    const deadline = Date.now() + 10_000;
+    for (let attempt = 0; attempt < 50 && Date.now() < deadline; attempt++) {
+      const point = await this.evaluate<{ x: number; y: number } | null>(
+        sendButtonPointExpression(this.selectors),
+      );
+      if (point) {
+        await this.clickAt(point.x, point.y);
+        return;
+      }
+      await this.evaluate("new Promise(resolve=>setTimeout(resolve,200))");
     }
+    throw new Error("ZCode 发送按钮未在观察期内启用或被遮挡；未发送任务");
   }
   async answerQuestion(answer: string): Promise<ZcodeQuestionAnswerResult> {
     const located = await this.evaluate<{

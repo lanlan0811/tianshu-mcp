@@ -21,6 +21,7 @@ import { makeBuildCtx } from "../../src/mcp/context.js";
 import { normPath } from "../../src/util/path.js";
 import { CdpDisconnectedError, CdpUnavailableError } from "../../src/agents/zcode/cdp.js";
 import type { ZcodeProjectItem } from "../../src/agents/zcode/project.js";
+import { ZcodeSetupPause } from "../../src/agents/zcode/recovery.js";
 
 const logger = new Logger(null, "error");
 const cleanup: string[] = [];
@@ -625,7 +626,7 @@ describe("ZCode 假 CDP 单轮", () => {
     expect(fake.provider).toBe("");
     expect(fake.model).toBe("deepseek-flash");
     expect(fake.permission).toBe("完全访问");
-    expect(fake.projectClickTarget).toBe("menuitemcheckbox");
+    expect(fake.projectClicks).toBe(0); // Already bound: do not toggle the selected checkbox.
     expect(result.session?.id).toBe("session-1");
   });
   it("模型直选为 0 时展开 family/provider 分组后重试成功", async () => {
@@ -1085,6 +1086,12 @@ class PausingAdapter extends ZcodeGuiAdapter {
 class EnvironmentPauseAdapter extends ZcodeGuiAdapter {
   calls: TaskContext[] = [];
   fake?: DelayedSessionRegistrationZcode;
+  constructor(
+    id: string,
+    private readonly pauseKind = "close_existing_instance",
+  ) {
+    super(id);
+  }
   override async run(
     ctx: TaskContext,
     _resolved: ResolvedAgent,
@@ -1101,7 +1108,12 @@ class EnvironmentPauseAdapter extends ZcodeGuiAdapter {
       deps: {
         ...deps,
         ensureInstance:
-          this.calls.length === 1 ? async () => ({ needsClose: true }) : deps.ensureInstance,
+          this.calls.length === 1
+            ? async () => {
+                if (this.pauseKind === "setup_recovery") throw new ZcodeSetupPause("请确认项目");
+                return { needsClose: true };
+              }
+            : deps.ensureInstance,
       },
     });
   }
@@ -1167,58 +1179,64 @@ describe("needs_user → continue_task", () => {
     expect(await manager.continueTask(meta.taskId, "重复")).toMatchObject({ found: false });
   });
 
-  it("环境处理确认恢复原任务，但确认文本不发送给模型", async () => {
-    const project = await makeTmpRoot("zcode-confirm-project");
-    cleanup.push(project);
-    fs.writeFileSync(path.join(project, "README.md"), "x");
-    await gitInitAndCommit(project);
-    const home = await makeTmpRoot("zcode-confirm-home");
-    cleanup.push(home);
-    const data = new DataHome(home, logger, { zcode: resolved().profile });
-    await data.init();
-    const store = new TaskStore(home, logger);
-    const registry = new AgentAdapterRegistry(() => data.loadProfiles(), logger);
-    const adapter = new EnvironmentPauseAdapter("zcode");
-    registry.register("zcode", adapter);
-    const manager = new TaskManager(
-      store,
-      data,
-      registry,
-      new AcceptanceEngine(store, logger),
-      logger,
-      makeBuildCtx({ store, dataHome: data }),
-    );
-    await manager.initialize(1);
-    const meta = await manager.submit({
-      projectPath: normPath(project),
-      displayPath: project,
-      agentId: "zcode",
-      task: "原始开发任务，读取 `./README.md`",
-      context: "必须保留的上下文",
-      model: "DeepSeek/deepseek-flash",
-      autoVerify: false,
-      autoFixRounds: 2,
-      taskTimeoutMs: 10_000,
-    });
-    for (let i = 0; i < 100 && (await manager.getMeta(meta.taskId))?.status !== "needs_user"; i++)
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    expect((await manager.continueTask(meta.taskId, "已关闭旧实例")).found).toBe(true);
-    for (let i = 0; i < 100 && (await manager.getMeta(meta.taskId))?.status !== "succeeded"; i++)
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(adapter.calls[1]?.resume).toMatchObject({
-      kind: "continue",
-      message: "已关闭旧实例",
-      sendMessage: false,
-    });
-    expect(adapter.calls[1]?.task).toBe("原始开发任务，读取 `./README.md`");
-    expect((await manager.getMeta(meta.taskId))?.status).toBe("succeeded");
-    expect((await manager.getMeta(meta.taskId))?.zcodeSessionId).toBe("delayed-session");
-    expect(adapter.fake?.sent).toBe(1);
-    expect(adapter.fake?.conversation).toContain("必须保留的上下文");
-    expect(adapter.fake?.conversation).toContain("【已验证项目引用】");
-    expect(adapter.fake?.conversation).not.toContain("已关闭旧实例");
-    await manager.shutdownInterrupt();
-  });
+  it.each(["close_existing_instance", "setup_recovery"])(
+    "环境处理确认恢复原任务，但确认文本不发送给模型：%s",
+    async (pauseKind) => {
+      const project = await makeTmpRoot("zcode-confirm-project");
+      cleanup.push(project);
+      fs.writeFileSync(path.join(project, "README.md"), "x");
+      await gitInitAndCommit(project);
+      const home = await makeTmpRoot("zcode-confirm-home");
+      cleanup.push(home);
+      const data = new DataHome(home, logger, { zcode: resolved().profile });
+      await data.init();
+      const store = new TaskStore(home, logger);
+      const registry = new AgentAdapterRegistry(() => data.loadProfiles(), logger);
+      const adapter = new EnvironmentPauseAdapter("zcode", pauseKind);
+      registry.register("zcode", adapter);
+      const manager = new TaskManager(
+        store,
+        data,
+        registry,
+        new AcceptanceEngine(store, logger),
+        logger,
+        makeBuildCtx({ store, dataHome: data }),
+      );
+      await manager.initialize(1);
+      const meta = await manager.submit({
+        projectPath: normPath(project),
+        displayPath: project,
+        agentId: "zcode",
+        task: "原始开发任务，读取 `./README.md`",
+        context: "必须保留的上下文",
+        model: "DeepSeek/deepseek-flash",
+        autoVerify: false,
+        autoFixRounds: 2,
+        taskTimeoutMs: 10_000,
+      });
+      for (let i = 0; i < 100 && (await manager.getMeta(meta.taskId))?.status !== "needs_user"; i++)
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      expect((await manager.getMeta(meta.taskId))?.roundsUsed).toBe(0);
+      expect((await manager.getMeta(meta.taskId))?.needsUserKind).toBe(pauseKind);
+      expect((await manager.continueTask(meta.taskId, "已关闭旧实例")).found).toBe(true);
+      for (let i = 0; i < 100 && (await manager.getMeta(meta.taskId))?.status !== "succeeded"; i++)
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(adapter.calls[1]?.resume).toMatchObject({
+        kind: "continue",
+        message: "已关闭旧实例",
+        sendMessage: false,
+      });
+      expect(adapter.calls[1]?.task).toBe("原始开发任务，读取 `./README.md`");
+      expect((await manager.getMeta(meta.taskId))?.status).toBe("succeeded");
+      expect((await manager.getMeta(meta.taskId))?.zcodeSessionId).toBe("delayed-session");
+      expect(adapter.fake?.sent).toBe(1);
+      expect((await manager.getMeta(meta.taskId))?.roundsUsed).toBe(0); // autoVerify=false: recovery consumes no repair rounds.
+      expect(adapter.fake?.conversation).toContain("必须保留的上下文");
+      expect(adapter.fake?.conversation).toContain("【已验证项目引用】");
+      expect(adapter.fake?.conversation).not.toContain("已关闭旧实例");
+      await manager.shutdownInterrupt();
+    },
+  );
 });
 
 describe("anchorless resume and session identity", () => {
@@ -1278,4 +1296,142 @@ describe("anchorless resume and session identity", () => {
     expect(result.endReason).toBe("session_lost");
     expect(fake.sent).toBe(0);
   });
+});
+
+describe("staged setup recovery", () => {
+  async function run(
+    fake: MissingProjectZcode,
+    project: string,
+    overrides: Partial<ZcodeRunDeps>,
+    gui: Record<string, unknown> = {},
+  ) {
+    return runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(gui),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: { ...depsFor(fake), ...overrides },
+    });
+  }
+  it("recovers a transient baseline timeout and imports only once", async () => {
+    const project = await makeTmpRoot("zcode-probe-retry");
+    cleanup.push(project);
+    const fake = new MissingProjectZcode(project);
+    let probes = 0,
+      imports = 0;
+    const result = await run(fake, project, {
+      listDialogs: async () => {
+        if (++probes === 1) throw Object.assign(new Error("probe timeout"), { killed: true });
+        return [];
+      },
+      selectFolder: async () => {
+        imports++;
+        fake.folderSelected = true;
+        return { ok: true, message: "ok" };
+      },
+    });
+    expect(result.ok).toBe(true);
+    expect(probes).toBe(2);
+    expect(imports).toBe(1);
+    expect(fake.sent).toBe(1);
+  });
+  it("reconciles an already imported project after a probe timeout", async () => {
+    const project = await makeTmpRoot("zcode-probe-reconcile");
+    cleanup.push(project);
+    const fake = new MissingProjectZcode(project);
+    let imports = 0;
+    const result = await run(fake, project, {
+      listDialogs: async () => {
+        fake.folderSelected = true;
+        throw new Error("timeout");
+      },
+      selectFolder: async () => {
+        imports++;
+        return { ok: true, message: "ok" };
+      },
+    });
+    expect(result.ok).toBe(true);
+    expect(imports).toBe(0);
+    expect(fake.sent).toBe(1);
+  });
+  it("does not repeat folder submission if timeout happened after binding", async () => {
+    const project = await makeTmpRoot("zcode-import-reconcile");
+    cleanup.push(project);
+    const fake = new MissingProjectZcode(project);
+    let imports = 0;
+    const result = await run(fake, project, {
+      listDialogs: async () => [],
+      selectFolder: async () => {
+        imports++;
+        fake.folderSelected = true;
+        throw new Error("operation timeout");
+      },
+    });
+    expect(result.ok).toBe(true);
+    expect(imports).toBe(1);
+    expect(fake.sent).toBe(1);
+  });
+  it("preserves unknown submission and requests confirmation without replay", async () => {
+    const project = await makeTmpRoot("zcode-import-unknown");
+    cleanup.push(project);
+    const fake = new MissingProjectZcode(project);
+    let imports = 0;
+    const result = await run(fake, project, {
+      listDialogs: async () => [],
+      selectFolder: async () => {
+        imports++;
+        return { ok: false, message: "operation timeout" };
+      },
+    });
+    expect(result.needsUserKind).toBe("setup_recovery");
+    expect(imports).toBe(1);
+    expect(fake.sent).toBe(0);
+  });
+  it("limits baseline retries and pauses with an unsent task", async () => {
+    const project = await makeTmpRoot("zcode-probe-exhausted");
+    cleanup.push(project);
+    const fake = new MissingProjectZcode(project);
+    let probes = 0;
+    const result = await run(
+      fake,
+      project,
+      {
+        listDialogs: async () => {
+          probes++;
+          throw new Error("timeout");
+        },
+      },
+      { setupRecoveryMaxRetries: 1 },
+    );
+    expect(result.needsUserKind).toBe("setup_recovery");
+    expect(probes).toBe(2);
+    expect(fake.sent).toBe(0);
+    expect(fake.chooseFolderClicked).toBe(false);
+  });
+  it("recognizes macOS permission errors at baseline time", async () => {
+    const project = await makeTmpRoot("zcode-baseline-permission");
+    cleanup.push(project);
+    const fake = new MissingProjectZcode(project);
+    const result = await run(fake, project, {
+      listDialogs: async () => {
+        throw new Error("not authorized -1743");
+      },
+    });
+    expect(result.needsUserKind).toBe("system_permission");
+    expect(fake.chooseFolderClicked).toBe(false);
+  });
+});
+
+
+it("closes the project menu before typing when binding and controls are already correct",async()=>{
+  const project=await makeTmpRoot("zcode-bound-open-menu");cleanup.push(project);
+  class MenuBlockingZcode extends PresetControlsZcode {
+    open=false;
+    override async click(key:string){if(key==="projectTrigger")this.open=true;return super.click(key);}
+    override async dismissMenus(){this.open=false;return super.dismissMenus();}
+    override async typeText(text:string){if(!this.open)await super.typeText(text);}
+  }
+  const fake=new MenuBlockingZcode(project);
+  const result=await runZcodeTask({ctx:ctx(project),resolved:resolved(),opts:opts(),logFile:path.join(project,"agent.log"),deps:depsFor(fake)});
+  expect(result.ok).toBe(true);expect(fake.sent).toBe(1);expect(fake.projectClicks).toBe(0);
 });

@@ -1,5 +1,7 @@
 # ZCode Windows 真机验收记录
 
+2026-09-13 的 #8/#9/#10 补丁验证见 [联合修复验收记录](zcode-issue-8-10-validation.md)，包含首次导入、已导入项目复用、无 CDP 实例处理后的同任务恢复及脱敏报告。
+
 验收日期：2026-09-11  
 环境：Windows 10 x64，ZCode `3.11.2.6792`（自动发现 `D:\Z-Code\ZCode\ZCode.exe`），模型 `DeepSeek/deepseek-flash`，权限模式“完全访问”。
 

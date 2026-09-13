@@ -1,5 +1,7 @@
 import net from "node:net";
-import { spawn, execFileSync, type ChildProcess } from "node:child_process";
+import { promisify } from "node:util";
+import { setTimeout as delay } from "node:timers/promises";
+import { spawn, execFile, execFileSync, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { TraeworkCdpClient } from "../traework/cdp/client.js";
 import type { GuiProfile } from "../../config/schema.js";
@@ -30,8 +32,8 @@ export function listZcodeProcesses(): ZcodeProcess[] {
   if (process.platform === "win32") {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-      const script =
-        'Get-CimInstance Win32_Process -Filter "Name=\'ZCode.exe\'" | ForEach-Object { "$($_.ProcessId)`t$($_.ExecutablePath)`t$($_.CommandLine)" }';
+        const script =
+          'Get-CimInstance Win32_Process -Filter "Name=\'ZCode.exe\'" | ForEach-Object { "$($_.ProcessId)`t$($_.ExecutablePath)`t$($_.CommandLine)" }';
         return parseProcessRows(
           execFileSync("powershell.exe", ["-NoProfile", "-Command", script], {
             encoding: "utf8",
@@ -54,6 +56,35 @@ export function listZcodeProcesses(): ZcodeProcess[] {
   } catch {
     return [];
   }
+}
+
+export interface ZcodeInstanceOptions {
+  signal?: AbortSignal;
+  deadline?: number;
+}
+export async function listZcodeProcessesAsync(
+  options: ZcodeInstanceOptions = {},
+): Promise<ZcodeProcess[]> {
+  options.signal?.throwIfAborted();
+  const timeout = Math.max(1, Math.min(30_000, (options.deadline ?? Infinity) - Date.now()));
+  if (process.platform === "win32") {
+    const script =
+      'Get-CimInstance Win32_Process -Filter "Name=\'ZCode.exe\'" | ForEach-Object { "$($_.ProcessId)\`t$($_.ExecutablePath)\`t$($_.CommandLine)" }';
+    const { stdout } = await promisify(execFile)(
+      "powershell.exe",
+      ["-NoProfile", "-Command", script],
+      { timeout, signal: options.signal, windowsHide: true },
+    );
+    return parseProcessRows(stdout);
+  }
+  const { stdout } = await promisify(execFile)("ps", ["-axo", "pid=,command="], {
+    timeout,
+    signal: options.signal,
+  });
+  return stdout.split(/\r?\n/).flatMap((line) => {
+    const m = /^\s*(\d+)\s+(.*ZCode.*)$/.exec(line);
+    return m ? [{ pid: Number(m[1]), commandLine: m[2]! }] : [];
+  });
 }
 
 export function rootZcodeProcesses(rows: ZcodeProcess[]): ZcodeProcess[] {
@@ -98,17 +129,18 @@ export async function ensureZcodeInstance(
   exePath: string,
   gui: GuiProfile,
   logger: AgentRunLogger,
+  options: ZcodeInstanceOptions = {},
 ): Promise<{ ready?: ZcodeReady; needsClose?: boolean; child?: ChildProcess }> {
-  let roots = rootZcodeProcesses(listZcodeProcesses());
+  let roots = rootZcodeProcesses(await listZcodeProcessesAsync(options));
   if (!roots.length) {
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    roots = rootZcodeProcesses(listZcodeProcesses());
+    await delay(500, undefined, { signal: options.signal });
+    roots = rootZcodeProcesses(await listZcodeProcessesAsync(options));
   }
   if (roots.length) {
     if (!roots.some((proc) => remoteDebugPort(proc.commandLine))) return { needsClose: true };
-    const reuseDeadline = Date.now() + gui.launchTimeoutMs;
+    const reuseDeadline = Math.min(options.deadline ?? Infinity, Date.now() + gui.launchTimeoutMs);
     while (Date.now() < reuseDeadline) {
-      roots = rootZcodeProcesses(listZcodeProcesses());
+      roots = rootZcodeProcesses(await listZcodeProcessesAsync(options));
       for (const proc of roots) {
         const port = remoteDebugPort(proc.commandLine);
         if (port) {
@@ -118,10 +150,11 @@ export async function ensureZcodeInstance(
         }
       }
       // eslint-disable-next-line no-await-in-loop
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await delay(500, undefined, { signal: options.signal });
     }
     throw new Error(`等待既有 ZCode CDP 页面就绪超时（${gui.launchTimeoutMs}ms）`);
   }
+  options.signal?.throwIfAborted();
   let port = gui.cdpPort;
   if (gui.cdpPortAuto) {
     let found = false;
@@ -139,19 +172,27 @@ export async function ensureZcodeInstance(
       );
   } else if (!(await freePort(port))) throw new Error(`ZCode CDP 端口 ${port} 已被占用`);
   const args = gui.exeArgs.map((arg) => arg.replaceAll("<port>", String(port)));
+  options.signal?.throwIfAborted();
   const child = spawn(exePath, args, { detached: false, stdio: "ignore", windowsHide: false });
+  let launchError: Error | undefined;
+  child.once("error", (error) => {
+    launchError = error;
+  });
+  // The desktop survives the MCP client; do not keep a completed smoke/server process alive.
+  child.unref();
   logger.info(
     `[zcode] 已启动 ${path.basename(exePath)}，CDP 端口 ${port}，pid=${child.pid ?? "unknown"}`,
   );
-  const deadline = Date.now() + gui.launchTimeoutMs;
+  const deadline = Math.min(options.deadline ?? Infinity, Date.now() + gui.launchTimeoutMs);
   while (Date.now() < deadline) {
     // eslint-disable-next-line no-await-in-loop
-    await new Promise((r) => setTimeout(r, 500));
+    await delay(500, undefined, { signal: options.signal });
     // eslint-disable-next-line no-await-in-loop
-    const ready = await probeZcodePort(port);
+    if (launchError) throw launchError;
+    const ready = await probeZcodePort(port, await listZcodeProcessesAsync(options));
     if (ready) return { ready, child };
     if (child.exitCode !== null) {
-      const forwardedRoots = rootZcodeProcesses(listZcodeProcesses());
+      const forwardedRoots = rootZcodeProcesses(await listZcodeProcessesAsync(options));
       for (const proc of forwardedRoots) {
         const forwardedPort = remoteDebugPort(proc.commandLine);
         if (forwardedPort) {
@@ -165,8 +206,7 @@ export async function ensureZcodeInstance(
           }
         }
       }
-      if (child.exitCode !== 0)
-        throw new Error(`ZCode 启动后提前退出（exit=${child.exitCode}）`);
+      if (child.exitCode !== 0) throw new Error(`ZCode 启动后提前退出（exit=${child.exitCode}）`);
     }
   }
   throw new Error(`等待 ZCode CDP 就绪超时（${gui.launchTimeoutMs}ms）`);

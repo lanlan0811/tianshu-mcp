@@ -1,5 +1,7 @@
 # ZCode Windows Hardware Acceptance Record
 
+For the 2026-09-13 #8/#9/#10 patch, see the [combined validation record](zcode-issue-8-10-validation.en.md), including first import, imported-project reuse, same-task recovery after a non-CDP instance and sanitized reports.
+
 Acceptance date: 2026-09-11  
 Environment: Windows 10 x64, ZCode `3.11.2.6792` (auto-discovered at `D:\Z-Code\ZCode\ZCode.exe`), model `DeepSeek/deepseek-flash`, permission mode Full Access.
 

@@ -1,3 +1,4 @@
+import { ZCODE_SETUP_DEFAULTS } from "../config/schema.js";
 /**
  * 内置 agent profiles（开发计划 §7.2）。用户数据目录 agent-profiles.json 可整键覆盖。
  * 代码优先、profile 可配：真实路径属于机器/环境数据 → 默认只给结构与探测规则。
@@ -34,6 +35,7 @@ export const BUILTIN_PROFILES: Record<string, AgentProfile> = {
       scanPattern: "OpenAI.Codex_*_x64__*/app/ChatGPT.exe",
     },
     gui: {
+      ...ZCODE_SETUP_DEFAULTS,
       cdpPort: 9333,
       cdpPortAuto: true,
       cdpPortRange: 30,
@@ -94,6 +96,7 @@ export const BUILTIN_PROFILES: Record<string, AgentProfile> = {
       scanRoots: [],
     },
     gui: {
+      ...ZCODE_SETUP_DEFAULTS,
       cdpPort: 9333,
       cdpPortAuto: true,
       cdpPortRange: 30,
@@ -152,6 +155,7 @@ export const BUILTIN_PROFILES: Record<string, AgentProfile> = {
       scanRoots: [],
     },
     gui: {
+      ...ZCODE_SETUP_DEFAULTS,
       cdpPort: 9222,
       cdpPortAuto: true,
       cdpPortRange: 20,

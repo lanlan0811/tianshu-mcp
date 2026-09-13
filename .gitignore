@@ -8,6 +8,8 @@ AGENTS.md
 # 整目录忽略（含目录本身），防止 git add . 把内嵌 git 仓库再次当作 gitlink 提交
 tianshu-mcp-web/
 
+docs/zcode-issue-8-10-evidence/
+
 analysis-tools/*
 
 /.tianshu-mcp/*

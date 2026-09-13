@@ -1,3 +1,4 @@
+import { ZCODE_SETUP_DEFAULTS } from "../../config/schema.js";
 /**
  * TraeWork 单轮任务执行（开发计划 §4.5）。
  *
@@ -151,6 +152,7 @@ async function waitForUi(
 function guiOf(resolved: ResolvedAgent): GuiProfile {
   const g = resolved.profile.gui;
   return {
+    ...ZCODE_SETUP_DEFAULTS,
     cdpPort: g?.cdpPort ?? 9222,
     cdpPortAuto: g?.cdpPortAuto ?? true,
     cdpPortRange: g?.cdpPortRange ?? 20,

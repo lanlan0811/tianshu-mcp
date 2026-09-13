@@ -92,3 +92,13 @@ Model readback decodes data-model-current-value and checks the visible model lab
 After closing an old instance, signing in or granting permissions, an unsent task takes a pre-send session baseline and sends its complete task, context and validated references. Confirmation text is never sent to the model. Existing-session answers and rework still select and verify the original session.
 
 Submission and identity share one observation window of at most 60 seconds, bounded by remaining task time. Prefer the task marker, then the unique new-session delta for initial dispatch. Multiple new sessions never justify guessing the active pane. Unresolved evidence preserves the scene and reports send_unknown or session_lost without automatic resubmission.
+
+## Staged automatic recovery (#10)
+
+Initialization tracks connection preparation, dialog baseline, folder opening, path submission and binding confirmation. The default budget is two minutes, bounded by remaining task time. Tasks remain running with progress updates and do not consume code-repair rounds. See [agent profiles](agent-profiles.en.md#zcode-automatic-initialization-recovery).
+
+Transient observations retry within limits after reconciling import and binding. A timed-out native submission that already bound the project continues immediately; unknown outcomes never replay clicking, typing or submission. Existing bindings do not toggle the selected checkbox. Cancellation interrupts waits and terminates this operation’s helper while preserving ZCode.
+
+Unresolved recovery pauses as `needs_user/setup_recovery`. Complete the indicated project action in ZCode, then call `continue_task`; the acknowledgement is not sent to the model, and the original task and acceptance baseline remain intact. macOS permission errors retain `system_permission`; failed/unknown observations are never treated as an empty sheet baseline. The overall task deadline takes precedence as `task_timeout`.
+
+Model readback supports provider/model labels split across text nodes and excludes transparent ancestors and clipped outgoing animation nodes. Residual menus are dismissed after binding so they cannot trap input focus. Dispatch waits for a unique, enabled, unobstructed send button; these checks are read-only and do not repeat submission. Windows native operations filter by process and dialog handle before querying the target accessibility tree; native phase logs use the `native:` prefix.

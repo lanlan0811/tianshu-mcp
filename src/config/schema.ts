@@ -179,7 +179,35 @@ export const ExecutableDiscoverySchema = z.object({
  * GUI 驱动配置（driver="gui" 的 agent 使用，如 traework）。
  * 所有字段均可由数据目录 agent-profiles.json 覆盖，代码只给默认值与探测规则。
  */
+export const ZCODE_SETUP_DEFAULTS = {
+  setupRecoveryTimeoutMs: 120_000,
+  dialogProbeTimeoutMs: 30_000,
+  dialogOperationTimeoutMs: 60_000,
+  setupRecoveryMaxRetries: 2,
+} as const;
+
 export const GuiProfileSchema = z.object({
+  setupRecoveryTimeoutMs: z
+    .number()
+    .int()
+    .positive()
+    .default(ZCODE_SETUP_DEFAULTS.setupRecoveryTimeoutMs),
+  dialogProbeTimeoutMs: z
+    .number()
+    .int()
+    .positive()
+    .default(ZCODE_SETUP_DEFAULTS.dialogProbeTimeoutMs),
+  dialogOperationTimeoutMs: z
+    .number()
+    .int()
+    .positive()
+    .default(ZCODE_SETUP_DEFAULTS.dialogOperationTimeoutMs),
+  setupRecoveryMaxRetries: z
+    .number()
+    .int()
+    .min(0)
+    .max(10)
+    .default(ZCODE_SETUP_DEFAULTS.setupRecoveryMaxRetries),
   /** CDP 调试端口（--remote-debugging-port） */
   cdpPort: z.number().int().positive().default(9222),
   /** 端口被占用时自动向后避让，直到找到可用端口 */

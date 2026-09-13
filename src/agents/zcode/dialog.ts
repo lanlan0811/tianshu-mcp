@@ -2,6 +2,14 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
+import { ZCODE_SETUP_DEFAULTS } from "../../config/schema.js";
+import { permissionError } from "./recovery.js";
+export interface NativeDialogOptions {
+  timeoutMs?: number;
+  signal?: AbortSignal;
+  platform?: NodeJS.Platform;
+  onProgress?: (stage: string) => void;
+}
 
 export function parseMacSheetBaseline(baseline: string[]): number | null {
   if (baseline.length !== 1) return null;
@@ -25,6 +33,7 @@ export function validateMacSheetBaseline(
 }
 
 const WINDOWS_LIST_SCRIPT = String.raw`
+$ErrorActionPreference='Stop'
 Add-Type @'
 using System; using System.Text; using System.Runtime.InteropServices;
 public static class TianshuDlg { public delegate bool EnumProc(IntPtr h, IntPtr l); [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc p, IntPtr l); [DllImport("user32.dll")] public static extern int GetClassName(IntPtr h, StringBuilder s, int n); [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint p); }
@@ -36,11 +45,20 @@ $out -join ','`;
 
 const WINDOWS_SELECT_SCRIPT = String.raw`
 $ErrorActionPreference='Stop'
+$operationDeadline=[DateTimeOffset]::FromUnixTimeMilliseconds([Int64]$env:TIANSHU_DIALOG_DEADLINE).LocalDateTime
+function Assert-Deadline { if((Get-Date) -ge $operationDeadline){throw 'ZCODE_DIALOG_TIMEOUT'} }
+Write-Output 'native:initialize'
+
 Add-Type -AssemblyName UIAutomationClient
 Add-Type @'
 using System;
 using System.Runtime.InteropServices;
 public static class TianshuDialogNative {
+  public delegate bool EnumProc(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc p, IntPtr l);
+  [DllImport("user32.dll")] public static extern int GetClassName(IntPtr h, System.Text.StringBuilder s, int n);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint p);
+  [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr h);
   public const uint BM_CLICK = 0x00F5;
   public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
   public const uint MOUSEEVENTF_LEFTUP = 0x0004;
@@ -91,15 +109,41 @@ public static class TianshuDialogNative {
 '@
 $baseline=($env:TIANSHU_DIALOG_BASELINE -split ',')
 $owners=($env:TIANSHU_ZCODE_PIDS -split ',')
-$deadline=(Get-Date).AddSeconds(15)
+function Get-OwnedDialogs {
+  $script:ownedHandles=@()
+  [TianshuDialogNative]::EnumWindows({param($h,$l)
+    [uint32]$ownerId=0
+    [void][TianshuDialogNative]::GetWindowThreadProcessId($h,[ref]$ownerId)
+    if($owners -contains [string]$ownerId){
+      $class=New-Object Text.StringBuilder 256
+      [void][TianshuDialogNative]::GetClassName($h,$class,$class.Capacity)
+      if($class.ToString() -eq '#32770'){$script:ownedHandles += $h}
+    }
+    return $true
+  },[IntPtr]::Zero)|Out-Null
+  foreach($handle in $script:ownedHandles){[System.Windows.Automation.AutomationElement]::FromHandle($handle)}
+}
+function Get-TargetDialog {
+  $handle=[IntPtr][Int64]$targetHandle
+  if(-not [TianshuDialogNative]::IsWindow($handle)){return $null}
+  [uint32]$ownerId=0
+  [void][TianshuDialogNative]::GetWindowThreadProcessId($handle,[ref]$ownerId)
+  if($owners -notcontains [string]$ownerId){throw 'ZCODE_DIALOG_OWNER_CHANGED'}
+  return [System.Windows.Automation.AutomationElement]::FromHandle($handle)
+}
+$deadline=$operationDeadline
 $window=$null
+Write-Output 'native:find-owned-dialog'
 do {
-  $root=[System.Windows.Automation.AutomationElement]::RootElement
-  $wins=$root.FindAll([System.Windows.Automation.TreeScope]::Children,[System.Windows.Automation.Condition]::TrueCondition)
-  foreach($w in $wins){$h=[string]$w.Current.NativeWindowHandle; $dialogOwnerPid=[string]$w.Current.ProcessId; $title=[string]$w.Current.Name; if($w.Current.ClassName -eq '#32770' -and $baseline -notcontains $h -and $owners -contains $dialogOwnerPid -and $title -match '选择|打开|Select|Choose|Browse|Open'){$window=$w;break}}
+  $wins=@(Get-OwnedDialogs)
+  $candidates=@()
+  foreach($w in $wins){$h=[string]$w.Current.NativeWindowHandle; $dialogOwnerPid=[string]$w.Current.ProcessId; $title=[string]$w.Current.Name; if($w.Current.ClassName -eq '#32770' -and $baseline -notcontains $h -and $owners -contains $dialogOwnerPid -and $title -match '选择|打开|Select|Choose|Browse|Open'){$candidates += $w}}
+  if($candidates.Count -gt 1){throw 'AMBIGUOUS_NEW_ZCODE_FOLDER_DIALOG'}
+  if($candidates.Count -eq 1){$window=$candidates[0]}
   if(-not $window){Start-Sleep -Milliseconds 200}
 } while(-not $window -and (Get-Date) -lt $deadline)
 if(-not $window){throw '未发现 ZCode 新建的文件夹对话框'}
+Write-Output 'native:find-address-control'
 $targetHandle=[string]$window.Current.NativeWindowHandle
 $controls=$window.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)
 $addressBar=$null
@@ -120,7 +164,8 @@ if($editCount -eq 0){
   $addressY=[int]($addressRect.Y+$addressRect.Height/2)
 }
 $activationAttempt=0
-$editDeadline=(Get-Date).AddSeconds(10)
+Write-Output 'native:activate-address-control'
+$editDeadline=$operationDeadline
 do {
   if($editCount -eq 0 -and $activationAttempt -in @(0,3)){
     [void][TianshuDialogNative]::SetForegroundWindow([IntPtr][Int64]$targetHandle)
@@ -140,10 +185,7 @@ do {
   }
   $activationAttempt++
   Start-Sleep -Milliseconds 250
-  $root=[System.Windows.Automation.AutomationElement]::RootElement
-  $wins=$root.FindAll([System.Windows.Automation.TreeScope]::Children,[System.Windows.Automation.Condition]::TrueCondition)
-  $window=$null
-  foreach($candidateWindow in $wins){if([string]$candidateWindow.Current.NativeWindowHandle -eq $targetHandle){$window=$candidateWindow;break}}
+  $window=Get-TargetDialog
   $addressEdit=$null
   $editCount=0
   if($window){
@@ -167,6 +209,8 @@ if([TianshuDialogNative]::GetForegroundWindow().ToInt64() -ne [Int64]$targetHand
 [TianshuDialogNative]::keybd_event(0x41,0,0,[UIntPtr]::Zero)
 [TianshuDialogNative]::keybd_event(0x41,0,[TianshuDialogNative]::KEYEVENTF_KEYUP,[UIntPtr]::Zero)
 [TianshuDialogNative]::keybd_event(0x11,0,[TianshuDialogNative]::KEYEVENTF_KEYUP,[UIntPtr]::Zero)
+Assert-Deadline
+Write-Output 'native:input-path'
 [TianshuDialogNative]::SendUnicodeText($env:TIANSHU_ZCODE_FOLDER)
 $targetNorm=[IO.Path]::GetFullPath($env:TIANSHU_ZCODE_FOLDER).TrimEnd('\').Replace('\','/').ToLowerInvariant()
 Start-Sleep -Milliseconds 200
@@ -174,13 +218,11 @@ if([TianshuDialogNative]::GetForegroundWindow().ToInt64() -ne [Int64]$targetHand
 [TianshuDialogNative]::keybd_event(0x0d,0,0,[UIntPtr]::Zero)
 [TianshuDialogNative]::keybd_event(0x0d,0,[TianshuDialogNative]::KEYEVENTF_KEYUP,[UIntPtr]::Zero)
 $navigated=$false
-$navigationDeadline=(Get-Date).AddSeconds(15)
+Write-Output 'native:verify-navigation'
+$navigationDeadline=$operationDeadline
 do {
   Start-Sleep -Milliseconds 200
-  $root=[System.Windows.Automation.AutomationElement]::RootElement
-  $wins=$root.FindAll([System.Windows.Automation.TreeScope]::Children,[System.Windows.Automation.Condition]::TrueCondition)
-  $window=$null
-  foreach($candidateWindow in $wins){if([string]$candidateWindow.Current.NativeWindowHandle -eq $targetHandle){$window=$candidateWindow;break}}
+  $window=Get-TargetDialog
   if($window){
     try {
       $controls=$window.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)
@@ -194,15 +236,13 @@ do {
   }
 } while(-not $navigated -and (Get-Date) -lt $navigationDeadline)
 if(-not $navigated){throw 'ZCode 文件夹对话框未导航到目标绝对路径'}
+Write-Output 'native:find-confirm-button'
 $confirmButton=$null
 $confirmCount=0
 $confirmReady=$false
-$confirmDeadline=(Get-Date).AddSeconds(5)
+$confirmDeadline=$operationDeadline
 do {
-  $root=[System.Windows.Automation.AutomationElement]::RootElement
-  $wins=$root.FindAll([System.Windows.Automation.TreeScope]::Children,[System.Windows.Automation.Condition]::TrueCondition)
-  $window=$null
-  foreach($candidateWindow in $wins){if([string]$candidateWindow.Current.NativeWindowHandle -eq $targetHandle){$window=$candidateWindow;break}}
+  $window=Get-TargetDialog
   if(-not $window){$confirmCount=0;$confirmReady=$false;Start-Sleep -Milliseconds 200;continue}
   try {
     $controls=$window.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)
@@ -214,19 +254,23 @@ do {
   if(-not $confirmReady){Start-Sleep -Milliseconds 200}
 } while(-not $confirmReady -and (Get-Date) -lt $confirmDeadline)
 if(-not $confirmReady){throw "ZCode 文件夹确认按钮未就绪（匹配 $confirmCount）"}
+Assert-Deadline
+Write-Output 'native:submit-once'
 [void][TianshuDialogNative]::SendMessage([IntPtr]$confirmButton.Current.NativeWindowHandle,[TianshuDialogNative]::BM_CLICK,[IntPtr]::Zero,[IntPtr]::Zero)
-$closeDeadline=(Get-Date).AddSeconds(5)
+$closeDeadline=$operationDeadline
 do {
   Start-Sleep -Milliseconds 200
-  $stillOpen=$false
-  $root=[System.Windows.Automation.AutomationElement]::RootElement
-  $wins=$root.FindAll([System.Windows.Automation.TreeScope]::Children,[System.Windows.Automation.Condition]::TrueCondition)
-  foreach($w in $wins){if([string]$w.Current.NativeWindowHandle -eq $targetHandle){$stillOpen=$true;break}}
+  $stillOpen=$null -ne (Get-TargetDialog)
 } while($stillOpen -and (Get-Date) -lt $closeDeadline)
 if($stillOpen){throw 'ZCode 文件夹对话框提交后仍未关闭'}`;
 
-export async function listOwnedDialogs(pids: number[]): Promise<string[]> {
-  if (process.platform === "darwin") {
+export async function listOwnedDialogs(
+  pids: number[],
+  options: NativeDialogOptions = {},
+): Promise<string[]> {
+  const timeoutMs = options.timeoutMs ?? ZCODE_SETUP_DEFAULTS.dialogProbeTimeoutMs;
+  const platform = options.platform ?? process.platform;
+  if (platform === "darwin") {
     const script = `tell application "System Events"
 tell process "ZCode"
   set total to 0
@@ -236,21 +280,23 @@ tell process "ZCode"
   return "sheet-count:" & total
 end tell
 end tell`;
-    try {
-      const { stdout } = await execFileAsync("osascript", ["-e", script], { timeout: 10_000 });
-      return [stdout.trim() || "sheet-count:0"];
-    } catch {
-      return ["sheet-count:0"];
-    }
+    const { stdout } = await execFileAsync("osascript", ["-e", script], {
+      timeout: timeoutMs,
+      signal: options.signal,
+    });
+    const baseline = [stdout.trim()];
+    if (parseMacSheetBaseline(baseline) === null) throw new Error("macOS 文件夹面板基线未知");
+    return baseline;
   }
-  if (process.platform !== "win32") return [];
+  if (platform !== "win32") return [];
   const { stdout } = await execFileAsync(
     "powershell.exe",
     ["-NoProfile", "-Command", WINDOWS_LIST_SCRIPT],
     {
       env: { ...process.env, TIANSHU_ZCODE_PIDS: pids.join(",") },
       windowsHide: true,
-      timeout: 10_000,
+      timeout: timeoutMs,
+      signal: options.signal,
     },
   );
   return stdout.trim() ? stdout.trim().split(",") : [];
@@ -260,25 +306,45 @@ export async function selectZcodeFolder(
   folder: string,
   ownerPids: number[],
   baseline: string[],
+  options: NativeDialogOptions = {},
 ): Promise<{ ok: boolean; needsPermission?: boolean; message: string }> {
-  if (process.platform === "win32") {
+  const timeoutMs = options.timeoutMs ?? ZCODE_SETUP_DEFAULTS.dialogOperationTimeoutMs;
+  const platform = options.platform ?? process.platform;
+  if (platform === "win32") {
     try {
-      await execFileAsync("powershell.exe", ["-NoProfile", "-Command", WINDOWS_SELECT_SCRIPT], {
-        env: {
-          ...process.env,
-          TIANSHU_ZCODE_FOLDER: folder,
-          TIANSHU_ZCODE_PIDS: ownerPids.join(","),
-          TIANSHU_DIALOG_BASELINE: baseline.join(","),
+      const execution = execFileAsync(
+        "powershell.exe",
+        ["-NoProfile", "-Command", WINDOWS_SELECT_SCRIPT],
+        {
+          env: {
+            ...process.env,
+            TIANSHU_ZCODE_FOLDER: folder,
+            TIANSHU_ZCODE_PIDS: ownerPids.join(","),
+            TIANSHU_DIALOG_BASELINE: baseline.join(","),
+            TIANSHU_DIALOG_DEADLINE: String(Date.now() + timeoutMs),
+          },
+          windowsHide: true,
+          timeout: timeoutMs,
+          signal: options.signal,
         },
-        windowsHide: true,
-        timeout: 20_000,
+      );
+      let output = "";
+      execution.child?.stdout?.on("data", (chunk: Buffer) => {
+        output += chunk.toString();
+        const lines = output.split(/\r?\n/);
+        output = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!options.signal?.aborted && line.startsWith("native:")) options.onProgress?.(line);
+        }
       });
+      await execution;
       return { ok: true, message: "Windows 文件夹对话框已提交并完成路径回读" };
     } catch (e) {
+      if (options.signal?.aborted) throw e;
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
   }
-  if (process.platform === "darwin") {
+  if (platform === "darwin") {
     // System Events 不提供跨观测稳定的 sheet 标识。存在旧 sheet 时，仅凭数量无法证明
     // 哪个是新面板，因此必须 fail-closed，绝不操作可能属于用户的既有面板。
     const checkedBaseline = validateMacSheetBaseline(baseline);
@@ -287,12 +353,13 @@ export async function selectZcodeFolder(
     const script = `on run argv
 set targetFolder to item 1 of argv
 set baselineCount to (item 2 of argv) as integer
+set operationDeadline to (current date) + ((item 3 of argv) as real)
 if baselineCount is not 0 then error "EXISTING_ZCODE_SHEET_REFUSED"
 tell application "System Events"
   if UI elements enabled is false then error "ACCESSIBILITY_PERMISSION_REQUIRED"
   tell process "ZCode"
     set frontmost to true
-    set deadline to (current date) + 15
+    set deadline to operationDeadline
     repeat
       set total to 0
       set targetFound to false
@@ -331,7 +398,7 @@ tell application "System Events"
       end repeat
     end if
     if submitted is false then error "ZCODE_FOLDER_CONFIRM_BUTTON_NOT_FOUND"
-    set closeDeadline to (current date) + 5
+    set closeDeadline to operationDeadline
     repeat
       set total to 0
       repeat with w in windows
@@ -345,15 +412,21 @@ tell application "System Events"
 end tell
 end run`;
     try {
-      await execFileAsync("osascript", ["-e", script, folder, String(baselineCount)], {
-        timeout: 20_000,
-      });
+      await execFileAsync(
+        "osascript",
+        ["-e", script, folder, String(baselineCount), String(timeoutMs / 1000)],
+        {
+          timeout: timeoutMs,
+          signal: options.signal,
+        },
+      );
       return { ok: true, message: "macOS 文件夹面板已提交" };
     } catch (e) {
+      if (options.signal?.aborted) throw e;
       const msg = e instanceof Error ? e.message : String(e);
       return {
         ok: false,
-        needsPermission: /ACCESSIBILITY_PERMISSION_REQUIRED|not authorized|辅助功能/i.test(msg),
+        needsPermission: permissionError(e),
         message: msg,
       };
     }

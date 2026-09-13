@@ -8,7 +8,7 @@ import type {
   ResolvedAgent,
   TaskContext,
 } from "../adapter.js";
-import type { GuiProfile } from "../../config/schema.js";
+import { ZCODE_SETUP_DEFAULTS, type GuiProfile } from "../../config/schema.js";
 import { mkdirp } from "../../util/fs.js";
 import { parseZcodeModel, exactUiName, ZcodeModelReadbackError } from "./model.js";
 import { validateTaskReferences } from "./references.js";
@@ -20,8 +20,21 @@ import {
   CdpUnavailableError,
   type ZcodeClickExactResult,
 } from "./cdp.js";
-import { ensureZcodeInstance, listZcodeProcesses, type ZcodeReady } from "./instance.js";
+import {
+  ensureZcodeInstance,
+  listZcodeProcessesAsync,
+  type ZcodeReady,
+  type ZcodeProcess,
+  type ZcodeInstanceOptions,
+} from "./instance.js";
 import { listOwnedDialogs, selectZcodeFolder } from "./dialog.js";
+import {
+  ZcodeBudget,
+  ZcodeBudgetError,
+  ZcodeSetupPause,
+  transientSetupError,
+  permissionError,
+} from "./recovery.js";
 
 export interface RunZcodeArgs {
   ctx: TaskContext;
@@ -32,7 +45,7 @@ export interface RunZcodeArgs {
 }
 export interface ZcodeRunDeps {
   ensureInstance: typeof ensureZcodeInstance;
-  listProcesses: typeof listZcodeProcesses;
+  listProcesses: (options?: ZcodeInstanceOptions) => ZcodeProcess[] | Promise<ZcodeProcess[]>;
   createClient: (
     port: number,
     timeout: number,
@@ -44,7 +57,7 @@ export interface ZcodeRunDeps {
 }
 const DEFAULT_DEPS: ZcodeRunDeps = {
   ensureInstance: ensureZcodeInstance,
-  listProcesses: listZcodeProcesses,
+  listProcesses: listZcodeProcessesAsync,
   createClient: (p, t, s) => new ZcodeCdpClient(p, t, s),
   listDialogs: listOwnedDialogs,
   selectFolder: selectZcodeFolder,
@@ -54,6 +67,13 @@ const DEFAULT_DEPS: ZcodeRunDeps = {
 function guiOf(resolved: ResolvedAgent): GuiProfile {
   const g = resolved.profile.gui;
   return {
+    setupRecoveryTimeoutMs:
+      g?.setupRecoveryTimeoutMs ?? ZCODE_SETUP_DEFAULTS.setupRecoveryTimeoutMs,
+    dialogProbeTimeoutMs: g?.dialogProbeTimeoutMs ?? ZCODE_SETUP_DEFAULTS.dialogProbeTimeoutMs,
+    dialogOperationTimeoutMs:
+      g?.dialogOperationTimeoutMs ?? ZCODE_SETUP_DEFAULTS.dialogOperationTimeoutMs,
+    setupRecoveryMaxRetries:
+      g?.setupRecoveryMaxRetries ?? ZCODE_SETUP_DEFAULTS.setupRecoveryMaxRetries,
     cdpPort: g?.cdpPort ?? 9333,
     cdpPortAuto: g?.cdpPortAuto ?? true,
     cdpPortRange: g?.cdpPortRange ?? 30,
@@ -204,9 +224,38 @@ async function clickAnyExactWhenReady(
 export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> {
   const started = Date.now(),
     { ctx, resolved, opts, logFile } = args,
-    deps = { ...DEFAULT_DEPS, ...args.deps };
+    baseDeps = { ...DEFAULT_DEPS, ...args.deps };
   const gui = guiOf(resolved);
   const { logger, close } = fileLogger(logFile, opts.logger);
+  const budget = new ZcodeBudget(
+    started + ctx.taskTimeoutMs,
+    started + gui.setupRecoveryTimeoutMs,
+    { ...opts, logger },
+    gui.progressIntervalMs,
+  );
+  const deps: ZcodeRunDeps = {
+    ...baseDeps,
+    sleep: (ms) => budget.run(() => baseDeps.sleep(Math.min(ms, budget.remaining()))),
+    createClient: (port, timeout, selectors) => {
+      const client = baseDeps.createClient(port, timeout, selectors);
+      return new Proxy(client, {
+        get(target, key) {
+          const value = Reflect.get(target, key);
+          if (typeof value !== "function") return value;
+          if (key === "disconnect") return value.bind(target);
+          return (...params: unknown[]) =>
+            budget.run(async () => {
+              const methodStarted = Date.now();
+              try {
+                return await value.apply(target, params);
+              } finally {
+                logger.debug(`[zcode] CDP ${String(key)} elapsed=${Date.now() - methodStarted}ms`);
+              }
+            });
+        },
+      });
+    },
+  };
   let cdp: ZcodeCdpClient | undefined;
   const result = (extra: Partial<AgentRunResult>): AgentRunResult => ({
     ok: false,
@@ -228,7 +277,29 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
         error: "未找到 ZCode 可执行文件",
         endReason: "setup_failed",
       });
-    const inst = await deps.ensureInstance(resolved.command, gui, logger);
+    let inst: Awaited<ReturnType<typeof ensureZcodeInstance>> = {};
+    for (let attempt = 0; attempt <= gui.setupRecoveryMaxRetries; attempt++) {
+      try {
+        inst = await budget.run((signal, timeoutMs) =>
+          deps.ensureInstance(
+            resolved.command,
+            { ...gui, launchTimeoutMs: Math.min(gui.launchTimeoutMs, timeoutMs) },
+            logger,
+            { signal, deadline: Date.now() + timeoutMs },
+          ),
+        );
+        break;
+      } catch (error) {
+        budget.check();
+        if (!transientSetupError(error)) throw error;
+        if (attempt === gui.setupRecoveryMaxRetries)
+          throw new ZcodeSetupPause("ZCode 项目连接尚未恢复，请检查应用状态后继续");
+        logger.warn(
+          `[zcode] 初始化连接暂时失败；attempt=${attempt + 1}；${error instanceof Error ? error.message : String(error)}`,
+        );
+        await deps.sleep(500 * (attempt + 1));
+      }
+    }
     if (inst.needsClose)
       return result({
         endReason: "needs_user",
@@ -300,10 +371,15 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
     const ensureProjectBound = async (
       initialItem?: ZcodeProjectItem,
     ): Promise<{ bound: boolean; ambiguous: boolean }> => {
-      if (!initialItem && (await waitBound(cdp!, ctx.projectPath, deps)))
+      const currentBinding = await cdp!.workspaceBinding();
+      if (currentBinding.ambiguous) return { bound: false, ambiguous: true };
+      if (
+        currentBinding.projectPath &&
+        normalizeProjectPath(currentBinding.projectPath) === normalizeProjectPath(ctx.projectPath)
+      )
         return { bound: true, ambiguous: false };
       let item = initialItem;
-      for (let round = 0; round < 2; round++) {
+      for (let round = 0; round <= gui.setupRecoveryMaxRetries; round++) {
         if (!item || round > 0) {
           // eslint-disable-next-line no-await-in-loop
           await cdp!.dismissMenus();
@@ -351,6 +427,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
     }
 
     if (!answeredQuestion) {
+      budget.setStage("确认项目绑定");
       if (!(await cdp.click("projectTrigger")))
         return result({
           hardFailure: true,
@@ -365,6 +442,8 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
           hardFailure: true,
           error: `项目同名或路径重复，无法消歧：${ctx.projectPath}`,
           endReason: "project_ambiguous",
+          needsUserKind: "setup_recovery",
+          pendingQuestion: "项目路径存在歧义，请在 ZCode 中确认目标项目后调用 continue_task。",
         });
       if (matched.item) {
         const binding = await ensureProjectBound(matched.item);
@@ -373,75 +452,195 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
             hardFailure: true,
             error: binding.ambiguous
               ? "项目绑定重试时目标项目无法唯一匹配"
-              : "ZCode 项目绑定两轮重试均未生效",
+              : "ZCode 项目绑定有限重试均未生效",
             endReason: "project_mismatch",
+            needsUserKind: "setup_recovery",
+            pendingQuestion: "项目绑定尚未确认，请在 ZCode 中确认目标项目后调用 continue_task。",
           });
       } else {
-        const pids = deps.listProcesses().map((p) => p.pid);
-        const before = await deps.listDialogs(pids);
-        let folderOption: ZcodeClickExactResult = {
-          clicked: false,
-          count: 0,
-          available: [],
-        };
-        for (let round = 0; round < 3 && !folderOption.clicked; round++) {
-          // ZCode 3.11.2 的工作区下拉会吞掉第一次 outside-click。每轮均先收起残留菜单再验证新菜单。
-          // eslint-disable-next-line no-await-in-loop
-          await cdp.dismissMenus();
-          // eslint-disable-next-line no-await-in-loop
-          if (!(await cdp.click("addProject"))) continue;
-          // eslint-disable-next-line no-await-in-loop
-          folderOption = await clickAnyExactWhenReady(
-            cdp,
-            "chooseFolder",
-            ["打开文件夹", "Open Folder"],
-            deps,
-          );
+        budget.setStage("准备文件夹面板");
+        let pids: number[] = [];
+        let before: string[] | undefined;
+        for (let attempt = 0; attempt <= gui.setupRecoveryMaxRetries; attempt++) {
+          try {
+            // ensureInstance already verified this root's process and CDP ownership.
+            // Do not start another expensive process enumeration during cold import.
+            pids = ready.pid
+              ? [ready.pid]
+              : (
+                  await budget.run(
+                    (signal, timeoutMs) =>
+                      Promise.resolve(
+                        deps.listProcesses({ signal, deadline: Date.now() + timeoutMs }),
+                      ),
+                    gui.dialogProbeTimeoutMs,
+                  )
+                ).map((p) => p.pid);
+            if (!pids.length)
+              throw new ZcodeSetupPause("无法确认目标 ZCode 进程，拒绝操作原生对话框");
+            before = await budget.run(
+              (signal, timeoutMs) => deps.listDialogs(pids, { signal, timeoutMs }),
+              gui.dialogProbeTimeoutMs,
+            );
+            break;
+          } catch (error) {
+            budget.check();
+            if (permissionError(error))
+              throw new ZcodeSetupPause(
+                "请授予 ZCode/System Events Accessibility 权限后继续",
+                true,
+              );
+            logger.warn(
+              `[zcode] 文件夹基线探测失败；attempt=${attempt + 1}；category=${transientSetupError(error) ? "transient" : "unknown"}；${error instanceof Error ? error.message : String(error)}`,
+            );
+            // Reconcile a delayed import before starting any native side effect.
+            const reconciled = await ensureProjectBound();
+            if (reconciled.bound) break;
+            if (reconciled.ambiguous)
+              throw new ZcodeSetupPause("项目路径存在歧义，请在 ZCode 中确认目标项目后继续");
+            if (!transientSetupError(error) || attempt === gui.setupRecoveryMaxRetries)
+              throw new ZcodeSetupPause(
+                "文件夹面板探测未恢复，请在 ZCode 中完成目标项目导入后继续",
+              );
+            await deps.sleep(500 * (attempt + 1));
+          }
         }
-        if (!folderOption.clicked)
-          return result({
-            hardFailure: true,
-            error: `无法唯一选择 ZCode 打开文件夹菜单项（匹配 ${folderOption.count}${folderOption.available.length ? `；可见候选=${folderOption.available.slice(0, 20).join("、")}` : ""}）`,
-            endReason: "setup_failed",
-          });
-        const selected = await deps.selectFolder(ctx.projectPath, pids, before);
-        if (!selected.ok)
-          return result({
-            endReason: selected.needsPermission ? "needs_user" : "setup_failed",
-            needsUserKind: selected.needsPermission ? "system_permission" : undefined,
-            pendingQuestion: selected.needsPermission
-              ? "请为 ZCode/System Events 授予 Accessibility 权限后调用 continue_task 确认。"
-              : undefined,
-            error: selected.needsPermission ? undefined : selected.message,
-            hardFailure: !selected.needsPermission,
-            session: selected.needsPermission
-              ? {
-                  id: activeSession.id,
-                  title: activeSession.title,
-                  boundProjectPath: ctx.projectPath,
-                  provider: spec.provider,
-                  model: spec.model,
-                  permissionMode: gui.defaultPermissionMode,
-                }
-              : undefined,
-          });
-        logger.info("[zcode] 项目首次导入完成，等待 ZCode CDP 页面重新稳定");
-        cdp.disconnect();
-        cdp = await connectStableZcode(ready, gui, deps);
-        logger.info("[zcode] 项目导入后的 ZCode CDP 页面已恢复");
+        if (before) {
+          if (before.some((item) => item.startsWith("sheet-count:") && item !== "sheet-count:0"))
+            throw new ZcodeSetupPause("ZCode 存在既有文件夹面板，请完成或关闭该面板后继续");
+          budget.setStage("打开项目文件夹");
+          let folderOption: ZcodeClickExactResult = {
+            clicked: false,
+            count: 0,
+            available: [],
+          };
+          for (
+            let round = 0;
+            round <= gui.setupRecoveryMaxRetries && !folderOption.clicked;
+            round++
+          ) {
+            // ZCode 3.11.2 的工作区下拉会吞掉第一次 outside-click。每轮均先收起残留菜单再验证新菜单。
+            // eslint-disable-next-line no-await-in-loop
+            await cdp.dismissMenus();
+            // eslint-disable-next-line no-await-in-loop
+            if (!(await cdp.click("addProject"))) continue;
+            // eslint-disable-next-line no-await-in-loop
+            folderOption = await clickAnyExactWhenReady(
+              cdp,
+              "chooseFolder",
+              ["打开文件夹", "Open Folder"],
+              deps,
+            );
+          }
+          if (!folderOption.clicked)
+            return result({
+              hardFailure: true,
+              error: `无法唯一选择 ZCode 打开文件夹菜单项（匹配 ${folderOption.count}${folderOption.available.length ? `；可见候选=${folderOption.available.slice(0, 20).join("、")}` : ""}）`,
+              endReason: "setup_failed",
+            });
+          budget.setStage("提交项目路径并等待导入");
+          let selected: Awaited<ReturnType<typeof selectZcodeFolder>>;
+          try {
+            selected = await budget.run(
+              (signal, timeoutMs) =>
+                deps.selectFolder(ctx.projectPath, pids, before!, {
+                  signal,
+                  timeoutMs,
+                  onProgress: (stage) => logger.info(`[zcode] ${stage}`),
+                }),
+              gui.dialogOperationTimeoutMs,
+            );
+          } catch (error) {
+            budget.check();
+            selected = {
+              ok: false,
+              needsPermission: permissionError(error),
+              message: error instanceof Error ? error.message : String(error),
+            };
+          }
+          if (!selected.ok && !selected.needsPermission) {
+            budget.setStage("复检项目导入结果");
+            // Submission may have succeeded before the helper timed out. Never replay it blindly.
+            cdp.disconnect();
+            cdp = await connectStableZcode(ready, gui, deps);
+            if ((await ensureProjectBound()).bound)
+              selected = { ok: true, message: "项目已导入，自动恢复完成" };
+            else {
+              logger.warn(`[zcode] 文件夹操作未确认：${selected.message}`);
+              throw new ZcodeSetupPause(
+                "项目导入结果尚未确认，请在 ZCode 中完成目标项目绑定后继续",
+              );
+            }
+          }
+          if (!selected.ok)
+            return result({
+              endReason: selected.needsPermission ? "needs_user" : "setup_failed",
+              needsUserKind: selected.needsPermission ? "system_permission" : undefined,
+              pendingQuestion: selected.needsPermission
+                ? "请为 ZCode/System Events 授予 Accessibility 权限后调用 continue_task 确认。"
+                : undefined,
+              error: selected.needsPermission ? undefined : selected.message,
+              hardFailure: !selected.needsPermission,
+              session: selected.needsPermission
+                ? {
+                    id: activeSession.id,
+                    title: activeSession.title,
+                    boundProjectPath: ctx.projectPath,
+                    provider: spec.provider,
+                    model: spec.model,
+                    permissionMode: gui.defaultPermissionMode,
+                  }
+                : undefined,
+            });
+          logger.info("[zcode] 项目首次导入完成，等待 ZCode CDP 页面重新稳定");
+          cdp.disconnect();
+          cdp = await connectStableZcode(ready, gui, deps);
+          logger.info("[zcode] 项目导入后的 ZCode CDP 页面已恢复");
+        }
       }
+      budget.setStage("确认项目绑定");
       const finalBinding = await ensureProjectBound();
       if (!finalBinding.bound)
         return result({
           hardFailure: true,
           error: finalBinding.ambiguous
             ? "ZCode 项目绑定回读不一致，且重试时目标项目无法唯一匹配"
-            : "ZCode 项目绑定回读与 projectPath 不一致，两轮幂等重试均失败",
+            : "ZCode 项目绑定回读与 projectPath 不一致，有限幂等重试均失败",
           endReason: "project_mismatch",
+          needsUserKind: "setup_recovery",
+          pendingQuestion: "项目绑定尚未确认，请在 ZCode 中确认目标项目后调用 continue_task。",
         });
       logger.info(`[zcode] 项目绑定回读通过：${ctx.projectPath}`);
+      await cdp.dismissMenus();
+      budget.finishSetup();
 
-      let modelValue = await cdp.selection("modelValue");
+      const readModel = async (waitForExpected = false) => {
+        const until = Math.min(started + ctx.taskTimeoutMs, Date.now() + 5_000);
+        let last: { display: string; internal: string } | undefined;
+        let error: unknown;
+        for (let attempt = 0; attempt < 25 && Date.now() < until; attempt++) {
+          try {
+            last = await cdp!.selection("modelValue");
+            error = undefined;
+            if (
+              !waitForExpected ||
+              ((exactUiName(last.display, spec.model) ||
+                exactUiName(last.display, `${spec.provider}/${spec.model}`)) &&
+                exactUiName(last.internal, spec.model))
+            )
+              return last;
+          } catch (e) {
+            if (!(e instanceof ZcodeModelReadbackError)) throw e;
+            error = e;
+          }
+          await deps.sleep(Math.min(200, Math.max(0, until - Date.now())));
+        }
+        if (error) throw error;
+        if (last) return last;
+        budget.check();
+        throw new ZcodeModelReadbackError("ZCode 模型回读未在观察期内稳定");
+      };
+      let modelValue = await readModel();
       const modelMatches = () =>
         (exactUiName(modelValue.display, spec.model) ||
           exactUiName(modelValue.display, `${spec.provider}/${spec.model}`)) &&
@@ -468,7 +667,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
             endReason: "model_unavailable",
           });
         await deps.sleep(300);
-        modelValue = await cdp.selection("modelValue");
+        modelValue = await readModel(true);
       } else logger.info(`[zcode] 模型回读已匹配，复用 ${spec.provider}/${spec.model}`);
       const displayMatches =
         exactUiName(modelValue.display, spec.model) ||
@@ -521,6 +720,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
                 .slice(0, 8)}`
             : (ctx.resume?.kind ?? "initial");
         const marker = `【tianshu:${ctx.taskId}:r${ctx.round}:${attempt}】`;
+        await cdp.dismissMenus();
         const before = await cdp.conversationText();
         const beforePoll = await cdp.poll();
         const previousIds = new Set(
@@ -609,6 +809,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
       }
     }
 
+    budget.finishSetup();
     const deadline = started + ctx.taskTimeoutMs;
     let state: ZcodePollState = { hash: "", stable: 0, idleSince: 0 },
       lastProgress = 0;
@@ -673,12 +874,30 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    if (e instanceof ZcodeBudgetError) {
+      if (e.reason === "aborted") return result({ killed: true, endReason: "aborted" });
+      if (e.reason === "task_timeout")
+        return result({ timeout: true, endReason: "task_timeout", error: msg });
+    }
+    if (e instanceof ZcodeSetupPause || (e instanceof ZcodeBudgetError && budget.settingUp))
+      return result({
+        endReason: "needs_user",
+        needsUserKind:
+          e instanceof ZcodeSetupPause && e.needsPermission
+            ? "system_permission"
+            : "setup_recovery",
+        pendingQuestion: `${msg}。请在 ZCode 中确认目标项目 ${ctx.projectPath}，处理后调用 continue_task；原任务已保留。`,
+        progressSummary: "自动恢复未能完成，等待处理后继续原任务",
+      });
+    if (e instanceof ZcodeBudgetError)
+      return result({ hardFailure: true, endReason: "cdp_disconnected", error: msg });
     if (e instanceof ZcodeModelReadbackError)
       return result({ hardFailure: true, error: msg, endReason: "model_mismatch" });
     if (e instanceof CdpDisconnectedError || e instanceof CdpUnavailableError)
       return result({ hardFailure: true, error: msg, endReason: "cdp_disconnected" });
     return result({ hardFailure: true, error: msg, endReason: "internal" });
   } finally {
+    budget.close();
     cdp?.disconnect();
     await close();
   }

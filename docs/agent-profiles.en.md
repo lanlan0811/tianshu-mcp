@@ -149,3 +149,16 @@ retain the instance and expose `agentEndReason` / `keptInstance` in metadata.
 ```
 
 > Kept as a historical record; this path is no longer the built-in default.
+
+## ZCode automatic initialization recovery
+
+Override these `gui` fields in the data-home `agent-profiles.json`. Older profiles inherit the defaults; other drivers do not use these recovery settings.
+
+| Field | Default | Meaning |
+|---|---:|---|
+| `setupRecoveryTimeoutMs` | 120000 | Total initialization-through-binding budget in milliseconds |
+| `dialogProbeTimeoutMs` | 30000 | One native dialog observation, milliseconds |
+| `dialogOperationTimeoutMs` | 60000 | One folder operation, milliseconds |
+| `setupRecoveryMaxRetries` | 2 | Additional attempts for safely retryable stages (0–10) |
+
+Each wait uses the minimum of its configured cap, remaining setup time and remaining task time. Retries never reset the deadline. After binding, only the task deadline applies. Initialization progress uses `progressIntervalMs`.

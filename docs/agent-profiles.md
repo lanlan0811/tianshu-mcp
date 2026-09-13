@@ -174,3 +174,16 @@ TraeWork 存活检测相关字段：`stableRounds` 仅确认 DOM 已稳定；随
 - **profile 改动不生效**：server 每次 resolve 会重读 profiles 文件并缓存结果；`get_profiles` 会触发一次新探测。改完 profile 建议重启 server。
 - **env 有敏感值**：仅本机可见，不会写入 task.jsonl/日志；属于自担风险字段。
 - **driver=gui 的 agent 找不到可执行**：`get_profiles` 会显示探测结果；可在 profile 里直接配 `gui.exePath` 指定绝对路径。
+
+## ZCode 初始化自动恢复
+
+以下 `gui` 字段可在数据目录的 `agent-profiles.json` 中覆盖；旧配置自动采用默认值，其他驱动不使用这些恢复字段。
+
+| 字段 | 默认值 | 含义 |
+|---|---:|---|
+| `setupRecoveryTimeoutMs` | 120000 | 从开始初始化到项目绑定完成的总预算（毫秒） |
+| `dialogProbeTimeoutMs` | 30000 | 单次原生对话框探测上限（毫秒） |
+| `dialogOperationTimeoutMs` | 60000 | 单次文件夹操作上限（毫秒） |
+| `setupRecoveryMaxRetries` | 2 | 可安全重试阶段的额外重试次数（0–10） |
+
+各次等待使用配置上限、初始化剩余预算与任务剩余时间中的最小值；重试不重置总预算。绑定完成后仅保留任务总时限。初始化中的周期进度沿用 `progressIntervalMs`。
