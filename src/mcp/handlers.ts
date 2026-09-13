@@ -3,7 +3,8 @@
  * run_task / rework / verify 依赖 AppContext 提供的 manager/engine/services。
  */
 import fsp from "node:fs/promises";
-import { assertExistingDir, normPath } from "../util/path.js";
+import { assertSafeProjectDir, normPath, resolveProjectDir } from "../util/path.js";
+import { execFileAsync } from "../verify/exec.js";
 import {
   type RunTaskParams,
   type QueryTaskParams,
@@ -84,13 +85,36 @@ export function makeHandlers(ctx: AppContext, defaults: Defaults) {
 
 type Handler = (args: Record<string, unknown>) => Promise<ToolResult>;
 
+/**
+ * 仓库未提交变更计数（git status --porcelain 行数）。
+ * 非 git 仓库、git 不存在或执行失败 → null（调用方不展示）。
+ * 仅作 run_task 提交时的共处警示，不参与任何判定。
+ */
+async function gitDirtyCount(dir: string): Promise<number | null> {
+  try {
+    const res = await execFileAsync("git", ["-C", dir, "status", "--porcelain"], {
+      timeoutMs: 5_000,
+    });
+    if (res.status !== 0) return null;
+    return res.stdout.split(/\r?\n/).filter((l) => l.trim().length > 0).length;
+  } catch {
+    return null;
+  }
+}
+
 function runTaskHandler(ctx: AppContext, defaults: Defaults): Handler {
   const { manager, dataHome, logger } = ctx;
   return async (rawArgs) => {
     const args = rawArgs as RunTaskParams;
-    // 规范化 + 校验目录
-    const dir = assertExistingDir(args.projectPath);
-    const norm = normPath(dir.raw);
+    // 安全闸门：绝对路径 + 存在 + realpath 消除符号链接 + 拒绝主目录/系统根目录
+    let dir: ReturnType<typeof assertSafeProjectDir>;
+    try {
+      dir = assertSafeProjectDir(args.projectPath);
+    } catch (e) {
+      return errorResult(e instanceof Error ? e.message : String(e));
+    }
+    const norm = dir.norm;
+    const dirtyCount = await gitDirtyCount(dir.canonical);
 
     // 项目自动登记（首次出现即登记，R10）
     const agentId = args.agentId ?? defaults.defaultAgentId;
@@ -154,11 +178,16 @@ function runTaskHandler(ctx: AppContext, defaults: Defaults): Handler {
     const lines = [
       `任务已提交：${meta.taskId}`,
       `Agent: ${finalAgentId}${resolved.message ? `（${resolved.message}）` : ""}`,
-      `项目: ${norm}`,
+      `项目: ${norm}${dir.viaSymlink ? `（经符号链接解析自 ${dir.raw}）` : ""}`,
       `自动验收: ${meta.autoVerify ? "开" : "关"}${meta.autoFixRounds > 0 ? `，自动返修上限 ${meta.autoFixRounds} 轮` : "（未开启自动返修）"}`,
       `队列位置：每项目串行 + 全局并发 ${ctx.manager.getMaxRunning()}。请用 query_task(${meta.taskId}) 轮询（建议间隔 5–10 秒）。`,
       `任务书摘要: ${args.task.slice(0, 120)}${args.task.length > 120 ? "…" : ""}`,
     ];
+    if (dirtyCount !== null && dirtyCount > 0) {
+      lines.push(
+        `注意：该仓库当前有 ${dirtyCount} 个未提交变更（可能有其他会话/在途工作共处），worker 将直接在原工作区上改动，验收仅归因相对基线的净变更。`,
+      );
+    }
     return formatToolResult(lines.join("\n"), metaFromTask(meta));
   };
 }
@@ -224,8 +253,12 @@ function listTasksHandler(ctx: AppContext): Handler {
     const args = rawArgs as ListTasksParams;
     let projectPath: string | undefined;
     if (args.projectPath) {
-      const norm = normPath(args.projectPath);
-      projectPath = norm;
+      // 与 run_task 的存储口径一致：realpath 归一（目录已被删等异常情况退回词法归一）
+      try {
+        projectPath = resolveProjectDir(args.projectPath).norm;
+      } catch {
+        projectPath = normPath(args.projectPath);
+      }
     }
     const list = await manager.listTasks({
       projectPath,
@@ -299,8 +332,13 @@ function verifyTaskHandler(ctx: AppContext): Handler {
     let taskId = args.taskId;
     let baseline;
     if (args.projectPath && !taskId) {
-      const dir = assertExistingDir(args.projectPath);
-      projectPath = normPath(dir.raw);
+      let dir: ReturnType<typeof assertSafeProjectDir>;
+      try {
+        dir = assertSafeProjectDir(args.projectPath);
+      } catch (e) {
+        return errorResult(e instanceof Error ? e.message : String(e));
+      }
+      projectPath = dir.norm;
       displayPath = dir.raw;
       // baselineRef：Git ref（任务 ID 不适用独立路径）
       if (args.baselineRef) {

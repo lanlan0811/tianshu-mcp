@@ -1,0 +1,79 @@
+/**
+ * 项目目录安全闸门单测：resolveProjectDir / assertSafeProjectDir。
+ * 防两类事故：写错路径（相对路径/不存在/符号链接歧义）、worker 写到仓库外（主目录/系统根目录）。
+ */
+import { describe, it, expect } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { assertSafeProjectDir, resolveProjectDir, normPath } from "../../src/util/path.js";
+import { makeTmpRoot, rmrf } from "../test-utils.js";
+
+describe("resolveProjectDir", () => {
+  it("拒绝相对路径", () => {
+    expect(() => resolveProjectDir("some/relative/dir")).toThrow(/绝对路径/);
+    expect(() => resolveProjectDir("./x")).toThrow(/绝对路径/);
+  });
+
+  it("拒绝不存在的目录", () => {
+    expect(() => resolveProjectDir("/no/such/dir-tianshu-mcp-test")).toThrow(/不存在/);
+  });
+
+  it("拒绝文件（必须是目录）", async () => {
+    const root = await makeTmpRoot("dir-guard-file");
+    const file = path.join(root, "a.txt");
+    fs.writeFileSync(file, "x");
+    expect(() => resolveProjectDir(file)).toThrow(/不存在|目录/);
+    await rmrf(root);
+  });
+
+  it("正常目录：返回 raw/canonical/norm", async () => {
+    const root = await makeTmpRoot("dir-guard-ok");
+    const r = resolveProjectDir(root);
+    expect(r.raw).toBe(root);
+    expect(r.norm).toBe(normPath(fs.realpathSync(root)));
+    await rmrf(root);
+  });
+
+  it("符号链接被 realpath 消除并标记 viaSymlink", async () => {
+    const root = await makeTmpRoot("dir-guard-real");
+    const sub = path.join(root, "real-proj");
+    fs.mkdirSync(sub);
+    const link = path.join(root, "link-proj");
+    fs.symlinkSync(sub, link);
+    const r = resolveProjectDir(link);
+    expect(r.viaSymlink).toBe(true);
+    expect(r.canonical).toBe(fs.realpathSync(sub));
+    expect(r.norm).toBe(normPath(fs.realpathSync(sub)));
+    const direct = resolveProjectDir(sub);
+    expect(direct.norm).toBe(r.norm); // 两个字符串,同一目录
+    await rmrf(root);
+  });
+});
+
+describe("assertSafeProjectDir", () => {
+  it("拒绝文件系统根目录", () => {
+    expect(() => assertSafeProjectDir("/")).toThrow(/根级目录|子树/);
+  });
+
+  it("拒绝用户主目录本身", () => {
+    expect(() => assertSafeProjectDir(os.homedir())).toThrow(/主目录/);
+  });
+
+  it("拒绝系统目录（realpath 前后形态都覆盖）", () => {
+    expect(() => assertSafeProjectDir("/etc")).toThrow(/拒绝|根级目录/);
+    expect(() => assertSafeProjectDir("/usr")).toThrow(/拒绝|根级目录/);
+    if (process.platform === "darwin") {
+      // macOS /tmp→/private/tmp、/var→/private/var：realpath 后也必须命中
+      expect(() => assertSafeProjectDir("/tmp")).toThrow(/拒绝|根级目录/);
+      expect(() => assertSafeProjectDir("/var")).toThrow(/拒绝|根级目录/);
+    }
+  });
+
+  it("系统根目录的子目录不受影响（/tmp/xxx、/Users/name/repo）", async () => {
+    const root = await makeTmpRoot("dir-guard-nested");
+    const r = assertSafeProjectDir(root); // 位于 /tmp 或 /var/folders 下
+    expect(r.norm.length).toBeGreaterThan(0);
+    await rmrf(root);
+  });
+});
