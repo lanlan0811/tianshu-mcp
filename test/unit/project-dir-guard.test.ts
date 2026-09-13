@@ -61,8 +61,16 @@ describe("assertSafeProjectDir", () => {
   });
 
   it("拒绝系统目录（realpath 前后形态都覆盖）", () => {
-    expect(() => assertSafeProjectDir("/etc")).toThrow(/拒绝|根级目录/);
-    expect(() => assertSafeProjectDir("/usr")).toThrow(/拒绝|根级目录/);
+    if (process.platform !== "win32") {
+      // /etc、/usr 是 POSIX 路径；Windows 上 normPath("/etc") 得到 "<当前盘>:/etc"，
+      // 该目录不存在，命中的是「目录不存在」而非拒绝清单，故按平台排除。
+      expect(() => assertSafeProjectDir("/etc")).toThrow(/拒绝|根级目录/);
+      expect(() => assertSafeProjectDir("/usr")).toThrow(/拒绝|根级目录/);
+    } else {
+      // Windows 侧改为校验等价语义：盘符根与系统目录都必须被拒绝
+      expect(() => assertSafeProjectDir("C:/")).toThrow(/拒绝|根级目录/);
+      expect(() => assertSafeProjectDir("C:/Windows")).toThrow(/拒绝|根级目录/);
+    }
     if (process.platform === "darwin") {
       // macOS /tmp→/private/tmp、/var→/private/var：realpath 后也必须命中
       expect(() => assertSafeProjectDir("/tmp")).toThrow(/拒绝|根级目录/);

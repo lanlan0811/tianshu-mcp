@@ -108,12 +108,19 @@ export function dangerKey(norm: string, platform: NodeJS.Platform = process.plat
  * resolveProjectDir 之上再拒「主目录本身」与「系统/根级目录」。
  * 注意只挡精确相等的根——/tmp/xxx、/Users/name/repo 等子目录不受影响。
  */
+/** 盘符根（Windows 的 C:\ / D:\ 等）：normPath 会剥掉尾斜杠得到 "d:"，需单独判定 */
+function isDriveRoot(norm: string): boolean {
+  return /^[a-z]:$/.test(norm);
+}
+
 export function assertSafeProjectDir(p: string): ProjectDirResolution {
   const r = resolveProjectDir(p);
   if (dangerKey(r.norm) === dangerKey(normPath(os.homedir()))) {
     throw new Error(`projectPath 不能是用户主目录本身（worker 将可写整个主目录）: ${r.canonical}`);
   }
-  if (DANGEROUS_ROOTS.has(dangerKey(r.norm))) {
+  // 盘符根不在 DANGEROUS_ROOTS 里：normPath 把 "D:\" 归一为 "d:"（尾斜杠被剥掉），
+  // 与清单里的 "d:/" 永不相等，故单独判定，覆盖所有盘符而不依赖枚举。
+  if (DANGEROUS_ROOTS.has(dangerKey(r.norm)) || isDriveRoot(dangerKey(r.norm))) {
     throw new Error(`projectPath 指向系统/根级目录，worker 写权限将覆盖整个子树，已拒绝: ${r.canonical}`);
   }
   return r;

@@ -33,6 +33,26 @@ function sleepCheck(name: string, ms: number, marker?: string): AcceptanceCheckD
   return { name, cmd: [process.execPath, "-e", code], displayCmd: `sleep-${ms}` };
 }
 
+/**
+ * node -e 假命令：先 touch 一个「已真正启动」标识文件，再 sleep ms 后退出 0。
+ * 取消类用例用它来替代固定延时——固定 250ms 在 Windows 上可能早于子进程 spawn，
+ * 导致「在途 check」实际尚未启动而被记为 skipped，用例间歇性失败。
+ */
+function startedSleepCheck(name: string, ms: number, startFile: string): AcceptanceCheckDef {
+  const code = `require("node:fs").writeFileSync(${JSON.stringify(startFile)},"");setTimeout(()=>process.exit(0),${ms})`;
+  return { name, cmd: [process.execPath, "-e", code], displayCmd: `sleep-${ms}` };
+}
+
+/** 有界等待：直到 pred 为真或超时（返回是否等到） */
+async function waitUntil(pred: () => Promise<boolean>, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await pred()) return true;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  return pred();
+}
+
 interface RunOutcome {
   report: VerifyReport;
   passed: boolean;
@@ -151,8 +171,22 @@ describe("验收命令检查有界并行（verifyConcurrency）", () => {
   it("任务取消：在途 check 被杀（aborted），未启动的 check 标记跳过", async () => {
     const project = await tmpDir("parallel-abort");
     const ac = new AbortController();
-    const checks = [sleepCheck("a", 30_000), sleepCheck("b", 30_000), sleepCheck("c", 30_000)];
-    const timer = setTimeout(() => ac.abort(), 250);
+    const startedA = path.join(project, "started-a");
+    const startedB = path.join(project, "started-b");
+    const checks = [
+      startedSleepCheck("a", 30_000, startedA),
+      startedSleepCheck("b", 30_000, startedB),
+      sleepCheck("c", 30_000),
+    ];
+    // 确定性取消点：等 a、b 都真正进入执行（各自 touch 了标识文件）再 abort。
+    // 用固定延时会在慢平台（Windows 子进程冷启动）上抢跑，使 b 尚未启动就被记为 skipped。
+    const abortWhenBothStarted = (async () => {
+      await waitUntil(
+        async () => (await exists(startedA)) && (await exists(startedB)),
+        15_000,
+      );
+      ac.abort();
+    })();
     try {
       const { report, wallMs } = await runVerify(project, {
         checks,
@@ -167,7 +201,7 @@ describe("验收命令检查有界并行（verifyConcurrency）", () => {
       expect(byName.get("c")?.skipped).toBe(true);
       expect(byName.get("c")?.reason).toContain("任务取消");
     } finally {
-      clearTimeout(timer);
+      await abortWhenBothStarted;
     }
   }, 30_000);
 
