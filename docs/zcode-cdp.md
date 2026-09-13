@@ -120,6 +120,9 @@ Windows 闭环已完成；macOS 基本闭环已验证（2026-09-13），取消/�
    播种项目经证伪——下拉不读 recentProjects；播种 lastWorkspaceSession 会让
    `restoreSession=true` 的启动卡死渲染（后端未分配 workspace 句柄）。项目只能经 UI 流程
    （面板或 composer）正规登记。
+8. **新建任务按钮有两副面孔**：首页底部的 `conversation-new-task` 图标可能是惰性挂载
+   （trusted 点击返回 true 但 composer 未打开）；侧栏 `[data-testid=task-new-button]` 大按钮
+   才是真入口。v0.3.4 流程在项目触发器未命中时回退侧栏按钮再重试（`newTaskSidebar` 键）。
 
 ## 无会话锚点的环境恢复（#9）
 

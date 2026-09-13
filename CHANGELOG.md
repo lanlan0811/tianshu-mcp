@@ -28,6 +28,8 @@
 
 ### 修复
 
+- zcode macOS 新建任务惰性按钮兜底：`conversation-new-task` 可能命中首页惰性图标（点击无响应），
+  项目触发器未命中时回退侧栏 `[data-testid=task-new-button]` 大按钮再重试。
 - `normalizeProjectPath` 解析符号链接：macOS `/tmp`→`/private/tmp` 曾使项目路径匹配失败
   退化为名称匹配，误报 `project_ambiguous`；realpath 失败退回词法归一。
 - zcode macOS 面板失败的 `needsPermission` 误报：execFile message 内嵌脚本文本（含

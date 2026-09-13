@@ -34,6 +34,9 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ### Fixed
 
+- zcode macOS new-task inert-button fallback: `conversation-new-task` can hit an inert home-screen
+  icon (click does nothing); when the project trigger misses, the flow now falls back to the
+  sidebar `[data-testid=task-new-button]` and retries.
 - `normalizeProjectPath` resolves symlinks: macOS `/tmp`→`/private/tmp` used to fail project
   path matching and degrade into a name match, falsely reporting `project_ambiguous`;
   falls back to lexical normalization when realpath fails.
