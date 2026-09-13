@@ -11,6 +11,9 @@
 
 ### 新增
 
+- `projectPath` 安全闸门：`run_task`/`verify_task` 提交即校验（绝对路径 + 存在目录 + realpath
+  消除符号链接），拒绝主目录本身与系统/根级目录（含 macOS `/private/*` realpath 形态）；
+  提交回执明示符号链接解析来源；git 仓库有未提交变更时追加共处警示（多会话场景）。
 - ZCode GUI 驱动支持 macOS：适配主进程标题改写（argv 隐藏后端口探测放宽 + 配置端口段补扫）、
   spawn detached+unref 实例驻留；文件夹面板按 macOS 窗口形态重写（NSOpenPanel 独立窗口 +
   go-to 字段 AX 直写，免疫中文输入法截获）。2026-09-13 macOS arm64 + ZCode 3.11.2 真机闭环

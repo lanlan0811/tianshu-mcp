@@ -163,6 +163,8 @@ Questions, login, an existing non-CDP instance, or system permission pause as `n
 
 > Every result is "human-readable text + a `---tianshu-mcp-meta---` JSON block" so the host can extract it with a regex.
 
+> **Path safety gate** (from the unreleased build): `projectPath` is validated at submission — must be absolute, the directory must exist, and symlinks are canonicalized via realpath (the receipt notes the resolution). The home directory itself and system/root directories are rejected outright so a worker's write access can never cover a whole system subtree; dirty git repos come with an uncommitted-changes coexistence warning.
+
 ## Logging & stdio contract
 
 This server is a standard MCP **stdio server** and follows the transport contract strictly:

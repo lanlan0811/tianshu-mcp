@@ -12,6 +12,10 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ### Added
 
+- `projectPath` safety gate: `run_task`/`verify_task` validate at submission (absolute path +
+  existing directory + realpath symlink resolution), reject the home directory itself and
+  system/root directories (including macOS `/private/*` realpath forms); the submission receipt
+  notes symlink resolution; dirty git repos get an uncommitted-changes coexistence warning.
 - ZCode GUI driver supports macOS: adapts to the main process rewriting its title (relaxed port
   attribution + bounded scan of the configured port range when argv hides the debug port) and
   detached+unref instance persistence; the folder-panel driver is rewritten for the macOS window
