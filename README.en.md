@@ -163,7 +163,7 @@ Questions, login, an existing non-CDP instance, or system permission pause as `n
 
 > Every result is "human-readable text + a `---tianshu-mcp-meta---` JSON block" so the host can extract it with a regex.
 
-> **Path safety gate** (from the unreleased build): `projectPath` is validated at submission — must be absolute, the directory must exist, and symlinks are canonicalized via realpath (the receipt notes the resolution). The home directory itself and system/root directories are rejected outright so a worker's write access can never cover a whole system subtree; dirty git repos come with an uncommitted-changes coexistence warning.
+> **Path safety gate** (since v0.4.0): `projectPath` is validated at submission — must be absolute, the directory must exist, and symlinks are canonicalized via realpath (the receipt notes the resolution). The home directory itself and system/root directories are rejected outright so a worker's write access can never cover a whole system subtree; dirty git repos come with an uncommitted-changes coexistence warning.
 
 ## Logging & stdio contract
 
@@ -280,7 +280,7 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
   - Issues #8 / #10: project triggers resolve tier by tier (explicit override → primary selector → exact fallback) and stop on ambiguity at the current tier; binding keys on the normalized absolute project path; stale menus are dismissed before adding a project, and native-operation timeouts reconcile side effects instead of replaying the whole import
   - Issue #9: environment recovery without a session re-sends the full original task / context / validated references, and the environment confirmation text is never sent to the model; dispatch confirmation and session identification share one bounded observation window (default 60s), preferring the task marker and falling back to a unique new-session delta, keeping a `session_lost` / `send_unknown` scene without automatic resend
   - Model read-back decodes stable attributes and excludes hidden / transparent / clipped outgoing values; initialization shares one deadline budget (120s total, 30s probe, 60s operation, 2 retries); macOS probe failures are fail-closed instead of masquerading as an empty sheet baseline
-- **Unreleased** (2026-09-13) — **443 tests**
+- **M17 — macOS GUI drivers for codex/zcode + projectPath safety gate + engineering performance + v0.4.0** (2026-09-13, from PR #11) — **443 tests**
   - **macOS wired up**: both `codex` (spawn .app + CDP) and `zcode` (process-title-rewrite adaptation + macOS window-form panel driving) GUI basic closed loops machine-verified (discover → bind → send → run evidence → acceptance PASS → `succeeded`); macOS stays `research` until the cancel/rework/continue_task/new-project matrix is covered
   - **codex-cli headless path**: on macOS, run `codex exec` via a `driver=spawn` user profile (⚠️ ≤0.130.0 is signed with a revoked certificate — use ≥0.154.0) — see "macOS headless path: codex-cli"
   - **projectPath safety gate**: realpath canonicalization + home/system-root rejection + dirty-repo coexistence warning — see "Path safety gate"
@@ -291,8 +291,8 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 
 | agentId | driver / adapter | status | Notes |
 |---|---|---|---|
-| `codex` | `gui` / `codex-gui` | **ready** (`research` on macOS) | Desktop GUI over CDP (Windows: MSIX COM activation; macOS: spawn .app binary + CDP); supports `model`/`reasoningLevel`/`planDoc`/`designSystem`; wait-user, cancel and dispatch-guard semantics machine-verified (v0.3.2); Windows machine-verified; macOS basic closed loop machine-verified (unreleased) — stays `research` until the cancel/rework matrix is covered |
-| `zcode` | `gui` / `zcode-gui` | **research** | CDP GUI adapter with the Windows hardware loop passed; adapted to ZCode 3.11.2 model menu and project binding (v0.3.3), with hardened project/model read-back and initialization recovery (v0.3.4); macOS basic closed loop machine-verified (2026-09-13, unreleased) — stays `research` until the cancel/rework/new-project matrix is covered |
+| `codex` | `gui` / `codex-gui` | **ready** (`research` on macOS) | Desktop GUI over CDP (Windows: MSIX COM activation; macOS: spawn .app binary + CDP); supports `model`/`reasoningLevel`/`planDoc`/`designSystem`; wait-user, cancel and dispatch-guard semantics machine-verified (v0.3.2); Windows machine-verified; macOS basic closed loop machine-verified (v0.4.0) — stays `research` until the cancel/rework matrix is covered |
+| `zcode` | `gui` / `zcode-gui` | **research** | CDP GUI adapter with the Windows hardware loop passed; adapted to ZCode 3.11.2 model menu and project binding (v0.3.3), with hardened project/model read-back and initialization recovery (v0.3.4); macOS basic closed loop machine-verified (2026-09-13, v0.4.0) — stays `research` until the cancel/rework/new-project matrix is covered |
 | `traework` | `gui` / `traework-gui` | **ready** | CDP-driven TRAE SOLO CN desktop UI; all three panel modes machine-verified |
 | `stub` | `spawn` | tests only | `test/stub-agent/stub-agent.mjs` with 3 playbooks (good/fix-on-first/never) |
 

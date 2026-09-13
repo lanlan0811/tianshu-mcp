@@ -10,6 +10,19 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ## [Unreleased]
 
+### Planned
+
+- More external AI-Agent adapters (a new agent = one profile + an optional adapter file).
+- TraeWork executable discovery and native-dialog driving on macOS (currently fail-closed).
+- Optional project-level skill seeding (by default nothing is written into target repos).
+- Cancel/rework/new-project matrices for the Codex and ZCode GUI drivers on macOS (both remain `research` on darwin).
+- Best-effort stop of a GUI-side pending session (via a temporary CDP connection) when cancelling
+  a task in the `needs_user` state.
+
+---
+
+## [0.4.0] — 2026-09-13
+
 ### Added
 
 - `projectPath` safety gate: `run_task`/`verify_task` validate at submission (absolute path +
@@ -71,15 +84,6 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 - README (both languages) gains "macOS headless path: codex-cli (user profile)" — including the
   revoked-certificate warning for ≤0.130.0 and a complete profile example.
-
-### Planned
-
-- More external AI-Agent adapters (a new agent = one profile + an optional adapter file).
-- TraeWork executable discovery and native-dialog driving on macOS (currently fail-closed).
-- Optional project-level skill seeding (by default nothing is written into target repos).
-- macOS hardware verification for the Codex GUI adapter (built-in status remains `research`).
-- Best-effort stop of a GUI-side pending session (via a temporary CDP connection) when cancelling
-  a task in the `needs_user` state.
 
 ---
 
@@ -587,7 +591,9 @@ project → pick model and reasoning level → send instructions → run detecti
 
 ---
 
-[Unreleased]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.4...v0.4.0
+[0.3.4]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.0...v0.3.1

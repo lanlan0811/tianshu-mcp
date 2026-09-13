@@ -159,7 +159,7 @@ ZCode 提问、需要登录、旧实例无 CDP、系统权限不足，或自动�
 
 > 返回统一为「人类可读文本 + `---tianshu-mcp-meta---` JSON 块」，便于宿主正则抽取。
 
-> **路径安全闸门**（未发布起）：`projectPath` 在提交时校验——必须绝对路径、目录必须存在、符号链接经 realpath 归一（回执明示解析来源）；主目录本身与系统/根级目录直接拒绝，防止 worker 写权限覆盖整棵系统子树；git 仓库有未提交变更时回执附带共处警示。
+> **路径安全闸门**（v0.4.0 起）：`projectPath` 在提交时校验——必须绝对路径、目录必须存在、符号链接经 realpath 归一（回执明示解析来源）；主目录本身与系统/根级目录直接拒绝，防止 worker 写权限覆盖整棵系统子树；git 仓库有未提交变更时回执附带共处警示。
 
 ## 日志与 stdio 契约
 
@@ -279,7 +279,7 @@ ZCode 提问、需要登录、旧实例无 CDP、系统权限不足，或自动�
   - issue #8 / #10：项目触发器按「用户覆盖 → 主选择器 → 精确备用」逐级定位，本级歧义即停；绑定以完整规范化路径为唯一依据；添加项目前先收起残留菜单，原生操作超时后先复检副作用，不盲目重放整段导入
   - issue #9：无锚点的环境恢复补发完整原任务 / 上下文 / 已验证引用，环境确认文本不发给模型；发送确认与会话识别共用一次有界观察窗口（默认 60s），优先任务标记、其次唯一新会话差集，无法定位则保留 `session_lost` / `send_unknown` 现场且不自动重发
   - 模型回读解码稳定属性、排除隐藏 / 透明 / 裁剪旧值；初始化引入共同截止时间预算（总计 120s、探测 30s、操作 60s、重试 2 次）；macOS 探测失败 fail-closed，不再伪装成「没有既有面板」
-- **未发布**（2026-09-13）— **443 测试**
+- **M17 — macOS 双驱动打通 + projectPath 安全闸门 + 工程性能 + v0.4.0**（2026-09-13，来自 PR #11）— **443 测试**
   - **macOS 打通**：`codex`（spawn .app + CDP）与 `zcode`（进程标题改写适配 + macOS 窗口面板驱动）GUI 基本闭环均真机验证通过（发现 → 绑定 → 发送 → 运行证据 → 验收 PASS → `succeeded`）；取消/返修/continue_task/新建项目矩阵补齐前 macOS 保持 `research`
   - **codex-cli 无头路径**：macOS 经 `driver=spawn` 用户 profile 走 `codex exec`（⚠️ ≤0.130.0 签名证书已被吊销，需 ≥0.154.0）——见「macOS 无头路径：codex-cli」
   - **projectPath 安全闸门**：realpath 归一 + 主目录/系统根目录拒绝 + 脏仓共处警示——见「路径安全闸门」
@@ -290,8 +290,8 @@ ZCode 提问、需要登录、旧实例无 CDP、系统权限不足，或自动�
 
 | agentId | driver / adapter | status | 说明 |
 |---|---|---|---|
-| `codex` | `gui` / `codex-gui` | **ready**（macOS 为 `research`） | Codex 桌面端 GUI（Windows：MSIX COM 激活 + CDP；macOS：spawn .app + CDP）；支持 `model`/`reasoningLevel`/`planDoc`/`designSystem`；等待用户确认、取消与重派护栏均已真机验证（v0.3.2）；Windows 真机已验证；macOS 基本闭环已真机验证（未发布），取消/返修矩阵补齐前保持 `research` |
-| `zcode` | `gui` / `zcode-gui` | **research** | CDP GUI adapter 已实现且 Windows 真机闭环通过；已适配 ZCode 3.11.2 模型菜单与项目绑定（v0.3.3），并加固项目/模型回读与初始化恢复（v0.3.4）；macOS 基本闭环已真机验证（2026-09-13，未发布），取消/返修/新建项目矩阵补齐前保持 `research` |
+| `codex` | `gui` / `codex-gui` | **ready**（macOS 为 `research`） | Codex 桌面端 GUI（Windows：MSIX COM 激活 + CDP；macOS：spawn .app + CDP）；支持 `model`/`reasoningLevel`/`planDoc`/`designSystem`；等待用户确认、取消与重派护栏均已真机验证（v0.3.2）；Windows 真机已验证；macOS 基本闭环已真机验证（v0.4.0），取消/返修矩阵补齐前保持 `research` |
+| `zcode` | `gui` / `zcode-gui` | **research** | CDP GUI adapter 已实现且 Windows 真机闭环通过；已适配 ZCode 3.11.2 模型菜单与项目绑定（v0.3.3），并加固项目/模型回读与初始化恢复（v0.3.4）；macOS 基本闭环已真机验证（2026-09-13，v0.4.0），取消/返修/新建项目矩阵补齐前保持 `research` |
 | `traework` | `gui` / `traework-gui` | **ready** | CDP 驱动 TRAE SOLO CN 桌面 UI；三种面板模式真机验证通过 |
 | `stub` | `spawn` | 仅测试 | `test/stub-agent/stub-agent.mjs` 三剧本（good/fix-on-first/never） |
 
@@ -342,7 +342,7 @@ run_task(projectPath=/path/to/项目, agentId=codex-cli, task="任务书", autoV
 
 行为与限制：
 
-- `get_profiles` 会列出 `codex-cli` 并探测 PATH 上的 `codex` 可执行（未发布版起；此前用户自定义 profile 可用但不显示）。
+- `get_profiles` 会列出 `codex-cli` 并探测 PATH 上的 `codex` 可执行（v0.4.0 起；此前用户自定义 profile 可用但不显示）。
 - `model` 参数对 spawn agent 不生效——CLI 使用 `~/.codex/config.toml` 的默认模型；要锁模型可在 `argsTemplate` 追加 `"-m", "<模型名>"`。
 - 写入被 `workspace-write` 沙箱限制在项目目录内；POSIX 下取消/超时自动对进程组 SIGTERM→SIGKILL（`killTree` 值在非 Windows 平台被忽略）。
 - 已实测：2026-09-13 macOS arm64 真机闭环（`run_task` → `codex exec` → 自动验收 PASS → `succeeded`）。

@@ -9,6 +9,18 @@
 
 ## [未发布]
 
+### 计划中
+
+- 更多外部 AI-Agent 适配（新 agent = 一个 profile +（如需）一个 adapter 文件）。
+- TraeWork 在 macOS 下的可执行探测与原生对话框驱动（当前 macOS 分支 fail-closed）。
+- 可选的项目级技能播种（默认不写入目标项目仓库）。
+- Codex 与 ZCode GUI 的 macOS 取消/返修/新建项目矩阵（当前两者 darwin 均保持 `research`）。
+- `needs_user` 状态下取消任务时经临时 CDP 连接尽力停止 GUI 内等待中的会话。
+
+---
+
+## [0.4.0] — 2026-09-13
+
 ### 新增
 
 - `projectPath` 安全闸门：`run_task`/`verify_task` 提交即校验（绝对路径 + 存在目录 + realpath
@@ -51,14 +63,6 @@
 ### 文档
 
 - README（中英）新增「macOS 无头路径：codex-cli（用户 profile）」——含 ≤0.130.0 签名证书吊销的警示与完整 profile 示例。
-
-### 计划中
-
-- 更多外部 AI-Agent 适配（新 agent = 一个 profile +（如需）一个 adapter 文件）。
-- TraeWork 在 macOS 下的可执行探测与原生对话框驱动（当前 macOS 分支 fail-closed）。
-- 可选的项目级技能播种（默认不写入目标项目仓库）。
-- Codex GUI 的 macOS 真机验证（当前内置状态为 `research`）。
-- needs_user 状态下取消任务时经临时 CDP 连接尽力停止 GUI 内等待中的会话。
 
 ---
 
@@ -505,7 +509,9 @@ Codex 桌面端改为 **GUI 驱动**：新增 `codex-gui` adapter，通过 MSIX 
 
 ---
 
-[未发布]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.3...HEAD
+[未发布]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.4...v0.4.0
+[0.3.4]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.0...v0.3.1
