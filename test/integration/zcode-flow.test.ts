@@ -513,6 +513,10 @@ function depsFor(fake: FakeZcode): Partial<ZcodeRunDeps> {
     ensureInstance: async () => ({ ready: { port: 9333, pid: 1, title: "ZCode" } }),
     listProcesses: () => [{ pid: 1, commandLine: "ZCode.exe --remote-debugging-port=9333" }],
     createClient: () => fake as never,
+    // 集成测试必须隔离原生对话框枚举：真实的 listOwnedDialogs 在 macOS 上会外呼 osascript，
+    // 无 ZCode/辅助功能授权的运行环境会（按设计）抛错，不再是可忽略的空基线。
+    // 需要特定基线的用例在此默认之上显式覆盖。
+    listDialogs: async () => [],
     sleep: async () => {},
   };
 }
