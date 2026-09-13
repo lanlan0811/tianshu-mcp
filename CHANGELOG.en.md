@@ -21,6 +21,17 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.3.4] — 2026-09-13
+
+- Fix #8/#10 project-selector ambiguity, full-path binding false negatives and contaminated model readback.
+- Fix #9 environment recovery without a session: send full task/context/references once and locate the session through its marker or unique delta.
+- Add initialization recovery with shared deadlines, configurable budgets and a resumable `setup_recovery` state. Reconcile native side effects after timeouts and terminate helper processes on cancellation.
+- Handle split model labels, hidden outgoing animation text, residual project menus trapping focus and send buttons that are not yet ready.
+- Add real DOM and recovery/cancellation regressions. Windows hardware verifies cold first import, imported-project reuse and same-task recovery with actual artifacts and 2/2 acceptance checks.
+- Release/tarball only; no npm publication. macOS has no real-device verification for this patch and the ZCode profile remains `research`.
+
+See [release notes](docs/release-v0.3.4.en.md) and [validation evidence](docs/zcode-issue-8-10-validation.en.md).
+
 ## [0.3.3] — 2026-09-12
 
 Fixes issues #4 / #7 by adapting the ZCode GUI driver to the 3.11.2 model-menu and project-binding semantics, while making acceptance fail closed for zero-test and zero-change outcomes.

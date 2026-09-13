@@ -88,7 +88,8 @@ export function composeReleaseBody(opts) {
 
   /** @type {string[]} */
   const footer = ["---", ""];
-  footer.push(`**npm**: https://www.npmjs.com/package/${npmPackage}/v/${version}`);
+  // A GitHub/Gitee release does not imply that its version was published to npm.
+  footer.push(`**npm registry**: https://www.npmjs.com/package/${npmPackage}`);
   if (opts.ciRunId) footer.push(`**CI**: https://github.com/${ownerRepo}/actions/runs/${opts.ciRunId}`);
   const prev = opts.previousVersion ? `v${String(opts.previousVersion).replace(/^v/, "")}` : "";
   if (host === "github") {

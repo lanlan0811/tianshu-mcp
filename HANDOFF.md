@@ -1,6 +1,6 @@
 # HANDOFF.md — 项目交接说明
 
-> 交接快照：**2026-09-12**（v0.3.3：ZCode 3.11.2 适配 + 验收引擎 fail-closed）。本文写给**接手本仓库的人**：先读「交接快照」了解当前状态，再按「从零搭环境」上手。
+> 交接快照：**2026-09-13**（v0.3.4：ZCode #8/#9/#10 项目回读、初始化恢复与会话发送确认）。本文写给**接手本仓库的人**：先读「交接快照」了解当前状态，再按「从零搭环境」上手。
 > 工作区规则见 `AGENTS.md`（gitignore 中，仅本地），安装/用法见 `README.md`，本文不重复，只做导览与状态记录。
 
 ---
@@ -34,13 +34,13 @@
 | 项 | 状态 |
 |---|---|
 | 分支 | `master`（**只在此分支提交**，不建其他分支） |
-| 发布提交 | `38fb47d chore(release): v0.3.3 版本号、双语 CHANGELOG 与文档更新`（tag `v0.3.3` 即此提交） |
-| 版本 / 许可证 | `0.3.3` / Apache-2.0 |
-| 标签 | `v0.1.0` … `v0.3.3`（均已推双仓） |
-| 工作树 | 干净；`github/master` 与 `gitee/master` 均同步于 `38fb47d` |
-| 测试 | **366/366 通过**（39 个测试文件：单元 24 + 集成 14 + 协议 1） |
-| 门禁 | lint 0 warning、typecheck clean、build 成功、`check:stdio` 6/6 场景通过、`npm pack` 内容校验通过 |
-| CI | ubuntu/windows/macos × Node 20/22/24 + pack-check = **10/10 全绿**（随 v0.3.3 tag 再次校验） |
+| 发布提交 | `chore(release): v0.3.4 版本号、双语文档与交接快照更新`（tag `v0.3.4` 指向该提交） |
+| 版本 / 许可证 | `0.3.4` / Apache-2.0 |
+| 标签 | `v0.1.0` … `v0.3.4`（均已推双仓） |
+| 工作树 | 干净；`github/master` 与 `gitee/master` 均同步 |
+| 测试 | **407/407 通过**（42 个测试文件：单元 27 + 集成 14 + 协议 1） |
+| 门禁 | lint 0 warning、typecheck clean、build 成功、`check:stdio` 6/6 场景通过、`npm pack` 内容校验与干净消费者安装通过 |
+| CI | ubuntu/windows/macos × Node 20/22/24 + pack-check = **10/10 全绿**（随 v0.3.4 tag 再次校验） |
 | npm | 发布由维护者手动 `npm publish`（需 token）；详见 `docs/npm-publish-guide.md` |
 | Release | 推送 `v*` tag 触发 `.github/workflows/release.yml`：正文由 `docs/release-v<ver>.md` + `.en.md` 双语合成（缺文档即报错，不产出空壳正文），`Full Changelog` 经 `git describe` 解析上一 tag，CI 链接解析同 SHA 运行，并附 `tianshu-mcp-<ver>.tgz`；Gitee 发行版由 `scripts/gitee-release.mjs` 用 `GITEE_TOKEN` 幂等补齐 |
 
@@ -49,7 +49,7 @@
 | agentId | driver / adapter | status | 说明 |
 |---|---|---|---|
 | `codex` | `gui` / `codex-gui` | **ready**（macOS 为 `research`） | Codex 桌面端 GUI（MSIX COM 激活 + CDP），支持 `model`/`reasoningLevel`/`planDoc`/`designSystem`；等待用户检测、取消真停、重派护栏均已真机验证（v0.3.2） |
-| `zcode` | `gui` / `zcode-gui` | **research** | CDP GUI adapter，Windows 真机闭环通过；已适配 ZCode 3.11.2 模型菜单与项目绑定（v0.3.3）；macOS 真机证据完成前不得改 `ready` |
+| `zcode` | `gui` / `zcode-gui` | **research** | CDP GUI adapter，Windows 真机闭环通过；已适配 ZCode 3.11.2 模型菜单与项目绑定（v0.3.3）、项目/模型回读加固与初始化恢复（v0.3.4）；macOS 真机证据完成前不得改 `ready` |
 | `traework` | `gui` / `traework-gui` | **ready** | CDP 驱动 TRAE SOLO CN 桌面 UI；三种面板模式真机验证通过 |
 | `stub` | `spawn` | 仅测试 | `test/stub-agent/stub-agent.mjs` 三剧本（good/fix-on-first/never） |
 
@@ -73,6 +73,7 @@
 - **M13** 技能文档对齐 + 发布自动化修复 + v0.3.1（无源码行为变更；SKILL/usage-examples 重写、双语 Release 正文、Full Changelog/CI 链接修复、Gitee 发行版自动化）
 - **M14** Codex 等待用户检测 + 取消真停 GUI + v0.3.2（issue #5/#6，详见 §8.4）
 - **M15** ZCode 3.11.2 适配 + 验收引擎 fail-closed + v0.3.3（issue #4/#7，详见 §8.5）— **366 测试**
+- **M16** ZCode 项目/模型回读加固 + 初始化共同截止时间恢复 + 无锚点会话发送确认 + v0.3.4（issue #8/#9/#10，详见 §8.6）— **407 测试**
 
 ### 实现期修复记录（重要）
 
@@ -133,7 +134,7 @@ src/
 │   │   └── computeruse/{guard,dialog}.ts
 │   ├── zcode/            ZCode GUI 驱动（v0.2.0 起）
 │   │   ├── adapter.ts / run.ts / instance.ts
-│   │   ├── cdp.ts / selectors.ts / discovery.ts / dialog.ts
+│   │   ├── cdp.ts / dom.ts / selectors.ts / discovery.ts / dialog.ts / recovery.ts
 │   │   ├── model.ts / project.ts / references.ts / liveness.ts
 │   └── codex/            Codex 桌面端 GUI 驱动（v0.3.0 起）
 │       ├── adapter.ts / run.ts
@@ -265,12 +266,12 @@ npm run check:stdio
 
 | 层级 | 位置 | 说明 |
 |---|---|---|
-| 单元 | `test/unit/`（24 文件） | 纯函数与组件逻辑：traework 全套（reply/selectors/launcher/guard/driver/session/liveness/dialog/cdp-client/repair-plan）、codex-core、zcode-core/zcode-handler、acceptance、baseline、atomic-write、log、config/profile 热加载等 |
+| 单元 | `test/unit/`（27 文件） | 纯函数与组件逻辑：traework 全套（reply/selectors/launcher/guard/driver/session/liveness/dialog/cdp-client/repair-plan）、codex-core、zcode-core/zcode-handler/zcode-dom/zcode-dialog/zcode-recovery、acceptance、baseline、atomic-write、log、config/profile 热加载等 |
 | 集成 | `test/integration/`（14 文件） | stub-agent 三剧本、取消/超时/基线、traework 假 CDP（单轮 + 返修 + 绑定兜底）、codex-flow、zcode-flow/restart/rework-loop、rework 竞态回归、verify-params |
 | 协议 | `test/protocol/`（1 文件） | 官方 SDK 客户端断言 9 工具面与返回格式 |
 | 真机 | `scripts/probe-*.mjs` / `scripts/smoke-zcode.mjs` | **手动**，需真实客户端 |
 
-假 CDP 桩在 `test/fake-cdp.ts`：**助手回复必须同步追加**（`autoReplyText`），不要改回定时器——轮询间隔小 + `stableRounds` 低时定时器会与稳定兜底抢跑（已在 CI 上翻车过一次）。ZCode 3.11.2 语义的假桩与回归用例见 `test/integration/zcode-flow.test.ts` / `test/unit/zcode-core.test.ts`（v0.3.3 同步）。
+假 CDP 桩在 `test/fake-cdp.ts`：**助手回复必须同步追加**（`autoReplyText`），不要改回定时器——轮询间隔小 + `stableRounds` 低时定时器会与稳定兜底抢跑（已在 CI 上翻车过一次）。ZCode 3.11.2 语义的假桩与回归用例见 `test/integration/zcode-flow.test.ts` / `test/unit/zcode-core.test.ts`（v0.3.3 同步），初始化恢复与实时选择器回归见 `test/unit/zcode-recovery.test.ts` / `test/unit/zcode-dom.test.ts` / `test/unit/zcode-dialog.test.ts`（v0.3.4 同步）。
 
 ---
 
@@ -476,6 +477,40 @@ Windows + Codex 26.903.9818.0 真机模拟实测：模型菜单的 `menuitemradi
 
 ---
 
+## 8.6 ZCode 项目回读、初始化恢复与会话发送确认（M16 / v0.3.4，issue #8/#9/#10）
+
+### 项目定位与绑定（#8/#10）
+
+- 项目触发器按「用户覆盖 → 主选择器 → 精确备用选择器」逐级定位，本级无可见匹配才降级，本级多匹配即报歧义；移除了包含「项目／Project」的宽泛匹配。
+- 绑定以**当前项目的规范化绝对路径**为唯一依据；只有能唯一关联到目标路径的项目名称才辅助判断，路径冲突时不允许同名文本覆盖。
+- 添加项目前先收起残留工作区菜单；原生文件夹操作超时后先复检绑定副作用，已绑定则直接继续，不盲目重放整段导入。
+
+### 模型回读（#8）
+
+- 当前值优先读取并解码稳定属性（`data-model-current-value` 等）；属性缺失时读当前可见标签、对应 `title`，最后兼容旧页面。
+- 供应商与模型名可能拆成多个 span：可见标签按拼接后精确比对；排除隐藏、透明、`aria-hidden` 祖先与溢出裁剪中的旧动画文本；证据冲突（`ambiguous`）时明确报错，不直接接受混合 `textContent`。
+
+### 初始化恢复（#10）
+
+- 准备、对话框基线、打开文件夹、路径提交、绑定确认划分为明确阶段；`setupRecoveryTimeoutMs`（默认 120s）为初始化到绑定完成的总预算，`dialogProbeTimeoutMs`（30s）/`dialogOperationTimeoutMs`（60s）为单次探测/操作上限，`setupRecoveryMaxRetries`（2）为可安全重试阶段的额外次数。所有等待取配置上限、阶段剩余预算、任务剩余时间的最小值；重试不重置预算。
+- 探测超时后先复检 CDP、项目列表与绑定状态；只读瞬态故障有限重试；点击/输入/提交超时后先确认副作用，无法证明上次未生效不重复执行。
+- Windows 只查询目标进程的原生对话框基线；macOS 探测失败不伪装成「没有既有面板」（fail-closed）。
+- 恢复预算耗尽或权限/目标歧义时保留现场，转可继续的 `needs_user/setup_recovery`；任务总时限先到则按 `task_timeout` 结束。恢复期间经进度通道展示阶段与耗时，不消耗代码返修轮数。
+
+### 会话恢复与发送确认（#9）
+
+- 明确区分「环境恢复后首次派发」与「已有会话续答/返修」，不只看 `ctx.resume` 是否存在。
+- 无锚点的环境恢复在发送前采集会话快照，发送**完整原任务、上下文和已验证引用**；用户的「已关闭」等确认文本不发给模型（`continue_task` 对非 `agent_question` 类型 `sendMessage=false`）。
+- 已有会话续答必须定位原会话，缺失或歧义时 `session_lost` fail-closed，不打开最近会话替代。
+- 发送确认与会话识别共用一次有界观察窗口（默认 60s 且受任务剩余时间约束）：消息出现、输入框清空或运行信号只证明进展，不单独代替会话定位；优先任务标记，首次派发用发送前后唯一的新会话差集；多个候选继续等待标记消歧，不凭当前活动会话猜测。窗口内仍无法定位则保留 `send_unknown` 现场，禁止自动重发。
+- 发送按钮只在「唯一、启用、未被遮挡（`elementFromPoint` 命中）」时才点击；未就绪则等待，不把点击尝试当成功。
+
+### 平台限制
+
+macOS 本次仅有自动化与 CI 验证，**无真机端到端验证**；ZCode profile 保持 `research`。Windows 真机任务、会话与 2/2 验收报告见 `docs/zcode-issue-8-10-validation.md`。
+
+---
+
 ## 9. 凭证与安全红线
 
 - 仓库内**不含任何 token**；`~/.npmrc`、`~/.git-credentials`、`GITEE_ACCESS_TOKEN` 均为本机凭证，勿入库。
@@ -491,7 +526,7 @@ Windows + Codex 26.903.9818.0 真机模拟实测：模型菜单的 `menuitemradi
 | 文档 | 内容 |
 |---|---|
 | `README.md` / `README.en.md` | 项目总览、快速开始（含天枢界面配置）、文档索引 |
-| `CHANGELOG.md` / `.en.md` | 版本历史 v0.1.0 → v0.3.3（含比较链接） |
+| `CHANGELOG.md` / `.en.md` | 版本历史 v0.1.0 → v0.3.4（含比较链接） |
 | `CONTRIBUTING.md` / `.en.md` | 开发环境、门禁、规范、提交/发布流程、如何新增 agent |
 | `SECURITY.md` / `.en.md` | 安全模型与漏洞报告 |
 | `CODE_OF_CONDUCT.md` / `.en.md` | 行为准则 |
@@ -504,6 +539,8 @@ Windows + Codex 26.903.9818.0 真机模拟实测：模型菜单的 `menuitemradi
 | `docs/agent-profiles.md` / `.en.md` | profile 字段说明（含 `driver`/`gui`/`stallTimeoutMs`/`cancelWaitMs`） |
 | `docs/adapter-matrix.md` / `.en.md` | 各 agent 能力调研矩阵 |
 | `docs/acceptance-config.md` / `.en.md` | 项目级验收配置规范（含 `requireChanges`） |
+| `docs/release-v0.3.4.md` / `.en.md` | v0.3.4 发布说明（ZCode #8/#9/#10 项目回读、初始化恢复与会话发送确认） |
+| `docs/zcode-issue-8-10-validation.md` / `.en.md` | ZCode #8/#9/#10 Windows 真机验收记录（冷导入、已导入复用、同任务恢复） |
 | `docs/release-v0.3.3.md` / `.en.md` | v0.3.3 发布说明（ZCode 3.11.2 适配 + 验收 fail-closed，issue #4/#7） |
 | `docs/release-v0.3.2.md` / `.en.md` | v0.3.2 发布说明（等待用户检测 + 取消真停 GUI，issue #5/#6） |
 | `docs/release-v0.3.1.md` / `.en.md` | v0.3.1 发布说明（技能文档重写 + 发布自动化修复） |
@@ -521,7 +558,7 @@ Windows + Codex 26.903.9818.0 真机模拟实测：模型菜单的 `menuitemradi
 
 ## 11. 接手人下一步建议
 
-1. 先跑 `npm ci && npm run typecheck && npm run lint && npm test && npm run build`，确认基线绿（366/366）。
+1. 先跑 `npm ci && npm run typecheck && npm run lint && npm test && npm run build`，确认基线绿（407/407）。
 2. 动 GUI adapter 相关代码前，先读对应文档与本文小节：
    TraeWork → `docs/traework-cdp.md` + §8.1/§8.2；ZCode → `docs/zcode-cdp.md` + §8.5；Codex → `docs/codex-gui-cdp.md` + §8.4。
    项目文件夹绑定出问题时，先看 §8.1 的排障顺序（下拉项 ≠ 项目 map、三处已修缺陷、两个定位陷阱）。
