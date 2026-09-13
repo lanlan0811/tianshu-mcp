@@ -428,12 +428,21 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
 
     if (!answeredQuestion) {
       budget.setStage("确认项目绑定");
-      if (!(await cdp.click("projectTrigger")))
-        return result({
-          hardFailure: true,
-          error: "无法打开 ZCode 项目列表",
-          endReason: "setup_failed",
-        });
+      if (!(await cdp.click("projectTrigger"))) {
+        // macOS 实测：newTask 可能命中首页底部惰性图标（trusted 点击无响应、composer 未打开），
+        // 此时项目触发器也不存在——先点侧栏新建任务大按钮打开 composer 再重试。
+        // Windows/假 CDP 主路径首次点击即中，不会进入本分支，行为不变。
+        logger.warn("[zcode] 项目触发器未命中，回退侧栏新建任务按钮后重试");
+        await cdp.click("newTaskSidebar");
+        // eslint-disable-next-line no-await-in-loop
+        await deps.sleep(500);
+        if (!(await cdp.click("projectTrigger")))
+          return result({
+            hardFailure: true,
+            error: "无法打开 ZCode 项目列表",
+            endReason: "setup_failed",
+          });
+      }
       await deps.sleep(300);
       const items = await cdp.projects();
       const matched = matchZcodeProject(items, ctx.projectPath);

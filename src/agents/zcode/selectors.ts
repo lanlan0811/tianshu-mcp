@@ -10,6 +10,7 @@ export type ZcodeSelectorKey =
   | "sendButton"
   | "stopButton"
   | "newTask"
+  | "newTaskSidebar"
   | "messageList"
   | "assistantMessage"
   | "questionCard"
@@ -61,6 +62,12 @@ export const ZCODE_SELECTORS: Record<ZcodeSelectorKey, ZcodeSelectorSpec> = {
     ],
     verifiedVersion: "3.11.x",
     note: "当前窗口顶部的新建会话按钮；避免命中其他工作区挂载的 task-new-button",
+  },
+  newTaskSidebar: {
+    primary: '[data-testid="task-new-button"]',
+    fallbacks: [],
+    verifiedVersion: "3.11.2-macOS",
+    note: "macOS 实测兜底：conversation-new-task 会命中首页底部惰性图标（trusted 点击无响应），侧栏大按钮才是真正入口；仅在 newTask 点击后 composer 未打开时使用",
   },
   messageList: {
     primary: '[data-testid="v4-timeline"]',
