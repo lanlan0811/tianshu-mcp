@@ -62,12 +62,18 @@ export function runVerifyCommand(name: string, argv: string[], opts: RunCommandO
       if (opts.signal) opts.signal.removeEventListener("abort", onAbort);
     };
     void (async () => {
-      if (opts.logFile) {
-        await mkdirp(path.dirname(opts.logFile));
-        stream = fs.createWriteStream(opts.logFile, { flags: "a" });
-        // 竞态兜底：晚到 data 在 end() 后写入会抛 ERR_STREAM_WRITE_AFTER_END，绝不能成为未处理 error 打崩 server。
-        stream.on("error", () => {});
-        safeWrite(`\n=== check: ${name} — ${displayCmd} @ ${new Date().toISOString()} ===\n`);
+      try {
+        if (opts.logFile) {
+          await mkdirp(path.dirname(opts.logFile));
+          stream = fs.createWriteStream(opts.logFile, { flags: "a" });
+          // 竞态兜底：晚到 data 在 end() 后写入会抛 ERR_STREAM_WRITE_AFTER_END，绝不能成为未处理 error 打崩 server。
+          stream.on("error", () => {});
+          safeWrite(`\n=== check: ${name} — ${displayCmd} @ ${new Date().toISOString()} ===\n`);
+        }
+      } catch (e) {
+        // 日志文件是辅助产物：mkdirp/建流失败必须降级为无日志运行——
+        // 此前此处 reject 会成为 unhandled rejection 且外层 promise 永不 resolve（验收挂死无超时）。
+        tail = (tail + `\n[log-error] 日志文件不可用，继续无日志运行：${e instanceof Error ? e.message : String(e)}\n`).slice(-16_384);
       }
       let spawnError: string | null = null;
       try {
