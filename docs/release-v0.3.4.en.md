@@ -16,6 +16,6 @@ Actual Windows tasks, sessions and 2/2 reports are linked in the [hardware valid
 
 ## Distribution and compatibility
 
-This release publishes a GitHub Release and tarball, **not an npm release**. Running `npx tianshu-mcp` alone will not obtain this patch; download and install the attached tarball. GitHub is primary and Gitee mirrors code and tags; consult workflow logs for mirror release creation status.
+This release publishes a GitHub Release and tarball, and is also published to npm (`tianshu-mcp@0.3.4`, `latest`); `npx -y tianshu-mcp` now obtains this patch, or install the attached tarball. GitHub is primary and Gitee mirrors code and tags, with the mirror release created automatically by the workflow.
 
 macOS has automated and CI coverage but no real-device end-to-end verification for this patch. The ZCode profile remains `research`.

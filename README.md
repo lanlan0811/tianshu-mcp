@@ -63,7 +63,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 403 项测试：42 个文件，含 Codex/ZCode 单元/假 CDP/重启/返修闭环
+npm test             # 443 项测试：46 个文件，含 Codex/ZCode 单元/假 CDP/重启/恢复/返修闭环
 ```
 
 ### 安装 npm 包
@@ -141,7 +141,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=zcode, task=「按 `./plan.md` 完�
          model=DeepSeek/deepseek-flash, autoVerify=true)
 ```
 
-ZCode 提问或需要用户处理登录、旧实例、系统权限时进入 `needs_user`；处理后调用 `continue_task(taskId, message)` 恢复原会话。模型选择已适配 ZCode 3.11.2：直选平铺模型优先，展开 provider/family 分组兜底，新旧布局均兼容。完整约束见 [docs/zcode-cdp.md](docs/zcode-cdp.md)。
+ZCode 提问、需要登录、旧实例无 CDP、系统权限不足，或自动恢复未完成（`needs_user/setup_recovery`）时进入 `needs_user`；处理后调用 `continue_task(taskId, message)` 恢复——确认文本不发给模型，无锚点的环境恢复会补发完整原任务、上下文与已验证引用，且不消耗返修轮数。模型选择已适配 ZCode 3.11.2：直选平铺模型优先，展开 provider/family 分组兜底，新旧布局均兼容。完整约束见 docs/zcode-cdp.md。
 
 ## 工具面（9 个）
 
@@ -185,7 +185,9 @@ ZCode 提问或需要用户处理登录、旧实例、系统权限时进入 `nee
 | [docs/zcode-windows-smoke.md](docs/zcode-windows-smoke.md) | ZCode Windows 真机开发、同会话返修与提问续跑验收记录 |
 | [docs/codex-gui-cdp.md](docs/codex-gui-cdp.md) | Codex 桌面端 GUI 驱动：MSIX COM 激活、CDP 接管、选择器、运行检测、验收返修 |
 | [docs/codex-windows-smoke.md](docs/codex-windows-smoke.md) | Codex Windows 真机验收记录（含验收失败→自动生成计划→返修通过闭环） |
-| [docs/release-v0.3.3.md](docs/release-v0.3.3.md) | v0.3.3 发布说明（ZCode 3.11.2 适配 + 验收引擎 fail-closed） |
+| [docs/release-v0.3.4.md](<docs/release-v0.3.4.md>) | v0.3.4 发布说明（ZCode 项目/模型回读、初始化恢复与会话发送确认，issue #8/#9/#10） |
+| [docs/zcode-issue-8-10-validation.md](<docs/zcode-issue-8-10-validation.md>) | ZCode #8/#9/#10 Windows 真机验收记录（冷导入、已导入复用、同任务恢复） |
+| [docs/release-v0.3.3.md](<docs/release-v0.3.3.md>) | v0.3.3 发布说明（ZCode 3.11.2 适配 + 验收引擎 fail-closed） |
 | [docs/release-v0.3.2.md](docs/release-v0.3.2.md) | v0.3.2 发布说明（Codex 等待用户检测 + cancel 真停 GUI） |
 | [docs/release-v0.3.1.md](docs/release-v0.3.1.md) | v0.3.1 发布说明（技能文档重写 + 发布自动化修复） |
 | [docs/release-v0.3.0.md](docs/release-v0.3.0.md) | v0.3.0 发布说明（Codex 桌面端 GUI 适配，含 BREAKING） |
@@ -200,7 +202,8 @@ ZCode 提问或需要用户处理登录、旧实例、系统权限时进入 `nee
 | [docs/npm-publish-guide.md](docs/npm-publish-guide.md) | npm 发布步骤与凭证说明 |
 | [docs/m2-smoke-record.md](docs/m2-smoke-record.md) | M2 真实 codex 冒烟记录（run_task→verify_task 通过 + 缺陷修复） |
 | [docs/m2-rework-record.md](docs/m2-rework-record.md) | M2 codex rework 闭环记录（失败→rework_task→再验收，含物证） |
-| [docs/host-integration-record.md](docs/host-integration-record.md) | 天枢宿主真实接入实测（DoD #6：2 servers / 10 tools） |
+| [docs/host-integration-record.md](<docs/host-integration-record.md>) | 天枢宿主真实接入实测（DoD #6：2 servers / 10 tools） |
+| [docs/issue-1-host-reconnect-record.md](<docs/issue-1-host-reconnect-record.md>) | issue #1 桌面宿主重连验收（天枢 v3.16.1：10 tools + 真实工具调用） |
 | [docs/dod7-release-record.md](docs/dod7-release-record.md) | DoD #7：npm 发布 tianshu-mcp@0.1.1 + npx 拉起连通记录 |
 | [docs/dod8-session-record.md](docs/dod8-session-record.md) | DoD #8：真实天枢会话实测（技能加载 + 工具面 + 全闭环） |
 | [docs/s7-session-recheck.md](docs/s7-session-recheck.md) | S7 二次整改真实会话复测记录 |
@@ -222,9 +225,9 @@ ZCode 提问或需要用户处理登录、旧实例、系统权限时进入 `nee
   - Zcode 无头接口（Z1）实测定论：ZCode 桌面无随包 headless CLI → unsupported
 - **R1–R8 / S1–S6 — 两轮验收整改** ✅（取消/超时/基线归因/参数语义/热加载/CI 加固）— **72 测试**
 - **工程 / CI** ✅
-  - GitHub Actions：`CI`（ubuntu/windows/macos × Node 20/22 + tarball 检查，**7/7 全绿**）与 `Release`（tag 触发）均绿
+  - GitHub Actions：`CI`（ubuntu/windows/macos × Node 20/22/24 + pack-check，**10/10 全绿**，随 v0.3.4 tag 再次校验）与 `Release`（tag 触发）均绿
   - 技能自检安装已在本机真实 `~/.rivet/skills/tianshu-mcp` 验证生效且幂等
-  - npm 包名 `tianshu-mcp` 可用
+  - npm 包名 `tianshu-mcp` 自 v0.1.1 起持续发布（当前 `0.3.4`）
 - **天枢宿主真实接入（DoD #6）** ✅（2026-09-07，[host-integration-record.md](docs/host-integration-record.md)）
   - 在真实 `D:\Tianshu` 桌面宿主 `mcp.servers` 配置本地模式 → sidecar `MCP: 2 servers connected, 10 tools`（含本 server 8 工具），spawn 子进程并 stdio 连通
   - 实测暴露并修复技能安装源路径 bug（fileURLToPath，提交 55cf2d0）
@@ -268,23 +271,27 @@ ZCode 提问或需要用户处理登录、旧实例、系统权限时进入 `nee
 - **M14 — Codex 等待用户检测 + 取消真停 GUI + v0.3.2**（2026-09-12，修复 issue #5 / #6，见 [release-v0.3.2.md](docs/release-v0.3.2.md)）
   - issue #5：Codex 停在「等待用户确认」界面不再死锁在 `running`——停止按钮可见且对话哈希 `gui.stallTimeoutMs`（默认 5 分钟）不变 → 转 `needs_user(user_confirmation)`；新增可配置 `gui.selectors.userGate` 界面检测；`continue_task` 扩展支持 codex（`user_confirmation` 重新观察 / `login_required` 重派）
   - issue #6：`cancel_task` 对 GUI agent 经 CDP 尽力点击停止并在 `gui.cancelWaitMs`（默认 15s）内有界等待 GUI 空闲后才落 `cancelled`；派发前检测受管实例运行态，仍运行则以 `instance_busy` 拒绝，杜绝新旧 turn 交叠
-- **M15 — ZCode 3.11.2 适配 + 验收引擎 fail-closed + v0.3.3**（2026-09-12，修复 issue #4 / #7，见 [release-v0.3.3.md](docs/release-v0.3.3.md)）— **366 测试**
-- **未发布**（2026-09-13）— **403 测试**
+- **M15 — ZCode 3.11.2 适配 + 验收引擎 fail-closed + v0.3.3**（2026-09-12，修复 issue #4 / #7，见 [release-v0.3.3.md](<docs/release-v0.3.3.md>)）— **366 测试**
+  - issue #4：模型菜单同时兼容 `group-provider` 与 3.11.2 `group-family` 分组，直选平铺模型优先、分组展开兜底；项目绑定改以 composer 复选项为主判据，回读校验触发器文本 + 完整路径，失败最多两轮幂等重试；添加项目前先收起残留菜单并重试
+  - issue #7：测试检查退出码 0 但输出零用例时改判失败；git 项目默认要求相对基线产生变更（`requireChanges: false` 可显式关闭），零用例与零变更不再假绿
+  - `{PROGRAMFILES}` 占位符统一大写且环境变量展开大小写不敏感
+- **M16 — ZCode 项目/模型回读加固 + 初始化共同截止时间恢复 + 无锚点会话发送确认 + v0.3.4**（2026-09-13，修复 issue #8 / #9 / #10，见 [release-v0.3.4.md](<docs/release-v0.3.4.md>)）— **407 测试**
+  - issue #8 / #10：项目触发器按「用户覆盖 → 主选择器 → 精确备用」逐级定位，本级歧义即停；绑定以完整规范化路径为唯一依据；添加项目前先收起残留菜单，原生操作超时后先复检副作用，不盲目重放整段导入
+  - issue #9：无锚点的环境恢复补发完整原任务 / 上下文 / 已验证引用，环境确认文本不发给模型；发送确认与会话识别共用一次有界观察窗口（默认 60s），优先任务标记、其次唯一新会话差集，无法定位则保留 `session_lost` / `send_unknown` 现场且不自动重发
+  - 模型回读解码稳定属性、排除隐藏 / 透明 / 裁剪旧值；初始化引入共同截止时间预算（总计 120s、探测 30s、操作 60s、重试 2 次）；macOS 探测失败 fail-closed，不再伪装成「没有既有面板」
+- **未发布**（2026-09-13）— **443 测试**
   - **macOS 打通**：`codex`（spawn .app + CDP）与 `zcode`（进程标题改写适配 + macOS 窗口面板驱动）GUI 基本闭环均真机验证通过（发现 → 绑定 → 发送 → 运行证据 → 验收 PASS → `succeeded`）；取消/返修/continue_task/新建项目矩阵补齐前 macOS 保持 `research`
   - **codex-cli 无头路径**：macOS 经 `driver=spawn` 用户 profile 走 `codex exec`（⚠️ ≤0.130.0 签名证书已被吊销，需 ≥0.154.0）——见「macOS 无头路径：codex-cli」
   - **projectPath 安全闸门**：realpath 归一 + 主目录/系统根目录拒绝 + 脏仓共处警示——见「路径安全闸门」
   - **修复**：`get_profiles` 漏列用户自定义 profile；zcode macOS `needsPermission` 误报；`normalizeProjectPath` 符号链接歧义；CDP 轮询在 renderer 替换/瞬时无响应时重连
   - **工程**：`execFileSync`/`spawnSync` 全量异步化（消除 Windows 轮询期事件循环冻结）；验收命令有界并行（`verifyConcurrency`）；测试套件 267s → 51s
-  - issue #4：模型菜单同时兼容 `group-provider` 与 3.11.2 `group-family` 分组，直选平铺模型优先、分组展开兜底；项目绑定改以 composer 复选项为主判据，回读校验触发器文本 + 完整路径，失败最多两轮幂等重试；添加项目前先收起残留菜单并重试
-  - issue #7：测试检查退出码 0 但输出零用例时改判失败；git 项目默认要求相对基线产生变更（`requireChanges: false` 可显式关闭），零用例与零变更不再假绿
-  - `{PROGRAMFILES}` 占位符统一大写且环境变量展开大小写不敏感
 
 ## Agent 适配现状
 
 | agentId | driver / adapter | status | 说明 |
 |---|---|---|---|
 | `codex` | `gui` / `codex-gui` | **ready**（macOS 为 `research`） | Codex 桌面端 GUI（Windows：MSIX COM 激活 + CDP；macOS：spawn .app + CDP）；支持 `model`/`reasoningLevel`/`planDoc`/`designSystem`；等待用户确认、取消与重派护栏均已真机验证（v0.3.2）；Windows 真机已验证；macOS 基本闭环已真机验证（未发布），取消/返修矩阵补齐前保持 `research` |
-| `zcode` | `gui` / `zcode-gui` | **research** | CDP GUI adapter，Windows 真机闭环通过；已适配 ZCode 3.11.2 模型菜单与项目绑定（v0.3.3）；macOS 基本闭环已真机验证（2026-09-13，未发布），取消/返修/新建项目矩阵补齐前保持 `research` |
+| `zcode` | `gui` / `zcode-gui` | **research** | CDP GUI adapter 已实现且 Windows 真机闭环通过；已适配 ZCode 3.11.2 模型菜单与项目绑定（v0.3.3），并加固项目/模型回读与初始化恢复（v0.3.4）；macOS 基本闭环已真机验证（2026-09-13，未发布），取消/返修/新建项目矩阵补齐前保持 `research` |
 | `traework` | `gui` / `traework-gui` | **ready** | CDP 驱动 TRAE SOLO CN 桌面 UI；三种面板模式真机验证通过 |
 | `stub` | `spawn` | 仅测试 | `test/stub-agent/stub-agent.mjs` 三剧本（good/fix-on-first/never） |
 
@@ -351,7 +358,7 @@ run_task(projectPath=/path/to/项目, agentId=codex-cli, task="任务书", autoV
 | 文档 | 内容 |
 |---|---|
 | [HANDOFF.md](HANDOFF.md) | 项目交接文档：当前状态快照、架构导览、硬性红线、已知限制、接手建议 |
-| [CHANGELOG.md](CHANGELOG.md) | 版本变更日志（v0.1.0 → v0.3.3） |
+| [CHANGELOG.md](<CHANGELOG.md>) | 版本变更日志（v0.1.0 → v0.3.4） |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 开发环境、工程规范、提交与发布流程、如何新增 agent |
 | [SECURITY.md](SECURITY.md) | 安全模型（凭证零管理/命令白名单/进程与桌面自动化边界）与私密报告渠道 |
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | 贡献者行为准则 |

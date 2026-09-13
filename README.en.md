@@ -63,7 +63,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 403 tests across 42 files, including Codex/ZCode unit/fake-CDP/restart/repair coverage
+npm test             # 443 tests across 46 files, including Codex/ZCode unit/fake-CDP/restart/recovery/repair coverage
 ```
 
 ### Install the npm package
@@ -189,7 +189,9 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 | [docs/zcode-windows-smoke.en.md](docs/zcode-windows-smoke.en.md) | ZCode Windows hardware record for development, same-session repair, and question continuation |
 | [docs/codex-gui-cdp.en.md](docs/codex-gui-cdp.en.md) | Codex desktop GUI driver: MSIX COM activation, CDP attach, selectors, run detection, verify/repair |
 | [docs/codex-windows-smoke.en.md](docs/codex-windows-smoke.en.md) | Codex Windows hardware record (incl. verify-fail → auto plan → repair-pass loop) |
-| [docs/release-v0.3.3.en.md](docs/release-v0.3.3.en.md) | v0.3.3 release notes (ZCode 3.11.2 adaptation + fail-closed acceptance engine) |
+| [docs/release-v0.3.4.en.md](<docs/release-v0.3.4.en.md>) | v0.3.4 release notes (ZCode project/model read-back, initialization recovery, session dispatch confirmation, issues #8/#9/#10) |
+| [docs/zcode-issue-8-10-validation.en.md](<docs/zcode-issue-8-10-validation.en.md>) | ZCode #8/#9/#10 Windows hardware record (cold import, imported-project reuse, same-task recovery) |
+| [docs/release-v0.3.3.en.md](<docs/release-v0.3.3.en.md>) | v0.3.3 release notes (ZCode 3.11.2 adaptation + fail-closed acceptance engine) |
 | [docs/release-v0.3.2.en.md](docs/release-v0.3.2.en.md) | v0.3.2 release notes (Codex wait-user detection + cancel truly stops the GUI) |
 | [docs/release-v0.3.1.en.md](docs/release-v0.3.1.en.md) | v0.3.1 release notes (skill docs rewrite + release automation fixes) |
 | [docs/release-v0.3.0.en.md](docs/release-v0.3.0.en.md) | v0.3.0 release notes (Codex desktop GUI adapter, incl. BREAKING) |
@@ -203,11 +205,11 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 | [docs/release-v0.1.5.en.md](docs/release-v0.1.5.en.md) | v0.1.5 release notes (mode switching, README/icon, release artifacts) |
 | [skills/tianshu-mcp/SKILL.md](skills/tianshu-mcp/SKILL.md) | Skill that teaches Tianshu how to orchestrate this MCP (with usage examples) |
 
-> Chinese documentation: see [README.md](README.md).
-> Some milestone/evidence records are **Chinese-only** (no English translation yet): [HANDOFF.md](HANDOFF.md),
-> [docs/npm-publish-guide.md](docs/npm-publish-guide.md), [docs/m2-smoke-record.md](docs/m2-smoke-record.md),
-> [docs/m2-rework-record.md](docs/m2-rework-record.md), [docs/host-integration-record.md](docs/host-integration-record.md),
-> [docs/dod7-release-record.md](docs/dod7-release-record.md), [docs/dod8-session-record.md](docs/dod8-session-record.md),
+> Chinese documentation: see README.md.
+> Some milestone/evidence records are **Chinese-only** (no English translation yet): [HANDOFF.md](<HANDOFF.md>),
+> [docs/npm-publish-guide.md](<docs/npm-publish-guide.md>), [docs/m2-smoke-record.md](<docs/m2-smoke-record.md>),
+> [docs/m2-rework-record.md](<docs/m2-rework-record.md>), [docs/host-integration-record.md](<docs/host-integration-record.md>), [docs/issue-1-host-reconnect-record.md](<docs/issue-1-host-reconnect-record.md>),
+> [docs/dod7-release-record.md](<docs/dod7-release-record.md>), [docs/dod8-session-record.md](<docs/dod8-session-record.md>),
 > [docs/s7-session-recheck.md](docs/s7-session-recheck.md).
 
 ## Milestone status
@@ -224,9 +226,9 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
   - Zcode headless entry (Z1) verified: ZCode desktop ships no headless CLI → unsupported
 - **R1–R8 / S1–S6 — two acceptance hardening rounds** ✅ (cancel / timeout / baseline attribution / parameter semantics / hot reload / CI hardening) — **72 tests**
 - **Engineering / CI** ✅
-  - GitHub Actions: `CI` (ubuntu/windows/macos × Node 20/22 + tarball check, **7/7 green**) and `Release` (tag-triggered) both green
+  - GitHub Actions: `CI` (ubuntu/windows/macos × Node 20/22/24 + pack-check, **10/10 green**, re-verified with the v0.3.4 tag) and `Release` (tag-triggered) both green
   - Skill self-install verified idempotent on this machine's real `~/.rivet/skills/tianshu-mcp`
-  - npm package name `tianshu-mcp` available
+  - npm package name `tianshu-mcp` published continuously since v0.1.1 (currently `0.3.4`)
 - **Real Tianshu host integration (DoD #6)** ✅ (2026-09-07)
   - Configured the local mode in the real `D:\Tianshu` desktop host `mcp.servers` → sidecar reported `MCP: 2 servers connected, 10 tools` (including this server's 8 tools), spawned the child process and connected over stdio
   - Exposed and fixed a skill-install source-path bug (fileURLToPath, commit 55cf2d0)
@@ -270,11 +272,15 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 - **M14 — Codex wait-user detection + cancel truly stops the GUI + v0.3.2** (2026-09-12, fixes issues #5 / #6, see [release-v0.3.2.en.md](docs/release-v0.3.2.en.md))
   - Issue #5: Codex parked on a "waiting for user confirmation" screen no longer dead-locks in `running` — with the stop button visible and the conversation hash unchanged for `gui.stallTimeoutMs` (default 5 min), the task turns `needs_user(user_confirmation)`; added a configurable `gui.selectors.userGate` UI gate; `continue_task` now supports codex (`user_confirmation` re-observes / `login_required` re-dispatches)
   - Issue #6: `cancel_task` for GUI agents clicks the in-app stop control over CDP and bounded-waits (`gui.cancelWaitMs`, default 15s) for the GUI to go idle before recording `cancelled`; dispatch-time liveness checks reject with `instance_busy` when a managed instance is still running, preventing overlapping turns
-- **M15 — ZCode 3.11.2 adaptation + fail-closed acceptance engine + v0.3.3** (2026-09-12, fixes issues #4 / #7, see [release-v0.3.3.en.md](docs/release-v0.3.3.en.md)) — **366 tests**
+- **M15 — ZCode 3.11.2 adaptation + fail-closed acceptance engine + v0.3.3** (2026-09-12, fixes issues #4 / #7, see [release-v0.3.3.en.md](<docs/release-v0.3.3.en.md>)) — **366 tests**
   - Issue #4: the model menu supports both `group-provider` and 3.11.2 `group-family` groups, selecting flat models directly first with group expansion as a fallback; project binding now keys on the composer's `menuitemcheckbox` with read-back checking trigger text + full path and up to two idempotent retries; stale workspace menus are dismissed before adding a project
   - Issue #7: a test check that exits 0 but reports zero executed tests fails; git projects must produce changes relative to the pre-work baseline by default (opt out with `requireChanges: false`) — zero tests and zero changes no longer pass silently
   - `{PROGRAMFILES}` placeholders normalized to uppercase and environment-variable expansion made case-insensitive
-- **Unreleased** (2026-09-13) — **403 tests**
+- **M16 — ZCode project/model read-back hardening + shared-deadline initialization recovery + anchorless session dispatch confirmation + v0.3.4** (2026-09-13, fixes issues #8 / #9 / #10, see [release-v0.3.4.en.md](<docs/release-v0.3.4.en.md>)) — **407 tests**
+  - Issues #8 / #10: project triggers resolve tier by tier (explicit override → primary selector → exact fallback) and stop on ambiguity at the current tier; binding keys on the normalized absolute project path; stale menus are dismissed before adding a project, and native-operation timeouts reconcile side effects instead of replaying the whole import
+  - Issue #9: environment recovery without a session re-sends the full original task / context / validated references, and the environment confirmation text is never sent to the model; dispatch confirmation and session identification share one bounded observation window (default 60s), preferring the task marker and falling back to a unique new-session delta, keeping a `session_lost` / `send_unknown` scene without automatic resend
+  - Model read-back decodes stable attributes and excludes hidden / transparent / clipped outgoing values; initialization shares one deadline budget (120s total, 30s probe, 60s operation, 2 retries); macOS probe failures are fail-closed instead of masquerading as an empty sheet baseline
+- **Unreleased** (2026-09-13) — **443 tests**
   - **macOS wired up**: both `codex` (spawn .app + CDP) and `zcode` (process-title-rewrite adaptation + macOS window-form panel driving) GUI basic closed loops machine-verified (discover → bind → send → run evidence → acceptance PASS → `succeeded`); macOS stays `research` until the cancel/rework/continue_task/new-project matrix is covered
   - **codex-cli headless path**: on macOS, run `codex exec` via a `driver=spawn` user profile (⚠️ ≤0.130.0 is signed with a revoked certificate — use ≥0.154.0) — see "macOS headless path: codex-cli"
   - **projectPath safety gate**: realpath canonicalization + home/system-root rejection + dirty-repo coexistence warning — see "Path safety gate"
@@ -286,7 +292,7 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 | agentId | driver / adapter | status | Notes |
 |---|---|---|---|
 | `codex` | `gui` / `codex-gui` | **ready** (`research` on macOS) | Desktop GUI over CDP (Windows: MSIX COM activation; macOS: spawn .app binary + CDP); supports `model`/`reasoningLevel`/`planDoc`/`designSystem`; wait-user, cancel and dispatch-guard semantics machine-verified (v0.3.2); Windows machine-verified; macOS basic closed loop machine-verified (unreleased) — stays `research` until the cancel/rework matrix is covered |
-| `zcode` | `gui` / `zcode-gui` | **research** | CDP GUI adapter with the Windows hardware loop passed; adapted to ZCode 3.11.2 model menu and project binding (v0.3.3); macOS basic closed loop machine-verified (2026-09-13, unreleased) — stays `research` until the cancel/rework/new-project matrix is covered |
+| `zcode` | `gui` / `zcode-gui` | **research** | CDP GUI adapter with the Windows hardware loop passed; adapted to ZCode 3.11.2 model menu and project binding (v0.3.3), with hardened project/model read-back and initialization recovery (v0.3.4); macOS basic closed loop machine-verified (2026-09-13, unreleased) — stays `research` until the cancel/rework/new-project matrix is covered |
 | `traework` | `gui` / `traework-gui` | **ready** | CDP-driven TRAE SOLO CN desktop UI; all three panel modes machine-verified |
 | `stub` | `spawn` | tests only | `test/stub-agent/stub-agent.mjs` with 3 playbooks (good/fix-on-first/never) |
 
@@ -352,7 +358,7 @@ Behavior and limits:
 
 | Document | Content |
 |---|---|
-| [CHANGELOG.en.md](CHANGELOG.en.md) | Version history (v0.1.0 → v0.3.3) |
+| [CHANGELOG.en.md](<CHANGELOG.en.md>) | Version history (v0.1.0 → v0.3.4) |
 | [CONTRIBUTING.en.md](CONTRIBUTING.en.md) | Dev setup, conventions, commit/release flow, adding an agent |
 | [SECURITY.en.md](SECURITY.en.md) | Security model (zero credentials / command whitelist / process & desktop-automation boundaries) and private reporting |
 | [CODE_OF_CONDUCT.en.md](CODE_OF_CONDUCT.en.md) | Contributor Code of Conduct |
