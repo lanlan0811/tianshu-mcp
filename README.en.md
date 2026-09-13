@@ -373,16 +373,18 @@ Behavior and limits:
 
 Thanks to the community members below who contributed through Issues and pull requests (listed in order of first participation):
 
-| Contributor | Contribution |
-|---|---|
-| [liuchsong](https://github.com/liuchsong) | Issue [#1](https://github.com/lanlan0811/tianshu-mcp/issues/1) (stdio log output polluting the JSON-RPC stream), Issue [#2](https://github.com/lanlan0811/tianshu-mcp/issues/2) (bundled headless CLI path in the ZCode desktop app) |
-| [a13612745638](https://github.com/a13612745638) | Issue [#3](https://github.com/lanlan0811/tianshu-mcp/issues/3) (visual acceptance proposal, still under discussion) |
-| [king195547](https://github.com/king195547) | Issue [#4](https://github.com/lanlan0811/tianshu-mcp/issues/4) (ZCode 3.11.2 model-menu grouping drift), Issue [#8](https://github.com/lanlan0811/tianshu-mcp/issues/8) (project-trigger fallback selector too broad — a regression) |
-| [zhaoxc857](https://github.com/zhaoxc857) | Issue [#5](https://github.com/lanlan0811/tianshu-mcp/issues/5) (codex completion detection deadlock while waiting for user confirmation), Issue [#6](https://github.com/lanlan0811/tianshu-mcp/issues/6) (cancel_task not actually stopping the in-GUI run) |
-| [jian-in](https://github.com/jian-in) | Issue [#7](https://github.com/lanlan0811/tianshu-mcp/issues/7) (ZCode 3.11.2 compatibility), Issue [#9](https://github.com/lanlan0811/tianshu-mcp/issues/9) (recovery failure for tasks with no session anchor) |
-| [huiliyi37](https://github.com/huiliyi37) | PR [#11](https://github.com/lanlan0811/tianshu-mcp/pull/11) (macOS GUI drivers, projectPath security gate, event-loop and verification performance work) |
-
-> Contributions are not limited to code: the reproduction steps, environment details and fix suggestions in these Issues shaped several releases.
+<table>
+  <tr>
+    <td align="center"><a href="https://github.com/liuchsong"><img src="https://github.com/liuchsong.png" width="72" height="72" alt="liuchsong" /><br /><sub>liuchsong</sub></a></td>
+    <td align="center"><a href="https://github.com/a13612745638"><img src="https://github.com/a13612745638.png" width="72" height="72" alt="a13612745638" /><br /><sub>a13612745638</sub></a></td>
+    <td align="center"><a href="https://github.com/king195547"><img src="https://github.com/king195547.png" width="72" height="72" alt="king195547" /><br /><sub>king195547</sub></a></td>
+  </tr>
+  <tr>
+    <td align="center"><a href="https://github.com/zhaoxc857"><img src="https://github.com/zhaoxc857.png" width="72" height="72" alt="zhaoxc857" /><br /><sub>zhaoxc857</sub></a></td>
+    <td align="center"><a href="https://github.com/jian-in"><img src="https://github.com/jian-in.png" width="72" height="72" alt="jian-in" /><br /><sub>jian-in</sub></a></td>
+    <td align="center"><a href="https://github.com/huiliyi37"><img src="https://github.com/huiliyi37.png" width="72" height="72" alt="huiliyi37" /><br /><sub>huiliyi37</sub></a></td>
+  </tr>
+</table>
 
 > Chinese counterparts: see [README.md](README.md). The handoff document [HANDOFF.md](HANDOFF.md) is Chinese-only.
 

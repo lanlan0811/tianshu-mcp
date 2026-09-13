@@ -373,16 +373,18 @@ run_task(projectPath=/path/to/项目, agentId=codex-cli, task="任务书", autoV
 
 感谢以下通过 Issue 与 PR 为本项目做出贡献的社区成员（按首次参与顺序排列）：
 
-| 贡献者 | 贡献内容 |
-|---|---|
-| [liuchsong](https://github.com/liuchsong) | Issue [#1](https://github.com/lanlan0811/tianshu-mcp/issues/1)（stdio 日志污染 JSON-RPC 流）、Issue [#2](https://github.com/lanlan0811/tianshu-mcp/issues/2)（ZCode 桌面版自带无头 CLI 接入路径） |
-| [a13612745638](https://github.com/a13612745638) | Issue [#3](https://github.com/lanlan0811/tianshu-mcp/issues/3)（视觉验收功能提案，仍在讨论） |
-| [king195547](https://github.com/king195547) | Issue [#4](https://github.com/lanlan0811/tianshu-mcp/issues/4)（ZCode 3.11.2 模型菜单分组漂移）、Issue [#8](https://github.com/lanlan0811/tianshu-mcp/issues/8)（项目触发器兜底选择器过宽回归） |
-| [zhaoxc857](https://github.com/zhaoxc857) | Issue [#5](https://github.com/lanlan0811/tianshu-mcp/issues/5)（codex 等待用户确认时的完成判定死锁）、Issue [#6](https://github.com/lanlan0811/tianshu-mcp/issues/6)（cancel_task 不真正停止 GUI 内运行） |
-| [jian-in](https://github.com/jian-in) | Issue [#7](https://github.com/lanlan0811/tianshu-mcp/issues/7)（ZCode 3.11.2 适配）、Issue [#9](https://github.com/lanlan0811/tianshu-mcp/issues/9)（无会话锚点任务的恢复失败） |
-| [huiliyi37](https://github.com/huiliyi37) | PR [#11](https://github.com/lanlan0811/tianshu-mcp/pull/11)（macOS GUI 驱动打通、projectPath 安全闸门、事件循环与验收性能工程） |
-
-> 贡献不限于代码：Issue 中提供的复现步骤、环境信息与修复建议同样推动了多个版本的修复。
+<table>
+  <tr>
+    <td align="center"><a href="https://github.com/liuchsong"><img src="https://github.com/liuchsong.png" width="72" height="72" alt="liuchsong" /><br /><sub>liuchsong</sub></a></td>
+    <td align="center"><a href="https://github.com/a13612745638"><img src="https://github.com/a13612745638.png" width="72" height="72" alt="a13612745638" /><br /><sub>a13612745638</sub></a></td>
+    <td align="center"><a href="https://github.com/king195547"><img src="https://github.com/king195547.png" width="72" height="72" alt="king195547" /><br /><sub>king195547</sub></a></td>
+  </tr>
+  <tr>
+    <td align="center"><a href="https://github.com/zhaoxc857"><img src="https://github.com/zhaoxc857.png" width="72" height="72" alt="zhaoxc857" /><br /><sub>zhaoxc857</sub></a></td>
+    <td align="center"><a href="https://github.com/jian-in"><img src="https://github.com/jian-in.png" width="72" height="72" alt="jian-in" /><br /><sub>jian-in</sub></a></td>
+    <td align="center"><a href="https://github.com/huiliyi37"><img src="https://github.com/huiliyi37.png" width="72" height="72" alt="huiliyi37" /><br /><sub>huiliyi37</sub></a></td>
+  </tr>
+</table>
 
 > 英文版对应文档见 [README.en.md](README.en.md)。
 
