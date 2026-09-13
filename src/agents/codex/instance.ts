@@ -6,7 +6,7 @@
  */
 import net from "node:net";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { TraeworkCdpClient } from "../traework/cdp/client.js";
 import type { GuiProfile } from "../../config/schema.js";
 import type { AgentRunLogger } from "../adapter.js";
@@ -66,6 +66,11 @@ export function listCodexProcesses(): Promise<CodexProcess[]> {
     const res = await execFileAsync("ps", ["-axo", "pid=,command="], { timeoutMs: 5_000 });
     return res.status === 0 ? parsePsRows(res.stdout, /ChatGPT/i) : [];
   });
+}
+
+/** 杀实例后主动失效进程枚举缓存：否则 TTL 内仍命中旧快照，等待环空探已死端口（最坏烧满 launchTimeoutMs） */
+export function invalidateCodexProcessCache(): void {
+  processCache.delete(PROCESS_CACHE_KEY);
 }
 
 /** 根进程：排除 renderer/gpu/utility/crashpad 等子进程 */
@@ -229,7 +234,7 @@ export async function ensureCodexInstance(
   //    --user-data-dir / --remote-debugging-port，单实例锁语义一致。
   const port = await pickPort(gui);
   // 对象持有：避免 TS 对闭包捕获的 let 做死窄化（loop 内读不到 error 回调的赋值）
-  const spawnState: { error: Error | null } = { error: null };
+  const spawnState: { error: Error | null; child: ChildProcess | null } = { error: null, child: null };
   if (gui.activation === "msix-com") {
     if (!candidate.aumid) throw new Error("Codex AUMID 未解析，无法通过 MSIX 激活启动");
     const args = buildActivationArgs(userDataDir, port);
@@ -246,6 +251,7 @@ export async function ensureCodexInstance(
       detached: process.platform !== "win32",
       stdio: "ignore",
     });
+    spawnState.child = child;
     if (process.platform !== "win32") child.unref();
     child.on("error", (e) => {
       spawnState.error = e instanceof Error ? e : new Error(String(e));
@@ -264,6 +270,26 @@ export async function ensureCodexInstance(
     // eslint-disable-next-line no-await-in-loop
     const ready = await probeCodexPort(port, snapshot);
     if (ready) return { ready: { ...ready, userDataDir } };
+    if (spawnState.child && spawnState.child.exitCode !== null) {
+      // 单实例锁转发：启动器把参数转给既有受管实例后退出——探测其真实端口接管，
+      // 不再空等满 launchTimeoutMs（对齐 zcode/instance.ts 同段处理）。
+      const forwardedRoots = rootCodexProcesses(snapshot);
+      for (const proc of forwardedRoots) {
+        const forwardedPort = remoteDebugPort(proc.commandLine);
+        const udd = remoteUserDataDir(proc.commandLine);
+        if (!forwardedPort || !udd || normalizeDir(udd) !== wanted) continue; // 仅本 MCP 受管 profile
+        // eslint-disable-next-line no-await-in-loop
+        const forwarded = await probeCodexPort(forwardedPort, forwardedRoots);
+        if (forwarded) {
+          logger.info(
+            `[codex] 启动器 exit=${spawnState.child.exitCode}，已接管既有受管实例 CDP 端口 ${forwarded.port}`,
+          );
+          return { ready: { ...forwarded, userDataDir } };
+        }
+      }
+      if (spawnState.child.exitCode !== 0)
+        throw new Error(`Codex 启动后提前退出（exit=${spawnState.child.exitCode}）`);
+    }
   }
   throw new Error(`等待 Codex CDP 就绪超时（${gui.launchTimeoutMs}ms）`);
 }

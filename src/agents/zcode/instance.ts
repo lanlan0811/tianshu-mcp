@@ -150,6 +150,8 @@ export async function ensureZcodeInstance(
     // macOS：argv 被标题改写隐藏时，补扫配置端口段（有界快速扫描，多数端口 ECONNREFUSED 立即返回）；
     // 扫描预算收窄到 10s——扫不到 ZCode 页面即确属「无 CDP 旧实例」，不必烧满 launchTimeoutMs。
     const scanAll = process.platform === "darwin" && argvPorts.length === 0;
+    // scanAll 的冻结列表是刻意设计（补扫配置端口段）；!scanAll 时端口每 tick 从最新 roots 重算，
+    // 实例 argv 变化（新调试端口）不会空等旧端口。
     const ports = scanAll
       ? Array.from({ length: gui.cdpPortRange }, (_, i) => gui.cdpPort + i)
       : argvPorts;
@@ -162,7 +164,13 @@ export async function ensureZcodeInstance(
       // 每个 tick 只枚举一次进程，快照传给本轮全部 probe
       // eslint-disable-next-line no-await-in-loop
       roots = rootZcodeProcesses(await listZcodeProcessesAsync(options));
-      for (const port of ports) {
+      const recomputed = roots
+        .map((p) => remoteDebugPort(p.commandLine))
+        .filter((x): x is number => x !== null);
+      // 重算为空（如 macOS 主进程标题改写隐藏 argv）时回退初始列表：
+      // 旧端口仍是真实 CDP 端口，darwin 放宽归属判定可继续命中；有值则以最新 roots 为准
+      const tickPorts = scanAll ? ports : recomputed.length > 0 ? recomputed : ports;
+      for (const port of tickPorts) {
         // eslint-disable-next-line no-await-in-loop
         const ready = await probeZcodePort(port, roots);
         if (ready) return { ready };

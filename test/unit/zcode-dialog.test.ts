@@ -1,9 +1,24 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 const native = vi.hoisted(() => vi.fn());
 vi.mock("node:child_process", () => ({
   execFile: Object.assign(vi.fn(), { [Symbol.for("nodejs.util.promisify.custom")]: native }),
 }));
-import { listOwnedDialogs, selectZcodeFolder } from "../../src/agents/zcode/dialog.js";
+// unit project 以 isolate:false 共享模块注册表：若其他测试文件（zcode-core 等）先静态 import
+// 了 dialog.js，其顶层 promisify(execFile) 绑定的就是真实 execFile，本文件的 vi.mock 无法回改，
+// 测试会真实外呼 powershell.exe/osascript（曾按分片调度概率性失败）。
+// 清模块缓存后动态 import，确保 dialog.ts 恒在本 mock 下求值（与文件执行顺序无关）；
+// 用完再清一次，避免把 mock 绑定的 dialog.js 留在共享缓存里影响后续文件。
+let listOwnedDialogs: typeof import("../../src/agents/zcode/dialog.js").listOwnedDialogs;
+let selectZcodeFolder: typeof import("../../src/agents/zcode/dialog.js").selectZcodeFolder;
+beforeAll(async () => {
+  vi.resetModules();
+  const mod = await import("../../src/agents/zcode/dialog.js");
+  listOwnedDialogs = mod.listOwnedDialogs;
+  selectZcodeFolder = mod.selectZcodeFolder;
+});
+afterAll(() => {
+  vi.resetModules();
+});
 beforeEach(() => {
   native.mockReset();
 });

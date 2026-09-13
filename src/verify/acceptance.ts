@@ -286,10 +286,15 @@ export class AcceptanceEngine {
     // optional:true 的失败只记 warning，不使本轮 verdict 失败（R4）
     const failed = checks.filter((c) => !c.passed && !c.skipped && !c.optional);
     const optFailed = checks.filter((c) => !c.passed && !c.skipped && c.optional);
-    const passed = failed.length === 0;
+    // 任务取消：验收被中断（在途 check 被杀、其余跳过），无论检查结果如何都不得落「通过」假绿
+    const cancelled = req.signal?.aborted ?? false;
+    const passed = !cancelled && failed.length === 0;
     const finishedAt = nowIso();
 
     const summaryBits: string[] = [];
+    if (cancelled) {
+      summaryBits.push("任务取消，验收未完成");
+    }
     if (failed.length) {
       summaryBits.push(`未通过检查: ${failed.map((c) => c.name).join(", ")}`);
     }

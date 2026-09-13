@@ -12,7 +12,8 @@ import fsp from "node:fs/promises";
 import os from "node:os";
 import { randomBytes } from "node:crypto";
 import { AcceptanceEngine } from "../../src/verify/acceptance.js";
-import { ServerConfigSchema, type AcceptanceCheckDef } from "../../src/config/schema.js";
+import { summarizeReport } from "../../src/verify/report.js";
+import { AcceptanceConfigSchema, ServerConfigSchema, type AcceptanceCheckDef } from "../../src/config/schema.js";
 import { TaskStore } from "../../src/tasks/task-store.js";
 import { Logger } from "../../src/util/log.js";
 import { exists } from "../../src/util/fs.js";
@@ -169,4 +170,63 @@ describe("验收命令检查有界并行（verifyConcurrency）", () => {
       clearTimeout(timer);
     }
   }, 30_000);
+
+  it("大输出 check 的 [exit] 尾行完整落入合并日志（resolve 前等日志流 flush）", async () => {
+    const project = await tmpDir("parallel-flush");
+    // 大段尾部输出后退出：flush 竞态下 [exit] 尾行最容易被 mergePartLogs 读丢
+    // （payload 由脚本内生成，避免超长 argv 撞 win32 命令行上限；
+    //   write 回调里再 exit——process.exit 会截断管道中未 flush 的输出）
+    const big = "x".repeat(200_000);
+    const checks: AcceptanceCheckDef[] = [
+      {
+        name: "big",
+        cmd: [process.execPath, "-e", `process.stdout.write("x".repeat(200000),()=>process.exit(0))`],
+        displayCmd: "big-out",
+      },
+      sleepCheck("small", 0, "SMALL"),
+    ];
+    const { passed, taskDir } = await runVerify(project, { checks, projectConcurrency: 2 });
+    expect(passed).toBe(true);
+    const log = await fsp.readFile(path.join(taskDir, "verify-0.log"), "utf8");
+    expect(log).toContain(big);
+    // 每条 check 的 [exit] 尾行都必须存在（part 文件 flush 完成后才被拼接）
+    expect(log.match(/\[exit\] code=0/g)).toHaveLength(2);
+    // big 段内：[exit] 尾行必须出现在 200KB 输出之后（不被截断）
+    expect(log.indexOf("[exit] code=0")).toBeGreaterThan(big.length);
+  }, 30_000);
+
+  it("任务取消落盘 verdict=failed 不假绿，摘要无「N/N 项通过」矛盾文本", async () => {
+    const project = await tmpDir("cancel-verdict");
+    const ac = new AbortController();
+    ac.abort(); // 验收开始前已取消：全部命令检查走「任务取消，未执行」skip（无失败项）
+    const { report, passed } = await runVerify(project, {
+      checks: [sleepCheck("a", 0, "A"), sleepCheck("b", 0, "B")],
+      serverConcurrency: 2,
+      signal: ac.signal,
+    });
+    // 检查零失败但验收被中断：不得落「通过」假绿
+    expect(passed).toBe(false);
+    expect(report.passed).toBe(false);
+    expect(report.verdict).toBe("failed");
+    expect(report.message).toContain("任务取消，验收未完成");
+    expect(report.message).not.toBe("验收通过。");
+    const summary = summarizeReport(report);
+    expect(summary).toContain("任务取消");
+    expect(summary).not.toContain("项命令检查通过");
+  }, 30_000);
+});
+
+describe("acceptance.json verifyConcurrency 容错", () => {
+  it("越界值 clamp 到 1..4（不株连整份 acceptance.json 失效）", () => {
+    const high = AcceptanceConfigSchema.parse({
+      requireChanges: false,
+      verifyConcurrency: 99,
+      checks: [{ name: "x", cmd: ["echo", "hi"] }],
+    });
+    expect(high.verifyConcurrency).toBe(4);
+    expect(high.checks).toHaveLength(1); // 整份配置仍有效
+    expect(high.requireChanges).toBe(false);
+    expect(AcceptanceConfigSchema.parse({ verifyConcurrency: 0 }).verifyConcurrency).toBe(1);
+    expect(AcceptanceConfigSchema.parse({ verifyConcurrency: -3 }).verifyConcurrency).toBe(1);
+  });
 });

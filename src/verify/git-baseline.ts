@@ -12,7 +12,7 @@ import { createHash } from "node:crypto";
 /** 文件读取/哈希的有界并发上限（worker 池，与 acceptance.ts 命令检查同构） */
 const FILE_IO_CONCURRENCY = 8;
 /** 未跟踪文件内容哈希的数量上限：超出部分不哈希（不参与预脏排除），并在 message 中注明 */
-const MAX_UNTRACKED_HASH = 5000;
+export const MAX_UNTRACKED_HASH = 5000;
 
 export interface Baseline {
   isRepo: boolean;
@@ -26,6 +26,8 @@ export interface Baseline {
   preDirtyHashes: Record<string, string>;
   /** 基线前未跟踪文件的内容 hash（兼容旧字段，逻辑并入 preDirtyHashes） */
   preUntrackedHashes: Record<string, string>;
+  /** 截断发生时的超帽数量（未跟踪 > 5000）：超帽文件无哈希，验收侧聚合提示且不归因，不发逐文件假 note */
+  untrackedHashTruncated?: number;
   capturedAt: string;
   message: string;
 }
@@ -74,10 +76,11 @@ export async function captureBaseline(projectPath: string): Promise<Baseline> {
     preExistingUntracked: parsed.untracked,
     preDirtyHashes: hashes,
     preUntrackedHashes,
+    ...(truncatedUntracked > 0 ? { untrackedHashTruncated: truncatedUntracked } : {}),
     capturedAt: new Date().toISOString(),
     message:
       truncatedUntracked > 0
-        ? `${baseMessage}注意：未跟踪文件共 ${parsed.untracked.length} 个，超出哈希上限 ${MAX_UNTRACKED_HASH}，仅前 ${untrackedToHash.length} 个计算内容 hash（其余不参与预脏排除，验收时可能被计入本轮变更）。`
+        ? `${baseMessage}注意：未跟踪文件共 ${parsed.untracked.length} 个，超出哈希上限 ${MAX_UNTRACKED_HASH}，仅前 ${untrackedToHash.length} 个计算内容 hash（超帽文件无法归因：验收时聚合标注且不计入本轮变更）。`
         : baseMessage,
   };
 }

@@ -73,9 +73,12 @@ export function summarizeReport(report: VerifyReport): string {
   const passCount = report.checks.filter((c) => c.passed).length;
   const fail = report.checks.filter((c) => !c.passed && !c.skipped);
   const skip = report.checks.filter((c) => c.skipped).length;
-  const head =
-    report.passed
-      ? `[PASS] 验收通过（第 ${report.round} 轮）：${passCount}/${report.checks.length} 项命令检查通过${skip ? `，${skip} 项跳过` : ""}。`
+  // 任务取消的轮次：不输出「N/N 项通过」式自相矛盾文本（检查并未完整执行）
+  const cancelled = report.message.includes("任务取消");
+  const head = report.passed
+    ? `[PASS] 验收通过（第 ${report.round} 轮）：${passCount}/${report.checks.length} 项命令检查通过${skip ? `，${skip} 项跳过` : ""}。`
+    : cancelled
+      ? `[FAIL] 验收未完成（第 ${report.round} 轮）：任务取消，验收中断${skip ? `，${skip} 项未执行` : ""}。`
       : `[FAIL] 验收失败（第 ${report.round} 轮）：${fail.length} 项检查未通过${skip ? `，${skip} 项跳过` : ""}。`;
   const lines = [head, ""];
   for (const c of report.checks) {

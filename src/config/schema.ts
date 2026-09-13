@@ -338,7 +338,10 @@ export type ProjectsFile = z.infer<typeof ProjectsFileSchema>;
 export const AcceptanceConfigSchema = z.object({
   checks: z.array(AcceptanceCheckSchema).default([]),
   requireChanges: z.boolean().default(true),
-  /** 命令检查并行度：1=串行（与历史行为一致）；缺省继承 server config.json 的 verifyConcurrency（默认 2），上限 4 */
-  verifyConcurrency: z.number().int().min(1).max(4).optional(),
+  /** 命令检查并行度：1=串行（与历史行为一致）；缺省继承 server config.json 的 verifyConcurrency（默认 2）。越界值 clamp 到 1..4（不再株连整份 acceptance.json 失效） */
+  verifyConcurrency: z
+    .number()
+    .transform((n) => (Number.isFinite(n) ? Math.min(4, Math.max(1, Math.round(n))) : 1))
+    .optional(),
 });
 export type AcceptanceConfig = z.infer<typeof AcceptanceConfigSchema>;

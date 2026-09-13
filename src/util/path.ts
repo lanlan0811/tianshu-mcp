@@ -95,16 +95,25 @@ const DANGEROUS_ROOTS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * DANGEROUS_ROOTS 查询 key：win32 下具名目录按大小写不敏感语义小写化
+ * （否则 `C:\Windows` 归一为 `c:/Windows`，与 Set 内小写字面量永不命中）。
+ * 仅用于危险根/主目录相等比较；不改 normPath 本身（它参与 projectHash 存储身份）。
+ */
+export function dangerKey(norm: string, platform: NodeJS.Platform = process.platform): string {
+  return platform === "win32" ? norm.toLowerCase() : norm;
+}
+
+/**
  * 写入类入口（run_task / verify_task）的项目目录闸门：
  * resolveProjectDir 之上再拒「主目录本身」与「系统/根级目录」。
  * 注意只挡精确相等的根——/tmp/xxx、/Users/name/repo 等子目录不受影响。
  */
 export function assertSafeProjectDir(p: string): ProjectDirResolution {
   const r = resolveProjectDir(p);
-  if (r.norm === normPath(os.homedir())) {
+  if (dangerKey(r.norm) === dangerKey(normPath(os.homedir()))) {
     throw new Error(`projectPath 不能是用户主目录本身（worker 将可写整个主目录）: ${r.canonical}`);
   }
-  if (DANGEROUS_ROOTS.has(r.norm)) {
+  if (DANGEROUS_ROOTS.has(dangerKey(r.norm))) {
     throw new Error(`projectPath 指向系统/根级目录，worker 写权限将覆盖整个子树，已拒绝: ${r.canonical}`);
   }
   return r;

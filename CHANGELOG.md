@@ -42,7 +42,7 @@
 ### 性能
 
 - GUI 实例探测、发现、注册全链路 `execFileSync`/`spawnSync` 异步化；就绪等待环每 tick 复用进程快照，进程枚举加 1.5s TTL 缓存——消除 Windows 轮询期事件循环冻结（单次最坏 30s）。
-- 验收命令检查有界并行：新增 `verifyConcurrency`（server 级默认 2、范围 1–4；项目级 `.tianshu-mcp/acceptance.json` 可覆盖，=1 完全退化串行）；日志按声明顺序拼接、格式不变；取消信号可中断在途与未启动检查。
+- 验收命令检查有界并行：新增 `verifyConcurrency`（**⚠ 默认值由串行变为 2**，范围 1–4；项目级 `.tianshu-mcp/acceptance.json` 可覆盖，=1 完全退化串行——写构建产物/带 `--fix`/共享缓存目录的 checks 建议显式设 1）；日志按声明顺序拼接、格式不变；取消信号可中断在途与未启动检查。
 - git 基线哈希两遍并一遍 + 异步有界并发（untracked 上限 5000 截断）；代码分析每文件只读一次，大文件嗅探只读前缀。
 - `get_profiles` 与任务快照读改 `Promise.all`。
 - 测试套件 267s → 51s：traework UI 层 sleep 改依赖注入（生产默认值不变），vitest 拆 unit 并行 / integration 串行双 project。

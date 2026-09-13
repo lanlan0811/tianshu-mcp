@@ -55,10 +55,11 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 - All `execFileSync`/`spawnSync` calls across GUI instance probing, discovery and registration
   are now async; ready-wait loops reuse a per-tick process snapshot with a 1.5s TTL cache —
   eliminating event-loop freezes during Windows polling (up to 30s per call).
-- Acceptance command checks run with bounded parallelism: new `verifyConcurrency` (server-level
-  default 2, range 1–4; project-level `.tianshu-mcp/acceptance.json` overrides, 1 = fully serial);
-  logs are concatenated in declaration order with unchanged format; cancellation interrupts both
-  in-flight and pending checks.
+- Acceptance command checks run with bounded parallelism: new `verifyConcurrency` (**⚠ default
+  changed from serial to 2**, range 1–4; project-level `.tianshu-mcp/acceptance.json` overrides,
+  1 = fully serial — set 1 explicitly for checks that write build outputs, run with `--fix`, or
+  share cache directories); logs are concatenated in declaration order with unchanged format;
+  cancellation interrupts both in-flight and pending checks.
 - Git baseline hashing is single-pass with bounded async concurrency (untracked cap 5000);
   code analysis reads each file at most once, sniffing only a prefix of large files.
 - `get_profiles` and task snapshot reads now use `Promise.all`.

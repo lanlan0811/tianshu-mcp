@@ -7,7 +7,7 @@ import path from "node:path";
 import fsp from "node:fs/promises";
 import { createHash } from "node:crypto";
 import type { AnalysisResult } from "../tasks/task.js";
-import { parsePorcelain, diffSinceBaseline, gitStatusPorcelain, type Baseline } from "./git-baseline.js";
+import { parsePorcelain, diffSinceBaseline, gitStatusPorcelain, MAX_UNTRACKED_HASH, type Baseline } from "./git-baseline.js";
 import { scanChangedLinesForSignals } from "./signals.js";
 
 /** diffstat per-file 行（report.json analysis.diffstat.perFile） */
@@ -54,6 +54,15 @@ export async function analyzeChanges(opts: AnalyzeOpts): Promise<AnalysisResult>
   const preChanged = new Set(baseline.preExistingChanged);
   const preUntracked = new Set(baseline.preExistingUntracked);
 
+  // 未跟踪超帽截断（>5000）时，「基线前已存在但无哈希」的文件无法归因：
+  // 不发逐文件假 note、不计入变更判定（untrackedFiles/diffstat/可疑标记），聚合为一条 note。
+  const unattributable = new Set<string>();
+  if ((baseline.untrackedHashTruncated ?? 0) > 0) {
+    for (const f of parsed.untracked) {
+      if (preUntracked.has(f) && !baseDirtyHash(baseline, f)) unattributable.add(f);
+    }
+  }
+
   // 文件 IO 统一入口：预脏 tracked 文件（仅 hash）+ 全部未跟踪文件（单次读取派生全部判断），
   // 有界并发执行。每个文件全程最多读一次；hash/二进制嗅探/行数/文本共用同一 buffer。
   const preDirtyNowHashes = new Map<string, string | null>();
@@ -94,6 +103,7 @@ export async function analyzeChanges(opts: AnalyzeOpts): Promise<AnalysisResult>
   // 新增未跟踪文件：基线前不存在 → 整文件计入；基线前已存在 → 内容 hash 变化才计入，未变则排除。
   for (const f of parsed.untracked) {
     if (trackedSeen.has(f)) continue;
+    if (unattributable.has(f)) continue; // 超帽截断无哈希：无法归因，不计入
     const probe = untrackedProbes.get(f);
     if (!probe) continue; // 上面已全量探测，不会缺；防御性跳过
     if (preUntracked.has(f)) {
@@ -125,6 +135,7 @@ export async function analyzeChanges(opts: AnalyzeOpts): Promise<AnalysisResult>
   for (const arr of changedLinesPerFile.values()) allAdded.push(...arr);
   // 未跟踪且基线前不存在 → 全量扫描；基线前已有且内容没变 → 已排除
   for (const f of parsed.untracked) {
+    if (unattributable.has(f)) continue; // 超帽截断无哈希：无法归因，不扫描
     const probe = untrackedProbes.get(f);
     if (!probe) continue;
     if (preUntracked.has(f)) {
@@ -142,6 +153,7 @@ export async function analyzeChanges(opts: AnalyzeOpts): Promise<AnalysisResult>
 
   const trackedFiles = [...new Set(perFile.filter((p) => !parsed.untracked.includes(p.file)).map((p) => p.file))];
   const untrackedFiles = parsed.untracked.filter((f) => {
+    if (unattributable.has(f)) return false; // 超帽截断无哈希：无法归因，不计入本轮变更
     if (!preUntracked.has(f)) return true;
     // 基线前已有：内容变了才作为本轮新增未跟踪
     const b = baseDirtyHash(baseline, f);
@@ -149,6 +161,12 @@ export async function analyzeChanges(opts: AnalyzeOpts): Promise<AnalysisResult>
     return !(b && n && b === n);
   });
   const changedFiles = [...trackedFiles];
+
+  if (unattributable.size) {
+    notes.push(
+      `${unattributable.size} 个基线前未跟踪文件超出哈希上限 ${MAX_UNTRACKED_HASH}，无法归因（未计入本轮变更判定）。`,
+    );
+  }
 
   if (preChanged.size || preUntracked.size) {
     notes.push(`动工前工作区已有 ${preChanged.size} 个已跟踪脏文件 + ${preUntracked.size} 个未跟踪文件；本报告仅归因相对动工前基线的净变更。`);
@@ -215,11 +233,11 @@ interface FileProbe {
   hash: string | null;
   /** 二进制扩展名命中，或前 8000 字节 NUL 占比 >10%；读取失败按二进制（同旧 looksBinary 的 catch → true） */
   binary: boolean;
-  /** utf8 文本 split("\n") 行数；读取失败为 0（同旧 countLines 的 catch） */
+  /** utf8 文本 split("\n") 行数；二进制不计算为 0（lines 仅非二进制消费）；读取失败为 0（同旧 countLines 的 catch） */
   lines: number;
   /** 非二进制扩展名且前 4000 字节无 NUL；读取失败按文本（同旧 looksTextFile 的 catch → true） */
   textFile: boolean;
-  /** utf8 全文（仅 textFile 时保留；读取失败为 null，同旧 readTextSafe） */
+  /** utf8 全文（仅非二进制且 textFile 时保留；读取失败为 null，同旧 readTextSafe） */
   text: string | null;
 }
 
@@ -245,6 +263,9 @@ async function probeFile(full: string): Promise<FileProbe> {
       }
     }
   }
+  // 二进制文件不做 utf8 全文解码/行切分（消除大文件内存尖峰）；
+  // lines 仅非二进制消费（整文件计入 add），text 仅 textFile 消费（可疑标记扫描）
+  if (binary) return { hash, binary, lines: 0, textFile, text: null };
   const text = buf.toString("utf8");
   return { hash, binary, lines: text.split("\n").length, textFile, text: textFile ? text : null };
 }

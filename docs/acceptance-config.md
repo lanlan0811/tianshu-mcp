@@ -15,8 +15,8 @@
 {
   // 默认 true：git 项目相对动工前基线零变更时验收失败
   "requireChanges": true,
-  // 选填：命令检查并行度（整数 1-4）。1=串行（与历史行为一致）；
-  // 缺省继承 server 数据目录 config.json 的 verifyConcurrency（默认 2）
+  // 选填：命令检查并行度（整数 1-4，越界值会被 clamp 到 1-4 而不是整份配置失效）。
+  // 1=串行（与历史行为一致）；缺省继承 server 数据目录 config.json 的 verifyConcurrency（默认 2）
   "verifyConcurrency": 2,
   // checks 数组：每条 = 一项自动命令检查
   "checks": [
@@ -38,6 +38,15 @@
 
 - 每条命令在**项目根目录**、以结构化 argv 执行（`shell:false`，不拼接 shell 字符串），stdout/stderr 写入该轮 `verify-N.log`，报告附输出尾部。
 - **有界并行**：命令检查按 `verifyConcurrency` 并行执行（worker 池，上限 4）。报告中各 check 的展示顺序恒为声明顺序（与完成顺序无关）；并行时每条 check 先写独立临时日志，全部结束后按声明顺序拼成同一份 `verify-N.log`（文件名与格式和串行完全一致）。`verifyConcurrency:1` 退化为逐条串行。任一 check 原有 `timeoutMs`/取消语义不变。
+
+### ⚠ 并行的脚本干扰
+
+`verifyConcurrency` 默认 2（**默认值由串行变为 2**）。并行执行的 checks 共享同一个项目工作区，以下形态的脚本互相干扰时可能产生误失败或误通过，**建议显式设 `"verifyConcurrency": 1`**（或拆轮验收）：
+
+- 写构建产物目录的 checks（如两个 check 都触发 `build`/覆盖同一 `dist/`）；
+- 带 `--fix` / 自动改写源码的 checks（如 `eslint --fix`、`prettier --write` 与 `tsc` 并行——一边改一边编译）；
+- 共享缓存目录的 checks（如同一 package manager 缓存、同一 `.pytest_cache`/覆盖率文件）。
+
 - **任一非 optional 检查失败 ⇒ 该轮验收失败**；跳过/超时各自标记。
 - **零用例 fail-closed**：非 optional 测试命令即使退出码为 0，只要输出明确表示未执行任何测试，仍判失败。
 - **零变更 fail-closed**：Git 项目在 `requireChanges:true`（默认）时，若相对动工前基线没有已跟踪、未跟踪或 diffstat 变更，新增 `no-changes` 失败项。纯问答/分析任务可显式设置 `"requireChanges": false`；非 Git 项目跳过该门禁并在报告中注明。

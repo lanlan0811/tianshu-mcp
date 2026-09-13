@@ -33,11 +33,19 @@ export function runVerifyCommand(name: string, argv: string[], opts: RunCommandO
     const safeWrite = (s: string): void => {
       if (stream && !streamEnded && stream.writable) stream.write(s);
     };
-    const safeEnd = (): void => {
-      if (stream && !streamEnded) {
-        streamEnded = true;
-        stream.end();
-      }
+    /**
+     * 结束日志流并等 flush 完成（resolve 前必须 await）：
+     * end(cb) 在数据刷盘后回调（出错也会带 err 回调，不挂死）；close 兜底等 fd 释放
+     * （win32 合并后删 parts 需要 fd 已关，否则 EPERM）。二者任一先到即放行。
+     */
+    const flushLog = (): Promise<void> => {
+      if (!stream || streamEnded) return Promise.resolve();
+      streamEnded = true;
+      const s = stream;
+      return new Promise((done) => {
+        s.once("close", done);
+        s.end(() => done());
+      });
     };
     const killActive = (): void => {
       if (child?.pid) void killTree(child.pid, "auto");
@@ -78,7 +86,7 @@ export function runVerifyCommand(name: string, argv: string[], opts: RunCommandO
         const msg = spawnError ?? "未知 spawn 错误";
         tail = (tail + `\n[spawn-error] ${msg}`).slice(-16_384);
         releaseSignal();
-        safeEnd();
+        await flushLog();
         resolve({ name, cmd: displayCmd, passed: false, durationMs: Date.now() - startedAt, exitCode: null, outputTail: tail, timeout: false, aborted: false, reason: `无法启动命令：${msg}` });
         return;
       }
@@ -94,24 +102,29 @@ export function runVerifyCommand(name: string, argv: string[], opts: RunCommandO
         tail = (tail + `\n[spawn-error] ${msg}`).slice(-16_384);
         releaseSignal();
         if (timer) clearTimeout(timer);
-        safeEnd();
-        resolve({ name, cmd: displayCmd, passed: false, durationMs: Date.now() - startedAt, exitCode: null, outputTail: tail, timeout: false, aborted, reason: `无法启动命令：${msg}` });
+        void (async () => {
+          await flushLog();
+          resolve({ name, cmd: displayCmd, passed: false, durationMs: Date.now() - startedAt, exitCode: null, outputTail: tail, timeout: false, aborted, reason: `无法启动命令：${msg}` });
+        })();
       });
       child.on("close", (code) => {
         if (timer) clearTimeout(timer);
         releaseSignal();
         safeWrite(`\n[exit] code=${code} ${timedOut ? "(timeout)" : aborted ? "(aborted)" : ""}\n`);
-        safeEnd();
-        resolve({
-          name,
-          cmd: displayCmd,
-          passed: !timedOut && !aborted && code === 0,
-          durationMs: Date.now() - startedAt,
-          exitCode: timedOut || aborted ? null : code,
-          outputTail: tail.slice(-4000),
-          timeout: timedOut,
-          aborted,
-        });
+        // 等日志流 flush 完成再 resolve：否则并行合并 mergePartLogs 可能读到缺 [exit] 尾行的 part 文件
+        void (async () => {
+          await flushLog();
+          resolve({
+            name,
+            cmd: displayCmd,
+            passed: !timedOut && !aborted && code === 0,
+            durationMs: Date.now() - startedAt,
+            exitCode: timedOut || aborted ? null : code,
+            outputTail: tail.slice(-4000),
+            timeout: timedOut,
+            aborted,
+          });
+        })();
       });
       if (opts.timeoutMs > 0) {
         timer = setTimeout(() => {

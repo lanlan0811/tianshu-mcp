@@ -22,7 +22,7 @@ import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { AgentRunLogger } from "../adapter.js";
-import { listCodexProcesses, normalizeDir, remoteUserDataDir, resolveUserDataDir } from "./instance.js";
+import { listCodexProcesses, invalidateCodexProcessCache, normalizeDir, remoteUserDataDir, resolveUserDataDir } from "./instance.js";
 import { execFileAsync } from "../../verify/exec.js";
 import type { GuiProfile } from "../../config/schema.js";
 
@@ -68,8 +68,23 @@ export function isProjectRegistered(
   return null;
 }
 
+/** POSIX SIGTERM 后有界等待进程退出（登记写入前的覆盖竞态收口）：kill(pid,0) 轮询至 ESRCH，超时由调用方 warn 继续 */
+async function waitForProcessExit(pid: number, timeoutMs = 3_000, intervalMs = 100): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      process.kill(pid, 0); // 存活探测：ESRCH=已退出；EPERM 等无法观测时也停止空等（与既有容错一致）
+    } catch {
+      return true;
+    }
+    if (Date.now() >= deadline) return false;
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+}
+
 /** 停止本 MCP 的受管 Codex 实例（绝不触碰默认 profile 实例） */
-async function stopManagedInstances(gui: GuiProfile): Promise<void> {
+async function stopManagedInstances(gui: GuiProfile, logger?: AgentRunLogger): Promise<void> {
   const wanted = normalizeDir(resolveUserDataDir(gui));
   const rows = (await listCodexProcesses()).filter((p) => {
     if (/--type=|crashpad/i.test(p.commandLine)) return false;
@@ -85,11 +100,17 @@ async function stopManagedInstances(gui: GuiProfile): Promise<void> {
       } else {
         // POSIX（macOS）：受管实例是独立 profile 的子进程，SIGTERM 即可（Electron 会自行带走 Helper）
         process.kill(p.pid, "SIGTERM");
+        // 有界等待退出：运行中的 Codex 会用内存态覆盖登记写入；超时仅 warn 继续（不阻塞登记）
+        // eslint-disable-next-line no-await-in-loop
+        const exited = await waitForProcessExit(p.pid);
+        if (!exited) logger?.warn(`[codex] 受管实例 pid=${p.pid} SIGTERM 后 3s 内未退出，继续登记（可能被内存态覆盖）`);
       }
     } catch {
       /* 已退出或权限不足：忽略，后续 ensureInstance 会重探 */
     }
   }
+  // 全部 taskkill/SIGTERM 完成后失效进程枚举缓存：TTL 内的旧快照会让等待环空探已死端口
+  invalidateCodexProcessCache();
 }
 
 export interface RegisterResult {
@@ -107,7 +128,7 @@ export async function ensureProjectRegistered(
   projectPath: string,
   gui: GuiProfile,
   logger: AgentRunLogger,
-  opts: { stateFile?: string; platform?: NodeJS.Platform; stopInstances?: (gui: GuiProfile) => void | Promise<void> } = {},
+  opts: { stateFile?: string; platform?: NodeJS.Platform; stopInstances?: (gui: GuiProfile, logger?: AgentRunLogger) => void | Promise<void> } = {},
 ): Promise<RegisterResult> {
   const platform = opts.platform ?? process.platform;
   // 状态文件位于 ~/.codex（跨平台同构），Windows 与 macOS 均可直接登记
@@ -130,7 +151,7 @@ export async function ensureProjectRegistered(
   if (existingId) return { status: "already", projectId: existingId, message: `已在 Codex 项目列表：${existingId}` };
 
   // 写入前先停受管实例，避免运行中的 Codex 覆盖本次修改
-  await (opts.stopInstances ?? stopManagedInstances)(gui);
+  await (opts.stopInstances ?? stopManagedInstances)(gui, logger);
 
   const id = randomUUID();
   const now = Date.now();

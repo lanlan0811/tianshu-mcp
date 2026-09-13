@@ -6,7 +6,7 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { assertSafeProjectDir, resolveProjectDir, normPath } from "../../src/util/path.js";
+import { assertSafeProjectDir, resolveProjectDir, normPath, dangerKey } from "../../src/util/path.js";
 import { makeTmpRoot, rmrf } from "../test-utils.js";
 
 describe("resolveProjectDir", () => {
@@ -75,5 +75,28 @@ describe("assertSafeProjectDir", () => {
     const r = assertSafeProjectDir(root); // 位于 /tmp 或 /var/folders 下
     expect(r.norm.length).toBeGreaterThan(0);
     await rmrf(root);
+  });
+});
+
+describe("dangerKey（win32 具名危险目录大小写不敏感）", () => {
+  it("win32：大写/混合形态归一到小写 key（命中 DANGEROUS_ROOTS 字面量）", () => {
+    // c:/Windows（normPath 只小写盘符）与 C:\Users 的 norm 形态 c:/Users、小写变体均归一
+    expect(dangerKey("c:/Windows", "win32")).toBe("c:/windows");
+    expect(dangerKey("c:/Users", "win32")).toBe("c:/users");
+    expect(dangerKey("c:/WINDOWS", "win32")).toBe("c:/windows");
+    expect(dangerKey("c:/windows", "win32")).toBe("c:/windows");
+    expect(dangerKey("C:/Program Files", "win32")).toBe("c:/program files");
+    expect(dangerKey("D:/", "win32")).toBe("d:/");
+  });
+
+  it("win32 下普通项目路径小写化后不命中任何危险根（精确相等才命中）", () => {
+    expect(dangerKey("c:/users/name/repo", "win32")).toBe("c:/users/name/repo");
+    expect(dangerKey("d:/proj", "win32")).toBe("d:/proj");
+  });
+
+  it("POSIX：保留大小写（/ETC ≠ /etc），普通项目路径原样不命中", () => {
+    expect(dangerKey("/home/user/proj", "linux")).toBe("/home/user/proj");
+    expect(dangerKey("/Users/x/repo", "darwin")).toBe("/Users/x/repo");
+    expect(dangerKey("/ETC", "linux")).toBe("/ETC"); // POSIX 大小写敏感：不命中 /etc
   });
 });
