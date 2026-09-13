@@ -191,6 +191,7 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 | [docs/codex-gui-cdp.en.md](docs/codex-gui-cdp.en.md) | Codex desktop GUI driver: MSIX COM activation, CDP attach, selectors, run detection, verify/repair |
 | [docs/codex-windows-smoke.en.md](docs/codex-windows-smoke.en.md) | Codex Windows hardware record (incl. verify-fail → auto plan → repair-pass loop) |
 | [docs/release-v0.3.4.en.md](<docs/release-v0.3.4.en.md>) | v0.3.4 release notes (ZCode project/model read-back, initialization recovery, session dispatch confirmation, issues #8/#9/#10) |
+| [docs/release-v0.4.1.en.md](<docs/release-v0.4.1.en.md>) | v0.4.1 release notes (skill docs aligned with the v0.4.0 tool surface + contributor credits) |
 | [docs/zcode-issue-8-10-validation.en.md](<docs/zcode-issue-8-10-validation.en.md>) | ZCode #8/#9/#10 Windows hardware record (cold import, imported-project reuse, same-task recovery) |
 | [docs/release-v0.3.3.en.md](<docs/release-v0.3.3.en.md>) | v0.3.3 release notes (ZCode 3.11.2 adaptation + fail-closed acceptance engine) |
 | [docs/release-v0.3.2.en.md](docs/release-v0.3.2.en.md) | v0.3.2 release notes (Codex wait-user detection + cancel truly stops the GUI) |
@@ -227,9 +228,9 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
   - Zcode headless entry (Z1) verified: ZCode desktop ships no headless CLI → unsupported
 - **R1–R8 / S1–S6 — two acceptance hardening rounds** ✅ (cancel / timeout / baseline attribution / parameter semantics / hot reload / CI hardening) — **72 tests**
 - **Engineering / CI** ✅
-  - GitHub Actions: `CI` (ubuntu/windows/macos × Node 20/22/24 + pack-check, **10/10 green**, re-verified with the v0.3.4 tag) and `Release` (tag-triggered) both green
+  - GitHub Actions: `CI` (ubuntu/windows/macos × Node 20/22/24 + pack-check, **10/10 green**, re-verified with the v0.4.1 tag) and `Release` (tag-triggered) both green
   - Skill self-install verified idempotent on this machine's real `~/.rivet/skills/tianshu-mcp`
-  - npm package name `tianshu-mcp` published continuously since v0.1.1 (currently `0.3.4`)
+  - npm package name `tianshu-mcp` published continuously since v0.1.1 (currently `0.4.1`)
 - **Real Tianshu host integration (DoD #6)** ✅ (2026-09-07)
   - Configured the local mode in the real `D:\Tianshu` desktop host `mcp.servers` → sidecar reported `MCP: 2 servers connected, 10 tools` (including this server's 8 tools), spawned the child process and connected over stdio
   - Exposed and fixed a skill-install source-path bug (fileURLToPath, commit 55cf2d0)
@@ -287,6 +288,10 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
   - **projectPath safety gate**: realpath canonicalization + home/system-root rejection + dirty-repo coexistence warning — see "Path safety gate"
   - **Fixes**: `get_profiles` missing user-defined profiles; zcode macOS `needsPermission` false positives; `normalizeProjectPath` symlink ambiguity; CDP polling now reconnects across renderer replacement/transient hangs
   - **Engineering**: all `execFileSync`/`spawnSync` calls async (no more event-loop freezes during Windows polling); bounded-parallel acceptance checks (`verifyConcurrency`); test suite 267s → 51s
+- **M18 — skill docs aligned with the v0.4.0 tool surface + contributor credits + v0.4.1** (2026-09-13) — **443 tests**
+  - `skills/tianshu-mcp/` now covers every v0.3.3 → v0.4.0 tool-surface change: the projectPath safety gate, the hard-failure error-code reference, the `setup_recovery` wait kind, the codex-cli headless path, `ready`/`research` status semantics, default-parallel-2 acceptance and the `requireChanges` gate; usage-examples adds the error-code table, the full meta field table, a project-level acceptance-config template and a `codex-cli` example
+  - Bilingual README gains a contributor credits section (avatar + name, in order of first participation)
+  - **No code behaviour changes**; no migration needed
 
 ## Agent support status
 
@@ -359,7 +364,7 @@ Behavior and limits:
 
 | Document | Content |
 |---|---|
-| [CHANGELOG.en.md](<CHANGELOG.en.md>) | Version history (v0.1.0 → v0.3.4) |
+| [CHANGELOG.en.md](<CHANGELOG.en.md>) | Version history (v0.1.0 → v0.4.1) |
 | [CONTRIBUTING.en.md](CONTRIBUTING.en.md) | Dev setup, conventions, commit/release flow, adding an agent |
 | [SECURITY.en.md](SECURITY.en.md) | Security model (zero credentials / command whitelist / process & desktop-automation boundaries) and private reporting |
 | [CODE_OF_CONDUCT.en.md](CODE_OF_CONDUCT.en.md) | Contributor Code of Conduct |

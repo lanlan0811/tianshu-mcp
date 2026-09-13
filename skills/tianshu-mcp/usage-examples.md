@@ -1,6 +1,6 @@
 # tianshu-mcp 使用示例（子文件）
 
-正文过长方法论不背：任务书模板、三种 agent 派活示例、meta 块字段解读、验收与返修模板都在这里，按需用读取文件工具查看。
+正文过长方法论不背：任务书模板、四种 agent 派活示例、meta 块字段全表、错误码速查、验收与返修模板、needs_user/取消示例都在这里，按需用读取文件工具查看。
 
 ## 1. 任务书模板
 
@@ -40,7 +40,7 @@
 - 现有 run 命令会写 out/ 目录；dry-run 应跳过全部写操作
 ```
 
-## 2. 三种 agent 派活示例
+## 2. 四种 agent 派活示例
 
 ### 2.1 codex（默认；model 必填，支持 reasoningLevel / planDoc / designSystem）
 
@@ -57,6 +57,7 @@ run_task(projectPath=D:/repo/app, agentId=codex,
 - `planDoc` / `designSystem` 会被拼进初始开发指令「根据计划文档(<planDoc>)…和设计系统(<designSystem>)…」，路径必须存在且在项目内。
 - `reasoningLevel` 接受 低/中/高 或 low/medium/high；不传沿用面板当前等级。
 - 不支持 `mode` 参数，传了会直接报错。
+- 冷启动实测 60–90 秒，首轮等待偏慢属正常，不要因慢就取消。
 
 ### 2.2 zcode（model 必填且为「供应商/模型」）
 
@@ -74,7 +75,7 @@ continue_task(taskId=tsk_..., message=采用 PostgreSQL 方案)
 ```
 
 - `needsUserKind=agent_question`：message 作为答案发送到原会话。
-- `needsUserKind=close_existing_instance / login_required / system_permission`：先让用户处理（关旧实例 / 登录 / 授系统权限），message 仅作为用户已处理的确认。
+- `needsUserKind=close_existing_instance / login_required / system_permission / setup_recovery`：先让用户处理（关旧实例 / 登录 / 授系统权限 / 在 ZCode 里确认目标项目），message 仅作为用户已处理的确认。
 
 ### 2.3 traework（model 可选；唯一支持 mode）
 
@@ -89,7 +90,20 @@ run_task(projectPath=D:/repo/app, agentId=traework,
 - `mode` 缺省时从任务书文本识别「切换 Work/Code/Design 模式」，识别不到保持 `Work`。
 - TraeWork 窗口需保持可见；实现顺序为「新建会话 → 切模式 → 在目标模式内绑定项目」。
 
-## 3. meta 块解读示例
+### 2.4 codex-cli（用户自建 profile；无头路径，无 GUI）
+
+内置 `codex` 走桌面 GUI 驱动。不想依赖 GUI 自动化（或需要可复现的 CI 式无头执行）时，在数据目录 `~/.tianshu-mcp/agent-profiles.json` 加一个 `driver=spawn` 的 profile，示例见 README「macOS 无头路径：codex-cli」。之后按普通 agent 派活：
+
+```text
+run_task(projectPath=/path/to/项目, agentId=codex-cli,
+  task=按计划实现功能, autoVerify=true, autoFixRounds=2)
+```
+
+- `model` 参数对 spawn 类 agent **不生效**：CLI 用 `~/.codex/config.toml` 的默认模型；要锁模型可在 `argsTemplate` 里追加 `"-m", "<模型名>"`。
+- codex CLI 版本要求 ≥0.154.0（≤0.130.0 签名证书已吊销，macOS Gatekeeper 直接 SIGKILL）。
+- 写入被 `workspace-write` 沙箱限制在项目目录内；POSIX 下取消/超时对进程组 SIGTERM→SIGKILL。
+
+## 3. meta 块解读（字段全表）
 
 `run_task` / `query_task` 等结果文本末尾的结构化块：
 
@@ -123,9 +137,11 @@ run_task(projectPath=D:/repo/app, agentId=traework,
 | `status` | queued/running/verify_start/fixing/needs_user/succeeded/failed/needs_attention/cancelled/interrupted |
 | `message` | 状态摘要/失败原因，最先读 |
 | `errorType` | 失败归类：timeout/spawn/agent_failed/verify_failed/cancelled/interrupted/agent_unresolved/internal |
-| `needsUserKind` | needs_user 时的等待类型：agent_question/close_existing_instance/login_required/system_permission/user_confirmation（codex 等待用户确认界面） |
-| `pendingQuestion` | needs_user 时 agent 提出的问题原文 |
-| `round` / `roundsUsed` | 已进行的 agent 轮次 |
+| `agentEndReason` | agent 侧结束原因（硬失败定位主用，取值见 §4） |
+| `lastRunSignal` | 最近一次运行观察到的信号（GUI 完成标志/空闲判定依据） |
+| `needsUserKind` | needs_user 时的等待类型：agent_question/close_existing_instance/login_required/system_permission/setup_recovery/user_confirmation |
+| `pendingQuestion` | needs_user 时 agent 提出的问题原文（或需用户处理事项的说明） |
+| `round` | 已进行的 agent 轮次（=roundsUsed） |
 | `changedFiles` | 相对 git 基线的变更清单（含未跟踪新增） |
 | `diffstat` | 增删行摘要（`+A -D`） |
 | `reportFiles` | 最近一轮验收报告 md/json 绝对路径 |
@@ -133,12 +149,41 @@ run_task(projectPath=D:/repo/app, agentId=traework,
 | `reportRound` | 最近一次验收的报告轮次（0-based，区别于 agent 轮次） |
 | `verificationSource` | 最近一次验收来源：auto（run_task 自动）/ manual（verify_task 手动） |
 | `latestVerificationVerdict` | 手动验收结论（不改变任务终态时单独记录） |
+| `checks` | 本轮检查项摘要（name/passed/durationMs） |
 | `abortSource` | 中断来源：user/shutdown/timeout/internal |
+| `cancelReason` / `cancelRequestedAt` | 取消原因与发起时间 |
+| `keptInstance` | 是否因任务未真正完成而保留了 GUI 实例 |
+| `zcodeSessionId` / `boundProjectPath` | 会话与项目绑定回执（zcode/codex） |
+| `modelProvider` / `permissionMode` | 实际生效的供应商标识与权限模式（zcode） |
+| `progressSummary` | 轮询期进度摘要 |
 | `model` / `mode` / `reasoningLevel` | 本次派单的模型 / 面板模式 / 思考等级（按 agent 生效） |
 
-规则：`ok=true` 且 status=succeeded → 交付达成；否则读 `message` 与 `reportFiles.md` 全文定位。
+规则：`ok=true` 且 status=succeeded → 交付达成；否则先读 `message`，再按 `errorType`/`agentEndReason` 查 §4，最后读 `reportFiles.md` 全文定位。
 
-## 4. 验收：verify_task 示例
+## 4. 硬失败错误码速查
+
+**硬失败**（`hardFailure`）表示基础设施/环境/前置条件问题，**不进验收、不进自动返修**——把它当"agent 没做好"反复重试是空转。读 `agentEndReason` 定位：
+
+| `agentEndReason` | 含义 | 处置 |
+|---|---|---|
+| `setup_failed` | 找不到安装 / 实例未就绪 / 点不到「新对话」 | 让用户确认已安装并可手动打开；重试一次 |
+| `project_ambiguous` | 项目同名或路径重复，无法消歧 | 已转 `needs_user`(setup_recovery)，请用户确认目标项目后 `continue_task` |
+| `project_mismatch` | 项目绑定或回读不一致，幂等重试仍失败 | 同上，请用户在 GUI 里确认或手工绑定 |
+| `project_create_failed` | 在 GUI 内新建项目失败 | 让用户手动把项目加进 agent，或换 `projectPath` |
+| `model_unavailable` | 面板里找不到指定模型（错误文本附可见候选） | 用 `get_profiles` / 面板实际模型名重派 |
+| `model_mismatch` | 模型回读与期望不符 | 同上；确认面板模型名与 `model` 参数完全一致 |
+| `permission_unknown` | 权限模式未确认（如 ZCode 未开「完全访问」） | 让用户在 agent 内切好权限模式 |
+| `cdp_disconnected` | CDP 连接断开且未能恢复 | 让用户关掉冲突实例；重试 |
+| `instance_busy` | 同项目已有未停止的运行（重派护栏） | 先 `cancel_task` 并**确认 GUI 已停**，或等其自行结束 |
+| `session_lost` | zcode 找不到原会话锚点 | 用新任务重派，不要指望恢复原会话 |
+| `input_mismatch` / `send_unknown` | 发送前回读不一致 / 发送结果无法确认（**不重复发送**） | 人工看窗口状态，必要时 `continue_task` 或重派 |
+| `idle_timeout` | GUI 长时间静止且无完成标志（现场已保留） | 看窗口里 agent 是否真卡住；必要时 `continue_task` 或取消 |
+| `task_timeout`（`errorType=timeout`） | 任务级超时 | 大任务调大 `taskTimeoutMs`；或拆小任务 |
+| `aborted` | 被取消/中断（`abortSource` 区分来源） | 按 SKILL §5 处理 |
+
+上表未覆盖的：先读 `message` 全文（多数带可执行建议），再读 `reportFiles.md`。
+
+## 5. 验收：verify_task 示例
 
 只读、不改源码、无需审批。三种典型用法：
 
@@ -159,7 +204,33 @@ verify_task(projectPath=D:/repo/app, baselineRef=HEAD~1,
 - `extraChecks` 单条支持 `name`/`cmd`（argv 数组或字符串）/`timeoutMs`/`optional`（optional:true 失败只记 warning）。
 - 验收命令优先级：extraChecks > 项目 `.tianshu-mcp/acceptance.json` > projects.json 管理员补录 > 按技术栈推导的默认集（详见 docs/acceptance-config.md）。
 
-## 5. 查历史：list_tasks 示例
+### 5.1 项目级验收配置模板（写进目标项目仓库）
+
+`<目标项目>/.tianshu-mcp/acceptance.json`：
+
+```jsonc
+{
+  // 默认 true：git 项目相对动工前基线零变更即判失败（防"什么都没做却报成功"）
+  "requireChanges": true,
+  // 命令检查并行度 1-4，缺省继承 server 的 verifyConcurrency（默认 2）
+  // ⚠ checks 之间有顺序依赖（读 build 产物 / 带 --fix / 共享缓存）时必须设 1
+  "verifyConcurrency": 1,
+  "checks": [
+    { "name": "typecheck", "cmd": ["npm", "run", "typecheck"], "timeoutMs": 120000 },
+    { "name": "lint",      "cmd": ["npm", "run", "lint"] },
+    { "name": "test",      "cmd": ["npm", "test"] },
+    // optional:true 时失败只记 warning，不影响本轮 verdict
+    { "name": "e2e", "cmd": ["npm", "run", "test:e2e"], "optional": true }
+  ]
+}
+```
+
+- `cmd` 推荐 argv 数组；字符串会被安全分词执行（`shell:false`，不拼接 shell 字符串）。
+- **纯只读/纯排查类任务**必须设 `"requireChanges": false`，否则零变更必然被判失败。
+- 非 git 项目跳过零变更门禁并在报告注明。
+- 默认并行 2 是有意为之（提速）；不确定就用 `verifyConcurrency: 1` 换确定性。
+
+## 6. 查历史：list_tasks 示例
 
 ```text
 # 某项目最近失败/需关注的任务
@@ -171,7 +242,7 @@ list_tasks()
 
 返回含每条任务的 taskId/status/agentId/时间摘要，可用于接续 `get_task_report` / `rework_task`。
 
-## 6. 返修提示语模板
+## 7. 返修提示语模板
 
 给 `rework_task(taskId, feedback)` 的 `feedback`，讲究**针对性**，避免空转：
 
@@ -195,11 +266,11 @@ list_tasks()
 parameter of type 'number' (src/run.ts:42)。请只修这一处类型问题并重跑 npm run build 确认。
 ```
 
-补充：自动返修（autoFixRounds）路径下，server 会先把失败证据写成修复计划文档（codex 写到项目 `.zcode/plans/`），并在下一轮指令中引用该文档；手动 `rework_task` 的 feedback 则按上面的针对性模板书写。
+补充：自动返修（autoFixRounds）路径下，server 会先把失败证据写成修复计划文档（写到项目 `.zcode/plans/`），并在下一轮指令中引用该文档；手动 `rework_task` 的 feedback 则按上面的针对性模板书写。
 
-## 7. needs_user 恢复与取消示例（v0.3.2 起）
+## 8. needs_user 恢复与取消示例
 
-### 7.1 codex 停在等待用户确认（user_confirmation）
+### 8.1 codex 停在等待用户确认（user_confirmation）
 
 轮询时看到任务转为 `needs_user`、`needsUserKind=user_confirmation`（Codex 停止按钮持续可见且对话长时间未变化，如方案确认卡/订阅确认页）：
 
@@ -211,34 +282,47 @@ parameter of type 'number' (src/run.ts:42)。请只修这一处类型问题并�
 
 注意：若用户尚未处理就调 continue_task，任务会再次转 `needs_user`（如实反映 GUI 状态），稍后再试即可。
 
-### 7.2 codex 需要登录（login_required）
+### 8.2 codex 需要登录（login_required）
 
 ```text
 在 Codex 窗口完成登录 → continue_task(taskId, message="已登录")
 MCP 复检环境后重新派发任务书（新会话 + 项目绑定 + 完整初始指令）。
 ```
 
-### 7.3 取消 GUI agent 任务（cancel_task）
+### 8.3 zcode 初始化恢复未完成（setup_recovery）
+
+`needsUserKind=setup_recovery` 表示 ZCode 的项目设置阶段自动恢复（有限重试 + 预算）用尽——常见于项目同名歧义、绑定回读不一致、原生面板操作超时：
+
+```text
+1) 提示用户：请在 ZCode 中确认目标项目（必要时手工完成绑定/关掉多余面板）。
+2) continue_task(taskId, message="已在 ZCode 中确认目标项目")
+3) 注意 message 只是"已处理"的确认，不会作为问题发送；原任务上下文被保留。
+```
+
+### 8.4 取消 GUI agent 任务（cancel_task）
 
 ```text
 cancel_task(taskId, reason="用户要求停止")
 → 返回 meta.message：
   "已取消：…；GUI 内运行已停止。"                      ← 已确认停止，可安全重派
-  "已取消：…；GUI 内运行未确认停止，Codex 窗口中的任务可能仍在继续。" ← 需人工检查
+  "已取消：…；GUI 内运行未确认停止，…窗口中的任务可能仍在继续。" ← 需人工检查
+  "已取消（等待用户处理时）：…；GUI 内可能仍有等待中的会话，请人工检查。"
   "已请求取消，但任务尚未在本调用内落终态…"            ← 稍后 query_task 复核
 ```
 
 GUI agent 取消语义：尽力点击界面停止按钮并等待 GUI 空闲（有界超时）；**未确认停止前不要重派同项目任务**——重派护栏会以 `instance_busy` 拒绝派发（防止新旧 turn 交叠），宁可等人工确认。
 
-### 7.4 agent-profiles.json 相关配置（可选）
+### 8.5 agent-profiles.json 相关配置（可选）
 
 ```json
 {
-  "codex": {
-    "gui": {
-      "stallTimeoutMs": 300000,
-      "cancelWaitMs": 15000,
-      "selectors": { "userGate": "[class*=\"embedded-checkout\"]" }
+  "profiles": {
+    "codex": {
+      "gui": {
+        "stallTimeoutMs": 300000,
+        "cancelWaitMs": 15000,
+        "selectors": { "userGate": "[class*=\"embedded-checkout\"]" }
+      }
     }
   }
 }
@@ -247,8 +331,9 @@ GUI agent 取消语义：尽力点击界面停止按钮并等待 GUI 空闲（�
 - `stallTimeoutMs`：停止按钮持续可见 + 对话无变化持续此时长 → 判定等待用户（默认 300000=5 分钟）。长命令型任务（大依赖安装/构建）建议调大。
 - `cancelWaitMs`：取消时点击停止按钮后等待 GUI 空闲的上限（默认 15000=15 秒）。
 - `selectors.userGate`：等待用户界面的检测选择器（如结账页 `embedded-checkout`、确认卡），配置后命中即快速转 `needs_user`；默认未配置=禁用，配置前请真机核对。
+- profile 的整键覆盖语义：数据目录 `agent-profiles.json` 里同名键会**覆盖**内置 profile 的对应字段；用户自定义 profile（如 `codex-cli`）会出现在 `get_profiles` 中。
 
-## 8. 汇报模板
+## 9. 汇报模板
 
 `get_task_report` 拿全文后向用户汇报建议包含：
 
@@ -259,3 +344,5 @@ GUI agent 取消语义：尽力点击界面停止按钮并等待 GUI 空闲（�
 - 代码分析：无可疑标记；注意 README 存在超大单文件改动（告警）
 - 验收报告：<report.md 路径>
 ```
+
+失败/需关注时的汇报建议包含：`errorType`/`agentEndReason` 与 `message` 原文、失败的 check 名与输出尾部、变更文件与 diffstat、下一步建议（针对性返修 / 人工介入 / 换 agent / 缩小任务）。

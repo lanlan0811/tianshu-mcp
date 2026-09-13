@@ -186,6 +186,7 @@ ZCode 提问、需要登录、旧实例无 CDP、系统权限不足，或自动�
 | [docs/zcode-windows-smoke.md](docs/zcode-windows-smoke.md) | ZCode Windows 真机开发、同会话返修与提问续跑验收记录 |
 | [docs/codex-gui-cdp.md](docs/codex-gui-cdp.md) | Codex 桌面端 GUI 驱动：MSIX COM 激活、CDP 接管、选择器、运行检测、验收返修 |
 | [docs/codex-windows-smoke.md](docs/codex-windows-smoke.md) | Codex Windows 真机验收记录（含验收失败→自动生成计划→返修通过闭环） |
+| [docs/release-v0.4.1.md](<docs/release-v0.4.1.md>) | v0.4.1 发布说明（技能文档对齐 v0.4.0 工具面 + 贡献者名录） |
 | [docs/release-v0.3.4.md](<docs/release-v0.3.4.md>) | v0.3.4 发布说明（ZCode 项目/模型回读、初始化恢复与会话发送确认，issue #8/#9/#10） |
 | [docs/zcode-issue-8-10-validation.md](<docs/zcode-issue-8-10-validation.md>) | ZCode #8/#9/#10 Windows 真机验收记录（冷导入、已导入复用、同任务恢复） |
 | [docs/release-v0.3.3.md](<docs/release-v0.3.3.md>) | v0.3.3 发布说明（ZCode 3.11.2 适配 + 验收引擎 fail-closed） |
@@ -226,9 +227,9 @@ ZCode 提问、需要登录、旧实例无 CDP、系统权限不足，或自动�
   - Zcode 无头接口（Z1）实测定论：ZCode 桌面无随包 headless CLI → unsupported
 - **R1–R8 / S1–S6 — 两轮验收整改** ✅（取消/超时/基线归因/参数语义/热加载/CI 加固）— **72 测试**
 - **工程 / CI** ✅
-  - GitHub Actions：`CI`（ubuntu/windows/macos × Node 20/22/24 + pack-check，**10/10 全绿**，随 v0.3.4 tag 再次校验）与 `Release`（tag 触发）均绿
+  - GitHub Actions：`CI`（ubuntu/windows/macos × Node 20/22/24 + pack-check，**10/10 全绿**，随 v0.4.1 tag 再次校验）与 `Release`（tag 触发）均绿
   - 技能自检安装已在本机真实 `~/.rivet/skills/tianshu-mcp` 验证生效且幂等
-  - npm 包名 `tianshu-mcp` 自 v0.1.1 起持续发布（当前 `0.3.4`）
+  - npm 包名 `tianshu-mcp` 自 v0.1.1 起持续发布（当前 `0.4.1`）
 - **天枢宿主真实接入（DoD #6）** ✅（2026-09-07，[host-integration-record.md](docs/host-integration-record.md)）
   - 在真实 `D:\Tianshu` 桌面宿主 `mcp.servers` 配置本地模式 → sidecar `MCP: 2 servers connected, 10 tools`（含本 server 8 工具），spawn 子进程并 stdio 连通
   - 实测暴露并修复技能安装源路径 bug（fileURLToPath，提交 55cf2d0）
@@ -286,6 +287,10 @@ ZCode 提问、需要登录、旧实例无 CDP、系统权限不足，或自动�
   - **projectPath 安全闸门**：realpath 归一 + 主目录/系统根目录拒绝 + 脏仓共处警示——见「路径安全闸门」
   - **修复**：`get_profiles` 漏列用户自定义 profile；zcode macOS `needsPermission` 误报；`normalizeProjectPath` 符号链接歧义；CDP 轮询在 renderer 替换/瞬时无响应时重连
   - **工程**：`execFileSync`/`spawnSync` 全量异步化（消除 Windows 轮询期事件循环冻结）；验收命令有界并行（`verifyConcurrency`）；测试套件 267s → 51s
+- **M18 — 技能文档对齐 v0.4.0 工具面 + 贡献者名录 + v0.4.1**（2026-09-13）— **443 测试**
+  - `skills/tianshu-mcp/` 逐项补齐 v0.3.3 → v0.4.0 的工具面变化：projectPath 安全闸门、硬失败错误码速查表、`setup_recovery` 等待类型、codex-cli 无头路径、`ready`/`research` 状态语义、验收默认并行 2 与 `requireChanges` 门禁；usage-examples 新增错误码表、meta 字段全表、项目级验收配置模板与 `codex-cli` 示例
+  - 双语 README 新增贡献者名录（头像 + 名字，按首次参与顺序）
+  - 本版本**无代码行为变更**，升级无需迁移
 
 ## Agent 适配现状
 
@@ -359,7 +364,7 @@ run_task(projectPath=/path/to/项目, agentId=codex-cli, task="任务书", autoV
 | 文档 | 内容 |
 |---|---|
 | [HANDOFF.md](HANDOFF.md) | 项目交接文档：当前状态快照、架构导览、硬性红线、已知限制、接手建议 |
-| [CHANGELOG.md](<CHANGELOG.md>) | 版本变更日志（v0.1.0 → v0.3.4） |
+| [CHANGELOG.md](<CHANGELOG.md>) | 版本变更日志（v0.1.0 → v0.4.1） |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 开发环境、工程规范、提交与发布流程、如何新增 agent |
 | [SECURITY.md](SECURITY.md) | 安全模型（凭证零管理/命令白名单/进程与桌面自动化边界）与私密报告渠道 |
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | 贡献者行为准则 |

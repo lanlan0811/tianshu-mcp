@@ -21,6 +21,42 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.4.1] — 2026-09-13
+
+Documentation release: the orchestration skill docs are aligned with the actual v0.4.0 tool
+surface, and the open-source repos now credit community contributors. No code behaviour changes.
+
+### Docs
+
+- **Skill docs fully aligned with the v0.4.0 tool surface** (`skills/tianshu-mcp/`, idempotently synced
+  into `~/.rivet/skills/tianshu-mcp/` at server startup):
+  - `SKILL.md` now documents the **projectPath safety gate** (absolute path + existing directory +
+    realpath canonicalization, rejection of the home directory and system/root directories, dirty-repo
+    warning), so an infrastructure rejection is not mistaken for an agent failure.
+  - `SKILL.md` adds a **hard-failure error-code reference** (`setup_failed`/`project_ambiguous`/
+    `project_mismatch`/`model_unavailable`/`model_mismatch`/`permission_unknown`/`cdp_disconnected`/
+    `instance_busy`/`session_lost`/`input_mismatch`/`send_unknown`/`idle_timeout` and more), stating
+    that hard failures never enter acceptance or auto-rework.
+  - `SKILL.md` covers all `needs_user` kinds, including the new `setup_recovery` (zcode initialization
+    recovery exhausted), plus `continue_task` state/type restrictions and the refusal semantics when the
+    zcode session anchor is lost.
+  - `SKILL.md` documents the `codex-cli` headless path (user-defined `driver=spawn` profile, `model` not
+    applicable, CLI ≥0.154.0 requirement), the `ready`/`research` status semantics, **default-parallel 2**
+    acceptance checks (`verifyConcurrency`), and the `requireChanges` zero-change gate.
+  - `usage-examples.md` adds: a `codex-cli` dispatch example; the **full meta-block field table** (now
+    including `agentEndReason`/`lastRunSignal`/`checks`/`round`/`keptInstance`/`zcodeSessionId`/
+    `modelProvider`/`permissionMode`/`progressSummary`); an **error-code reference table**; a project-level
+    `.tianshu-mcp/acceptance.json` template (with the parallel-interference warning and `requireChanges`
+    guidance); a `setup_recovery` recovery example; and the profile whole-key override semantics.
+- **Bilingual README contributor credits**: a new "Contributors" section lists, in order of first
+  participation, the community members who took part through Issues and pull requests (avatar + name).
+
+### Other
+
+- `package.json` version bumped to `0.4.1` (`serverInfo.version` is synced automatically at build time).
+
+---
+
 ## [0.4.0] — 2026-09-13
 
 ### Added
@@ -601,7 +637,8 @@ project → pick model and reasoning level → send instructions → run detecti
 
 ---
 
-[Unreleased]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.4...v0.4.0
 [0.3.4]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.2...v0.3.3

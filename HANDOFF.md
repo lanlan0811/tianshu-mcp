@@ -1,6 +1,6 @@
 # HANDOFF.md — 项目交接说明
 
-> **交接快照：2026-09-13 · 版本 `0.4.0`（tag `v0.4.0`，npm / GitHub / Gitee 均已发布）**
+> **交接快照：2026-09-13 · 版本 `0.4.1`（tag `v0.4.1`，npm / GitHub / Gitee 均已发布）**
 > 本文写给**接手本仓库的人**：先说清「这是什么、现在到哪一步」，再给出「怎么跑、怎么改、哪里会踩坑」。
 > 工作区规则见 `AGENTS.md`（gitignore，仅本地）；安装与用法见 `README.md`，本文不重复，只做导览与状态记录。
 
@@ -37,7 +37,7 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build   # 期
 
 - **天枢官方仓库**：<https://github.com/huiliyi37/Tianshu-harness>（基于 harness 工程的终端编程智能体运行时，TUI × GUI；Apache-2.0）
 - **本仓库**：`github.com/lanlan0811/tianshu-mcp`（主）｜`gitee.com/lan0811/tianshu-mcp`（镜像）
-- **npm**：`tianshu-mcp`（当前发布版本 `0.4.0`）
+- **npm**：`tianshu-mcp`（当前发布版本 `0.4.1`）
 - **工具面**：9 个 MCP 工具（`run_task / continue_task / query_task / list_tasks / get_task_report / cancel_task / verify_task / rework_task / get_profiles`）
 
 ### 为什么是这样设计的（四个硬约束，改架构前必读）
@@ -56,13 +56,13 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build   # 期
 | 项 | 状态 |
 |---|---|
 | 分支 | `master`（**只在此分支提交**，不建其他分支） |
-| 版本 / 许可证 | `0.4.0` / Apache-2.0 |
-| 标签 | `v0.1.0` … `v0.4.0`（均已推双仓） |
-| 工作树 | 干净；`github/master` 与 `gitee/master` 均同步（发布提交见 `git log` 的 `chore(release): v0.4.0`） |
+| 版本 / 许可证 | `0.4.1` / Apache-2.0 |
+| 标签 | `v0.1.0` … `v0.4.1`（均已推双仓） |
+| 工作树 | 干净；`github/master` 与 `gitee/master` 均同步（发布提交见 `git log` 的 `chore(release): v0.4.1`） |
 | 测试 | **443/443 通过**（46 个测试文件：单元 31 + 集成 14 + 协议 1） |
 | 门禁 | lint 0 warning、typecheck clean、build 成功且构建后无跟踪差异、`check:stdio` 6/6 场景通过、`npm pack` 内容校验与干净消费者安装通过 |
-| CI | ubuntu/windows/macos × Node 20/22/24 + pack-check = **10/10 全绿**（随 v0.4.0 tag 再次校验） |
-| npm | `tianshu-mcp@0.4.0` 已发布（`latest`）；`npx -y tianshu-mcp` 即为该版本。发布步骤见 `docs/npm-publish-guide.md` |
+| CI | ubuntu/windows/macos × Node 20/22/24 + pack-check = **10/10 全绿**（随 v0.4.1 tag 再次校验） |
+| npm | `tianshu-mcp@0.4.1` 已发布（`latest`）；`npx -y tianshu-mcp` 即为该版本。发布步骤见 `docs/npm-publish-guide.md` |
 | GitHub Release | 推送 `v*` tag 触发 `.github/workflows/release.yml`：先跑完整门禁并校验「tag 版本 === package.json 版本」，正文由 `docs/release-v<ver>.md` + `.en.md` 双语合成（缺文档即报错，不产出空壳正文），`Full Changelog` 经 `git describe` 解析上一 tag，CI 链接解析同 SHA 运行，并附 `tianshu-mcp-<ver>.tgz` |
 | Gitee 发行版 | 由 `scripts/gitee-release.mjs` 用仓库 Secret `GITEE_TOKEN` 幂等补齐（未配置时明确提示并跳过，不让工作流失败） |
 
@@ -101,6 +101,7 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build   # 期
 | M15 | ZCode 3.11.2 适配 + 验收引擎 fail-closed（issue #4/#7，详见 §9.5） | `0.3.3` | 366 |
 | M16 | ZCode 项目/模型回读加固 + 初始化共同截止时间恢复 + 无锚点会话发送确认（issue #8/#9/#10，详见 §9.6） | `0.3.4` | **407** |
 | M17 | macOS 双驱动打通（codex/zcode）+ `projectPath` 安全闸门 + 验收并行与事件循环性能工程（社区 PR #11，详见 §2.1 与 `docs/release-v0.4.0.md`） | `0.4.0` | **443** |
+| M18 | 技能文档对齐 v0.4.0 工具面（projectPath 闸门/错误码速查/`setup_recovery`/codex-cli/验收并行与 `requireChanges`）+ 双语 README 贡献者名录；**无代码行为变更** | `0.4.1` | 443 |
 
 ### 3.2 实现期修复记录（都是真机/CI 逼出来的，改相关代码前先读）
 
@@ -620,6 +621,7 @@ macOS 本次仅有自动化与 CI 验证，**无真机端到端验证**；ZCode 
 | `docs/agent-profiles.md` / `.en.md` | profile 字段说明（含 `driver`/`gui`/`stallTimeoutMs`/`cancelWaitMs`/`setupRecovery*`） |
 | `docs/adapter-matrix.md` / `.en.md` | 各 agent 能力调研矩阵 |
 | `docs/acceptance-config.md` / `.en.md` | 项目级验收配置规范（含 `requireChanges`） |
+| `docs/release-v0.4.1.md` / `.en.md` | v0.4.1 发布说明（技能文档对齐 v0.4.0 工具面 + 贡献者名录，无代码变更） |
 | `docs/release-v0.4.0.md` / `.en.md` | v0.4.0 发布说明（macOS 双驱动、projectPath 安全闸门、行为变更与性能工程） |
 | `docs/release-v0.3.4.md` / `.en.md` 等 | 历史版本发布说明（按需查 `docs/release-v*.md`） |
 | `docs/issue-1-host-reconnect-record.md` | issue #1 桌面宿主重连验收（v3.16.1：10 tools + 真实工具调用） |

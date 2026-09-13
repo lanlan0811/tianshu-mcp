@@ -19,6 +19,26 @@
 
 ---
 
+## [0.4.1] — 2026-09-13
+
+文档版本：把编排技能文档对齐 v0.4.0 实际工具面，并补齐开源仓库的贡献者名录。本版本无代码行为变更。
+
+### 文档
+
+- **技能文档全面对齐 v0.4.0 工具面**（`skills/tianshu-mcp/`，server 启动时幂等同步到 `~/.rivet/skills/tianshu-mcp/`）：
+  - `SKILL.md` 新增 **projectPath 安全闸门**说明（绝对路径 + 存在目录 + realpath 归一、主目录与系统根目录拒绝、脏仓警示），避免把基础设施拒绝误判为 agent 失败。
+  - `SKILL.md` 新增 **硬失败错误码速查**（`setup_failed`/`project_ambiguous`/`project_mismatch`/`model_unavailable`/`model_mismatch`/`permission_unknown`/`cdp_disconnected`/`instance_busy`/`session_lost`/`input_mismatch`/`send_unknown`/`idle_timeout` 等），明确硬失败不进验收与自动返修。
+  - `SKILL.md` 补全 needs_user 等待类型：新增 `setup_recovery`（zcode 初始化恢复未完成）；补 `continue_task` 的状态与类型限制、zcode 会话定位信息丢失时的拒绝语义。
+  - `SKILL.md` 补 `codex-cli` 无头路径（用户自建 `driver=spawn` profile、model 不生效、CLI ≥0.154.0 版本要求）、`ready`/`research` 状态语义、验收 **默认并行 2**（`verifyConcurrency`）与 `requireChanges` 零变更门禁。
+  - `usage-examples.md` 新增：`codex-cli` 派活示例；meta 块**字段全表**（补 `agentEndReason`/`lastRunSignal`/`checks`/`round`/`keptInstance`/`zcodeSessionId`/`modelProvider`/`permissionMode`/`progressSummary` 等）；**错误码速查表**；项目级 `.tianshu-mcp/acceptance.json` 配置模板（含 `verifyConcurrency` 并行干扰警示与 `requireChanges` 用法）；`setup_recovery` 恢复示例；profile 整键覆盖语义。
+- **双语 README 补贡献者名录**：新增「贡献者 / Contributors」小节，按首次参与顺序列出通过 Issue 与 PR 参与项目的社区成员（头像 + 名字）。
+
+### 其他
+
+- `package.json` 版本号提升至 `0.4.1`（`serverInfo.version` 经 build 自动同步）。
+
+---
+
 ## [0.4.0] — 2026-09-13
 
 ### 新增
@@ -512,7 +532,8 @@ Codex 桌面端改为 **GUI 驱动**：新增 `codex-gui` adapter，通过 MSIX 
 
 ---
 
-[未发布]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.4.0...HEAD
+[未发布]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.4...v0.4.0
 [0.3.4]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.3.2...v0.3.3
