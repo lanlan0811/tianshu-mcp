@@ -116,6 +116,9 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build   # 期
 | 8 | M15 | 模型菜单/项目绑定判据漂移；验收零用例、零变更假绿 | 3.11.2 把 provider 分组改为 family；绑定入口改为 composer 复选项 → 新旧双兼容 + 直选优先 + 回读重试；验收引擎 fail-closed（详见 §9.5） | `test/unit/zcode-core.test.ts` 等 |
 | 9 | M16 | #8/#9/#10：项目/模型回读误判、原生探测超时不协调、无锚点恢复丢会话与上下文 | 触发器逐级定位 + 完整路径绑定；模型解码稳定属性并排除旧值；初始化共用截止时间预算；无锚点恢复补发完整任务/上下文/引用并以标记定位会话（详见 §9.6） | `test/unit/zcode-recovery.test.ts`、`zcode-dom.test.ts`、`zcode-dialog.test.ts`、`test/integration/zcode-flow.test.ts` |
 | 10 | M16 | 首次推送后 macOS CI 全红（Windows/Ubuntu 全绿） | 集成测试「添加项目首次点击被吞」未 mock `listDialogs`，触达真实 `listOwnedDialogs`；其 darwin 分支改为 fail-closed 后于无 ZCode/辅助功能授权的 runner 上抛错 → 给 `depsFor` 补 hermetic `listDialogs` 默认桩 | `test/integration/zcode-flow.test.ts` |
+| 11 | M17 | Windows 上盘符根未被 `projectPath` 闸门拦截（`assertSafeProjectDir("C:/")` 不抛错） | `normPath` 剥尾斜杠：`D:\` → `d:`，与清单里的 `d:/` 永不相等（死条目）→ 改为单独判定盘符根，覆盖所有盘符 | `test/unit/project-dir-guard.test.ts` |
+| 12 | M17 | `project-dir-guard` 的系统目录断言在 Windows 红 | `/etc`、`/usr` 是 POSIX 路径，Windows 命中的是「目录不存在」→ 加平台守卫，Windows 侧改验盘符根与 `C:/Windows` | `test/unit/project-dir-guard.test.ts` |
+| 13 | M17 | `acceptance-parallel` 取消用例偶发（单跑绿、全量红；CI 两次重试都红） | 固定 250ms 在慢平台可能早于子进程 spawn，在途 check 被误记为 `skipped` → 等两个在途 check 真正启动（各自 touch 标识文件）后再取消 | `test/unit/acceptance-parallel.test.ts` |
 
 ---
 
@@ -222,7 +225,8 @@ MSIX 发现（Appx 查询优先 + 扫盘回退） → COM 激活 + 专属 user-d
    未确认停止时终态必须明示「GUI 内运行未确认停止」。重派前必须确认受管实例空闲，否则以 `instance_busy` 拒绝（防 turn 交叠）。
 9. **验收 fail-closed**：测试命令退出码 0 但输出显示零用例 → 判失败；git 项目默认要求相对基线产生变更
    （`requireChanges: false` 显式关闭）。不得为「让任务变绿」放松这两个门禁。
-10. **只在 `master` 提交，commit 用中文**；不建分支、不覆盖已有 tag。
+10. **路径闸门不得放宽**：`projectPath` 必须是存在的绝对目录，`realpath` 归一后落在主目录或系统/根级目录一律拒绝；盘符根由单独判定覆盖，不依赖枚举清单。
+11. **只在 `master` 提交，commit 用中文**；不建分支、不覆盖已有 tag。
 
 ---
 
@@ -304,7 +308,7 @@ npm publish --registry=https://registry.npmjs.org --access public
 
 | 层级 | 位置 | 说明 |
 |---|---|---|
-| 单元 | `test/unit/`（27 文件） | 纯函数与组件逻辑：traework 全套（reply / selectors / launcher / guard / driver / session / liveness / dialog / cdp-client / repair-plan）、codex-core、zcode-core / zcode-handler / zcode-dom / zcode-dialog / zcode-recovery、acceptance、baseline、atomic-write、log、config/profile 热加载等 |
+| 单元 | `test/unit/`（31 文件） | 纯函数与组件逻辑：traework 全套（reply / selectors / launcher / guard / driver / session / liveness / dialog / cdp-client / repair-plan）、codex-core、zcode-core / zcode-handler / zcode-dom / zcode-dialog / zcode-recovery、acceptance、baseline、atomic-write、log、config/profile 热加载等 |
 | 集成 | `test/integration/`（14 文件） | stub-agent 三剧本、取消 / 超时 / 基线、traework 假 CDP（单轮 + 返修 + 绑定兜底）、codex-flow、zcode-flow / restart / rework-loop、rework 竞态回归、verify-params |
 | 协议 | `test/protocol/`（1 文件） | 官方 SDK 客户端断言 9 工具面与返回格式 |
 | 真机 | `scripts/probe-*.mjs` / `scripts/smoke-zcode.mjs` | **手动**，需真实客户端 |
@@ -353,6 +357,7 @@ npm publish --registry=https://registry.npmjs.org --access public
 | Codex 卡在「等待用户确认」/ `cancel_task` 没真停 | §9.4 |
 | ZCode 模型菜单选不中 / 项目绑定判据漂移 / 验收假绿 | §9.5 |
 | ZCode 项目或模型回读误判 / 原生面板超时 / 恢复后丢会话与上下文 | §9.6 |
+| 升级 v0.4.0 后行为变了 / 验收检查互相干扰 / 符号链接路径下历史任务「消失」 | §9.7 |
 
 ### 9.1 TraeWork 项目文件夹绑定排障（M6 / M7 实战教训）
 
@@ -556,6 +561,33 @@ Windows + Codex 26.903.9818.0 真机模拟实测：模型菜单的 `menuitemradi
 **平台限制**
 
 macOS 本次仅有自动化与 CI 验证，**无真机端到端验证**；ZCode profile 保持 `research`。Windows 真机任务、会话与 2/2 验收报告见 `docs/zcode-issue-8-10-validation.md`。
+
+---
+
+### 9.7 v0.4.0 行为变更与排障（验收并行 / 路径闸门 / macOS 无头路径）
+
+> v0.4.0 有三条**会改变既有行为**的变动。升级后遇到「和以前不一样」，先查这里。
+
+**① 验收命令默认并行（`verifyConcurrency`）**
+
+- 新增配置项 `verifyConcurrency`（范围 1–4），**默认值由串行变为 2**；项目级 `.tianshu-mcp/acceptance.json` 可覆盖，server 级在 `config.json`。
+- 检查项之间有顺序依赖时（后续检查读取 build 产物、带 `--fix`、共享缓存目录）**必须显式设 1**，完全退化为串行。
+- 报告与日志格式不变：结果按**声明顺序**返回；每条 check 写独立 part 日志，结束后按声明顺序拼回 `verify-<round>.log`。
+- 取消信号可中断在途 check（记 `aborted`）与未启动 check（记 `skipped`）。
+
+**② 项目身份改为 `realpath` 归一（`projectPath` 安全闸门）**
+
+- `projectPath` 提交即校验：绝对路径 + 存在目录 + `realpath` 消除符号链接；回执明示解析来源。
+- 拒绝**用户主目录本身**与**系统/根级目录**；盘符根（`C:\`、`D:\` 等）由**单独判定**覆盖——`normPath` 会把 `D:\` 归一为 `d:`（尾斜杠被剥掉），所以不能靠枚举清单。
+- **副作用**：符号链接入口（macOS `/tmp` → `/private/tmp`）下，同一目录可能与既有 `projects.json` 记录、历史任务目录不再匹配——按规范化后的**真实路径**查找；`list_tasks` 过滤已同步用同一归一。
+- git 仓库有未提交变更时，回执附带共处警示（多会话场景）。
+
+**③ macOS 无头路径（可选，不改代码）**
+
+- 内置 `codex` 仍走 GUI 驱动；不想依赖 GUI 自动化时，在数据目录 `agent-profiles.json` 加一个 `driver=spawn` 的 `codex-cli` profile 走 `codex exec`（即 v0.3.0 之前内置 codex 的 M2 定稿参数）。
+- ⚠️ codex CLI 需保持 **≥0.154.0**：≤0.130.0 的签名证书已被吊销，macOS Gatekeeper 会直接 SIGKILL。
+
+**平台状态**：`codex` 与 `zcode` 的 macOS **基本闭环**已由贡献者在 macOS arm64 真机验证；取消 / 返修 / `continue_task` / 新建项目矩阵未覆盖，**两者 darwin 仍为 `research`**。维护者无 macOS 设备，该结论未独立复验。
 
 ---
 

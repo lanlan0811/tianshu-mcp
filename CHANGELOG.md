@@ -50,6 +50,9 @@
 - `get_profiles` 列出数据目录 `agent-profiles.json` 中的用户自定义 profile（此前未 resolve 不显示，`run_task` 却可用，探测反馈不一致）。
 - zcode-flow 测试桩补 `listDialogs`，消除真实 osascript/PowerShell 调用在全量负载下撞 `taskTimeoutMs` 墙钟导致的 flake。
 - CDP `connect()` 失败分支自清理 WebSocket（不再依赖调用方兜底 disconnect）；`send()` 超时定时器 unref。
+- **盘符根未被 `projectPath` 闸门拦截**（Windows）：`normPath` 会剥掉尾斜杠（`D:\` → `d:`），与拒绝清单里的 `d:/` 永不相等，故闸门对盘符根形同虚设；改为**单独的盘符根判定**，覆盖所有盘符而不依赖枚举。
+- `test/unit/project-dir-guard.test.ts` 的系统目录断言不可移植：`/etc`、`/usr` 是 POSIX 路径，Windows 上命中的是「目录不存在」而非拒绝清单；按平台分支，Windows 侧改验盘符根与 `C:/Windows`。
+- `test/unit/acceptance-parallel.test.ts` 取消用例偶发（单跑绿、全量红）：固定 250ms 在慢平台可能早于子进程 spawn，使在途 check 被误记为 `skipped`；改为**等两个在途 check 真正启动后再取消**。
 
 ### 性能
 

@@ -62,6 +62,16 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
   calls blew the `taskTimeoutMs` wall-clock budget under full-suite load.
 - CDP `connect()` failure paths now dispose of the WebSocket themselves (no longer relying on
   callers to disconnect); the `send()` timeout timer is unref'd.
+- **Drive roots were not rejected by the `projectPath` gate** (Windows): `normPath` strips the
+  trailing slash (`D:\` -> `d:`), which never equals the `d:/` entries in the reject list, so the
+  gate was effectively a no-op for drive roots; a dedicated drive-root check now covers every
+  drive letter instead of relying on enumeration.
+- `test/unit/project-dir-guard.test.ts` had a non-portable system-directory assertion: `/etc` and
+  `/usr` are POSIX paths, and on Windows they hit "directory does not exist" rather than the reject
+  list; the assertion is now platform-branched and verifies drive roots plus `C:/Windows` on Windows.
+- `test/unit/acceptance-parallel.test.ts` cancellation case was flaky (green alone, red in a full
+  run): a fixed 250ms delay can precede the child spawn on slower platforms, mislabelling an
+  in-flight check as `skipped`; it now waits until both in-flight checks have really started.
 
 ### Performance
 
