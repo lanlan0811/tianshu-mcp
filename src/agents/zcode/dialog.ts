@@ -3,7 +3,6 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 import { ZCODE_SETUP_DEFAULTS } from "../../config/schema.js";
-import { permissionError } from "./recovery.js";
 export interface NativeDialogOptions {
   timeoutMs?: number;
   signal?: AbortSignal;
@@ -455,8 +454,10 @@ end run`;
       const msg = err.message ?? String(e);
       return {
         ok: false,
+        // 只判 stderr：execFile 的 message 内嵌完整脚本文本（含 ACCESSIBILITY_PERMISSION_REQUIRED
+        // 字面量），permissionError(e) 会把一切面板失败恒报成权限问题并跳过自动恢复——
+        // 冲突裁决时曾因此把本修复又合并回去（二次引入，勿再并联）。
         needsPermission:
-          permissionError(e) ||
           /ACCESSIBILITY_PERMISSION_REQUIRED|not authorized|辅助功能|errAEEventNotPermitted|-1743/i.test(
             detail,
           ),
