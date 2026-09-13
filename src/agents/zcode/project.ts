@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 
 export interface ZcodeProjectItem {
@@ -46,7 +47,14 @@ export function normalizeProjectPath(
 ): string {
   const api = platform === "win32" ? path.win32 : path.posix;
   let out = api.normalize(value).replace(/[\\/]+$/, "");
-  if (platform === "win32") out = out.replace(/\\/g, "/").toLowerCase();
+  if (platform === "win32") return out.replace(/\\/g, "/").toLowerCase();
+  // POSIX：符号链接会让同一目录产生两个字符串（macOS /tmp→/private/tmp 实测）——
+  // 词法归一不等会退化成「名称匹配 → 项目同名歧义」误判。优先 realpath，路径不存在退回词法。
+  try {
+    out = fs.realpathSync(out);
+  } catch {
+    /* 路径不存在（如单测的虚拟路径）：保持词法归一 */
+  }
   return out;
 }
 

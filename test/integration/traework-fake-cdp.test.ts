@@ -78,8 +78,12 @@ function makeDeps(state: FakeDomState, over: Partial<TraeworkRunDeps> = {}): Tra
       throw new Error("测试不应启动新实例（应复用）");
     },
     waitReady: async (port) => ({ port, title: "TraeWork CN" }),
-    release: () => ({ released: true, reason: "已终止" }),
+    release: async () => ({ released: true, reason: "已终止" }),
     resolvePort: async (gui) => gui.cdpPort,
+    // 纯微任务 no-op 会饿死事件循环 timers 阶段（guardPoll 的 deadline 检测永不触发），
+    // 与 codex-flow.test.ts 同理：钳到 2ms 的真实 sleep，保留事件循环语义。
+    sleep: (ms) => new Promise((r) => setTimeout(r, Math.min(ms, 2))),
+    dialogWaitTimeoutMs: 20_000, // 本文件的桩不会走到原生对话框等待
     ...over,
   };
 }
@@ -338,7 +342,7 @@ describe("runTraeworkTask 全链路（假 CDP）", () => {
       deps: makeDeps(state, {
         probeReady: async () => null,
         launch: () => ({ pid: 1234, port: 9222, exePath: "x.exe", commandLine: "x.exe --remote-debugging-port=9222" }),
-        release: () => {
+        release: async () => {
           released = true;
           return { released: true, reason: "不应调用" };
         },
@@ -364,7 +368,7 @@ describe("runTraeworkTask 全链路（假 CDP）", () => {
       deps: makeDeps(state, {
         probeReady: async () => null,
         launch: () => ({ pid: 2345, port: 9222, exePath: "x.exe", commandLine: "x.exe --remote-debugging-port=9222" }),
-        release: () => {
+        release: async () => {
           released = true;
           return { released: true, reason: "不应调用" };
         },
@@ -392,7 +396,7 @@ describe("runTraeworkTask 全链路（假 CDP）", () => {
       deps: makeDeps(state, {
         probeReady: async () => null,
         launch: () => ({ pid: 3456, port: 9222, exePath: "x.exe", commandLine: "x.exe --remote-debugging-port=9222" }),
-        release: () => {
+        release: async () => {
           released = true;
           return { released: true, reason: "不应调用" };
         },
@@ -456,7 +460,7 @@ describe("runTraeworkTask 全链路（假 CDP）", () => {
           launched = true;
           return { pid: 1234, port: 9222, exePath: "x.exe", commandLine: "x.exe --remote-debugging-port=9222" };
         },
-        release: () => {
+        release: async () => {
           released = true;
           return { released: true, reason: "已终止" };
         },

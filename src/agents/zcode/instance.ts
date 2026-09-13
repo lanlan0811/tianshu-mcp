@@ -1,11 +1,13 @@
 import net from "node:net";
 import { promisify } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
-import { spawn, execFile, execFileSync, type ChildProcess } from "node:child_process";
+import { spawn, execFile, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { TraeworkCdpClient } from "../traework/cdp/client.js";
 import type { GuiProfile } from "../../config/schema.js";
 import type { AgentRunLogger } from "../adapter.js";
+import { execFileAsync } from "../../verify/exec.js";
+import { TtlCache } from "../../util/ttl-cache.js";
 
 export interface ZcodeProcess {
   pid: number;
@@ -28,34 +30,34 @@ export function parseProcessRows(raw: string): ZcodeProcess[] {
   return out;
 }
 
-export function listZcodeProcesses(): ZcodeProcess[] {
+/** 进程枚举短缓存（1.5s）：轮询环每 tick 复用同一快照，避免重复 powershell/ps 枚举 */
+const processCache = new TtlCache<ZcodeProcess[]>(1_500);
+/** 无参枚举，缓存 key 为固定常量（参数集为空） */
+const PROCESS_CACHE_KEY = "zcode-process-list";
+
+export function listZcodeProcesses(): Promise<ZcodeProcess[]> {
+  return processCache.get(PROCESS_CACHE_KEY, enumerateZcodeProcesses);
+}
+
+async function enumerateZcodeProcesses(): Promise<ZcodeProcess[]> {
   if (process.platform === "win32") {
+    const script =
+      'Get-CimInstance Win32_Process -Filter "Name=\'ZCode.exe\'" | ForEach-Object { "$($_.ProcessId)`t$($_.ExecutablePath)`t$($_.CommandLine)" }';
     for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const script =
-          'Get-CimInstance Win32_Process -Filter "Name=\'ZCode.exe\'" | ForEach-Object { "$($_.ProcessId)`t$($_.ExecutablePath)`t$($_.CommandLine)" }';
-        return parseProcessRows(
-          execFileSync("powershell.exe", ["-NoProfile", "-Command", script], {
-            encoding: "utf8",
-            windowsHide: true,
-            timeout: 15_000,
-          }),
-        );
-      } catch {
-        if (attempt === 1) return [];
-      }
+      // eslint-disable-next-line no-await-in-loop
+      const res = await execFileAsync("powershell.exe", ["-NoProfile", "-Command", script], {
+        timeoutMs: 15_000,
+      });
+      if (res.status === 0) return parseProcessRows(res.stdout);
     }
     return [];
   }
-  try {
-    const raw = execFileSync("ps", ["-axo", "pid=,command="], { encoding: "utf8", timeout: 5_000 });
-    return raw.split(/\r?\n/).flatMap((line) => {
-      const m = /^\s*(\d+)\s+(.*ZCode.*)$/.exec(line);
-      return m ? [{ pid: Number(m[1]), commandLine: m[2]! }] : [];
-    });
-  } catch {
-    return [];
-  }
+  const res = await execFileAsync("ps", ["-axo", "pid=,command="], { timeoutMs: 5_000 });
+  if (res.status !== 0) return [];
+  return res.stdout.split(/\r?\n/).flatMap((line) => {
+    const m = /^\s*(\d+)\s+(.*ZCode.*)$/.exec(line);
+    return m ? [{ pid: Number(m[1]), commandLine: m[2]! }] : [];
+  });
 }
 
 export interface ZcodeInstanceOptions {
@@ -112,9 +114,14 @@ function productTarget(title = "", url = ""): boolean {
 
 export async function probeZcodePort(
   port: number,
-  processes = listZcodeProcesses(),
+  processes?: ZcodeProcess[],
 ): Promise<ZcodeReady | null> {
-  const owner = rootZcodeProcesses(processes).find((p) => remoteDebugPort(p.commandLine) === port);
+  const rows = processes ?? (await listZcodeProcesses());
+  const roots = rootZcodeProcesses(rows);
+  let owner = roots.find((p) => remoteDebugPort(p.commandLine) === port);
+  // macOS 主进程启动完成后会改写进程标题（ps 只剩 "ZCode"，argv 中的调试端口被隐藏，实测 3.11.2）。
+  // 放宽归属判定：端口上确有 ZCode 页面且存在根进程即接管（pid 取根进程首个，仅供日志/对话框过滤）。
+  if (!owner && process.platform === "darwin" && roots.length) owner = roots[0];
   if (!owner) return null;
   try {
     const targets = await TraeworkCdpClient.listTargets(port, 1500);
@@ -137,21 +144,41 @@ export async function ensureZcodeInstance(
     roots = rootZcodeProcesses(await listZcodeProcessesAsync(options));
   }
   if (roots.length) {
-    if (!roots.some((proc) => remoteDebugPort(proc.commandLine))) return { needsClose: true };
-    const reuseDeadline = Math.min(options.deadline ?? Infinity, Date.now() + gui.launchTimeoutMs);
+    const argvPorts = roots
+      .map((p) => remoteDebugPort(p.commandLine))
+      .filter((x): x is number => x !== null);
+    // macOS：argv 被标题改写隐藏时，补扫配置端口段（有界快速扫描，多数端口 ECONNREFUSED 立即返回）；
+    // 扫描预算收窄到 10s——扫不到 ZCode 页面即确属「无 CDP 旧实例」，不必烧满 launchTimeoutMs。
+    const scanAll = process.platform === "darwin" && argvPorts.length === 0;
+    // scanAll 的冻结列表是刻意设计（补扫配置端口段）；!scanAll 时端口每 tick 从最新 roots 重算，
+    // 实例 argv 变化（新调试端口）不会空等旧端口。
+    const ports = scanAll
+      ? Array.from({ length: gui.cdpPortRange }, (_, i) => gui.cdpPort + i)
+      : argvPorts;
+    if (!ports.length) return { needsClose: true };
+    const reuseDeadline = Math.min(
+      options.deadline ?? Infinity,
+      Date.now() + (scanAll ? Math.min(gui.launchTimeoutMs, 10_000) : gui.launchTimeoutMs),
+    );
     while (Date.now() < reuseDeadline) {
+      // 每个 tick 只枚举一次进程，快照传给本轮全部 probe
+      // eslint-disable-next-line no-await-in-loop
       roots = rootZcodeProcesses(await listZcodeProcessesAsync(options));
-      for (const proc of roots) {
-        const port = remoteDebugPort(proc.commandLine);
-        if (port) {
-          // eslint-disable-next-line no-await-in-loop
-          const ready = await probeZcodePort(port, roots);
-          if (ready) return { ready };
-        }
+      const recomputed = roots
+        .map((p) => remoteDebugPort(p.commandLine))
+        .filter((x): x is number => x !== null);
+      // 重算为空（如 macOS 主进程标题改写隐藏 argv）时回退初始列表：
+      // 旧端口仍是真实 CDP 端口，darwin 放宽归属判定可继续命中；有值则以最新 roots 为准
+      const tickPorts = scanAll ? ports : recomputed.length > 0 ? recomputed : ports;
+      for (const port of tickPorts) {
+        // eslint-disable-next-line no-await-in-loop
+        const ready = await probeZcodePort(port, roots);
+        if (ready) return { ready };
       }
       // eslint-disable-next-line no-await-in-loop
       await delay(500, undefined, { signal: options.signal });
     }
+    if (scanAll) return { needsClose: true };
     throw new Error(`等待既有 ZCode CDP 页面就绪超时（${gui.launchTimeoutMs}ms）`);
   }
   options.signal?.throwIfAborted();
@@ -173,7 +200,13 @@ export async function ensureZcodeInstance(
   } else if (!(await freePort(port))) throw new Error(`ZCode CDP 端口 ${port} 已被占用`);
   const args = gui.exeArgs.map((arg) => arg.replaceAll("<port>", String(port)));
   options.signal?.throwIfAborted();
-  const child = spawn(exePath, args, { detached: false, stdio: "ignore", windowsHide: false });
+  // POSIX（macOS）必须 detached：实测父进程退出时非 detached 子进程会被进程组连坐杀掉
+  //（codex-gui 同款问题，2026-09-13 真机结论）；detached 后自成进程组组长，实例跨 server 退出驻留。
+  const child = spawn(exePath, args, {
+    detached: process.platform !== "win32",
+    stdio: "ignore",
+    windowsHide: false,
+  });
   let launchError: Error | undefined;
   child.once("error", (error) => {
     launchError = error;

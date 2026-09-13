@@ -66,11 +66,14 @@ describe("ZCode 安装与模型", () => {
     expect(source).not.toMatch(/\$pid\b/i);
     expect(source).toContain("$dialogOwnerPid");
   });
-  it("macOS 文件夹守卫只操作全进程唯一的新 sheet", () => {
+  it("macOS 文件夹守卫只操作全进程唯一的新面板窗口", () => {
     const source = fs.readFileSync(path.resolve("src", "agents", "zcode", "dialog.ts"), "utf8");
+    // macOS 3.11.2 实测：NSOpenPanel 是独立窗口而非 sheet——守卫语义从 sheet 改为窗口计数
     expect(source).not.toContain("set targetSheet to sheet 1 of window 1");
     expect(source).toContain('error "AMBIGUOUS_NEW_ZCODE_FOLDER_SHEET"');
-    expect(source).toContain("set targetSheet to sheet 1 of w");
+    expect(source).toContain("if (name of w) is in panelTitles");
+    // 权限判定不得匹配内嵌脚本文本（防把普通面板失败误报成权限问题）
+    expect(source).toContain("err.stderr");
   });
   it("显式 gui.exePath 优先且读取真实文件", async () => {
     const root = await makeTmpRoot("zcode-discovery");
@@ -88,7 +91,7 @@ describe("ZCode 安装与模型", () => {
         relativePaths: [],
       },
     });
-    expect(discoverZcode(profile)?.path).toBe(exe);
+    expect((await discoverZcode(profile))?.path).toBe(exe);
     await rmrf(root);
   });
   it("固定盘按可配置 D 优先并去重", () => {
@@ -154,7 +157,7 @@ describe("ZCode 安装与模型", () => {
       },
     });
     expect(
-      discoverZcode(profile, {
+      await discoverZcode(profile, {
         platform: "win32",
         fixedDrives: [],
         driveRoots: { "C:": cRoot, "D:": dRoot },
@@ -187,7 +190,7 @@ describe("ZCode 安装与模型", () => {
       },
     });
     expect(
-      discoverZcode(registryProfile, {
+      await discoverZcode(registryProfile, {
         platform: "win32",
         fixedDrives: [],
         registryDirs: [registryRoot],
@@ -203,7 +206,7 @@ describe("ZCode 安装与模型", () => {
       },
     });
     expect(
-      discoverZcode(standardProfile, {
+      await discoverZcode(standardProfile, {
         platform: "win32",
         fixedDrives: [],
         registryDirs: [],
@@ -238,12 +241,12 @@ describe("ZCode 安装与模型", () => {
         relativePaths: [],
       },
     });
-    expect(discoverZcode(profile, { platform: "darwin" })).toMatchObject({
+    expect(await discoverZcode(profile, { platform: "darwin" })).toMatchObject({
       path: path.join(userDir, "ZCode"),
       source: "bundle",
     });
     fs.writeFileSync(path.join(systemDir, "ZCode"), "");
-    expect(discoverZcode(profile, { platform: "darwin" })).toMatchObject({
+    expect(await discoverZcode(profile, { platform: "darwin" })).toMatchObject({
       path: path.join(systemDir, "ZCode"),
       source: "bundle",
     });

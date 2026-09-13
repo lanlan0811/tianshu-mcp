@@ -9,6 +9,49 @@
 
 ## [未发布]
 
+### 新增
+
+- `projectPath` 安全闸门：`run_task`/`verify_task` 提交即校验（绝对路径 + 存在目录 + realpath
+  消除符号链接），拒绝主目录本身与系统/根级目录（含 macOS `/private/*` realpath 形态）；
+  提交回执明示符号链接解析来源；git 仓库有未提交变更时追加共处警示（多会话场景）。
+- ZCode GUI 驱动支持 macOS：适配主进程标题改写（argv 隐藏后端口探测放宽 + 配置端口段补扫）、
+  spawn detached+unref 实例驻留；文件夹面板按 macOS 窗口形态重写（NSOpenPanel 独立窗口 +
+  go-to 字段 AX 直写，免疫中文输入法截获）。2026-09-13 macOS arm64 + ZCode 3.11.2 真机闭环
+  验证（绑定→回读→发送→运行证据→验收 PASS→succeeded）；取消/返修/新建项目矩阵补齐前
+  macOS 保持 `research`。
+- Codex GUI 驱动支持 macOS：spawn ChatGPT.app 包内可执行（activation 按平台默认 spawn/msix-com），
+  detached+unref 实例驻留；POSIX 进程枚举与 SIGTERM 停止；darwin 安装发现默认目录；
+  项目登记状态文件（`~/.codex/.codex-global-state.json`）darwin 直写；运行观察环对
+  renderer 瞬时无响应/target 替换做 CDP 重连（连续 5 次才判断开）。2026-09-13 macOS arm64
+  真机闭环验证（发现→登记→绑定→发送→运行证据→验收 PASS→succeeded）；取消/返修矩阵
+  补齐前 macOS 保持 `research`。
+
+### 修复
+
+- zcode macOS 新建任务惰性按钮兜底：`conversation-new-task` 可能命中首页惰性图标（点击无响应），
+  项目触发器未命中时回退侧栏 `[data-testid=task-new-button]` 大按钮再重试。
+- `normalizeProjectPath` 解析符号链接：macOS `/tmp`→`/private/tmp` 曾使项目路径匹配失败
+  退化为名称匹配，误报 `project_ambiguous`；realpath 失败退回词法归一。
+- zcode macOS 面板失败的 `needsPermission` 误报：execFile message 内嵌脚本文本（含
+  `ACCESSIBILITY_PERMISSION_REQUIRED` 字面量）把一切失败报成权限问题，改判 stderr 的
+  execution error 行。
+- `get_profiles` 列出数据目录 `agent-profiles.json` 中的用户自定义 profile（此前未 resolve 不显示，`run_task` 却可用，探测反馈不一致）。
+- zcode-flow 测试桩补 `listDialogs`，消除真实 osascript/PowerShell 调用在全量负载下撞 `taskTimeoutMs` 墙钟导致的 flake。
+- CDP `connect()` 失败分支自清理 WebSocket（不再依赖调用方兜底 disconnect）；`send()` 超时定时器 unref。
+
+### 性能
+
+- GUI 实例探测、发现、注册全链路 `execFileSync`/`spawnSync` 异步化；就绪等待环每 tick 复用进程快照，进程枚举加 1.5s TTL 缓存——消除 Windows 轮询期事件循环冻结（单次最坏 30s）。
+- 验收命令检查有界并行：新增 `verifyConcurrency`（**⚠ 默认值由串行变为 2**，范围 1–4；项目级 `.tianshu-mcp/acceptance.json` 可覆盖，=1 完全退化串行——写构建产物/带 `--fix`/共享缓存目录的 checks 建议显式设 1）；日志按声明顺序拼接、格式不变；取消信号可中断在途与未启动检查。
+- git 基线哈希两遍并一遍 + 异步有界并发（untracked 上限 5000 截断）；代码分析每文件只读一次，大文件嗅探只读前缀。
+- `get_profiles` 与任务快照读改 `Promise.all`。
+- 测试套件 267s → 51s：traework UI 层 sleep 改依赖注入（生产默认值不变），vitest 拆 unit 并行 / integration 串行双 project。
+- `tsconfig.build.json` 关闭 declaration，dist 去除 70 个 `.d.ts`（140 → 71 文件）。
+
+### 文档
+
+- README（中英）新增「macOS 无头路径：codex-cli（用户 profile）」——含 ≤0.130.0 签名证书吊销的警示与完整 profile 示例。
+
 ### 计划中
 
 - 更多外部 AI-Agent 适配（新 agent = 一个 profile +（如需）一个 adapter 文件）。

@@ -60,14 +60,18 @@ export interface RunTraeworkArgs {
   deps?: Partial<TraeworkRunDeps>;
 }
 
-/** 可注入依赖（生产用真实实现；集成测试注入假 CDP） */
+/** 可注入依赖（生产用真实实现；集成测试注入假 CDP 与 no-op sleep） */
 export interface TraeworkRunDeps {
   createClient: (port: number, sendTimeoutMs: number) => TraeworkCdpClient;
   probeReady: (port: number) => Promise<ReadyInstance | null>;
   launch: (opts: LaunchOptions) => SpawnedInstance;
   waitReady: (port: number, timeoutMs: number, logger: AgentRunLogger) => Promise<ReadyInstance>;
-  release: (inst: SpawnedInstance, logger: AgentRunLogger) => { released: boolean; reason: string };
+  release: (inst: SpawnedInstance, logger: AgentRunLogger) => Promise<{ released: boolean; reason: string }>;
   resolvePort: (gui: GuiProfile, logger: AgentRunLogger) => Promise<number>;
+  /** UI 层等待（生产真实 sleep；测试注入钳制版/no-op，贯穿 run → ui/*） */
+  sleep: (ms: number) => Promise<void>;
+  /** 原生「选择文件夹」对话框出现的等待总时限（生产 20s；测试钳短） */
+  dialogWaitTimeoutMs: number;
 }
 
 const DEFAULT_DEPS: TraeworkRunDeps = {
@@ -77,11 +81,9 @@ const DEFAULT_DEPS: TraeworkRunDeps = {
   waitReady,
   release: (inst, logger) => releaseInstance(inst, logger),
   resolvePort,
+  sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+  dialogWaitTimeoutMs: 20_000,
 };
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
 
 class PollGuardError extends Error {
   constructor(readonly reason: "aborted" | "timeout") {
@@ -131,6 +133,7 @@ async function waitForUi(
   cdp: TraeworkCdpClient,
   selectors: GuiProfile["selectors"],
   logger: AgentRunLogger,
+  sleep: (ms: number) => Promise<void>,
   timeoutMs = 60_000,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
@@ -297,11 +300,11 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
 
     // CDP 端口就绪 ≠ 渲染进程 DOM 就绪（新实例首启需数秒渲染）。
     // 必须等到聊天输入框出现，否则后续「新建任务/选择文件夹」都会找不到。
-    await waitForUi(cdp, gui.selectors, logger);
+    await waitForUi(cdp, gui.selectors, logger, deps.sleep);
 
     // ---- 2. 新建会话（每任务一个干净会话）----
     if (gui.freshSession) {
-      const ok = await startNewSession(cdp, { selectors: gui.selectors, logger });
+      const ok = await startNewSession(cdp, { selectors: gui.selectors, logger, sleep: deps.sleep });
       if (!ok) logger.warn("[traework] 未能新建会话，将在当前会话继续（fail-open）");
     }
 
@@ -317,7 +320,7 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
     }
     if (target.mode !== "Work" || (gui.modeSwitch && ctx.mode)) {
       logger.info(`[traework] 目标模式 ${target.mode}（来源：${target.source}），切换中…`);
-      const modeOk = await ensureMode(cdp, target.mode, { selectors: gui.selectors, logger });
+      const modeOk = await ensureMode(cdp, target.mode, { selectors: gui.selectors, logger, sleep: deps.sleep });
       if (!modeOk) {
         return stop(
           "setup_failed",
@@ -332,6 +335,8 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
       selectors: gui.selectors,
       logger,
       mode: target.mode,
+      sleep: deps.sleep,
+      dialogWaitTimeoutMs: deps.dialogWaitTimeoutMs,
     });
     if (!bound.bound) {
       return stop("setup_failed", `项目文件夹绑定失败（${bound.method}）：${bound.message}`, {
@@ -360,7 +365,7 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
 
     // ---- 5. 切模型（用户指定时）----
     if (ctx.model && gui.modelSwitch) {
-      const sw = await selectModel(cdp, ctx.model, { selectors: gui.selectors, logger });
+      const sw = await selectModel(cdp, ctx.model, { selectors: gui.selectors, logger, sleep: deps.sleep });
       if (!sw.ok) {
         const detail =
           sw.reason === "restricted"
@@ -377,7 +382,7 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
     // ---- 6. 写入任务书并发送 ----
     const promptText = buildPromptText(ctx.task, ctx.context, ctx.feedback);
     const marker = makeMarker();
-    await typeAndSend(cdp, marker + promptText, { selectors: gui.selectors, logger });
+    await typeAndSend(cdp, marker + promptText, { selectors: gui.selectors, logger, sleep: deps.sleep });
 
     // ---- 7. 轮询到完成 ----
     const base = await cdp.text("messageContainer", gui.selectors);
@@ -391,7 +396,7 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
     for (;;) {
       try {
         // eslint-disable-next-line no-await-in-loop
-        await guardPoll(sleep(gui.pollIntervalMs), opts.signal, deadline);
+        await guardPoll(deps.sleep(gui.pollIntervalMs), opts.signal, deadline);
       } catch (e) {
         if (e instanceof PollGuardError && e.reason === "aborted")
           return stop("aborted", "已取消", { killed: true });
@@ -518,7 +523,7 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
     cdp?.disconnect();
     // 只在本轮真正完成/ask_user 时释放本模块创建的实例；其余结果保留现场。
     if (spawned && (endReason === "completion_mark" || endReason === "ask_user")) {
-      const r = deps.release(spawned, logger);
+      const r = await deps.release(spawned, logger);
       logger.info(`[traework] 实例释放：${r.reason}`);
     } else if (keptInstance) {
       logger.info(

@@ -9,9 +9,11 @@ import type { SelectorOverrides } from "../cdp/selectors.js";
 export interface ComposerOptions {
   selectors?: SelectorOverrides;
   logger: AgentRunLogger;
+  /** 测试注入点：等待函数（生产缺省真实 sleep） */
+  sleep?: (ms: number) => Promise<void>;
 }
 
-function sleep(ms: number): Promise<void> {
+function defaultSleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
@@ -38,6 +40,7 @@ export async function typeAndSend(
   opts: ComposerOptions,
 ): Promise<{ typedText: string }> {
   const { selectors, logger } = opts;
+  const sleep = opts.sleep ?? defaultSleep;
   const focused = await cdp.focus("chatInput", selectors);
   if (!focused) {
     throw new Error("找不到聊天输入框（.chat-input-v2-input-box-editable）——TraeWork 可能仍在加载或 UI 已变更");

@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
 import type { AgentProfile } from "../../config/schema.js";
 import { expandEnvPath } from "../../util/path.js";
+import { execFileAsync } from "../../verify/exec.js";
 
 export interface ZcodeCandidate {
   path: string;
@@ -23,24 +23,15 @@ function validExecutable(p: string, platform: NodeJS.Platform = process.platform
   }
 }
 
-function fileVersion(p: string): string | undefined {
+async function fileVersion(p: string): Promise<string | undefined> {
   if (process.platform !== "win32") return undefined;
-  try {
-    const escaped = p.replace(/'/g, "''");
-    return (
-      execFileSync(
-        "powershell.exe",
-        ["-NoProfile", "-Command", `(Get-Item -LiteralPath '${escaped}').VersionInfo.FileVersion`],
-        {
-          encoding: "utf8",
-          windowsHide: true,
-          timeout: 5_000,
-        },
-      ).trim() || undefined
-    );
-  } catch {
-    return undefined;
-  }
+  const escaped = p.replace(/'/g, "''");
+  const res = await execFileAsync(
+    "powershell.exe",
+    ["-NoProfile", "-Command", `(Get-Item -LiteralPath '${escaped}').VersionInfo.FileVersion`],
+    { timeoutMs: 5_000 },
+  );
+  return res.status === 0 ? res.stdout.trim() || undefined : undefined;
 }
 
 export function normalizeDrive(value: string): string | null {
@@ -48,29 +39,22 @@ export function normalizeDrive(value: string): string | null {
   return m ? `${m[1]!.toUpperCase()}:` : null;
 }
 
-export function windowsFixedDrives(): string[] {
+export async function windowsFixedDrives(): Promise<string[]> {
   if (process.platform !== "win32") return [];
-  try {
-    const raw = execFileSync(
-      "powershell.exe",
-      [
-        "-NoProfile",
-        "-Command",
-        "Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | Select-Object -ExpandProperty DeviceID",
-      ],
-      {
-        encoding: "utf8",
-        windowsHide: true,
-        timeout: 8_000,
-      },
-    );
-    return raw
-      .split(/\r?\n/)
-      .map((s) => normalizeDrive(s))
-      .filter((s): s is string => Boolean(s));
-  } catch {
-    return [];
-  }
+  const res = await execFileAsync(
+    "powershell.exe",
+    [
+      "-NoProfile",
+      "-Command",
+      "Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | Select-Object -ExpandProperty DeviceID",
+    ],
+    { timeoutMs: 8_000 },
+  );
+  if (res.status !== 0) return [];
+  return res.stdout
+    .split(/\r?\n/)
+    .map((s) => normalizeDrive(s))
+    .filter((s): s is string => Boolean(s));
 }
 
 export function orderedDrives(all: string[], preferred: string[]): string[] {
@@ -82,22 +66,18 @@ export function orderedDrives(all: string[], preferred: string[]): string[] {
   ];
 }
 
-function registryInstallLocations(): string[] {
+async function registryInstallLocations(): Promise<string[]> {
   if (process.platform !== "win32") return [];
   const script =
     "$roots=@('HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*','HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*','HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'); Get-ItemProperty $roots -ErrorAction SilentlyContinue | Where-Object {$_.DisplayName -match '^Z[ -]?Code' -and $_.InstallLocation} | ForEach-Object {$_.InstallLocation}";
-  try {
-    return execFileSync("powershell.exe", ["-NoProfile", "-Command", script], {
-      encoding: "utf8",
-      windowsHide: true,
-      timeout: 8_000,
-    })
-      .split(/\r?\n/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-  } catch {
-    return [];
-  }
+  const res = await execFileAsync("powershell.exe", ["-NoProfile", "-Command", script], {
+    timeoutMs: 8_000,
+  });
+  if (res.status !== 0) return [];
+  return res.stdout
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 function pathCandidates(platform: NodeJS.Platform): string[] {
@@ -110,7 +90,7 @@ function pathCandidates(platform: NodeJS.Platform): string[] {
 }
 
 /** Data-driven ZCode discovery. Optional injected inputs make order/platform behavior unit-testable. */
-export function discoverZcode(
+export async function discoverZcode(
   profile: AgentProfile,
   input: {
     platform?: NodeJS.Platform;
@@ -118,24 +98,25 @@ export function discoverZcode(
     registryDirs?: string[];
     driveRoots?: Record<string, string>;
   } = {},
-): ZcodeCandidate | null {
+): Promise<ZcodeCandidate | null> {
   const platform = input.platform ?? process.platform;
   const explicit = profile.gui?.exePath?.trim() || profile.command?.trim();
   if (explicit && validExecutable(explicit, platform))
-    return { path: explicit, source: "explicit", version: fileVersion(explicit) };
+    return { path: explicit, source: "explicit", version: await fileVersion(explicit) };
   const disc = profile.executableDiscovery;
   if (!disc) return null;
 
-  const firstValid = (
+  const firstValid = async (
     candidates: Array<{ p: string; source: ZcodeCandidate["source"] }>,
-  ): ZcodeCandidate | null => {
+  ): Promise<ZcodeCandidate | null> => {
     const seen = new Set<string>();
     for (const candidate of candidates) {
       const key = platform === "win32" ? candidate.p.toLowerCase() : candidate.p;
       if (seen.has(key)) continue;
       seen.add(key);
       if (validExecutable(candidate.p, platform))
-        return { path: candidate.p, source: candidate.source, version: fileVersion(candidate.p) };
+        // eslint-disable-next-line no-await-in-loop
+        return { path: candidate.p, source: candidate.source, version: await fileVersion(candidate.p) };
     }
     return null;
   };
@@ -161,24 +142,24 @@ export function discoverZcode(
 
     // Configured preferred drives are explicit profile data. Probe them first so a slow/failed
     // WMI fixed-drive query cannot make an installed GUI agent transiently unavailable.
-    const preferred = firstValid(driveCandidates(preferredDrives));
+    const preferred = await firstValid(driveCandidates(preferredDrives));
     if (preferred) return preferred;
 
-    const drives = orderedDrives(input.fixedDrives ?? windowsFixedDrives(), preferredDrives).filter(
+    const drives = orderedDrives(input.fixedDrives ?? (await windowsFixedDrives()), preferredDrives).filter(
       (drive) => !preferredDrives.includes(drive),
     );
-    const fixedDrive = firstValid(driveCandidates(drives));
+    const fixedDrive = await firstValid(driveCandidates(drives));
     if (fixedDrive) return fixedDrive;
 
     const registryCandidates: Array<{ p: string; source: ZcodeCandidate["source"] }> = [];
-    for (const dir of input.registryDirs ?? registryInstallLocations()) {
+    for (const dir of input.registryDirs ?? (await registryInstallLocations())) {
       registryCandidates.push({ p: path.join(dir, "ZCode.exe"), source: "registry" });
       registryCandidates.push({
         p: path.join(dir, "ZCode", "ZCode.exe"),
         source: "registry",
       });
     }
-    const registry = firstValid(registryCandidates);
+    const registry = await firstValid(registryCandidates);
     if (registry) return registry;
   }
 
@@ -191,10 +172,10 @@ export function discoverZcode(
         source: platform === "darwin" && dir.includes(".app") ? "bundle" : "standard",
       });
   }
-  const standard = firstValid(standardCandidates);
+  const standard = await firstValid(standardCandidates);
   if (standard) return standard;
 
-  const executableInPath = firstValid(
+  const executableInPath = await firstValid(
     pathCandidates(platform).map((p) => ({ p, source: "path" as const })),
   );
   return executableInPath;

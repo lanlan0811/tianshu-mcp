@@ -108,4 +108,50 @@ describe("R5 profile 热加载", () => {
     const second = await reg.resolve("stub", true);
     expect(second.profile.argsTemplate).toEqual(["--version"]);
   });
+
+  it("listProfileIds 包含数据目录用户自定义 profile（get_profiles 不再漏列）", async () => {
+    const home = await makeTmpRoot("list-profile-ids");
+    const dh = new DataHome(home, silentLogger, {
+      stub: {
+        displayName: "stub",
+        type: "cli",
+        status: "ready",
+        command: "node",
+        argsTemplate: ["-v"],
+        promptMode: "arg",
+        cwd: "task",
+        env: {},
+        timeoutMs: 1000,
+        killTree: "taskkill",
+      } as AgentProfile,
+    });
+    await dh.init();
+    const reg = new AgentAdapterRegistry(() => dh.loadProfiles(), silentLogger);
+    await fsp.writeFile(
+      path.join(home, "agent-profiles.json"),
+      JSON.stringify({
+        profiles: {
+          "codex-cli": {
+            displayName: "Codex CLI",
+            type: "cli",
+            driver: "spawn",
+            status: "ready",
+            command: "node",
+            argsTemplate: ["-v"],
+            promptMode: "arg",
+            cwd: "task",
+            env: {},
+            timeoutMs: 1000,
+            killTree: "taskkill",
+          },
+        },
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 20));
+    const ids = await reg.listProfileIds();
+    expect(ids).toContain("codex-cli"); // 用户自定义键
+    expect(ids).toContain("stub"); // 内置 profile 键
+    expect(ids).toContain("codex"); // 构造期预注册 adapter 键
+    expect(new Set(ids).size).toBe(ids.length); // 无重复
+  });
 });

@@ -91,7 +91,7 @@ export function codexGuiOf(resolved: ResolvedAgent): GuiProfile {
     freshSession: g?.freshSession ?? true,
     selectors: g?.selectors ?? {},
     modelRequired: g?.modelRequired ?? true,
-    activation: g?.activation ?? "msix-com",
+    activation: g?.activation ?? (process.platform === "darwin" ? "spawn" : "msix-com"),
     userDataDir: g?.userDataDir,
     appxPackageName: g?.appxPackageName ?? "OpenAI.Codex",
     permissionMode: g?.permissionMode ?? "完全访问",
@@ -201,7 +201,7 @@ export async function runCodexTask(args: RunCodexArgs): Promise<AgentRunResult> 
 
     // ---- 步骤 1/2：定位 + 启动受管实例 ----
     const spec = parseCodexModel(ctx.model, ctx.reasoningLevel);
-    const found = deps.discover(resolved.profile);
+    const found = await deps.discover(resolved.profile);
     const exePath = resolved.command || found?.path;
     const aumid = found?.aumid;
     if (!exePath)
@@ -218,7 +218,7 @@ export async function runCodexTask(args: RunCodexArgs): Promise<AgentRunResult> 
     // 这一步会先停受管实例再写状态文件，因此必须在 ensureInstance 之前执行。
     // 失败/不支持时返回 skipped，后续自动回退到界面「新建项目」路径。
     try {
-      const reg = deps.ensureRegistered(ctx.projectPath, gui, logger);
+      const reg = await deps.ensureRegistered(ctx.projectPath, gui, logger);
       logger.info(`[codex] 项目登记：${reg.status}（${reg.message}）`);
     } catch (e) {
       logger.warn(`[codex] 项目登记异常，回退界面新建路径：${e instanceof Error ? e.message : String(e)}`);
@@ -231,6 +231,18 @@ export async function runCodexTask(args: RunCodexArgs): Promise<AgentRunResult> 
 
     cdp = await connectStableCodex(ready, gui, deps, true);
     logger.info("[codex] CDP 页面与输入状态已稳定");
+    // macOS 实测：turn 完成/页面切换瞬间 renderer 会瞬时无响应甚至被替换，单次 evaluate
+    // 挂起（15s 超时）不等于 CDP 死亡——重连当前页面继续观察，连续失败才判 cdp_disconnected。
+    const reconnectCdp = async (): Promise<void> => {
+      const next = await connectStableCodex(
+        ready,
+        { ...gui, launchTimeoutMs: Math.min(gui.launchTimeoutMs, 20_000) },
+        deps,
+        true,
+      );
+      cdp?.disconnect();
+      cdp = next;
+    };
     if (await cdp.exists("loginIndicator"))
       return result({
         endReason: "needs_user",
@@ -365,14 +377,29 @@ export async function runCodexTask(args: RunCodexArgs): Promise<AgentRunResult> 
       let seenRunning = false;
       const confirmAttempts = Math.ceil(Math.min(60_000, Math.max(5_000, ctx.taskTimeoutMs)) / 250);
       const confirmed = (): boolean => seenCleared || seenMessage || seenRunning;
+      let confirmCdpFailures = 0;
       for (let i = 0; i < confirmAttempts && !confirmed(); i++) {
         // eslint-disable-next-line no-await-in-loop
         await deps.sleep(250);
-        // eslint-disable-next-line no-await-in-loop
-        const [poll, input] = await Promise.all([cdp.poll(), cdp.inputText()]);
-        seenMessage ||= poll.conversationText.includes(marker);
-        seenCleared ||= !input.includes(marker);
-        seenRunning ||= poll.stopVisible;
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          const [poll, input] = await Promise.all([cdp.poll(), cdp.inputText()]);
+          confirmCdpFailures = 0;
+          seenMessage ||= poll.conversationText.includes(marker);
+          seenCleared ||= !input.includes(marker);
+          seenRunning ||= poll.stopVisible;
+        } catch (e) {
+          // 与运行检测环同因：页面切换瞬间 evaluate 可挂起——重连继续，连续失败才放大
+          if (!(e instanceof CdpDisconnectedError || e instanceof CdpUnavailableError)) throw e;
+          confirmCdpFailures += 1;
+          if (confirmCdpFailures > 5) throw e;
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            await reconnectCdp();
+          } catch {
+            /* 下轮继续重试 */
+          }
+        }
       }
       if (!confirmed())
         return result({
@@ -393,6 +420,7 @@ export async function runCodexTask(args: RunCodexArgs): Promise<AgentRunResult> 
       // 「turn 在恢复前已完成 → 从未见运行信号 → 判不了 finished → 误落 idle_timeout」。
       state.sawRunning = true;
     }
+    let cdpFailures = 0;
     let lastProgress = 0;
     for (;;) {
       // 取消（issue #6）：不止退出 MCP 等待循环，还要尽力点击 GUI 停止按钮并等待空闲，
@@ -409,8 +437,27 @@ export async function runCodexTask(args: RunCodexArgs): Promise<AgentRunResult> 
         });
       // eslint-disable-next-line no-await-in-loop
       await deps.sleep(gui.pollIntervalMs);
-      // eslint-disable-next-line no-await-in-loop
-      const poll: CodexPoll = await cdp.poll();
+      let poll: CodexPoll;
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        poll = await cdp.poll();
+        cdpFailures = 0;
+      } catch (e) {
+        if (!(e instanceof CdpDisconnectedError || e instanceof CdpUnavailableError)) throw e;
+        cdpFailures += 1;
+        if (cdpFailures > 5) throw e;
+        logger.warn(
+          `[codex] CDP 轮询失败（${cdpFailures}/5）：${e instanceof Error ? e.message : String(e)}；尝试重连当前页面`,
+        );
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          await reconnectCdp();
+          logger.info("[codex] CDP 已重连当前页面，继续观察");
+        } catch (re) {
+          logger.warn(`[codex] CDP 重连失败：${re instanceof Error ? re.message : String(re)}`);
+        }
+        continue;
+      }
       const verdict = judgeCodexPoll(poll, state, gui.stableRounds, gui.idleTimeoutMs, Date.now(), gui.stallTimeoutMs);
       state = verdict.state;
       if (Date.now() - lastProgress >= gui.progressIntervalMs) {
@@ -537,7 +584,7 @@ async function createProject(
   if (!(await waitFor(cdp, "sourceFolderArea", deps, 10_000)))
     return { ok: false, error: "「创建项目」对话框未出现（找不到源文件夹按钮）" };
 
-  const pids = deps.listProcesses()
+  const pids = (await deps.listProcesses())
     .filter((p) => !/--type=|crashpad/i.test(p.commandLine))
     .map((p) => p.pid);
   // 先清理残留原生对话框（上一轮失败可能留下，遮挡界面且会让本轮误判「无新对话框」）

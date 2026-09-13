@@ -395,6 +395,7 @@ export class TaskOrchestrator {
       config: await this.deps.dataHome.loadConfig(),
       projectVerify,
       baseline,
+      signal: this.signal,
       store,
       logger: this.deps.logger,
     };

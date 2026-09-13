@@ -157,14 +157,34 @@ export class TraeworkCdpClient {
     const ws = new WebSocket(page.webSocketDebuggerUrl) as unknown as CdpWebSocket;
     this.ws = ws;
     await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new CdpUnavailableError("CDP WebSocket 连接超时")), this.opts.connectTimeoutMs ?? 10_000);
+      // 失败分支自清理：close 半成品 socket 并清 this.ws，不依赖调用方兜底 disconnect。
+      let settled = false;
+      const cleanup = (): void => {
+        if (this.ws === ws) this.ws = null;
+        try {
+          ws.close();
+        } catch {
+          /* 已断开 */
+        }
+      };
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(new CdpUnavailableError("CDP WebSocket 连接超时"));
+      }, this.opts.connectTimeoutMs ?? 10_000);
       ws.onopen = () => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timer);
         this.isAlive = true;
         resolve();
       };
       ws.onerror = () => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timer);
+        cleanup();
         reject(new CdpUnavailableError("CDP WebSocket 连接失败"));
       };
     });
@@ -199,6 +219,8 @@ export class TraeworkCdpClient {
         if (!this.pending.delete(id)) return;
         reject(new CdpUnavailableError(`命令 ${method} 等待响应超时（${timeoutMs}ms）`));
       }, timeoutMs);
+      // 不让挂起的响应超时定时器拖住进程退出（脚本性调用断连即走）。
+      timer.unref?.();
       this.pending.set(id, { resolve, reject, timer });
       try {
         this.ws.send(JSON.stringify({ id, method, params }));

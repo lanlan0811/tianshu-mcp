@@ -63,7 +63,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 407 tests across 42 files, including Codex/ZCode unit/fake-CDP/restart/recovery/repair coverage
+npm test             # 443 tests across 46 files, including Codex/ZCode unit/fake-CDP/restart/recovery/repair coverage
 ```
 
 ### Install the npm package
@@ -162,6 +162,8 @@ Questions, login, an existing non-CDP instance, or system permission pause as `n
 | `get_profiles` | read | Inspect agent adapters and executable discovery results |
 
 > Every result is "human-readable text + a `---tianshu-mcp-meta---` JSON block" so the host can extract it with a regex.
+
+> **Path safety gate** (from the unreleased build): `projectPath` is validated at submission — must be absolute, the directory must exist, and symlinks are canonicalized via realpath (the receipt notes the resolution). The home directory itself and system/root directories are rejected outright so a worker's write access can never cover a whole system subtree; dirty git repos come with an uncommitted-changes coexistence warning.
 
 ## Logging & stdio contract
 
@@ -278,17 +280,73 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
   - Issues #8 / #10: project triggers resolve tier by tier (explicit override → primary selector → exact fallback) and stop on ambiguity at the current tier; binding keys on the normalized absolute project path; stale menus are dismissed before adding a project, and native-operation timeouts reconcile side effects instead of replaying the whole import
   - Issue #9: environment recovery without a session re-sends the full original task / context / validated references, and the environment confirmation text is never sent to the model; dispatch confirmation and session identification share one bounded observation window (default 60s), preferring the task marker and falling back to a unique new-session delta, keeping a `session_lost` / `send_unknown` scene without automatic resend
   - Model read-back decodes stable attributes and excludes hidden / transparent / clipped outgoing values; initialization shares one deadline budget (120s total, 30s probe, 60s operation, 2 retries); macOS probe failures are fail-closed instead of masquerading as an empty sheet baseline
+- **Unreleased** (2026-09-13) — **443 tests**
+  - **macOS wired up**: both `codex` (spawn .app + CDP) and `zcode` (process-title-rewrite adaptation + macOS window-form panel driving) GUI basic closed loops machine-verified (discover → bind → send → run evidence → acceptance PASS → `succeeded`); macOS stays `research` until the cancel/rework/continue_task/new-project matrix is covered
+  - **codex-cli headless path**: on macOS, run `codex exec` via a `driver=spawn` user profile (⚠️ ≤0.130.0 is signed with a revoked certificate — use ≥0.154.0) — see "macOS headless path: codex-cli"
+  - **projectPath safety gate**: realpath canonicalization + home/system-root rejection + dirty-repo coexistence warning — see "Path safety gate"
+  - **Fixes**: `get_profiles` missing user-defined profiles; zcode macOS `needsPermission` false positives; `normalizeProjectPath` symlink ambiguity; CDP polling now reconnects across renderer replacement/transient hangs
+  - **Engineering**: all `execFileSync`/`spawnSync` calls async (no more event-loop freezes during Windows polling); bounded-parallel acceptance checks (`verifyConcurrency`); test suite 267s → 51s
 
 ## Agent support status
 
 | agentId | driver / adapter | status | Notes |
 |---|---|---|---|
-| `codex` | `gui` / `codex-gui` | **ready** | Desktop GUI over CDP (MSIX COM activation + dedicated profile); supports `model`/`reasoningLevel`/`planDoc`/`designSystem`; wait-user, cancel and dispatch-guard semantics machine-verified (v0.3.2); Windows machine-verified |
-| `zcode` | `gui` / `zcode-gui` | **research** | CDP GUI adapter with the Windows hardware loop passed; adapted to ZCode 3.11.2 model menu and project binding (v0.3.3), with hardened project/model read-back and initialization recovery (v0.3.4); remains non-ready until macOS hardware passes |
+| `codex` | `gui` / `codex-gui` | **ready** (`research` on macOS) | Desktop GUI over CDP (Windows: MSIX COM activation; macOS: spawn .app binary + CDP); supports `model`/`reasoningLevel`/`planDoc`/`designSystem`; wait-user, cancel and dispatch-guard semantics machine-verified (v0.3.2); Windows machine-verified; macOS basic closed loop machine-verified (unreleased) — stays `research` until the cancel/rework matrix is covered |
+| `zcode` | `gui` / `zcode-gui` | **research** | CDP GUI adapter with the Windows hardware loop passed; adapted to ZCode 3.11.2 model menu and project binding (v0.3.3), with hardened project/model read-back and initialization recovery (v0.3.4); macOS basic closed loop machine-verified (2026-09-13, unreleased) — stays `research` until the cancel/rework/new-project matrix is covered |
 | `traework` | `gui` / `traework-gui` | **ready** | CDP-driven TRAE SOLO CN desktop UI; all three panel modes machine-verified |
 | `stub` | `spawn` | tests only | `test/stub-agent/stub-agent.mjs` with 3 playbooks (good/fix-on-first/never) |
 
 > Adding an agent usually needs only a profile — see [docs/agent-profiles.en.md](docs/agent-profiles.en.md) and [CONTRIBUTING.en.md](CONTRIBUTING.en.md).
+
+## macOS headless path: codex-cli (user profile)
+
+The built-in `codex` drives the desktop GUI; the macOS channel is now wired up (spawn .app + CDP, basic closed loop machine-verified — see "Agent support status") and stays `research` until the cancel/rework matrix is covered. If you'd rather not depend on GUI automation, **the headless Codex CLI works end-to-end on macOS** — no server changes needed: add a `driver=spawn` user profile in the data directory (these are the M2-finalized arguments used by the built-in codex before v0.3.0).
+
+Prerequisites:
+
+- Codex CLI (`npm i -g @openai/codex`). ⚠️ **Keep it current**: ≤0.130.0 is signed with a revoked certificate — macOS Gatekeeper SIGKILLs it at exec (`Killed: 9`); ≥0.154.0 is verified working.
+- Signed in via `codex login` (reuses the `~/.codex` login state).
+
+`~/.tianshu-mcp/agent-profiles.json`:
+
+```json
+{
+  "profiles": {
+    "codex-cli": {
+      "displayName": "Codex CLI (OpenAI headless)",
+      "type": "cli",
+      "driver": "spawn",
+      "status": "ready",
+      "command": null,
+      "argsTemplate": ["exec", "<prompt:arg>", "--skip-git-repo-check", "--sandbox", "workspace-write"],
+      "promptMode": "arg",
+      "cwd": "task",
+      "env": {},
+      "timeoutMs": 1800000,
+      "killTree": "taskkill",
+      "authNote": "Reuses ~/.codex login state; do not combine with --approve-for-me (mutually exclusive, machine-verified)",
+      "executableDiscovery": {
+        "dirs": ["/opt/homebrew/bin", "/usr/local/bin"],
+        "fileNames": ["codex"],
+        "fallbackCommand": "codex"
+      }
+    }
+  }
+}
+```
+
+Usage is identical to built-in agents:
+
+```text
+run_task(projectPath=/path/to/project, agentId=codex-cli, task="task brief", autoVerify=true, autoFixRounds=2)
+```
+
+Behavior and limits:
+
+- `get_profiles` lists `codex-cli` and probes the `codex` executable on PATH (from the unreleased build onward; before that, user-defined profiles worked but were not displayed).
+- The `model` parameter has no effect on spawn agents — the CLI uses the default model from `~/.codex/config.toml`; to pin one, append `"-m", "<model>"` to `argsTemplate`.
+- Writes are confined to the project directory by the `workspace-write` sandbox; on POSIX, cancel/timeout SIGTERM→SIGKILLs the process group (the `killTree` value is ignored off Windows).
+- Machine-verified: 2026-09-13 macOS arm64 closed loop (`run_task` → `codex exec` → acceptance PASS → `succeeded`).
 
 ## Recommended phrasing (for Tianshu)
 

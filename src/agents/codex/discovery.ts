@@ -14,9 +14,9 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
 import type { AgentProfile } from "../../config/schema.js";
 import { expandEnvPath } from "../../util/path.js";
+import { execFileAsync } from "../../verify/exec.js";
 
 export interface CodexCandidate {
   /** GUI 宿主 exe 绝对路径 */
@@ -49,6 +49,11 @@ export interface CodexDiscoveryInput {
 
 const DEFAULT_APPX_NAME = "OpenAI.Codex";
 const DEFAULT_PFN_SUFFIX = "2p2nqsd0c76g0";
+/** macOS 标准 .app 位置（dirs 留空时注入；.app 包内可执行文件目录） */
+export const DEFAULT_MACOS_BUNDLE_BIN_DIRS = [
+  "/Applications/ChatGPT.app/Contents/MacOS",
+  "{HOME}/Applications/ChatGPT.app/Contents/MacOS",
+];
 
 function isExecutableFile(p: string): boolean {
   try {
@@ -79,19 +84,13 @@ export function parseAppxPackageJson(raw: string): AppxInfo | null {
 }
 
 /** 真实调用 Get-AppxPackage（仅 Windows） */
-export function queryAppxPackage(packageName = DEFAULT_APPX_NAME): AppxInfo | null {
+export async function queryAppxPackage(packageName = DEFAULT_APPX_NAME): Promise<AppxInfo | null> {
   if (process.platform !== "win32") return null;
   const script = `$p = Get-AppxPackage -Name '${packageName.replace(/'/g, "''")}' | Select-Object -First 1; if ($p) { $p | Select-Object InstallLocation,PackageFamilyName,PackageFullName,Version | ConvertTo-Json -Compress }`;
-  try {
-    const raw = execFileSync("powershell.exe", ["-NoProfile", "-Command", script], {
-      encoding: "utf8",
-      windowsHide: true,
-      timeout: 25_000,
-    });
-    return parseAppxPackageJson(raw);
-  } catch {
-    return null;
-  }
+  const res = await execFileAsync("powershell.exe", ["-NoProfile", "-Command", script], {
+    timeoutMs: 25_000,
+  });
+  return res.status === 0 ? parseAppxPackageJson(res.stdout) : null;
 }
 
 /** 通配符段匹配（仅支持 `*`，逐段比较，Windows 大小写不敏感） */
@@ -171,10 +170,10 @@ export function scanForCodex(
  * 数据驱动的 Codex 发现。
  * 顺序：显式 exePath → Appx 查询 → 扫盘 → macOS bundle。
  */
-export function discoverCodex(
+export async function discoverCodex(
   profile: AgentProfile,
   input: CodexDiscoveryInput = {},
-): CodexCandidate | null {
+): Promise<CodexCandidate | null> {
   const platform = input.platform ?? process.platform;
   const disc = profile.executableDiscovery;
   const relativeExe = disc?.installRelativeExe?.length ? disc.installRelativeExe : ["app/ChatGPT.exe"];
@@ -186,7 +185,7 @@ export function discoverCodex(
 
   if (platform === "win32") {
     // 2) Appx 查询（权威、自动跟版本）
-    const appx = input.appx !== undefined ? input.appx : queryAppxPackage(disc?.appxPackageName);
+    const appx = input.appx !== undefined ? input.appx : await queryAppxPackage(disc?.appxPackageName);
     if (appx?.installLocation) {
       for (const rel of relativeExe) {
         const full = path.join(appx.installLocation, rel.split("/").join(path.sep));
@@ -222,9 +221,9 @@ export function discoverCodex(
     return null;
   }
 
-  // 4) macOS：普通 .app，直接可执行（本轮 research，不参与就绪判定）
+  // 4) macOS：普通 .app，直接可执行（activation=spawn 直启包内 Mach-O）
   if (platform === "darwin") {
-    const dirs = (disc?.dirs ?? []).map(expandEnvPath);
+    const dirs = (disc?.dirs?.length ? disc.dirs : DEFAULT_MACOS_BUNDLE_BIN_DIRS).map(expandEnvPath);
     for (const d of dirs) {
       const full = path.join(d, "ChatGPT");
       const alt = path.join(d, "Codex");

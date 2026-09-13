@@ -6,6 +6,13 @@
  */
 import { execFileAsync } from "./exec.js";
 import path from "node:path";
+import fsp from "node:fs/promises";
+import { createHash } from "node:crypto";
+
+/** 文件读取/哈希的有界并发上限（worker 池，与 acceptance.ts 命令检查同构） */
+const FILE_IO_CONCURRENCY = 8;
+/** 未跟踪文件内容哈希的数量上限：超出部分不哈希（不参与预脏排除），并在 message 中注明 */
+export const MAX_UNTRACKED_HASH = 5000;
 
 export interface Baseline {
   isRepo: boolean;
@@ -19,6 +26,8 @@ export interface Baseline {
   preDirtyHashes: Record<string, string>;
   /** 基线前未跟踪文件的内容 hash（兼容旧字段，逻辑并入 preDirtyHashes） */
   preUntrackedHashes: Record<string, string>;
+  /** 截断发生时的超帽数量（未跟踪 > 5000）：超帽文件无哈希，验收侧聚合提示且不归因，不发逐文件假 note */
+  untrackedHashTruncated?: number;
   capturedAt: string;
   message: string;
 }
@@ -44,18 +53,20 @@ export async function captureBaseline(projectPath: string): Promise<Baseline> {
   const statusRes = await gitOk(projectPath, ["status", "--porcelain", "--untracked-files=all"]);
   const porcelain = statusRes.ok ? statusRes.stdout.split("\n").filter((s) => s.trim().length > 0) : [];
   const parsed = parsePorcelain(porcelain);
-  // 记录全部预脏文件（已跟踪 staged/unstaged + 未跟踪）的内容 hash
-  const dirtyPaths = [...parsed.changed, ...parsed.untracked];
-  const hashes: Record<string, string> = {};
-  for (const f of dirtyPaths) {
-    const h = await fileHash(path.join(projectPath, f));
-    if (h) hashes[f] = h;
-  }
+  // 记录全部预脏文件（已跟踪 staged/unstaged + 未跟踪）的内容 hash：
+  // 单遍有界并发哈希，preUntrackedHashes 从同一结果 pick 派生（不再二次读取）。
+  const untrackedToHash = parsed.untracked.slice(0, MAX_UNTRACKED_HASH);
+  const truncatedUntracked = parsed.untracked.length - untrackedToHash.length;
+  const dirtyPaths = [...parsed.changed, ...untrackedToHash];
+  const hashes = await hashFiles(projectPath, dirtyPaths);
   const preUntrackedHashes: Record<string, string> = {};
-  for (const f of parsed.untracked) {
-    const h = await fileHash(path.join(projectPath, f));
+  for (const f of untrackedToHash) {
+    const h = hashes[f];
     if (h) preUntrackedHashes[f] = h;
   }
+  const baseMessage = head
+    ? `基线 HEAD=${head}，工作树${porcelain.length > 0 ? `脏（${porcelain.length} 项）` : "干净"}。`
+    : "无 HEAD（空仓库）。";
   return {
     isRepo: true,
     head,
@@ -65,18 +76,36 @@ export async function captureBaseline(projectPath: string): Promise<Baseline> {
     preExistingUntracked: parsed.untracked,
     preDirtyHashes: hashes,
     preUntrackedHashes,
+    ...(truncatedUntracked > 0 ? { untrackedHashTruncated: truncatedUntracked } : {}),
     capturedAt: new Date().toISOString(),
-    message: head
-      ? `基线 HEAD=${head}，工作树${porcelain.length > 0 ? `脏（${porcelain.length} 项）` : "干净"}。`
-      : "无 HEAD（空仓库）。",
+    message:
+      truncatedUntracked > 0
+        ? `${baseMessage}注意：未跟踪文件共 ${parsed.untracked.length} 个，超出哈希上限 ${MAX_UNTRACKED_HASH}，仅前 ${untrackedToHash.length} 个计算内容 hash（超帽文件无法归因：验收时聚合标注且不计入本轮变更）。`
+        : baseMessage,
   };
 }
 
+/** 有界并发计算文件内容 hash（读取失败/超大文件跳过，与串行版语义一致） */
+async function hashFiles(projectPath: string, files: string[]): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  let cursor = 0;
+  const workerCount = Math.min(FILE_IO_CONCURRENCY, files.length);
+  const workers = Array.from({ length: workerCount }, async () => {
+    for (;;) {
+      const i = cursor++;
+      if (i >= files.length) return;
+      const f = files[i]!;
+      const h = await fileHash(path.join(projectPath, f));
+      if (h) out[f] = h;
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
 async function fileHash(p: string): Promise<string | null> {
-  const { createHash } = await import("node:crypto");
-  const fs = await import("node:fs");
   try {
-    const buf = fs.readFileSync(p);
+    const buf = await fsp.readFile(p);
     if (buf.length > 4 * 1024 * 1024) return null; // 超大文件不哈希
     return createHash("sha1").update(buf).digest("hex");
   } catch {

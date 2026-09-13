@@ -4,7 +4,6 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
 import type { AgentAdapter, ResolvedAgent, AgentRunResult, TaskContext } from "./adapter.js";
 import { CliAdapter } from "./cli.js";
 import { TraeworkGuiAdapter } from "./traework/adapter.js";
@@ -16,6 +15,7 @@ import type { AgentProfile } from "../config/schema.js";
 import type { SpawnResult } from "./spawn.js";
 import { Logger } from "../util/log.js";
 import { expandEnvPath, platformDefaultDiscoveryDirs } from "../util/path.js";
+import { execFileAsync } from "../verify/exec.js";
 
 export class AgentAdapterRegistry {
   private adapters = new Map<string, AgentAdapter>();
@@ -68,8 +68,10 @@ export class AgentAdapterRegistry {
     return this.adapters.get(id);
   }
 
-  listAgentIds(): string[] {
-    return Array.from(this.adapters.keys());
+  /** 全部可见 agentId：已注册 adapter 与 profile 键（内置 + 数据目录用户自定义）的并集。 */
+  async listProfileIds(): Promise<string[]> {
+    const profiles = await this.loadProfiles();
+    return [...new Set([...this.adapters.keys(), ...Object.keys(profiles)])];
   }
 
   /** 若 adapter 需要 prompt 文件（promptMode=file），调用其 prepare */
@@ -100,7 +102,7 @@ export class AgentAdapterRegistry {
     if (cache && cached && cached.profile === profile) return cached;
     // driver 决定执行面实现（spawn/gui）——在解析前对齐 adapter 类型
     this.ensureAdapterFor(agentId, profile);
-    const resolved = this.resolveProfile(agentId, profile);
+    const resolved = await this.resolveProfile(agentId, profile);
     if (resolved.ok) this.resolveCache.set(agentId, resolved);
     return resolved;
   }
@@ -111,7 +113,7 @@ export class AgentAdapterRegistry {
     else this.resolveCache.clear();
   }
 
-  private resolveProfile(agentId: string, profile: AgentProfile): ResolvedAgent {
+  private async resolveProfile(agentId: string, profile: AgentProfile): Promise<ResolvedAgent> {
     if (profile.status === "unsupported") {
       return {
         id: agentId,
@@ -125,7 +127,7 @@ export class AgentAdapterRegistry {
     }
     // Codex 桌面端（MSIX）：不走 dirs/PATH 通用探测，用 Appx 查询 + 扫盘
     if (profile.adapter === "codex-gui") {
-      const found = discoverCodex(profile);
+      const found = await discoverCodex(profile);
       if (found)
         return {
           id: agentId,
@@ -154,7 +156,7 @@ export class AgentAdapterRegistry {
     }
     if (profile.status === "research") {
       if (profile.adapter === "zcode-gui") {
-        const found = discoverZcode(profile);
+        const found = await discoverZcode(profile);
         if (found)
           return {
             id: agentId,
@@ -175,7 +177,7 @@ export class AgentAdapterRegistry {
         const dirs = (disc.dirs.length > 0 ? disc.dirs : platformDefaultDiscoveryDirs()).map((d) =>
           expandEnvPath(d),
         );
-        const found = this.probeDiscovery(agentId, disc.fileNames, dirs, disc.fallbackCommand);
+        const found = await this.probeDiscovery(agentId, disc.fileNames, dirs, disc.fallbackCommand);
         if (found) {
           return {
             id: agentId,
@@ -217,7 +219,7 @@ export class AgentAdapterRegistry {
         const dirs = (disc.dirs.length > 0 ? disc.dirs : platformDefaultDiscoveryDirs()).map((d) =>
           expandEnvPath(d),
         );
-        const found = this.probeDiscovery(agentId, disc.fileNames, dirs, disc.fallbackCommand);
+        const found = await this.probeDiscovery(agentId, disc.fileNames, dirs, disc.fallbackCommand);
         if (found) {
           return {
             id: agentId,
@@ -275,7 +277,7 @@ export class AgentAdapterRegistry {
       const dirs = (disc.dirs.length > 0 ? disc.dirs : platformDefaultDiscoveryDirs()).map((d) =>
         expandEnvPath(d),
       );
-      const found = this.probeDiscovery(agentId, disc.fileNames, dirs, disc.fallbackCommand);
+      const found = await this.probeDiscovery(agentId, disc.fileNames, dirs, disc.fallbackCommand);
       if (found) {
         return {
           id: agentId,
@@ -291,7 +293,7 @@ export class AgentAdapterRegistry {
     }
     // 3) 路径内查找（PATH 命令）
     if (!path.isAbsolute(cmd)) {
-      const inPath = this.findInPath(cmd);
+      const inPath = await this.findInPath(cmd);
       if (inPath) {
         return {
           id: agentId,
@@ -316,12 +318,12 @@ export class AgentAdapterRegistry {
     };
   }
 
-  private probeDiscovery(
+  private async probeDiscovery(
     agentId: string,
     fileNames: string[],
     dirs: string[],
     fallback: string | undefined,
-  ): string | null {
+  ): Promise<string | null> {
     const candidates: { p: string; mtime: number }[] = [];
     for (const d of dirs) {
       if (!d || !fs.existsSync(d)) continue;
@@ -344,7 +346,7 @@ export class AgentAdapterRegistry {
     if (candidates.length > 0) return candidates[0]!.p;
     if (fallback) {
       if (!path.isAbsolute(fallback)) {
-        const inPath = this.findInPath(fallback);
+        const inPath = await this.findInPath(fallback);
         if (inPath) return inPath;
         return null;
       }
@@ -374,10 +376,10 @@ export class AgentAdapterRegistry {
     return out;
   }
 
-  private findInPath(cmd: string): string | null {
+  private async findInPath(cmd: string): Promise<string | null> {
     const isWin = process.platform === "win32";
     const whichCmd = isWin ? "where" : "which";
-    const res = spawnSync(whichCmd, [cmd], { windowsHide: true, encoding: "utf8" });
+    const res = await execFileAsync(whichCmd, [cmd]);
     if (res.status !== 0 || !res.stdout) return null;
     const first = res.stdout
       .split(/\r?\n/)

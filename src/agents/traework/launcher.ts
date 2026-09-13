@@ -11,10 +11,11 @@
  */
 import net from "node:net";
 import path from "node:path";
-import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { TraeworkCdpClient } from "./cdp/client.js";
 import type { AgentRunLogger } from "../adapter.js";
 import type { GuiProfile } from "../../config/schema.js";
+import { execFileAsync } from "../../verify/exec.js";
 
 /** 端口是否空闲（可绑定） */
 export function isPortFree(port: number, host = "127.0.0.1"): Promise<boolean> {
@@ -83,23 +84,23 @@ export interface SpawnedInstance {
 }
 
 /** 读取进程命令行（Windows 用 CIM；其他平台读 /proc 或 ps） */
-export function readCommandLine(pid: number): string | null {
+export async function readCommandLine(pid: number): Promise<string | null> {
   try {
     if (process.platform === "win32") {
-      const res = spawnSync(
+      const res = await execFileAsync(
         "powershell",
         [
           "-NoProfile",
           "-Command",
           `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}" -ErrorAction SilentlyContinue).CommandLine`,
         ],
-        { encoding: "utf8", windowsHide: true, timeout: 10_000 },
+        { timeoutMs: 10_000 },
       );
-      const out = (res.stdout ?? "").trim();
+      const out = res.stdout.trim();
       return out || null;
     }
-    const res = spawnSync("ps", ["-p", String(pid), "-o", "command="], { encoding: "utf8", timeout: 5_000 });
-    const out = (res.stdout ?? "").trim();
+    const res = await execFileAsync("ps", ["-p", String(pid), "-o", "command="], { timeoutMs: 5_000 });
+    const out = res.stdout.trim();
     return out || null;
   } catch {
     return null;
@@ -169,20 +170,20 @@ export async function waitReady(port: number, timeoutMs: number, logger: AgentRu
  *
  * @param deps 测试注入点（默认用真实进程探测）
  */
-export function releaseInstance(
+export async function releaseInstance(
   inst: SpawnedInstance,
   logger: AgentRunLogger,
   deps: {
     alive?: (pid: number) => boolean;
-    readCmd?: (pid: number) => string | null;
+    readCmd?: (pid: number) => string | null | Promise<string | null>;
     kill?: (pid: number) => void;
   } = {},
-): { released: boolean; reason: string } {
+): Promise<{ released: boolean; reason: string }> {
   const alive = deps.alive ?? isAlive;
   const readCmd = deps.readCmd ?? readCommandLine;
   if (inst.pid <= 0) return { released: false, reason: "无有效 pid" };
   if (!alive(inst.pid)) return { released: false, reason: "进程已退出" };
-  const actual = readCmd(inst.pid);
+  const actual = await readCmd(inst.pid);
   if (!actual) {
     return { released: false, reason: `无法读取 pid ${inst.pid} 的命令行，放弃终止（避免误杀）` };
   }
@@ -197,7 +198,7 @@ export function releaseInstance(
       deps.kill(inst.pid);
     } else if (process.platform === "win32") {
       // 不带 /T：只结束这一个进程，不波及子进程树
-      spawnSync("taskkill", ["/PID", String(inst.pid), "/F"], { windowsHide: true, timeout: 10_000 });
+      await execFileAsync("taskkill", ["/PID", String(inst.pid), "/F"], { timeoutMs: 10_000 });
     } else {
       process.kill(inst.pid, "SIGTERM");
     }

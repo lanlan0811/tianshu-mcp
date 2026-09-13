@@ -2,9 +2,12 @@
  * AcceptanceEngine（开发计划 §8）：A. 自动命令检查 + B. 代码分析，
  * 产出 report.md + report.json，判定一轮验收通过/失败。
  * 配置优先级：extraChecks 参数 > 项目内 .tianshu-mcp/acceptance.json > projects.json 补录 > 默认集。
+ * 命令检查按 verifyConcurrency 有界并行（1=串行）；并行时每条 check 写独立 part 日志，
+ * 结束后按声明顺序拼回同一份 verify-<round>.log（对外产物与串行一致）。
  */
 import path from "node:path";
-import { exists, readJsonSafe } from "../util/fs.js";
+import fsp from "node:fs/promises";
+import { exists, mkdirp, readJsonSafe, readTextSafe } from "../util/fs.js";
 import {
   type AcceptanceCheckDef,
   type AcceptanceConfig,
@@ -32,6 +35,8 @@ export interface VerifyRequest {
   checksMode?: "append" | "replace";
   projectVerify?: AcceptanceCheckDef[]; // projects.json 补录
   baseline?: Awaited<ReturnType<typeof captureBaseline>>;
+  /** 任务取消信号：中断在途 check（杀进程树），未启动的 check 标记跳过不再 spawn */
+  signal?: AbortSignal;
   store: TaskStore;
   logger: Logger;
 }
@@ -101,16 +106,24 @@ export async function deriveDefaultChecks(
   return { checks, notes };
 }
 
+/** part 日志文件名的安全片段（check 名可能含空格/斜杠等） */
+function sanitizeFilePart(name: string): string {
+  return name.replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 40) || "check";
+}
+
 export class AcceptanceEngine {
   constructor(
     private readonly store: TaskStore,
     private readonly logger: Logger,
   ) {}
 
-  /** 组装一轮验收要跑的检查项（含 git diff --check 内置） */
-  private async resolveChecks(
-    req: VerifyRequest,
-  ): Promise<{ checks: AcceptanceCheckDef[]; notes: string[]; requireChanges: boolean }> {
+  /** 组装一轮验收要跑的检查项（含 git diff --check 内置）与项目级并行度覆盖 */
+  private async resolveChecks(req: VerifyRequest): Promise<{
+    checks: AcceptanceCheckDef[];
+    notes: string[];
+    requireChanges: boolean;
+    verifyConcurrency?: number;
+  }> {
     const notes: string[] = [];
     const out: AcceptanceCheckDef[] = [];
     const mode = req.checksMode ?? "append";
@@ -147,12 +160,16 @@ export class AcceptanceEngine {
       }
       out.push(...(req.extraChecks ?? []));
     }
-    return { checks: out, notes, requireChanges };
+    return { checks: out, notes, requireChanges, verifyConcurrency: inProject?.verifyConcurrency };
   }
 
   private async readProjectAcceptance(
     projectPath: string,
-  ): Promise<{ checks: AcceptanceCheckDef[]; requireChanges: boolean } | null> {
+  ): Promise<{
+    checks: AcceptanceCheckDef[];
+    requireChanges: boolean;
+    verifyConcurrency?: number;
+  } | null> {
     const p = path.join(projectPath, ".tianshu-mcp", "acceptance.json");
     const raw = await readJsonSafe<unknown>(p);
     if (raw == null) return null;
@@ -165,6 +182,7 @@ export class AcceptanceEngine {
     return {
       checks: config.checks.map((c) => toAcceptanceDef(c)),
       requireChanges: config.requireChanges,
+      verifyConcurrency: config.verifyConcurrency,
     };
   }
 
@@ -177,9 +195,12 @@ export class AcceptanceEngine {
     if (req.baseline)
       this.logger.debug(`使用 run_task 动工前基线（HEAD=${baseline.head ?? "n/a"}）`);
 
-    const { checks: rawChecks, notes, requireChanges } = await this.resolveChecks(req);
+    const { checks: rawChecks, notes, requireChanges, verifyConcurrency } =
+      await this.resolveChecks(req);
     const checks: CheckResult[] = [];
     const zeroTestChecks: string[] = [];
+    // 命令检查并行度：项目 acceptance.json > server config.json > 默认 2（schema 已约束 1..4）
+    const concurrency = verifyConcurrency ?? req.config?.verifyConcurrency ?? 2;
 
     // 内置 git diff --check（相对动工前基线；非 git 仓库跳过并标注）
     if (baseline.isRepo) {
@@ -202,38 +223,32 @@ export class AcceptanceEngine {
     const mdPath = path.join(logBase, `report-${req.round}.md`);
     const jsonPath = path.join(logBase, `report-${req.round}.json`);
 
-    for (const c of rawChecks) {
-      const argv = c.cmd;
-      if (argv.length === 0) {
-        checks.push(makeSkipResult(c.name, c.displayCmd || c.name, "空命令"));
-        continue;
+    if (concurrency <= 1 || rawChecks.length <= 1) {
+      // 串行路径：verifyConcurrency=1（或仅单条命令检查）——与历史行为完全一致，直接追加 verify-<round>.log
+      for (const c of rawChecks) {
+        const { result, zeroTest } = await this.runCommandCheck(c, req, timeoutMs, verifyLog);
+        if (zeroTest) zeroTestChecks.push(c.name);
+        checks.push(result);
       }
-      if (argv[0] === "skip" && argv[1] === ":") {
-        checks.push(makeSkipResult(c.name, c.displayCmd, "显式 skip 命令"));
-        continue;
+    } else {
+      // 有界并行：worker 池按声明顺序领取；每条 check 写独立 part 日志，
+      // 全部结束后按声明顺序拼回同一份 verify-<round>.log（对外产物与串行一致）
+      this.logger.debug(
+        `命令检查有界并行：verifyConcurrency=${concurrency}，共 ${rawChecks.length} 项`,
+      );
+      const outcomes = await this.runCommandChecksParallel(
+        rawChecks,
+        req,
+        timeoutMs,
+        concurrency,
+        logBase,
+        verifyLog,
+        req.round,
+      );
+      for (const { result, zeroTest } of outcomes) {
+        if (zeroTest) zeroTestChecks.push(result.name);
+        checks.push(result);
       }
-      const res = await runVerifyCommand(c.name, argv, {
-        cwd: req.projectPath,
-        timeoutMs: c.timeoutMs ?? timeoutMs,
-        logFile: verifyLog,
-        env: {},
-      });
-      if (
-        !c.optional &&
-        res.exitCode === 0 &&
-        res.passed &&
-        isTestCheck(c.name, argv) &&
-        detectZeroTestCases(res.outputTail)
-      ) {
-        res.passed = false;
-        res.outputTail = `${res.outputTail}\n[fail-closed] 命令退出码 0 但未执行任何测试用例`.slice(
-          -4000,
-        );
-        res.reason = "fail-closed：命令退出码 0 但未执行任何测试用例";
-        zeroTestChecks.push(c.name);
-      }
-      if (c.optional) res.optional = true;
-      checks.push(res);
     }
 
     // 代码分析（相对动工前基线）
@@ -271,10 +286,15 @@ export class AcceptanceEngine {
     // optional:true 的失败只记 warning，不使本轮 verdict 失败（R4）
     const failed = checks.filter((c) => !c.passed && !c.skipped && !c.optional);
     const optFailed = checks.filter((c) => !c.passed && !c.skipped && c.optional);
-    const passed = failed.length === 0;
+    // 任务取消：验收被中断（在途 check 被杀、其余跳过），无论检查结果如何都不得落「通过」假绿
+    const cancelled = req.signal?.aborted ?? false;
+    const passed = !cancelled && failed.length === 0;
     const finishedAt = nowIso();
 
     const summaryBits: string[] = [];
+    if (cancelled) {
+      summaryBits.push("任务取消，验收未完成");
+    }
     if (failed.length) {
       summaryBits.push(`未通过检查: ${failed.map((c) => c.name).join(", ")}`);
     }
@@ -313,5 +333,128 @@ export class AcceptanceEngine {
       `任务 ${req.taskId} 第 ${req.round} 轮验收: ${passed ? "通过" : "失败"}（${checks.length} 项检查）`,
     );
     return { report, passed };
+  }
+
+  /**
+   * 执行单条命令检查（skip 情形直接给结果，不落日志；含零用例 fail-closed 与 optional 标注）。
+   * 取消语义：启动前 signal 已 aborted → skip（不 spawn）；在途 → 由 runner 的 signal 杀进程树。
+   */
+  private async runCommandCheck(
+    c: AcceptanceCheckDef,
+    req: VerifyRequest,
+    defaultTimeoutMs: number,
+    logFile: string,
+  ): Promise<{ result: CheckResult; zeroTest: boolean }> {
+    const argv = c.cmd;
+    if (argv.length === 0) {
+      return { result: makeSkipResult(c.name, c.displayCmd || c.name, "空命令"), zeroTest: false };
+    }
+    if (argv[0] === "skip" && argv[1] === ":") {
+      return { result: makeSkipResult(c.name, c.displayCmd, "显式 skip 命令"), zeroTest: false };
+    }
+    if (req.signal?.aborted) {
+      return {
+        result: makeSkipResult(c.name, c.displayCmd || argv.join(" "), "任务取消，未执行"),
+        zeroTest: false,
+      };
+    }
+    const res = await runVerifyCommand(c.name, argv, {
+      cwd: req.projectPath,
+      timeoutMs: c.timeoutMs ?? defaultTimeoutMs,
+      logFile,
+      env: {},
+      signal: req.signal,
+    });
+    let zeroTest = false;
+    if (
+      !c.optional &&
+      res.exitCode === 0 &&
+      res.passed &&
+      isTestCheck(c.name, argv) &&
+      detectZeroTestCases(res.outputTail)
+    ) {
+      res.passed = false;
+      res.outputTail = `${res.outputTail}\n[fail-closed] 命令退出码 0 但未执行任何测试用例`.slice(
+        -4000,
+      );
+      res.reason = "fail-closed：命令退出码 0 但未执行任何测试用例";
+      zeroTest = true;
+    }
+    if (c.optional) res.optional = true;
+    return { result: res, zeroTest };
+  }
+
+  /**
+   * 有界并行执行命令检查（verifyConcurrency>1）：worker 池按声明顺序领取下标（结果顺序=声明顺序，
+   * 与完成顺序无关）。每条 check 写独立 part 日志避免交错，全部结束后按声明顺序拼回
+   * verify-<round>.log（文件名与格式和串行一致），随后清理 parts 目录。
+   * runVerifyCommand 对所有失败/超时/abort 都 resolve 不 reject，Promise.all 不会中途抛出。
+   */
+  private async runCommandChecksParallel(
+    rawChecks: AcceptanceCheckDef[],
+    req: VerifyRequest,
+    defaultTimeoutMs: number,
+    concurrency: number,
+    logBase: string,
+    verifyLog: string,
+    round: number,
+  ): Promise<{ result: CheckResult; zeroTest: boolean }[]> {
+    const partsDir = path.join(logBase, `verify-${round}.parts`);
+    const outcomes: ({ result: CheckResult; zeroTest: boolean } | undefined)[] = new Array(
+      rawChecks.length,
+    );
+    const partPaths: (string | undefined)[] = new Array(rawChecks.length);
+    let cursor = 0;
+    const workerCount = Math.min(concurrency, rawChecks.length);
+    const workers = Array.from({ length: workerCount }, async () => {
+      for (;;) {
+        if (req.signal?.aborted) return; // 未启动的 check 由下方统一补 skip 结果
+        const i = cursor++;
+        if (i >= rawChecks.length) return;
+        const c = rawChecks[i]!;
+        const partPath = path.join(
+          partsDir,
+          `${String(i).padStart(3, "0")}-${sanitizeFilePart(c.name)}.log`,
+        );
+        outcomes[i] = await this.runCommandCheck(c, req, defaultTimeoutMs, partPath);
+        partPaths[i] = partPath;
+      }
+    });
+    await Promise.all(workers);
+    for (let i = 0; i < rawChecks.length; i++) {
+      if (!outcomes[i]) {
+        const c = rawChecks[i]!;
+        outcomes[i] = {
+          result: makeSkipResult(c.name, c.displayCmd || c.name, "任务取消，未执行"),
+          zeroTest: false,
+        };
+      }
+    }
+    await this.mergePartLogs(partPaths, verifyLog, partsDir);
+    return outcomes as { result: CheckResult; zeroTest: boolean }[];
+  }
+
+  /**
+   * 按声明顺序把 part 日志拼回 verify-<round>.log（append 语义与串行一致；skip 的 check 无 part 文件，
+   * 与串行时同样不落日志段落）。拼接成功才清理 parts；失败保留 parts 便于排查。
+   */
+  private async mergePartLogs(
+    partPaths: (string | undefined)[],
+    verifyLog: string,
+    partsDir: string,
+  ): Promise<void> {
+    try {
+      await mkdirp(path.dirname(verifyLog));
+      for (const p of partPaths) {
+        if (!p) continue;
+        const text = await readTextSafe(p);
+        if (text != null && text.length > 0) await fsp.appendFile(verifyLog, text, "utf8");
+      }
+      await fsp.rm(partsDir, { recursive: true, force: true });
+    } catch (e) {
+      this.logger.warn(
+        `合并 verify 日志失败（保留 parts 目录 ${partsDir}）: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
   }
 }

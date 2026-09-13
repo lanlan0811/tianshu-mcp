@@ -22,9 +22,10 @@ import {
   normalizeDir,
   isCodexTarget,
   parseProcessRows,
+  parsePsRows,
   pickCodexPage,
 } from "../../src/agents/codex/instance.js";
-import { buildActivationArgs, ACTIVATION_CSHARP } from "../../src/agents/codex/launcher.js";
+import { buildActivationArgs, buildSpawnArgs, ACTIVATION_CSHARP } from "../../src/agents/codex/launcher.js";
 import {
   matchCodexProject,
   projectBasename,
@@ -123,7 +124,7 @@ describe("Codex 安装发现", () => {
         appxPackageName: "OpenAI.Codex",
       },
     });
-    const found = discoverCodex(profile, {
+    const found = await discoverCodex(profile, {
       platform: "win32",
       appx: {
         installLocation: install,
@@ -151,7 +152,7 @@ describe("Codex 安装发现", () => {
         scanPattern: "OpenAI.Codex_*_x64__*/app/ChatGPT.exe",
       },
     });
-    const found = discoverCodex(profile, { platform: "win32", appx: null });
+    const found = await discoverCodex(profile, { platform: "win32", appx: null });
     expect(found?.source).toBe("scan");
     expect(found?.path).toBe(path.join(install, "app", "ChatGPT.exe"));
     expect(found?.aumid).toBe("OpenAI.Codex_2p2nqsd0c76g0!App"); // publisher hash 段来自目录名
@@ -174,7 +175,7 @@ describe("Codex 安装发现", () => {
       gui: { exePath: exe },
       executableDiscovery: { installRelativeExe: ["app/ChatGPT.exe"] },
     });
-    expect(discoverCodex(profile, { platform: "win32", appx: null })?.source).toBe("explicit");
+    expect((await discoverCodex(profile, { platform: "win32", appx: null }))?.source).toBe("explicit");
     await rmrf(root);
   });
 
@@ -242,6 +243,56 @@ describe("Codex 启动通道", () => {
 
   it("启动参数对双引号做转义（防注入）", () => {
     expect(buildActivationArgs('C:\\x"y', 9333)).toContain('\\"y');
+  });
+
+  it("macOS spawn 参数为 argv 形式：不加引号、含空格路径原样保留", () => {
+    const argv = buildSpawnArgs("/Users/a b/.tianshu-mcp/codex-gui/profile", 9333);
+    expect(argv).toEqual([
+      "--user-data-dir=/Users/a b/.tianshu-mcp/codex-gui/profile",
+      "--remote-debugging-port=9333",
+    ]);
+  });
+
+  it("POSIX ps 输出按关键字过滤并解析 pid 与完整命令行", () => {
+    const rows = parsePsRows(
+      [
+        "  501 /Applications/ChatGPT.app/Contents/MacOS/ChatGPT --user-data-dir=/x --remote-debugging-port=9333",
+        "  502 /Applications/ChatGPT.app/Contents/MacOS/ChatGPT --type=renderer",
+        "  803 /usr/sbin/mdnsresponder",
+        "garbage line",
+      ].join("\n"),
+      /ChatGPT/i,
+    );
+    expect(rows.map((r) => r.pid)).toEqual([501, 502]);
+    expect(remoteDebugPort(rows[0]!.commandLine)).toBe(9333);
+    expect(rootCodexProcesses(rows).map((r) => r.pid)).toEqual([501]);
+  });
+
+  it("macOS 发现默认目录为 .app 包内 MacOS 目录且无硬编码用户名", async () => {
+    const { DEFAULT_MACOS_BUNDLE_BIN_DIRS } = await import("../../src/agents/codex/discovery.js");
+    for (const d of DEFAULT_MACOS_BUNDLE_BIN_DIRS) {
+      expect(d).toMatch(/ChatGPT\.app\/Contents\/MacOS$/);
+      expect(d).not.toMatch(/\/Users\/[^/{}]+/);
+    }
+  });
+
+  it("darwin 发现：dirs 提供时命中 ChatGPT/Codex 可执行，source=macos", async () => {
+    const { discoverCodex } = await import("../../src/agents/codex/discovery.js");
+    const root = await makeTmpRoot("codex-mac-discovery");
+    const bin = path.join(root, "ChatGPT.app", "Contents", "MacOS");
+    fs.mkdirSync(bin, { recursive: true });
+    fs.writeFileSync(path.join(bin, "ChatGPT"), "fake");
+    const found = await discoverCodex(
+      { executableDiscovery: { dirs: [bin], fileNames: [], preferredDrives: [], relativePaths: [] } } as never,
+      { platform: "darwin" },
+    );
+    expect(found?.source).toBe("macos");
+    expect(found?.path).toBe(path.join(bin, "ChatGPT"));
+    const missing = await discoverCodex(
+      { executableDiscovery: { dirs: [path.join(root, "nowhere")], fileNames: [], preferredDrives: [], relativePaths: [] } } as never,
+      { platform: "darwin" },
+    );
+    expect(missing).toBeNull();
   });
 
   it("内联 C# 声明 IApplicationActivationManager 且无第三方依赖", () => {
@@ -749,12 +800,19 @@ describe("Codex 注册表接入", () => {
     expect(reg.getAdapter("codex")).toBeInstanceOf(CliAdapter);
   });
 
-  it("builtin codex profile 为 codex-gui + msix-com + 专属 user-data-dir", async () => {
+  it("builtin codex profile 为 codex-gui + 平台条件 activation + 专属 user-data-dir", async () => {
     const { BUILTIN_PROFILES } = await import("../../src/agents/builtin.js");
     const codex = BUILTIN_PROFILES.codex!;
     expect(codex.driver).toBe("gui");
     expect(codex.adapter).toBe("codex-gui");
-    expect(codex.gui?.activation).toBe("msix-com");
+    // Windows 走 MSIX COM 激活；macOS 无 MSIX，spawn .app 包内可执行
+    const darwin = process.platform === "darwin";
+    expect(codex.gui?.activation).toBe(darwin ? "spawn" : "msix-com");
+    expect(codex.gui?.userDataDir).toBe(
+      darwin
+        ? "{HOME}/.tianshu-mcp/codex-gui/profile"
+        : "{LOCALAPPDATA}/tianshu-mcp/codex-gui/profile",
+    );
     expect(codex.gui?.permissionMode).toBe("完全访问");
     expect(codex.gui?.fixPlanDir).toBe(".zcode/plans");
     expect(codex.gui?.defaultAutoFixRounds).toBe(5);
@@ -765,7 +823,7 @@ describe("Codex 注册表接入", () => {
 /* ---------------- run.ts 归一配置 ---------------- */
 
 describe("Codex run 配置归一", () => {
-  it("guiOf 提供 msix-com 与默认权限/修复目录", async () => {
+  it("guiOf 按平台提供 activation 默认值与默认权限/修复目录", async () => {
     const { codexGuiOf } = await import("../../src/agents/codex/run.js");
     const profile = AgentProfileSchema.parse({ driver: "gui", adapter: "codex-gui", status: "ready" });
     const gui = codexGuiOf({
@@ -777,7 +835,8 @@ describe("Codex run 配置归一", () => {
       ok: true,
       message: "",
     });
-    expect(gui.activation).toBe("msix-com");
+    // 未显式配置时：macOS 默认 spawn（无 MSIX），其余平台默认 msix-com
+    expect(gui.activation).toBe(process.platform === "darwin" ? "spawn" : "msix-com");
     expect(gui.permissionMode).toBe("完全访问");
     expect(gui.defaultAutoFixRounds).toBe(5);
     expect(gui.fixPlanDir).toBe(".zcode/plans");
@@ -798,16 +857,45 @@ describe("Codex 项目登记", () => {
     const st = stateWith({
       abc: { id: "abc", name: "切水果小游戏", rootPaths: ["D:\\切水果小游戏"] },
     });
-    expect(isProjectRegistered(st, "d:\\切水果小游戏")).toBe("abc");
-    expect(isProjectRegistered(st, "D:\\其它")).toBeNull();
+    expect(isProjectRegistered(st, "d:\\切水果小游戏", "win32")).toBe("abc");
+    expect(isProjectRegistered(st, "D:\\其它", "win32")).toBeNull();
   });
 
-  it("非 Windows 直接 skipped（不写文件）", async () => {
+  it("macOS 路径按 POSIX 语义匹配（保留大小写）", async () => {
+    const { isProjectRegistered } = await import("../../src/agents/codex/registry.js");
+    const st = stateWith({
+      abc: { id: "abc", name: "proj", rootPaths: ["/Users/a/Proj"] },
+    });
+    expect(isProjectRegistered(st, "/Users/a/Proj", "darwin")).toBe("abc");
+    expect(isProjectRegistered(st, "/users/a/proj", "darwin")).toBeNull();
+  });
+
+  it("非 Windows/macOS 直接 skipped（不写文件）", async () => {
     const { ensureProjectRegistered } = await import("../../src/agents/codex/registry.js");
-    const r = ensureProjectRegistered("D:PROJX", { activation: "msix-com" } as never, silentLogger, {
+    const r = await ensureProjectRegistered("D:PROJX", { activation: "msix-com" } as never, silentLogger, {
       platform: "linux",
     });
     expect(r.status).toBe("skipped");
+  });
+
+  it("macOS 同样写状态文件登记（停止受管实例 + POSIX 路径）", async () => {
+    const { ensureProjectRegistered, isProjectRegistered } = await import("../../src/agents/codex/registry.js");
+    const root = await makeTmpRoot("codex-register-mac");
+    const stateFile = path.join(root, "state.json");
+    fs.writeFileSync(stateFile, JSON.stringify(stateWith({})), "utf8");
+    let stopped = 0;
+    const projPath = path.join(root, "新项目");
+    const r = await ensureProjectRegistered(projPath, {} as never, silentLogger, {
+      stateFile,
+      platform: "darwin",
+      stopInstances: () => {
+        stopped += 1;
+      },
+    });
+    expect(r.status).toBe("performed");
+    expect(stopped).toBe(1);
+    const after = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+    expect(isProjectRegistered(after, projPath, "darwin")).toBe(r.projectId);
   });
 
   it("登记新项目：写入 local-projects/project-order 且保留其它键、创建备份", async () => {
@@ -819,7 +907,7 @@ describe("Codex 项目登记", () => {
     });
     fs.writeFileSync(stateFile, JSON.stringify(before), "utf8");
     let stopped = 0;
-    const r = ensureProjectRegistered("D:\\切水果小游戏", {} as never, silentLogger, {
+    const r = await ensureProjectRegistered("D:\\切水果小游戏", {} as never, silentLogger, {
       stateFile,
       platform: "win32",
       stopInstances: () => {
@@ -848,7 +936,7 @@ describe("Codex 项目登记", () => {
     );
     const before = fs.readFileSync(stateFile, "utf8");
     let stopped = 0;
-    const r = ensureProjectRegistered("D:\\切水果小游戏", {} as never, silentLogger, {
+    const r = await ensureProjectRegistered("D:\\切水果小游戏", {} as never, silentLogger, {
       stateFile,
       platform: "win32",
       stopInstances: () => { stopped += 1; },
@@ -864,7 +952,7 @@ describe("Codex 项目登记", () => {
     const root = await makeTmpRoot("codex-register-badjson");
     const stateFile = path.join(root, "state.json");
     fs.writeFileSync(stateFile, "{ not json", "utf8");
-    const r = ensureProjectRegistered("D:PROJX", {} as never, silentLogger, {
+    const r = await ensureProjectRegistered("D:PROJX", {} as never, silentLogger, {
       stateFile,
       platform: "win32",
       stopInstances: () => {},

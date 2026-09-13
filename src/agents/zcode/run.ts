@@ -428,10 +428,36 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
 
     if (!answeredQuestion) {
       budget.setStage("确认项目绑定");
-      if (!(await cdp.click("projectTrigger")))
+      // 冷启动时 composer/项目触发器挂载可超过 10s（macOS 实测）——首次点击未命中时
+      // 有界等待其挂载再重试；首点即中（Windows/假 CDP 主路径）不进入等待，行为不变。
+      const waitProjectTrigger = async (timeoutMs: number): Promise<boolean> => {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+          // eslint-disable-next-line no-await-in-loop
+          if (await cdp!.exists("projectTrigger")) return true;
+          // eslint-disable-next-line no-await-in-loop
+          await deps.sleep(300);
+        }
+        return false;
+      };
+      let triggerReady = true;
+      if (!(await cdp.click("projectTrigger"))) {
+        triggerReady = await waitProjectTrigger(15_000);
+        if (!triggerReady) {
+          // macOS 实测：palette 首页也带 composer-input（无工作区触发器），不能以 chatInput
+          // 判断任务 composer 已打开——触发器持续缺席即回退侧栏新建任务大按钮。
+          // 代价上限是多一个空草稿（此时任何已开 composer 都不是可用态），可接受。
+          logger.warn("[zcode] 项目触发器未命中，回退侧栏新建任务按钮后重试");
+          await cdp.click("newTaskSidebar");
+          triggerReady = await waitProjectTrigger(15_000);
+        }
+        // eslint-disable-next-line no-await-in-loop
+        if (triggerReady && !(await cdp.click("projectTrigger"))) triggerReady = false;
+      }
+      if (!triggerReady)
         return result({
           hardFailure: true,
-          error: "无法打开 ZCode 项目列表",
+          error: "无法打开 ZCode 项目列表（等待项目触发器超时）",
           endReason: "setup_failed",
         });
       await deps.sleep(300);

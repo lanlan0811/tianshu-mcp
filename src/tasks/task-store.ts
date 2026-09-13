@@ -190,24 +190,18 @@ export class TaskStore {
   /** 启动扫描：找出 running/interrupted/queued 遗留，供归档 */
   async scanLegacyActive(): Promise<TaskMeta[]> {
     const dirs = await readDirSafe(path.join(this.home, "tasks"));
-    const out: TaskMeta[] = [];
-    for (const d of dirs) {
-      if (!d.startsWith("tsk_")) continue;
-      const meta = await this.readSnapshot(d);
-      if (meta && ACTIVE_STATUSES.includes(meta.status)) out.push(meta);
-    }
-    return out;
+    const metas = await Promise.all(
+      dirs.filter((d) => d.startsWith("tsk_")).map((d) => this.readSnapshot(d)),
+    );
+    return metas.filter((m): m is TaskMeta => m !== null && ACTIVE_STATUSES.includes(m.status));
   }
 
   /** 列出全部任务快照 */
   async listTaskSnapshots(): Promise<TaskMeta[]> {
     const dirs = await readDirSafe(path.join(this.home, "tasks"));
-    const out: TaskMeta[] = [];
-    for (const d of dirs) {
-      if (!d.startsWith("tsk_")) continue;
-      const meta = await this.readSnapshot(d);
-      if (meta) out.push(meta);
-    }
-    return out;
+    const metas = await Promise.all(
+      dirs.filter((d) => d.startsWith("tsk_")).map((d) => this.readSnapshot(d)),
+    );
+    return metas.filter((m): m is TaskMeta => m !== null);
   }
 }

@@ -7,13 +7,15 @@ import type { AgentRunLogger } from "../../adapter.js";
 import type { SelectorOverrides } from "../cdp/selectors.js";
 import { modelNameMatch } from "./reply.js";
 
-function sleep(ms: number): Promise<void> {
+function defaultSleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
 export interface ModelSwitchOptions {
   selectors?: SelectorOverrides;
   logger: AgentRunLogger;
+  /** 测试注入点：等待函数（生产缺省真实 sleep） */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export type ModelSwitchResult =
@@ -65,6 +67,7 @@ async function scrollList(cdp: TraeworkCdpClient, selectors?: SelectorOverrides)
 /** 收集下拉中全部可用模型显示名（滚动到底） */
 export async function collectModels(cdp: TraeworkCdpClient, opts: ModelSwitchOptions): Promise<string[]> {
   const { selectors, logger } = opts;
+  const sleep = opts.sleep ?? defaultSleep;
   // 若下拉已打开先关闭，保证坐标有效
   if ((await readOptions(cdp, selectors)).length > 0) {
     await cdp.pressEscape();
@@ -103,6 +106,7 @@ export async function selectModel(
   opts: ModelSwitchOptions,
 ): Promise<ModelSwitchResult> {
   const { selectors, logger } = opts;
+  const sleep = opts.sleep ?? defaultSleep;
 
   // 已选中则无需操作
   const current = await cdp.text("modelTriggerValue", selectors);

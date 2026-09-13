@@ -272,17 +272,17 @@ class DisconnectedCodex extends FakeCodex {
 
 function depsFor(fake: FakeCodex, over: Partial<CodexRunDeps> = {}): Partial<CodexRunDeps> {
   return {
-    discover: () =>
+    discover: async () =>
       ({ path: process.execPath, aumid: "OpenAI.Codex_test!App", source: "appx" as const }),
     ensureInstance: async () => ({ ready: { port: 9333, pid: 1, title: "ChatGPT", url: "app://-/index.html" } }),
-    listProcesses: () => [{ pid: 1, commandLine: `ChatGPT.exe --remote-debugging-port=9333` }],
+    listProcesses: async () => [{ pid: 1, commandLine: `ChatGPT.exe --remote-debugging-port=9333` }],
     createClient: () => fake as never,
     listDialogs: async () => [],
     selectFolder: async () => ({ ok: true, message: "selected" }),
     focusApp: async () => true,
     closeDialogs: async () => 0,
     // 关键：必须注入 no-op。真实实现会写用户 ~/.codex 的项目状态，测试绝不可污染真实环境。
-    ensureRegistered: () => ({ status: "skipped" as const, message: "test-noop" }),
+    ensureRegistered: async () => ({ status: "skipped" as const, message: "test-noop" }),
     sleep: async () => {},
     ...over,
   };
@@ -443,7 +443,7 @@ describe("Codex 假 CDP 单轮流程", () => {
       resolved: resolved(),
       opts: opts(),
       logFile: path.join(project, "agent.log"),
-      deps: depsFor(fake, { discover: () => ({ path: process.execPath, source: "explicit" as const }) }),
+      deps: depsFor(fake, { discover: async () => ({ path: process.execPath, source: "explicit" as const }) }),
     });
     expect(result.ok).toBe(false);
     expect(result.endReason).toBe("setup_failed");

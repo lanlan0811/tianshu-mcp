@@ -33,11 +33,19 @@ export function runVerifyCommand(name: string, argv: string[], opts: RunCommandO
     const safeWrite = (s: string): void => {
       if (stream && !streamEnded && stream.writable) stream.write(s);
     };
-    const safeEnd = (): void => {
-      if (stream && !streamEnded) {
-        streamEnded = true;
-        stream.end();
-      }
+    /**
+     * 结束日志流并等 flush 完成（resolve 前必须 await）：
+     * end(cb) 在数据刷盘后回调（出错也会带 err 回调，不挂死）；close 兜底等 fd 释放
+     * （win32 合并后删 parts 需要 fd 已关，否则 EPERM）。二者任一先到即放行。
+     */
+    const flushLog = (): Promise<void> => {
+      if (!stream || streamEnded) return Promise.resolve();
+      streamEnded = true;
+      const s = stream;
+      return new Promise((done) => {
+        s.once("close", done);
+        s.end(() => done());
+      });
     };
     const killActive = (): void => {
       if (child?.pid) void killTree(child.pid, "auto");
@@ -54,12 +62,18 @@ export function runVerifyCommand(name: string, argv: string[], opts: RunCommandO
       if (opts.signal) opts.signal.removeEventListener("abort", onAbort);
     };
     void (async () => {
-      if (opts.logFile) {
-        await mkdirp(path.dirname(opts.logFile));
-        stream = fs.createWriteStream(opts.logFile, { flags: "a" });
-        // 竞态兜底：晚到 data 在 end() 后写入会抛 ERR_STREAM_WRITE_AFTER_END，绝不能成为未处理 error 打崩 server。
-        stream.on("error", () => {});
-        safeWrite(`\n=== check: ${name} — ${displayCmd} @ ${new Date().toISOString()} ===\n`);
+      try {
+        if (opts.logFile) {
+          await mkdirp(path.dirname(opts.logFile));
+          stream = fs.createWriteStream(opts.logFile, { flags: "a" });
+          // 竞态兜底：晚到 data 在 end() 后写入会抛 ERR_STREAM_WRITE_AFTER_END，绝不能成为未处理 error 打崩 server。
+          stream.on("error", () => {});
+          safeWrite(`\n=== check: ${name} — ${displayCmd} @ ${new Date().toISOString()} ===\n`);
+        }
+      } catch (e) {
+        // 日志文件是辅助产物：mkdirp/建流失败必须降级为无日志运行——
+        // 此前此处 reject 会成为 unhandled rejection 且外层 promise 永不 resolve（验收挂死无超时）。
+        tail = (tail + `\n[log-error] 日志文件不可用，继续无日志运行：${e instanceof Error ? e.message : String(e)}\n`).slice(-16_384);
       }
       let spawnError: string | null = null;
       try {
@@ -78,7 +92,7 @@ export function runVerifyCommand(name: string, argv: string[], opts: RunCommandO
         const msg = spawnError ?? "未知 spawn 错误";
         tail = (tail + `\n[spawn-error] ${msg}`).slice(-16_384);
         releaseSignal();
-        safeEnd();
+        await flushLog();
         resolve({ name, cmd: displayCmd, passed: false, durationMs: Date.now() - startedAt, exitCode: null, outputTail: tail, timeout: false, aborted: false, reason: `无法启动命令：${msg}` });
         return;
       }
@@ -94,24 +108,29 @@ export function runVerifyCommand(name: string, argv: string[], opts: RunCommandO
         tail = (tail + `\n[spawn-error] ${msg}`).slice(-16_384);
         releaseSignal();
         if (timer) clearTimeout(timer);
-        safeEnd();
-        resolve({ name, cmd: displayCmd, passed: false, durationMs: Date.now() - startedAt, exitCode: null, outputTail: tail, timeout: false, aborted, reason: `无法启动命令：${msg}` });
+        void (async () => {
+          await flushLog();
+          resolve({ name, cmd: displayCmd, passed: false, durationMs: Date.now() - startedAt, exitCode: null, outputTail: tail, timeout: false, aborted, reason: `无法启动命令：${msg}` });
+        })();
       });
       child.on("close", (code) => {
         if (timer) clearTimeout(timer);
         releaseSignal();
         safeWrite(`\n[exit] code=${code} ${timedOut ? "(timeout)" : aborted ? "(aborted)" : ""}\n`);
-        safeEnd();
-        resolve({
-          name,
-          cmd: displayCmd,
-          passed: !timedOut && !aborted && code === 0,
-          durationMs: Date.now() - startedAt,
-          exitCode: timedOut || aborted ? null : code,
-          outputTail: tail.slice(-4000),
-          timeout: timedOut,
-          aborted,
-        });
+        // 等日志流 flush 完成再 resolve：否则并行合并 mergePartLogs 可能读到缺 [exit] 尾行的 part 文件
+        void (async () => {
+          await flushLog();
+          resolve({
+            name,
+            cmd: displayCmd,
+            passed: !timedOut && !aborted && code === 0,
+            durationMs: Date.now() - startedAt,
+            exitCode: timedOut || aborted ? null : code,
+            outputTail: tail.slice(-4000),
+            timeout: timedOut,
+            aborted,
+          });
+        })();
       });
       if (opts.timeoutMs > 0) {
         timer = setTimeout(() => {

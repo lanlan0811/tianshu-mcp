@@ -114,3 +114,58 @@ describe("R3 边界", () => {
     expect(analysis.notes.some((n) => n.includes("git 仓库"))).toBe(true);
   });
 });
+
+describe("未跟踪超帽截断（>5000）归因", () => {
+  it("截断发生时：基线前未跟踪但无哈希的文件聚合一条 note，且不计入变更判定", async () => {
+    const p = await tmpRepo();
+    // 两个「基线前已存在」的未跟踪文件
+    await fsp.writeFile(path.join(p, "old1.txt"), "old1\n");
+    await fsp.writeFile(path.join(p, "old2.txt"), "old2\n");
+    const realBaseline = await captureBaseline(p);
+    expect(realBaseline.untrackedHashTruncated).toBeUndefined(); // 少量文件不截断
+    expect(realBaseline.preExistingUntracked).toContain("old1.txt");
+    // 合成截断基线：模拟 >5000 超帽后这两个文件未哈希（无 preDirtyHashes）
+    const baseline = {
+      ...realBaseline,
+      preDirtyHashes: {},
+      preUntrackedHashes: {},
+      untrackedHashTruncated: 2,
+    };
+    const analysis = await analyzeChanges({ baseline, projectPath: p, taskText: "noop" });
+    // 不得计入变更判定（untrackedFiles / changedFiles / diffstat 均为空）
+    expect(analysis.untrackedFiles).toHaveLength(0);
+    expect(analysis.changedFiles).toHaveLength(0);
+    expect(analysis.diffstat.perFile).toHaveLength(0);
+    expect(analysis.diffstat.totalAdd).toBe(0);
+    // 不发逐文件假 note，改为一条聚合 note
+    expect(analysis.notes.filter((n) => n.includes("无法按行精确归因"))).toHaveLength(0);
+    const agg = analysis.notes.filter((n) => n.includes("超出哈希上限 5000") && n.includes("无法归因"));
+    expect(agg).toHaveLength(1);
+    expect(agg[0]).toContain("2 个基线前未跟踪文件");
+  }, 30_000);
+
+  it("截断发生时：任务新增的未跟踪文件仍正常归因（只豁免超帽旧文件）", async () => {
+    const p = await tmpRepo();
+    await fsp.writeFile(path.join(p, "old1.txt"), "old1\n");
+    const realBaseline = await captureBaseline(p);
+    const baseline = { ...realBaseline, preDirtyHashes: {}, preUntrackedHashes: {}, untrackedHashTruncated: 1 };
+    // agent 任务期间新增 new.txt
+    await fsp.writeFile(path.join(p, "new.txt"), "new\n");
+    const analysis = await analyzeChanges({ baseline, projectPath: p, taskText: "新增 new.txt" });
+    expect(analysis.untrackedFiles).toEqual(["new.txt"]);
+    expect(analysis.diffstat.perFile.find((r) => r.file === "new.txt")).toBeTruthy();
+    expect(analysis.notes.some((n) => n.includes("1 个基线前未跟踪文件"))).toBe(true);
+  }, 30_000);
+
+  it("未截断时：同样的无哈希场景保持逐文件归因（现状逐字节一致）", async () => {
+    const p = await tmpRepo();
+    await fsp.writeFile(path.join(p, "old1.txt"), "old1\n");
+    const realBaseline = await captureBaseline(p);
+    // 无截断字段：无哈希（如基线读取失败形态）→ 维持逐文件归因旧行为
+    const baseline = { ...realBaseline, preDirtyHashes: {}, preUntrackedHashes: {} };
+    const analysis = await analyzeChanges({ baseline, projectPath: p, taskText: "noop" });
+    expect(analysis.untrackedFiles).toContain("old1.txt");
+    expect(analysis.notes.some((n) => n.includes("无法按行精确归因"))).toBe(true);
+    expect(analysis.notes.some((n) => n.includes("超出哈希上限"))).toBe(false);
+  }, 30_000);
+});

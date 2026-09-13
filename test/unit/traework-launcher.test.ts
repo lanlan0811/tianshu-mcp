@@ -40,29 +40,29 @@ describe("端口探测", () => {
 });
 
 describe("releaseInstance 安全红线", () => {
-  it("pid 无效 → 不终止", () => {
-    const r = releaseInstance(inst({ pid: -1 }), silentLogger, { alive: () => true });
+  it("pid 无效 → 不终止", async () => {
+    const r = await releaseInstance(inst({ pid: -1 }), silentLogger, { alive: () => true });
     expect(r.released).toBe(false);
   });
 
-  it("进程已退出 → 不终止", () => {
+  it("进程已退出 → 不终止", async () => {
     const kill = vi.fn();
-    const r = releaseInstance(inst(), silentLogger, { alive: () => false, kill });
+    const r = await releaseInstance(inst(), silentLogger, { alive: () => false, kill });
     expect(r.released).toBe(false);
     expect(kill).not.toHaveBeenCalled();
   });
 
-  it("读不到命令行 → 放弃终止（避免误杀）", () => {
+  it("读不到命令行 → 放弃终止（避免误杀）", async () => {
     const kill = vi.fn();
-    const r = releaseInstance(inst(), silentLogger, { alive: () => true, readCmd: () => null, kill });
+    const r = await releaseInstance(inst(), silentLogger, { alive: () => true, readCmd: () => null, kill });
     expect(r.released).toBe(false);
     expect(r.reason).toContain("放弃终止");
     expect(kill).not.toHaveBeenCalled();
   });
 
-  it("命令行不含端口参数 → 放弃终止（用户实例）", () => {
+  it("命令行不含端口参数 → 放弃终止（用户实例）", async () => {
     const kill = vi.fn();
-    const r = releaseInstance(inst(), silentLogger, {
+    const r = await releaseInstance(inst(), silentLogger, {
       alive: () => true,
       readCmd: () => "D:\\TRAE Work CN\\TRAE SOLO CN.exe", // 用户手动启动，无调试端口
       kill,
@@ -72,9 +72,9 @@ describe("releaseInstance 安全红线", () => {
     expect(kill).not.toHaveBeenCalled();
   });
 
-  it("命令行是别的程序 → 放弃终止", () => {
+  it("命令行是别的程序 → 放弃终止", async () => {
     const kill = vi.fn();
-    const r = releaseInstance(inst(), silentLogger, {
+    const r = await releaseInstance(inst(), silentLogger, {
       alive: () => true,
       readCmd: () => "C:\\Windows\\notepad.exe --remote-debugging-port=9222",
       kill,
@@ -83,9 +83,9 @@ describe("releaseInstance 安全红线", () => {
     expect(kill).not.toHaveBeenCalled();
   });
 
-  it("命令行完全吻合 → 允许终止", () => {
+  it("命令行完全吻合 → 允许终止", async () => {
     const kill = vi.fn();
-    const r = releaseInstance(inst(), silentLogger, {
+    const r = await releaseInstance(inst(), silentLogger, {
       alive: () => true,
       readCmd: () => "D:\\TRAE Work CN\\TRAE SOLO CN.exe --remote-debugging-port=9222",
       kill,
@@ -94,9 +94,9 @@ describe("releaseInstance 安全红线", () => {
     expect(kill).toHaveBeenCalledWith(4242);
   });
 
-  it("端口不匹配（另一个自建实例）→ 放弃终止", () => {
+  it("端口不匹配（另一个自建实例）→ 放弃终止", async () => {
     const kill = vi.fn();
-    const r = releaseInstance(inst({ port: 9333 }), silentLogger, {
+    const r = await releaseInstance(inst({ port: 9333 }), silentLogger, {
       alive: () => true,
       readCmd: () => "D:\\TRAE Work CN\\TRAE SOLO CN.exe --remote-debugging-port=9222",
       kill,

@@ -55,15 +55,19 @@ export const BUILTIN_PROFILES: Record<string, AgentProfile> = {
       freshSession: true,
       selectors: {},
       modelRequired: true,
-      activation: "msix-com",
-      userDataDir: "{LOCALAPPDATA}/tianshu-mcp/codex-gui/profile",
+      // macOS 无 MSIX：直接 spawn .app 包内可执行文件（Electron 同样接受 --user-data-dir/--remote-debugging-port）
+      activation: process.platform === "darwin" ? "spawn" : "msix-com",
+      userDataDir:
+        process.platform === "darwin"
+          ? "{HOME}/.tianshu-mcp/codex-gui/profile"
+          : "{LOCALAPPDATA}/tianshu-mcp/codex-gui/profile",
       appxPackageName: "OpenAI.Codex",
       permissionMode: "完全访问",
       defaultPermissionMode: "完全访问",
       fixPlanDir: ".zcode/plans",
       defaultAutoFixRounds: 5,
     },
-    note: "Codex 桌面端为 MSIX 商店包：GUI 宿主 ChatGPT.exe 无法 CreateProcess 直启（策略拒绝），须经 IApplicationActivationManager COM 激活并注入专属 user-data-dir + --remote-debugging-port；详见 docs/codex-gui-cdp.md",
+    note: "Codex 桌面端为 MSIX 商店包：GUI 宿主 ChatGPT.exe 无法 CreateProcess 直启（策略拒绝），须经 IApplicationActivationManager COM 激活并注入专属 user-data-dir + --remote-debugging-port；macOS 无 MSIX，直接 spawn ChatGPT.app 包内可执行（activation=spawn）。详见 docs/codex-gui-cdp.md",
   },
   zcode: {
     displayName: "Zcode (ZCode 桌面)",

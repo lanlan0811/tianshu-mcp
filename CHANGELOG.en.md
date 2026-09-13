@@ -10,6 +10,68 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ## [Unreleased]
 
+### Added
+
+- `projectPath` safety gate: `run_task`/`verify_task` validate at submission (absolute path +
+  existing directory + realpath symlink resolution), reject the home directory itself and
+  system/root directories (including macOS `/private/*` realpath forms); the submission receipt
+  notes symlink resolution; dirty git repos get an uncommitted-changes coexistence warning.
+- ZCode GUI driver supports macOS: adapts to the main process rewriting its title (relaxed port
+  attribution + bounded scan of the configured port range when argv hides the debug port) and
+  detached+unref instance persistence; the folder-panel driver is rewritten for the macOS window
+  form (NSOpenPanel as a standalone window + AX value write into the go-to field, immune to IME
+  interception). Machine-verified closed loop on 2026-09-13 (macOS arm64, ZCode 3.11.2: bind →
+  readback → send → run evidence → acceptance PASS → succeeded); macOS stays `research` until
+  the cancel/rework/new-project matrix is covered.
+- Codex GUI driver supports macOS: spawns the ChatGPT.app bundle executable directly
+  (per-platform `activation` default spawn/msix-com) with detached+unref instance persistence;
+  POSIX process enumeration and SIGTERM stop; default discovery dirs on darwin; project
+  registration writes the shared state file (`~/.codex/.codex-global-state.json`) on darwin too;
+  the observation loop reconnects CDP across transient renderer hangs / target replacement
+  (only 5 consecutive failures count as disconnected). Machine-verified closed loop on
+  2026-09-13 (macOS arm64: discover → register → bind → send → run evidence → acceptance PASS
+  → succeeded); macOS stays `research` until the cancel/rework matrix is covered.
+
+### Fixed
+
+- zcode macOS new-task inert-button fallback: `conversation-new-task` can hit an inert home-screen
+  icon (click does nothing); when the project trigger misses, the flow now falls back to the
+  sidebar `[data-testid=task-new-button]` and retries.
+- `normalizeProjectPath` resolves symlinks: macOS `/tmp`→`/private/tmp` used to fail project
+  path matching and degrade into a name match, falsely reporting `project_ambiguous`;
+  falls back to lexical normalization when realpath fails.
+- zcode macOS panel failures no longer misreport `needsPermission`: the execFile message embeds
+  the full script text (containing the `ACCESSIBILITY_PERMISSION_REQUIRED` literal), so every
+  failure looked like a permission problem — the check now reads the stderr execution-error line.
+- `get_profiles` now lists user-defined profiles from the data-directory `agent-profiles.json`
+  (previously hidden until first resolve, even though `run_task` could already use them — inconsistent discovery feedback).
+- zcode-flow test stubs now cover `listDialogs`, removing a flake where real osascript/PowerShell
+  calls blew the `taskTimeoutMs` wall-clock budget under full-suite load.
+- CDP `connect()` failure paths now dispose of the WebSocket themselves (no longer relying on
+  callers to disconnect); the `send()` timeout timer is unref'd.
+
+### Performance
+
+- All `execFileSync`/`spawnSync` calls across GUI instance probing, discovery and registration
+  are now async; ready-wait loops reuse a per-tick process snapshot with a 1.5s TTL cache —
+  eliminating event-loop freezes during Windows polling (up to 30s per call).
+- Acceptance command checks run with bounded parallelism: new `verifyConcurrency` (**⚠ default
+  changed from serial to 2**, range 1–4; project-level `.tianshu-mcp/acceptance.json` overrides,
+  1 = fully serial — set 1 explicitly for checks that write build outputs, run with `--fix`, or
+  share cache directories); logs are concatenated in declaration order with unchanged format;
+  cancellation interrupts both in-flight and pending checks.
+- Git baseline hashing is single-pass with bounded async concurrency (untracked cap 5000);
+  code analysis reads each file at most once, sniffing only a prefix of large files.
+- `get_profiles` and task snapshot reads now use `Promise.all`.
+- Test suite 267s → 51s: traework UI-layer sleeps are injectable (production defaults unchanged);
+  vitest split into parallel unit / serial integration projects.
+- `tsconfig.build.json` no longer emits declarations — 70 `.d.ts` files dropped (140 → 71 files).
+
+### Documentation
+
+- README (both languages) gains "macOS headless path: codex-cli (user profile)" — including the
+  revoked-certificate warning for ≤0.130.0 and a complete profile example.
+
 ### Planned
 
 - More external AI-Agent adapters (a new agent = one profile + an optional adapter file).

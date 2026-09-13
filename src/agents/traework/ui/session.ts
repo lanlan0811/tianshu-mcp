@@ -17,8 +17,15 @@ import {
   type FolderDialogInfo,
 } from "../computeruse/dialog.js";
 
-function sleep(ms: number): Promise<void> {
+function defaultSleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/** UI 层会话/绑定函数的公共选项；sleep 为测试注入点（生产缺省真实 sleep） */
+export interface SessionUiOptions {
+  selectors?: SelectorOverrides;
+  logger: AgentRunLogger;
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export interface ProjectFolderItem {
@@ -70,14 +77,14 @@ export function matchProjectItem(item: ProjectFolderItem, projectPath: string): 
 /** 新建会话（点「新建任务」） */
 export async function startNewSession(
   cdp: TraeworkCdpClient,
-  opts: { selectors?: SelectorOverrides; logger: AgentRunLogger },
+  opts: SessionUiOptions,
 ): Promise<boolean> {
   const ok = await cdp.click("newTask", opts.selectors);
   if (!ok) {
     opts.logger.warn("[traework] 未找到「新建任务」按钮，跳过会话隔离（fail-open）");
     return false;
   }
-  await sleep(2500);
+  await (opts.sleep ?? defaultSleep)(2500);
   return true;
 }
 
@@ -142,8 +149,9 @@ export async function readMode(cdp: TraeworkCdpClient, selectors?: SelectorOverr
 export async function ensureMode(
   cdp: TraeworkCdpClient,
   mode: TraeworkMode,
-  opts: { selectors?: SelectorOverrides; logger: AgentRunLogger },
+  opts: SessionUiOptions,
 ): Promise<boolean> {
+  const sleep = opts.sleep ?? defaultSleep;
   const cur = await readMode(cdp, opts.selectors);
   if (cur.toLowerCase() === mode.toLowerCase()) return true;
   const pos = await cdp.evaluateString(`(function(){
@@ -272,8 +280,9 @@ export async function readBoundProject(cdp: TraeworkCdpClient, selectors?: Selec
 /** 展开「选择文件夹」下拉（图2） */
 async function openProjectDropdown(
   cdp: TraeworkCdpClient,
-  opts: { selectors?: SelectorOverrides; logger: AgentRunLogger },
+  opts: SessionUiOptions,
 ): Promise<boolean> {
+  const sleep = opts.sleep ?? defaultSleep;
   // 优先点 placeholder 形态（未绑定）
   if (await cdp.click("projectButton", opts.selectors)) {
     await sleep(1500);
@@ -307,7 +316,7 @@ async function openProjectDropdown(
  */
 async function clickDropdownFooter(
   cdp: TraeworkCdpClient,
-  opts: { selectors?: SelectorOverrides; logger: AgentRunLogger },
+  opts: SessionUiOptions & { dialogWaitTimeoutMs?: number },
 ): Promise<{ clicked: boolean; hwnd: number }> {
   const { logger } = opts;
 
@@ -335,7 +344,7 @@ async function clickDropdownFooter(
   }
 
   // 3) 关键：确认原生对话框真的被唤起（避免「点了但没弹」被当成成功）
-  const appeared = await waitDialogAppeared();
+  const appeared = await waitDialogAppeared(opts.dialogWaitTimeoutMs ?? 20_000, opts.sleep ?? defaultSleep);
   if (!appeared) {
     // 记录当前下拉 DOM 快照，便于诊断选择器漂移
     const snapshot = await cdp
@@ -353,7 +362,10 @@ async function clickDropdownFooter(
 }
 
 /** 点击 footer 后等待原生对话框出现（脚本内轮询，单次 PowerShell 调用） */
-async function waitDialogAppeared(timeoutMs = 20_000): Promise<FolderDialogInfo | null> {
+async function waitDialogAppeared(
+  timeoutMs: number,
+  sleep: (ms: number) => Promise<void>,
+): Promise<FolderDialogInfo | null> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     // eslint-disable-next-line no-await-in-loop
@@ -378,19 +390,19 @@ export interface BindProjectResult {
 export async function bindProject(
   cdp: TraeworkCdpClient,
   projectPath: string,
-  opts: { selectors?: SelectorOverrides; logger: AgentRunLogger; mode?: TraeworkMode },
+  opts: SessionUiOptions & { mode?: TraeworkMode; dialogWaitTimeoutMs?: number },
 ): Promise<BindProjectResult> {
   const { selectors, logger } = opts;
   const wantMode = opts.mode ?? "Work";
 
-  const first = await bindProjectOnce(cdp, projectPath, { selectors, logger, mode: wantMode });
+  const first = await bindProjectOnce(cdp, projectPath, { ...opts, mode: wantMode });
   if (first.bound || wantMode === "Work") return first;
 
   // 兜底（实测 2026-09-08）：「选择文件夹」相关 UI 在非 Work 模式下可能不出现/不稳定
   // （失败任务 mode=Code 时下拉底部按钮点击后原生对话框未弹出）。回落 Work 完成绑定，
   // 再切回目标模式；仅重试一次，避免无限循环。
   logger.warn(`[traework] 在 ${wantMode} 模式绑定失败（${first.message}），回落 Work 模式重试一次`);
-  const inWork = await bindProjectOnce(cdp, projectPath, { selectors, logger, mode: "Work" });
+  const inWork = await bindProjectOnce(cdp, projectPath, { ...opts, mode: "Work" });
   if (!inWork.bound) {
     // 把两次失败信息都带出来，便于定位
     return {
@@ -400,7 +412,7 @@ export async function bindProject(
     };
   }
   // 切回目标模式
-  const backOk = await ensureMode(cdp, wantMode, { selectors, logger });
+  const backOk = await ensureMode(cdp, wantMode, { selectors, logger, sleep: opts.sleep });
   if (!backOk) {
     logger.warn(`[traework] Work 模式绑定成功，但切回 ${wantMode} 模式失败`);
   }
@@ -419,11 +431,12 @@ export async function bindProject(
 async function bindProjectOnce(
   cdp: TraeworkCdpClient,
   projectPath: string,
-  opts: { selectors?: SelectorOverrides; logger: AgentRunLogger; mode: TraeworkMode },
+  opts: SessionUiOptions & { mode: TraeworkMode; dialogWaitTimeoutMs?: number },
 ): Promise<BindProjectResult> {
   const { selectors, logger } = opts;
+  const sleep = opts.sleep ?? defaultSleep;
 
-  const modeOk = await ensureMode(cdp, opts.mode, { selectors, logger });
+  const modeOk = await ensureMode(cdp, opts.mode, { selectors, logger, sleep: opts.sleep });
   if (!modeOk) {
     logger.warn(`[traework] 未能确认处于 ${opts.mode} 模式，仍尝试绑定项目（fail-open）`);
   }

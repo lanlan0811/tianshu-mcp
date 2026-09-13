@@ -3,7 +3,6 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 import { ZCODE_SETUP_DEFAULTS } from "../../config/schema.js";
-import { permissionError } from "./recovery.js";
 export interface NativeDialogOptions {
   timeoutMs?: number;
   signal?: AbortSignal;
@@ -264,6 +263,16 @@ do {
 } while($stillOpen -and (Get-Date) -lt $closeDeadline)
 if($stillOpen){throw 'ZCode 文件夹对话框提交后仍未关闭'}`;
 
+/**
+ * macOS NSOpenPanel 以**独立窗口**出现（3.11.2 实测：标题 "Open"，sheets 恒 0；
+ * 旧的 sheet 语义在 macOS 找不到面板）。baseline 的 sheet-count:N 线格式保留，
+ * 但语义 = ZCode 进程内标题命中面板集合的窗口数。
+ */
+const MAC_PANEL_TITLES = ["Open", "打开", "Choose", "选择", "选取"];
+const MAC_PANEL_CONFIRM = ["Open", "打开", "Choose", "选择", "选取"];
+
+const asList = (items: string[]): string => items.map((t) => `"${t}"`).join(", ");
+
 export async function listOwnedDialogs(
   pids: number[],
   options: NativeDialogOptions = {},
@@ -272,10 +281,11 @@ export async function listOwnedDialogs(
   const platform = options.platform ?? process.platform;
   if (platform === "darwin") {
     const script = `tell application "System Events"
+set panelTitles to {${asList(MAC_PANEL_TITLES)}}
 tell process "ZCode"
   set total to 0
   repeat with w in windows
-    set total to total + (count of sheets of w)
+    if (name of w) is in panelTitles then set total to total + 1
   end repeat
   return "sheet-count:" & total
 end tell
@@ -345,8 +355,8 @@ export async function selectZcodeFolder(
     }
   }
   if (platform === "darwin") {
-    // System Events 不提供跨观测稳定的 sheet 标识。存在旧 sheet 时，仅凭数量无法证明
-    // 哪个是新面板，因此必须 fail-closed，绝不操作可能属于用户的既有面板。
+    // macOS：面板是独立窗口（标题命中 MAC_PANEL_TITLES）。基线必须 0——存在旧面板时无法
+    // 证明哪个是新面板，fail-closed 绝不操作可能属于用户的既有面板（与旧 sheet 语义一致）。
     const checkedBaseline = validateMacSheetBaseline(baseline);
     if (!checkedBaseline.ok) return checkedBaseline;
     const baselineCount = checkedBaseline.count;
@@ -357,41 +367,55 @@ set operationDeadline to (current date) + ((item 3 of argv) as real)
 if baselineCount is not 0 then error "EXISTING_ZCODE_SHEET_REFUSED"
 tell application "System Events"
   if UI elements enabled is false then error "ACCESSIBILITY_PERMISSION_REQUIRED"
+  set panelTitles to {${asList(MAC_PANEL_TITLES)}}
+  set confirmNames to {${asList(MAC_PANEL_CONFIRM)}}
   tell process "ZCode"
     set frontmost to true
     set deadline to operationDeadline
     repeat
-      set total to 0
-      set targetFound to false
+      set panelWins to {}
       repeat with w in windows
-        set windowSheetCount to count of sheets of w
-        set total to total + windowSheetCount
-        if total is 1 and windowSheetCount is 1 then
-          set targetSheet to sheet 1 of w
-          set targetFound to true
-        end if
+        if (name of w) is in panelTitles then set end of panelWins to w
       end repeat
-      if total is 1 and targetFound then exit repeat
+      set total to count of panelWins
+      if total is 1 then exit repeat
       if total > 1 then error "AMBIGUOUS_NEW_ZCODE_FOLDER_SHEET"
       if (current date) > deadline then error "NEW_ZCODE_FOLDER_SHEET_NOT_FOUND"
       delay 0.2
     end repeat
+    set panelWin to item 1 of panelWins
     keystroke "g" using {command down, shift down}
-    delay 0.3
-    keystroke targetFolder
-    key code 36
     delay 0.5
-    if targetFound is false then error "AMBIGUOUS_NEW_ZCODE_FOLDER_SHEET"
+    -- keystroke 会被中文输入法截获改写成乱码（实测拼音 IME 下路径变“特没谱…”），
+    -- 且字段可能残留上次路径——必须 AX 直写 value（免疫 IME 与旧内容）
+    if (count of sheets of panelWin) is 0 then error "ZCODE_GOTO_FIELD_NOT_OPEN"
+    set value of text field 1 of sheet 1 of panelWin to targetFolder
+    delay 0.3
+    key code 36
+    delay 0.8
+    -- go-to 字段偶需二次回车确认；等其收起到最多 5s
+    set gotoDeadline to (current date) + 5
+    repeat
+      if not (exists panelWin) then exit repeat
+      set sheetCount to count of sheets of panelWin
+      if sheetCount is 0 then exit repeat
+      if (current date) > gotoDeadline then error "ZCODE_GOTO_FIELD_STUCK"
+      key code 36
+      delay 0.5
+    end repeat
+    if not (exists panelWin) then error "ZCODE_FOLDER_PANEL_VANISHED"
+    -- 确认按钮：优先 AXDefaultButton，其次标题命中
     set submitted to false
-    set defaultButtons to every button of targetSheet whose subrole is "AXDefaultButton"
+    set sg to first splitter group of panelWin
+    set defaultButtons to every button of sg whose subrole is "AXDefaultButton"
     if (count of defaultButtons) is 1 then
       click item 1 of defaultButtons
       set submitted to true
     end if
     if submitted is false then
-      repeat with buttonName in {"Choose", "Open", "选择", "打开"}
-        if exists button buttonName of targetSheet then
-          click button buttonName of targetSheet
+      repeat with b in (every button of sg)
+        if (name of b) is in confirmNames then
+          click b
           set submitted to true
           exit repeat
         end if
@@ -402,7 +426,7 @@ tell application "System Events"
     repeat
       set total to 0
       repeat with w in windows
-        set total to total + (count of sheets of w)
+        if (name of w) is in panelTitles then set total to total + 1
       end repeat
       if total is 0 then exit repeat
       if (current date) > closeDeadline then error "ZCODE_FOLDER_SHEET_STILL_OPEN"
@@ -423,10 +447,20 @@ end run`;
       return { ok: true, message: "macOS 文件夹面板已提交" };
     } catch (e) {
       if (options.signal?.aborted) throw e;
-      const msg = e instanceof Error ? e.message : String(e);
+      // 权限判定必须看 stderr 的 execution error 行——execFile 的 message 会内嵌完整脚本文本
+      // （其中含 ACCESSIBILITY_PERMISSION_REQUIRED 字面量），曾把一切面板失败误报成权限问题。
+      const err = e as { message?: string; stderr?: string };
+      const detail = String(err.stderr ?? "");
+      const msg = err.message ?? String(e);
       return {
         ok: false,
-        needsPermission: permissionError(e),
+        // 只判 stderr：execFile 的 message 内嵌完整脚本文本（含 ACCESSIBILITY_PERMISSION_REQUIRED
+        // 字面量），permissionError(e) 会把一切面板失败恒报成权限问题并跳过自动恢复——
+        // 冲突裁决时曾因此把本修复又合并回去（二次引入，勿再并联）。
+        needsPermission:
+          /ACCESSIBILITY_PERMISSION_REQUIRED|not authorized|辅助功能|errAEEventNotPermitted|-1743/i.test(
+            detail,
+          ),
         message: msg,
       };
     }
