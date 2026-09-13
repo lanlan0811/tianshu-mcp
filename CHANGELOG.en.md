@@ -28,7 +28,7 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 - Add initialization recovery with shared deadlines, configurable budgets and a resumable `setup_recovery` state. Reconcile native side effects after timeouts and terminate helper processes on cancellation.
 - Handle split model labels, hidden outgoing animation text, residual project menus trapping focus and send buttons that are not yet ready.
 - Add real DOM and recovery/cancellation regressions. Windows hardware verifies cold first import, imported-project reuse and same-task recovery with actual artifacts and 2/2 acceptance checks.
-- Release/tarball only; no npm publication. macOS has no real-device verification for this patch and the ZCode profile remains `research`.
+- Published as a GitHub Release/tarball and to npm (`latest`). macOS has no real-device verification for this patch and the ZCode profile remains `research`.
 
 See [release notes](docs/release-v0.3.4.en.md) and [validation evidence](docs/zcode-issue-8-10-validation.en.md).
 

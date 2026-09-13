@@ -16,6 +16,6 @@ Windows 实际任务、会话和 2/2 验收报告见 [真机验收记录](zcode-
 
 ## 分发与兼容性
 
-本次发布 GitHub Release 与 tarball，**不发布 npm**。仅运行 `npx tianshu-mcp` 不会自动取得本补丁；需下载本 Release 附件并安装。GitHub 为主仓库，Gitee 为代码与标签镜像；镜像发行版是否创建以工作流日志为准。
+已发布 GitHub Release 与 tarball，并同步发布到 npm（`tianshu-mcp@0.3.4`，`latest`）；`npx -y tianshu-mcp` 现在即可取得本补丁，也可安装 Release 附件。GitHub 为主仓库，Gitee 为代码与标签镜像，镜像发行版由工作流自动创建。
 
 macOS 有自动化和 CI 覆盖，尚未完成本次真机端到端验证；ZCode profile 继续保持 `research`。

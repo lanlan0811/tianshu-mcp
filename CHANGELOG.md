@@ -26,7 +26,7 @@
 - 增加共用截止时间的初始化恢复、可配置预算及 `setup_recovery` 暂停；原生操作超时先复检副作用，取消回收辅助进程。
 - 修复拆分模型标签、隐藏动画旧值、项目菜单焦点截获和发送按钮尚未就绪的问题。
 - 补充真实 DOM、取消及恢复回归，Windows 真机覆盖新项目冷导入、已导入项目复用和同任务恢复，实际产物与 2/2 验收通过。
-- 本版本发布 Release/tarball，不发布 npm；macOS 尚无本次真机验证，ZCode profile 保持 `research`。
+- 本版本发布 GitHub Release/tarball 并同步发布到 npm（`latest`）；macOS 尚无本次真机验证，ZCode profile 保持 `research`。
 
 详见 [发布说明](docs/release-v0.3.4.md) 和 [验收证据](docs/zcode-issue-8-10-validation.md)。
 

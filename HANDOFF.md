@@ -15,7 +15,7 @@
 
 - **天枢官方仓库**：<https://github.com/huiliyi37/Tianshu-harness>（基于 harness 工程的终端编程智能体运行时，TUI × GUI；Apache-2.0）
 - **本仓库**：`github.com/lanlan0811/tianshu-mcp`（主）｜`gitee.com/lan0811/tianshu-mcp`（镜像）
-- **npm**：`tianshu-mcp`（当前发布版本 `0.3.3`）
+- **npm**：`tianshu-mcp`（当前发布版本 `0.3.4`）
 - **工具面**：9 个 MCP 工具（`run_task / continue_task / query_task / list_tasks / get_task_report / cancel_task / verify_task / rework_task / get_profiles`）
 
 ### 为什么是这样设计的（硬约束）
@@ -213,7 +213,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 366 项
+npm test             # 407 项
 ```
 
 日常循环（改 `src/` 后）：
