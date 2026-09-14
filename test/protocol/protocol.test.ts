@@ -111,14 +111,20 @@ describe("工具面", () => {
   });
 
   it("参数校验：run_task 缺 projectPath 时协议层放行，由语义层拒绝不支持的 agent", async () => {
-    const res = await ts.client.callTool({ name: "run_task", arguments: { task: "没有项目路径" } });
+    // 显式用 stub agent（startTestServer 已注入其 profile）：若依赖默认 agent=codex，
+    // 断言会随「本机装了 codex / CI 没装」两条路径分叉，测试就不再跨平台确定。
+    const res = await ts.client.callTool({
+      name: "run_task",
+      arguments: { agentId: "stub", task: "没有项目路径" },
+    });
     expect(res.isError).toBe(true);
     const text = (res.content as { text: string }[]).map((c) => c.text).join("\n");
     // issue #12：projectPath 已可选——协议层必须放行（不再 -32602 / 参数不合法），
-    // 由语义层说明「该 agent 需要 projectPath」。默认 agent 是 codex，不支持无项目派发。
+    // 由语义层说明「该 agent 需要 projectPath」，且绝不真的提交任务。
     expect(text).not.toMatch(/-32602|参数不合法|Invalid arguments|Input validation/i);
     expect(text).toMatch(/需要 projectPath/);
     expect(text).toMatch(/仅支持 ZCode/);
+    expect(text).not.toMatch(/任务已提交/);
   });
 
   it("参数校验：不存在目录被拒绝", async () => {
