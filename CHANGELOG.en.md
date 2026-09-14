@@ -22,6 +22,12 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 - Real-machine verification of project-less dispatch on macOS (this round covers Windows 10 only).
 - ZCode's **automatic import of an unregistered project** cannot complete on Windows: the native-panel script relies on `SetForegroundWindow` to bring the dialog forward before activating its address bar, but a child process of a background MCP server is refused by Windows, so the address-bar Edit never appears and the script spins until its deadline (measured: 56s, then classified by `budget.check()` as an exhausted setup budget). PowerShell's stdout is also block-buffered through a pipe, so killing the process loses the buffer and not a single `native:` stage reaches the log, misdirecting diagnosis. Workaround: add the target directory to the ZCode project list manually first; the fix direction is to grab the foreground with `AttachThreadInput` inside the script, or to use a supported ZCode registration entry point.
 
+---
+
+## [0.5.3] — 2026-09-15
+
+**ZCode hardware-revisit fixes (issue #12, second round)**: three defects found on hardware are fixed — GUI instances could not outlive the server on Windows, "new task" did not switch pages and everything waited silently, and send-failure attribution was misleading. See the [v0.5.3 release notes](docs/release-v0.5.3.en.md) and the [Windows 10 acceptance record](docs/zcode-issue-12-windows-evidence.en.md).
+
 ### Fixed
 
 - **ZCode / Codex desktop instances could not outlive the server on Windows (found on hardware)**: the `zcode` and `codex` GUI instances were spawned behind a platform branch (`detached: process.platform !== "win32"`) while `traework` already used an unconditional `detached: true`. A minimal experiment (Windows 10 / Node 24.18.0) on the same spawn shows a non-detached child's survival after the parent exits is 0 and a detached child's is 1. As a result, as soon as the MCP server (or a one-shot smoke / probe script) exited on Windows, ZCode was killed along with it and `keptInstance`'s "instance survives the server exit" was a no-op — `needs_user` told the user to "handle it in ZCode, then call continue_task" while the window was already gone. The invariant now lives in one place, `guiInstanceSpawnOptions()`, shared by all three GUI instances (`codex` even branched `unref()` by platform; that branch is gone). The execution-type children in `verify/runner`, `visual/services` and `agents/spawn` keep their platform branch because their semantics are the opposite — they must be terminable as a group.
@@ -30,7 +36,7 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ### Tests
 
-- Full suite: **530 passed / 10 skipped** (Windows 10 x64, Node 24.18.0), adding 4 cases: falling back to the sidebar entry when no draft is established and still dispatching, failing closed without sending when neither entry point creates a draft, attributing a send failure to "window not in the foreground" when the page is throttled, and keeping the original button attribution when the page is visible.
+- Full suite: **532 passed / 10 skipped** (Windows 10 x64, Node 24.18.0), a net gain of 7 cases over v0.5.2: falling back to the sidebar entry when no draft is established and still dispatching, failing closed without sending when neither entry point creates a draft, attributing a send failure to "window not in the foreground" when the page is throttled, keeping the original button attribution when the page is visible, plus 2 regression cases for the GUI-instance spawn invariant (unconditional detached + unref across platforms).
 
 ### Docs
 
