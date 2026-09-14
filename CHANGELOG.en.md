@@ -12,6 +12,7 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ### Planned
 
+- **Visual acceptance phase 2 — AI visual content validation** (issue #13): validate whether image/page-screenshot *content* matches the task description (logo elements, style match, page semantics, etc.). Marked in issue #3 as an "optional extension"; its pixel-comparison phase 1 shipped with v0.5.0. Requires settling the model/credential source (without breaking the "zero credential management" red line), judgement debouncing, and gate placement (warning-only by default is suggested).
 - More external AI-Agent adapters (a new agent = one profile + an optional adapter file).
 - TraeWork executable discovery and native-dialog driving on macOS (currently fail-closed).
 - Optional project-level skill seeding (by default nothing is written into target repos).

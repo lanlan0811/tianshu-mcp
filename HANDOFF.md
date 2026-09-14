@@ -683,5 +683,7 @@ Windows + Codex 真机模拟实测：模型菜单的 `menuitemradio` 对 trusted
 8. 发版前务必确认 `src/version.generated.ts`、`package.json` **与 `package-lock.json`** 三者版本一致并同步提交
    （CI 有「构建后无 tracked diff」门禁；v0.5.0 曾漏掉锁文件）。推 `v*` tag 即触发 Release
    （双语正文取 `docs/release-v<ver>.md` + `.en.md`，**缺文档会直接失败**；且要求同 SHA 的成功 CI）。完整步骤见 §6.4。
-9. 未发布计划（见 `CHANGELOG.md` 的「未发布」节）：更多 agent 适配、TraeWork / ZCode / Codex 的 macOS 验证矩阵、
+9. 未发布计划（见 `CHANGELOG.md` 的「未发布」节）：**视觉验收第二阶段——AI 视觉内容校验（issue #13，前身 issue #3 的「可选扩展」）**、
+   更多 agent 适配、TraeWork / ZCode / Codex 的 macOS 验证矩阵、
    项目级技能播种、`needs_user` 状态取消时经临时 CDP 连接尽力停止 GUI 内等待中的会话。
+   注：issue #3 第一阶段（像素级对比 + 图片规格 + 报告 + 返修闭环 + 基准批准/冻结）已随 v0.5.0 完成，issue #3 已关闭。
