@@ -1,5 +1,6 @@
 /** report.md / report.json 生成（验收引擎产物，开发计划 §8.5） */
 import type { VerifyReport } from "../tasks/task.js";
+import { visualEvidence } from "../visual/report.js";
 
 export function reportToJsonable(report: VerifyReport): Record<string, unknown> {
   return {
@@ -14,6 +15,8 @@ export function reportToJsonable(report: VerifyReport): Record<string, unknown> 
     analysis: report.analysis,
     files: report.files,
     message: report.message,
+    ...(report.blockingIssues ? { blockingIssues: report.blockingIssues } : {}),
+    ...(report.visual ? { visual: report.visual } : {}),
   };
 }
 
@@ -29,7 +32,9 @@ export function reportToMd(report: VerifyReport): string {
   if (report.checks.length === 0) L.push("（无可运行的检查项）", "");
   for (const c of report.checks) {
     const mark = c.skipped ? "SKIP" : c.passed ? "PASS" : "FAIL";
-    L.push(`- [${mark}] ${c.name} — \`${c.cmd}\`${c.durationMs >= 0 ? ` (${c.durationMs}ms)` : ""}${c.skipped && c.reason ? ` — ${c.reason}` : ""}`);
+    L.push(
+      `- [${mark}] ${c.name} — \`${c.cmd}\`${c.durationMs >= 0 ? ` (${c.durationMs}ms)` : ""}${c.skipped && c.reason ? ` — ${c.reason}` : ""}`,
+    );
     if (!c.passed && !c.skipped) {
       if (c.timeout) L.push(`  - [WARN] 超时（${c.durationMs}ms）`);
       L.push(`  - 退出码: ${c.exitCode ?? "n/a"}`);
@@ -46,11 +51,15 @@ export function reportToMd(report: VerifyReport): string {
   if (a.changedFiles.length === 0 && a.untrackedFiles.length === 0) {
     L.push("无变更文件（相对 git 基线）。", "");
   } else {
-    L.push(`### 变更清单（${a.changedFiles.length} 个已跟踪 + ${a.untrackedFiles.length} 个未跟踪）`, "");
+    L.push(
+      `### 变更清单（${a.changedFiles.length} 个已跟踪 + ${a.untrackedFiles.length} 个未跟踪）`,
+      "",
+    );
     for (const f of a.changedFiles) L.push(`- ${f}`);
     for (const f of a.untrackedFiles) L.push(`- (未跟踪) ${f}`);
     L.push("", `### diffstat：+${a.diffstat.totalAdd} -${a.diffstat.totalDel}`, "");
-    for (const pf of a.diffstat.perFile) L.push(`- ${pf.file}: +${pf.add} -${pf.del}${pf.binary ? " (binary)" : ""}`);
+    for (const pf of a.diffstat.perFile)
+      L.push(`- ${pf.file}: +${pf.add} -${pf.del}${pf.binary ? " (binary)" : ""}`);
   }
   const sig = a.signals;
   const sigTotal = sig.todo + sig.consoleDebug + sig.commentedBlock + sig.secretLike;
@@ -64,7 +73,7 @@ export function reportToMd(report: VerifyReport): string {
     for (const w of a.warnings) L.push(`- [WARN] ${w}`);
   }
   for (const n of a.notes) L.push(`- [INFO] ${n}`);
-  L.push("", "---", "", report.message, "");
+  L.push("", visualEvidence(report), "", "---", "", report.message, "");
   return L.join("\n");
 }
 
@@ -81,18 +90,36 @@ export function summarizeReport(report: VerifyReport): string {
       ? `[FAIL] 验收未完成（第 ${report.round} 轮）：任务取消，验收中断${skip ? `，${skip} 项未执行` : ""}。`
       : `[FAIL] 验收失败（第 ${report.round} 轮）：${fail.length} 项检查未通过${skip ? `，${skip} 项跳过` : ""}。`;
   const lines = [head, ""];
+  if (report.visual)
+    for (const result of report.visual.results)
+      lines.push(
+        `- [${result.status}] ${result.id}/${result.viewport ?? result.target}: ${result.code} — ${result.message}`,
+      );
+  if (report.blockingIssues)
+    for (const issue of report.blockingIssues)
+      lines.push(`- [BLOCKED] ${issue.code}: ${issue.message}`);
   for (const c of report.checks) {
     const st = c.skipped ? "SKIP" : c.passed ? "PASS" : "FAIL";
-    lines.push(`- [${st}] ${c.name} — ${c.cmd}${c.skipped ? (c.reason ? `（${c.reason}）` : "") : `（${c.durationMs}ms, exit=${c.exitCode}）`}`);
+    lines.push(
+      `- [${st}] ${c.name} — ${c.cmd}${c.skipped ? (c.reason ? `（${c.reason}）` : "") : `（${c.durationMs}ms, exit=${c.exitCode}）`}`,
+    );
     if (!c.passed && !c.skipped && c.outputTail) {
-      const tail = c.outputTail.trim().split("\n").slice(-6).map((s) => `    ${s}`).join("\n");
+      const tail = c.outputTail
+        .trim()
+        .split("\n")
+        .slice(-6)
+        .map((s) => `    ${s}`)
+        .join("\n");
       lines.push(`  输出尾部：\n${tail}`);
     }
   }
   const a = report.analysis;
-  const sigTotal = a.signals.todo + a.signals.consoleDebug + a.signals.commentedBlock + a.signals.secretLike;
+  const sigTotal =
+    a.signals.todo + a.signals.consoleDebug + a.signals.commentedBlock + a.signals.secretLike;
   const analysisBits: string[] = [];
-  analysisBits.push(`变更 ${a.changedFiles.length} 个已跟踪 + ${a.untrackedFiles.length} 个未跟踪文件，diffstat +${a.diffstat.totalAdd} -${a.diffstat.totalDel}`);
+  analysisBits.push(
+    `变更 ${a.changedFiles.length} 个已跟踪 + ${a.untrackedFiles.length} 个未跟踪文件，diffstat +${a.diffstat.totalAdd} -${a.diffstat.totalDel}`,
+  );
   if (sigTotal) analysisBits.push(`可疑标记 ${sigTotal} 处`);
   if (a.bigFileChanges.length) analysisBits.push(`超大改动 ${a.bigFileChanges.length} 个`);
   if (a.warnings.length) analysisBits.push(`告警 ${a.warnings.length} 条`);

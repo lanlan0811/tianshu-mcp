@@ -157,7 +157,12 @@ export class TaskManager {
     if (!isTerminal(meta.status)) {
       return { found: false, reason: `任务仍在进行中（status=${meta.status}），无法 rework` };
     }
-    if (meta.agentId === "zcode" && !meta.zcodeSessionId && !meta.zcodeSessionTitle) {
+    if (
+      meta.agentId === "zcode" &&
+      !meta.pendingVisualVerification &&
+      !meta.zcodeSessionId &&
+      !meta.zcodeSessionTitle
+    ) {
       return { found: false, reason: "ZCode 原会话定位信息缺失，拒绝创建新任务冒充续修" };
     }
     meta.status = "queued";
@@ -311,7 +316,8 @@ export class TaskManager {
       return {
         found: true,
         settled: false,
-        reason: "已请求取消，但任务尚未在本调用内落终态（GUI 侧停止可能未完成）；请稍后 query_task 复核",
+        reason:
+          "已请求取消，但任务尚未在本调用内落终态（GUI 侧停止可能未完成）；请稍后 query_task 复核",
       };
     }
     return { found: true, reason: `任务已处于终态（${meta.status}），无需取消`, settled: true };

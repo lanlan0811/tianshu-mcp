@@ -7,6 +7,26 @@ const logger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {
 afterEach(() => vi.useRealTimers());
 
 describe("ZCode shared recovery budget", () => {
+  it("keeps task timeout authoritative when abort synchronously rejects a CDP operation", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const budget = new ZcodeBudget(20, 100, { logger }, 10);
+    const pending = budget
+      .run(
+        (signal) =>
+          new Promise((_resolve, reject) => {
+            signal.addEventListener(
+              "abort",
+              () => reject(new Error("CDP disconnected during abort")),
+              { once: true },
+            );
+          }),
+      )
+      .catch((error) => error);
+    await vi.advanceTimersByTimeAsync(20);
+    expect(await pending).toMatchObject({ reason: "task_timeout" });
+    budget.close();
+  });
   it("provides backward-compatible defaults and rejects invalid settings", () => {
     expect(GuiProfileSchema.parse({})).toMatchObject({
       setupRecoveryTimeoutMs: 120000,

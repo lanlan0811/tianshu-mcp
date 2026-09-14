@@ -26,6 +26,7 @@ import {
 import { nowIso } from "../util/id.js";
 import { Logger } from "../util/log.js";
 import { reportToJsonable, reportToMd } from "../verify/report.js";
+import { visualHtml } from "../visual/report.js";
 
 const STATUS_EVENT_MAP: Record<TaskStatus, TaskEventName> = {
   queued: "queued",
@@ -183,6 +184,10 @@ export class TaskStore {
   /* ---------- 报告 ---------- */
   async saveReport(taskId: string, report: VerifyReport): Promise<void> {
     await mkdirp(this.dir(taskId));
+    if (report.visual) {
+      report.files.html = path.join(this.dir(taskId), `report-${report.round}.html`);
+      await writeTextAtomic(report.files.html, visualHtml(report));
+    }
     await writeTextAtomic(report.files.md, reportToMd(report));
     await writeJsonAtomic(report.files.json, reportToJsonable(report));
   }

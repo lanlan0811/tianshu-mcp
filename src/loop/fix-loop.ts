@@ -28,6 +28,12 @@ import type { TaskMeta } from "../tasks/task.js";
 import { TaskStore } from "../tasks/task-store.js";
 import type { DataHome } from "../config/store.js";
 import { Logger } from "../util/log.js";
+import { freezeVisualSnapshot, checkVisualSnapshot } from "../visual/snapshot.js";
+import { visualEvidence } from "../visual/report.js";
+import { withVisualLock } from "../visual/lock.js";
+import path from "node:path";
+import fsp from "node:fs/promises";
+import { VisualError } from "../visual/errors.js";
 
 export interface OrchestratorDeps {
   store: TaskStore;
@@ -62,26 +68,48 @@ export class TaskOrchestrator {
     const store = this.deps.store;
 
     try {
-      // ---- 解析 agent（spawn/认证等基础设施错误不再重试）----
-      const resolved = await this.deps.registry.resolve(meta.agentId, true);
-      if (!resolved.ok) {
-        return this.finish(
-          "failed",
-          "agent_unresolved",
-          `agent '${meta.agentId}' 不可用：${resolved.message}`,
-        );
-      }
-
       // ---- 采集 git 基线（动工前，R12）----
       await store.appendEvent(meta.taskId, "note", meta.status, "采集 git 基线…");
       await mkdirp(store.dir(meta.taskId));
       const savedBaseline = await readJsonSafe<Baseline>(store.baselinePath(meta.taskId));
       const baseline = savedBaseline ?? (await captureBaseline(meta.projectPath));
       if (!savedBaseline) await writeJsonAtomic(store.baselinePath(meta.taskId), baseline);
+      try {
+        const frozen = await freezeVisualSnapshot(meta.projectPath, store.dir(meta.taskId));
+        await checkVisualSnapshot(meta.projectPath, frozen);
+      } catch (e) {
+        if (this.aborted()) return this.abortTerminal();
+        meta.pendingVisualVerification = true;
+        return this.finish("needs_attention", "verify_failed", String(e));
+      }
+
+      let resumedFeedback: string | undefined;
+      if (meta.pendingVisualVerification) {
+        await store.updateStatus(meta, "running", "恢复视觉阻塞：先重新验收");
+        await store.updateStatus(meta, "verify_start", "恢复视觉阻塞：先重新验收");
+        const retry = await this.runVerifyOnce(meta, meta.roundsUsed, baseline);
+        if (this.aborted()) return this.abortTerminal();
+        if (retry.report.blockingIssues?.length)
+          return this.finish("needs_attention", "verify_failed", retry.report.message);
+        delete meta.pendingVisualVerification;
+        if (retry.passed) return this.finish("succeeded", null, retry.summary);
+        if (meta.roundsUsed > meta.autoFixRounds)
+          return this.finish("failed", "verify_failed", retry.summary);
+        resumedFeedback = `${retry.summary}\n${visualEvidence(retry.report)}`;
+      }
+
+      const resolved = await this.deps.registry.resolve(meta.agentId, true);
+      if (!resolved.ok)
+        return this.finish(
+          "failed",
+          "agent_unresolved",
+          `agent '${meta.agentId}' 不可用：${resolved.message}`,
+        );
 
       // ---- 返修循环 ----
       let round = meta.roundsUsed;
-      let feedback = this.initialFeedback;
+      let feedback =
+        [this.initialFeedback, resumedFeedback].filter(Boolean).join("\n") || undefined;
       const maxRounds = meta.autoFixRounds;
 
       for (;;) {
@@ -94,7 +122,17 @@ export class TaskOrchestrator {
           delete meta.continueReobserve;
           await store.writeSnapshot(meta);
         }
-        const runRes = await this.runAgentOnce(ctx, resolved);
+        const runRes = await withVisualLock(
+          path.dirname(path.dirname(store.dir(meta.taskId))),
+          await fsp.realpath(meta.projectPath),
+          async () => {
+            await checkVisualSnapshot(
+              meta.projectPath,
+              await freezeVisualSnapshot(meta.projectPath, store.dir(meta.taskId)),
+            );
+            return this.runAgentOnce(ctx, resolved);
+          },
+        );
         meta.logFile = runRes.logFile;
         meta.agentEndReason = runRes.endReason;
         meta.lastRunSignal = runRes.endReason ?? meta.lastRunSignal;
@@ -179,6 +217,10 @@ export class TaskOrchestrator {
         meta.diffstat = verdict.diffstat;
 
         if (this.aborted()) return this.abortTerminal(); // 验收期间被取消：进入终态，不进入返修
+        if (verdict.report.blockingIssues?.length) {
+          meta.pendingVisualVerification = true;
+          return this.finish("needs_attention", "verify_failed", verdict.report.message);
+        }
         if (verdict.passed) {
           return this.finish("succeeded", null, verdict.summary);
         }
@@ -263,6 +305,11 @@ export class TaskOrchestrator {
         return { status: "needs_attention", meta, summary: `${msg}\n\n${verdict.summary}` };
       }
     } catch (e) {
+      if (this.aborted()) return this.abortTerminal();
+      if (e instanceof VisualError) {
+        meta.pendingVisualVerification = true;
+        return this.finish("needs_attention", "verify_failed", e.message);
+      }
       const msg = e instanceof Error ? e.message : String(e);
       logger.error(`任务 ${meta.taskId} 编排异常: ${msg}`);
       return this.finish("failed", "internal", `内部错误：${msg}`);
@@ -301,9 +348,10 @@ export class TaskOrchestrator {
    * guiStop（issue #6）：取消时 GUI agent 的界面停止结果，如实写进终态文案——
    * idle=false 时必须明示「GUI 内运行未停止」，编排方不得误以为已停。
    */
-  private async abortTerminal(
-    guiStop?: { clicked: boolean; idle: boolean },
-  ): Promise<OrchestrateResult> {
+  private async abortTerminal(guiStop?: {
+    clicked: boolean;
+    idle: boolean;
+  }): Promise<OrchestrateResult> {
     if (this.done)
       return { status: this.meta.status, meta: this.meta, reason: this.meta.lastMessage };
     if (this.meta.abortSource === "timeout") {
@@ -400,6 +448,10 @@ export class TaskOrchestrator {
       logger: this.deps.logger,
     };
     const { report, passed } = await this.deps.engine.runVerify(req);
+    meta.reportRound = report.round;
+    meta.verificationSource = "auto";
+    meta.reportMd = report.files.md;
+    meta.reportJson = report.files.json;
     const summary = summarizeReport(report);
     return {
       passed,

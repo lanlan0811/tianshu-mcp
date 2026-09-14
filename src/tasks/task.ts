@@ -3,6 +3,7 @@
  * 状态机见开发计划 §6：queued → running → … → succeeded/failed/cancelled/interrupted。
  */
 import type { TraeworkMode, ReasoningLevel } from "../config/schema.js";
+import type { VisualReport } from "../visual/types.js";
 
 export const TASK_STATUSES = [
   "queued",
@@ -102,8 +103,10 @@ export interface VerifyReport {
   verdict: "passed" | "failed";
   checks: CheckResult[];
   analysis: AnalysisResult;
-  files: { md: string; json: string };
+  files: { md: string; json: string; html?: string };
+  visual?: VisualReport;
   message: string;
+  blockingIssues?: { code: string; message: string }[];
 }
 
 /** 任务全量 meta（task.json 快照 + meta 块输出共用） */
@@ -160,6 +163,7 @@ export interface TaskMeta {
   reworkFeedback?: string;
   /** S4：最近一次验收的报告轮次（0-based，reportRound）——区别于 agent roundsUsed */
   reportRound?: number;
+  pendingVisualVerification?: boolean;
   /** S4：最近一次验收来源：run_task 自动 / verify_task 手动；不覆盖 agentId */
   verificationSource?: "auto" | "manual";
   /** S4：最近一次手动验收结论（不改变 agent 任务终态时单独记录） */

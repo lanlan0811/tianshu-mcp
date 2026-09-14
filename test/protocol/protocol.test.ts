@@ -52,15 +52,17 @@ describe("工具 annotations（S4/S6：直接断言真实 tools/list）", () => 
 });
 
 describe("工具面", () => {
-  it("注册 9 个工具且名称与能力标注符合 ZCode 计划", async () => {
+  it("注册 11 个工具且名称与能力标注符合视觉验收计划", async () => {
     const tools = await ts.client.listTools();
     const names = tools.tools.map((t) => t.name).sort();
     expect(names).toEqual([
+      "approve_visual_baseline",
       "cancel_task",
       "continue_task",
       "get_profiles",
       "get_task_report",
       "list_tasks",
+      "prepare_visual_baseline",
       "query_task",
       "rework_task",
       "run_task",
@@ -79,6 +81,16 @@ describe("工具面", () => {
     const def = TOOL_DEFS.find((d) => d.name === "continue_task");
     expect(def?.capability).toBe("write");
     expect(def?.requireApproval).toBe(true);
+  });
+
+  it("视觉基准工具公开有副作用与宿主审批元数据", async () => {
+    const { tools } = await ts.client.listTools();
+    for (const name of ["prepare_visual_baseline", "approve_visual_baseline"]) {
+      const tool = tools.find((t) => t.name === name);
+      expect(tool?.annotations?.readOnlyHint).toBe(false);
+      expect(tool?._meta?.requireApproval).toBe(true);
+    }
+    expect(tools.find((t) => t.name === "approve_visual_baseline")?.annotations?.destructiveHint).toBe(true);
   });
 
   it("get_profiles 返回文本 + 可解析 meta 块", async () => {

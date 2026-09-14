@@ -9,6 +9,7 @@
  * 而 Codex 只能读项目工作区内的文件。
  */
 import path from "node:path";
+import { visualEvidence } from "../../visual/report.js";
 import { mkdirp, writeTextAtomic } from "../../util/fs.js";
 import type { VerifyReport } from "../../tasks/task.js";
 import type { AgentRunLogger } from "../adapter.js";
@@ -44,6 +45,7 @@ export function renderCodexFixPlan(input: CodexFixPlanInput): string {
   const roundNo = input.round + 1;
 
   const lines: string[] = [
+    visualEvidence(report),
     `# Codex 修复计划（第 ${roundNo} 轮返修）`,
     "",
     `- 任务 ID：\`${input.taskId}\``,
@@ -88,13 +90,21 @@ export function renderCodexFixPlan(input: CodexFixPlanInput): string {
   lines.push("## 4. 代码分析结果", "");
   const changed = [...a.changedFiles, ...a.untrackedFiles];
   lines.push(`- 变更文件（${changed.length} 个）：`);
-  lines.push(changed.length ? changed.slice(0, 50).map((f) => `  - \`${f}\``).join("\n") : "  （无变更）");
+  lines.push(
+    changed.length
+      ? changed
+          .slice(0, 50)
+          .map((f) => `  - \`${f}\``)
+          .join("\n")
+      : "  （无变更）",
+  );
   lines.push(`- diffstat：+${a.diffstat.totalAdd} -${a.diffstat.totalDel}`);
   const sig = a.signals;
   lines.push(
     `- 可疑标记：TODO/FIXME ${sig.todo} 处、console.log/debugger ${sig.consoleDebug} 处、注释代码块 ${sig.commentedBlock} 处、疑似密钥 ${sig.secretLike} 处`,
   );
-  if (a.bigFileChanges.length) lines.push(`- 超大单文件改动（>500 行）：${a.bigFileChanges.join("、")}`);
+  if (a.bigFileChanges.length)
+    lines.push(`- 超大单文件改动（>500 行）：${a.bigFileChanges.join("、")}`);
   if (a.warnings.length) lines.push("", "告警：", ...a.warnings.map((w) => `- ${w}`));
   if (a.notes.length) lines.push("", "提示：", ...a.notes.map((n) => `- ${n}`));
   lines.push("");

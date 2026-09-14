@@ -14,6 +14,7 @@ import { digest, withVisualLock } from "./lock.js";
 import { baselineRelative, captureVisualSnapshot, fileDigest } from "./snapshot.js";
 import { writeJsonAtomic } from "../util/fs.js";
 import { execFileAsync } from "../verify/exec.js";
+import { projectRelativePath } from "./schema.js";
 
 const safeId = z.string().uuid();
 export const PrepareBaselineSchema = z
@@ -23,7 +24,9 @@ export const PrepareBaselineSchema = z
     viewportIds: z.array(z.string()).min(1).optional(),
     imports: z
       .array(
-        z.object({ caseId: z.string(), viewportId: z.string(), file: z.string().min(1) }).strict(),
+        z
+          .object({ caseId: z.string(), viewportId: z.string(), file: projectRelativePath })
+          .strict(),
       )
       .optional(),
   })
@@ -54,7 +57,11 @@ interface Candidate {
   entries: CandidateEntry[];
   createdAt: string;
 }
-export async function prepareBaseline(home: string, args: z.infer<typeof PrepareBaselineSchema>) {
+export async function prepareBaseline(
+  home: string,
+  args: z.infer<typeof PrepareBaselineSchema>,
+  signal?: AbortSignal,
+) {
   const project = await fs.realpath(args.projectPath);
   return withVisualLock(home, project, async () => {
     const config = (await readAcceptanceConfig(project))?.visual;
@@ -71,7 +78,7 @@ export async function prepareBaseline(home: string, args: z.infer<typeof Prepare
     const snapshot = await captureVisualSnapshot(project);
     const id = randomUUID();
     const directory = path.join(home, "visual-candidates", id);
-    const budget = new VisualBudget(config.limits);
+    const budget = new VisualBudget(config.limits, signal);
     const browser = new VisualBrowser(config, home, budget);
     const services = new VisualServices(project, budget);
     const entries: CandidateEntry[] = [];

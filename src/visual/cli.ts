@@ -7,6 +7,24 @@ import { VISUAL_DEFAULTS } from "./defaults.js";
 
 /** Called before creating the MCP server. CLI output never enters protocol stdout. */
 export async function runVisualCli(args: string[]): Promise<void> {
+  const controller = new AbortController();
+  const cancellable = args[0] === "baseline" && args[1] === "prepare";
+  const cancel = (): void => {
+    controller.abort();
+  };
+  if (cancellable) {
+    process.once("SIGINT", cancel);
+    process.once("SIGTERM", cancel);
+  }
+  try {
+    await dispatchVisualCli(args, controller.signal);
+  } finally {
+    process.removeListener("SIGINT", cancel);
+    process.removeListener("SIGTERM", cancel);
+  }
+}
+
+async function dispatchVisualCli(args: string[], signal: AbortSignal): Promise<void> {
   const home = resolveDataHome();
   const [command, ...rest] = args;
   if (command === "baseline" && rest.length === 2 && ["prepare", "approve"].includes(rest[0]!)) {
@@ -16,11 +34,35 @@ export async function runVisualCli(args: string[]): Promise<void> {
     console.log(
       JSON.stringify(
         rest[0] === "prepare"
-          ? await prepareBaseline(home, PrepareBaselineSchema.parse(input))
+          ? await prepareBaseline(home, PrepareBaselineSchema.parse(input), signal)
           : await approveBaseline(home, ApproveBaselineSchema.parse(input)),
         null,
         2,
       ),
+    );
+    return;
+  }
+  if (command === "rules") {
+    const { reviewRules, approveRules } = await import("./manage.js");
+    if (rest[0] === "review" && rest.length === 2) {
+      console.log(JSON.stringify(await reviewRules(home, rest[1]!), null, 2));
+      return;
+    }
+    if (rest[0] === "approve" && rest.length === 5) {
+      console.log(
+        JSON.stringify(await approveRules(home, rest[1]!, rest[2]!, rest[3]!, rest[4]!), null, 2),
+      );
+      return;
+    }
+  }
+  if (
+    command === "artifacts" &&
+    rest[0] === "clean" &&
+    (rest.length === 2 || (rest.length === 3 && rest[2] === "--apply"))
+  ) {
+    const { cleanArtifacts } = await import("./manage.js");
+    console.log(
+      JSON.stringify(await cleanArtifacts(home, rest[1]!, rest[2] === "--apply"), null, 2),
     );
     return;
   }
@@ -64,6 +106,6 @@ export async function runVisualCli(args: string[]): Promise<void> {
     return;
   }
   throw new Error(
-    "Usage: tianshu-mcp visual init [project] | doctor [project] | browser install | baseline prepare/approve <request.json>",
+    "Usage: tianshu-mcp visual init [project] | doctor [project] | browser install | baseline prepare/approve <request.json> | rules review <taskId> | rules approve <taskId> <reviewId> <digest> <approval-note> | artifacts clean <taskId> [--apply]",
   );
 }

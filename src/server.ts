@@ -91,9 +91,13 @@ export async function buildServer(
         title: tool.name,
         description: tool.description,
         inputSchema: tool.inputSchema,
+        _meta: { requireApproval: tool.requireApproval, capability: tool.capability },
         annotations: {
           readOnlyHint: tool.capability === "read",
-          destructiveHint: tool.name === "cancel_task" || tool.name === "rework_task",
+          destructiveHint:
+            tool.name === "cancel_task" ||
+            tool.name === "rework_task" ||
+            tool.name === "approve_visual_baseline",
           openWorldHint: tool.name === "run_task",
           title: tool.name,
         },
@@ -122,6 +126,7 @@ export async function buildServer(
   const close = async (): Promise<void> => {
     logger.info("server 关闭：归档活动任务并终止子进程…");
     await manager.shutdownInterrupt();
+    await engine.close();
     try {
       await server.close();
     } catch {

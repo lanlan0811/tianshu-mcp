@@ -7,6 +7,7 @@
  * 仅写入 MCP 任务数据目录，避免临时计划污染项目工作区。
  */
 import path from "node:path";
+import { visualEvidence } from "../visual/report.js";
 import { mkdirp, writeTextAtomic } from "../util/fs.js";
 import type { VerifyReport } from "../tasks/task.js";
 import type { AgentRunLogger } from "../agents/adapter.js";
@@ -39,6 +40,7 @@ export function renderRepairPlan(input: RepairPlanInput): string {
   const a = report.analysis;
 
   const lines: string[] = [
+    visualEvidence(report),
     `# 修复计划（第 ${input.round + 1} 轮返修）`,
     "",
     `- 任务 ID：\`${input.taskId}\``,

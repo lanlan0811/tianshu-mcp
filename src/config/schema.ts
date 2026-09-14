@@ -337,7 +337,7 @@ export type ProjectsFile = z.infer<typeof ProjectsFileSchema>;
 /* ---------------- 项目内 .tianshu-mcp/acceptance.json ---------------- */
 
 export const AcceptanceConfigSchema = z.object({
-  checks: z.array(AcceptanceCheckSchema).default([]),
+  checks: z.array(AcceptanceCheckSchema).optional(),
   visual: VisualConfigSchema.optional(),
   requireChanges: z.boolean().default(true),
   /** 命令检查并行度：1=串行（与历史行为一致）；缺省继承 server config.json 的 verifyConcurrency（默认 2）。越界值 clamp 到 1..4（不再株连整份 acceptance.json 失效） */

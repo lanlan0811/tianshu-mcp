@@ -6,14 +6,15 @@
  * 结束后按声明顺序拼回同一份 verify-<round>.log（对外产物与串行一致）。
  */
 import path from "node:path";
+import { randomUUID } from "node:crypto";
+import { readAcceptanceConfig } from "../visual/config.js";
+import { visualError } from "../visual/errors.js";
+import { runVisual } from "../visual/engine.js";
+import { checkVisualSnapshot, freezeVisualSnapshot } from "../visual/snapshot.js";
+import { withVisualLock } from "../visual/lock.js";
 import fsp from "node:fs/promises";
 import { exists, mkdirp, readJsonSafe, readTextSafe } from "../util/fs.js";
-import {
-  type AcceptanceCheckDef,
-  type AcceptanceConfig,
-  AcceptanceConfigSchema,
-  type ServerConfig,
-} from "../config/schema.js";
+import { type AcceptanceCheckDef, type ServerConfig } from "../config/schema.js";
 import { toAcceptanceDef } from "../config/store.js";
 import { runVerifyCommand, makeSkipResult } from "./runner.js";
 import { analyzeChanges } from "./code-analysis.js";
@@ -112,6 +113,23 @@ function sanitizeFilePart(name: string): string {
 }
 
 export class AcceptanceEngine {
+  private readonly active = new Map<string, AbortController>();
+
+  async runVisualOperation<T>(run: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    const key = `visual-operation:${randomUUID()}`;
+    const controller = new AbortController();
+    this.active.set(key, controller);
+    try {
+      return await run(controller.signal);
+    } finally {
+      this.active.delete(key);
+    }
+  }
+
+  async close(): Promise<void> {
+    for (const controller of this.active.values()) controller.abort();
+    while (this.active.size) await new Promise((resolve) => setTimeout(resolve, 20));
+  }
   constructor(
     private readonly store: TaskStore,
     private readonly logger: Logger,
@@ -133,7 +151,7 @@ export class AcceptanceEngine {
 
     // 先取基础集（项目/默认），除非 replace 模式只用 extraChecks
     if (!(mode === "replace" && hasExtra)) {
-      if (inProject) {
+      if (inProject?.checks !== undefined) {
         notes.push(
           `使用项目内验收配置 <project>/.tianshu-mcp/acceptance.json（${inProject.checks.length} 项）。`,
         );
@@ -163,24 +181,15 @@ export class AcceptanceEngine {
     return { checks: out, notes, requireChanges, verifyConcurrency: inProject?.verifyConcurrency };
   }
 
-  private async readProjectAcceptance(
-    projectPath: string,
-  ): Promise<{
-    checks: AcceptanceCheckDef[];
+  private async readProjectAcceptance(projectPath: string): Promise<{
+    checks: AcceptanceCheckDef[] | undefined;
     requireChanges: boolean;
     verifyConcurrency?: number;
   } | null> {
-    const p = path.join(projectPath, ".tianshu-mcp", "acceptance.json");
-    const raw = await readJsonSafe<unknown>(p);
-    if (raw == null) return null;
-    const r = AcceptanceConfigSchema.safeParse(raw);
-    if (!r.success) {
-      this.logger.warn(`项目 ${projectPath} 的 acceptance.json 解析失败: ${r.error.message}`);
-      return null;
-    }
-    const config = r.data as AcceptanceConfig;
+    const config = await readAcceptanceConfig(projectPath);
+    if (!config) return null;
     return {
-      checks: config.checks.map((c) => toAcceptanceDef(c)),
+      checks: config.checks?.map((c) => toAcceptanceDef(c)),
       requireChanges: config.requireChanges,
       verifyConcurrency: config.verifyConcurrency,
     };
@@ -188,6 +197,40 @@ export class AcceptanceEngine {
 
   /** 执行一轮完整验收。返回 report + 是否 pass。 */
   async runVerify(req: VerifyRequest): Promise<{ report: VerifyReport; passed: boolean }> {
+    if (this.active.has(req.taskId)) throw new Error(`Verification already active: ${req.taskId}`);
+    const controller = new AbortController();
+    this.active.set(req.taskId, controller);
+    const home = path.dirname(path.dirname(req.store.dir(req.taskId)));
+    try {
+      return await withVisualLock(home, `task:${req.taskId}`, async () => {
+        const filenames = await fsp
+          .readdir(req.store.dir(req.taskId))
+          .catch((e: NodeJS.ErrnoException) => {
+            if (e.code === "ENOENT") return [] as string[];
+            throw e;
+          });
+        const rounds = filenames.flatMap((name) => {
+          const m = /^report-(\d+)\.(md|json)$/.exec(name);
+          return m ? [Number(m[1])] : [];
+        });
+        const round = Math.max(req.round, ...rounds.map((n) => n + 1));
+        const request = {
+          ...req,
+          round,
+          signal: req.signal ? AbortSignal.any([req.signal, controller.signal]) : controller.signal,
+        };
+        return await withVisualLock(home, await fsp.realpath(req.projectPath), () =>
+          this.executeVerify(request),
+        );
+      });
+    } finally {
+      this.active.delete(req.taskId);
+    }
+  }
+
+  private async executeVerify(
+    req: VerifyRequest,
+  ): Promise<{ report: VerifyReport; passed: boolean }> {
     const startedAt = nowIso();
     const config = req.config ?? { verifyCommandTimeoutMs: 5 * 60_000 };
     const timeoutMs = config.verifyCommandTimeoutMs ?? 5 * 60_000;
@@ -195,8 +238,28 @@ export class AcceptanceEngine {
     if (req.baseline)
       this.logger.debug(`使用 run_task 动工前基线（HEAD=${baseline.head ?? "n/a"}）`);
 
-    const { checks: rawChecks, notes, requireChanges, verifyConcurrency } =
-      await this.resolveChecks(req);
+    let configurationError: { code: string; message: string } | undefined;
+    const resolved = await this.resolveChecks(req).catch((e: unknown) => {
+      const error = visualError(e);
+      configurationError = { code: error.code, message: error.message };
+      return {
+        checks: [] as AcceptanceCheckDef[],
+        notes: [error.message],
+        requireChanges: false,
+        verifyConcurrency: undefined,
+      };
+    });
+    const { checks: rawChecks, notes, requireChanges, verifyConcurrency } = resolved;
+    let visual: VerifyReport["visual"];
+    if (!configurationError) {
+      try {
+        const frozen = await freezeVisualSnapshot(req.projectPath, req.store.dir(req.taskId));
+        await checkVisualSnapshot(req.projectPath, frozen);
+      } catch (e) {
+        const error = visualError(e);
+        configurationError = { code: error.code, message: error.message };
+      }
+    }
     const checks: CheckResult[] = [];
     const zeroTestChecks: string[] = [];
     // 命令检查并行度：项目 acceptance.json > server config.json > 默认 2（schema 已约束 1..4）
@@ -251,6 +314,26 @@ export class AcceptanceEngine {
       }
     }
 
+    // Visual checks inspect artifacts after command checks (for example a build) have completed.
+    if (!configurationError) {
+      try {
+        const frozen = await freezeVisualSnapshot(req.projectPath, req.store.dir(req.taskId));
+        await checkVisualSnapshot(req.projectPath, frozen);
+        const visualConfig = (await readAcceptanceConfig(req.projectPath))?.visual;
+        if (visualConfig?.enabled)
+          visual = await runVisual(
+            visualConfig,
+            req.projectPath,
+            path.dirname(path.dirname(req.store.dir(req.taskId))),
+            path.join(req.store.dir(req.taskId), "visual", String(req.round)),
+            req.signal,
+          );
+        await checkVisualSnapshot(req.projectPath, frozen);
+      } catch (e) {
+        const error = visualError(e);
+        configurationError = { code: error.code, message: error.message };
+      }
+    }
     // 代码分析（相对动工前基线）
     const analysis = await analyzeChanges({
       baseline,
@@ -283,15 +366,47 @@ export class AcceptanceEngine {
       analysis.notes.push("requireChanges=true，但项目不是 git 仓库，零变更门禁已跳过。");
     }
 
+    if (!configurationError) {
+      try {
+        await checkVisualSnapshot(
+          req.projectPath,
+          await freezeVisualSnapshot(req.projectPath, req.store.dir(req.taskId)),
+        );
+      } catch (e) {
+        const error = visualError(e);
+        configurationError = { code: error.code, message: error.message };
+      }
+    }
     // optional:true 的失败只记 warning，不使本轮 verdict 失败（R4）
     const failed = checks.filter((c) => !c.passed && !c.skipped && !c.optional);
     const optFailed = checks.filter((c) => !c.passed && !c.skipped && c.optional);
     // 任务取消：验收被中断（在途 check 被杀、其余跳过），无论检查结果如何都不得落「通过」假绿
     const cancelled = req.signal?.aborted ?? false;
-    const passed = !cancelled && failed.length === 0;
+    const visualBlocked =
+      visual?.results.filter(
+        (r) =>
+          r.status === "blocked" &&
+          (!r.optional ||
+            ["VISUAL_INTEGRITY", "MASK_ALL_PIXELS", "MASK_NOT_FOUND", "MASK_NOT_VISIBLE"].includes(
+              r.code,
+            )),
+      ) ?? [];
+    const visualFailed = visual?.results.filter((r) => !r.optional && r.status === "failed") ?? [];
+    const blockingIssues = [
+      ...(configurationError ? [configurationError] : []),
+      ...visualBlocked.map((r) => ({ code: r.code, message: `${r.id}: ${r.message}` })),
+    ];
+    const passed =
+      !cancelled && !blockingIssues.length && !visualFailed.length && failed.length === 0;
     const finishedAt = nowIso();
 
     const summaryBits: string[] = [];
+    if (configurationError)
+      summaryBits.push(`验收阻塞 [${configurationError.code}]: ${configurationError.message}`);
+    if (visualBlocked.length)
+      summaryBits.push(`视觉阻塞: ${visualBlocked.map((r) => `${r.id} [${r.code}]`).join(", ")}`);
+    if (visualFailed.length)
+      summaryBits.push(`视觉缺陷: ${visualFailed.map((r) => r.id).join(", ")}`);
     if (cancelled) {
       summaryBits.push("任务取消，验收未完成");
     }
@@ -327,6 +442,8 @@ export class AcceptanceEngine {
       analysis,
       files: { md: mdPath, json: jsonPath },
       message,
+      ...(blockingIssues.length ? { blockingIssues } : {}),
+      ...(visual ? { visual } : {}),
     };
     await this.store.saveReport(req.taskId, report);
     this.logger.info(

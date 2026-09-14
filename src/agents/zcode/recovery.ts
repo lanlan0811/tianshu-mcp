@@ -76,13 +76,22 @@ export class ZcodeBudget {
     cap = Infinity,
   ): Promise<T> {
     const timeoutMs = this.remaining(cap);
+    const deadline = Math.min(
+      Date.now() + timeoutMs,
+      this.taskDeadline,
+      this.bound ? Infinity : this.setupDeadline,
+    );
     const controller = new AbortController();
     let reject!: (error: Error) => void;
     const aborted = new Promise<never>((_, fail) => {
       reject = fail;
     });
+    let timer: ReturnType<typeof setTimeout>;
     const stop = () => {
-      controller.abort();
+      if (!this.opts.signal?.aborted && Date.now() < deadline) {
+        timer = setTimeout(stop, Math.max(1, deadline - Date.now()));
+        return;
+      }
       const reason = this.opts.signal?.aborted
         ? "aborted"
         : Date.now() >= this.taskDeadline
@@ -91,13 +100,19 @@ export class ZcodeBudget {
             ? "setup_recovery"
             : "operation_timeout";
       reject(new ZcodeBudgetError(reason, this.stage));
+      // Preserve the controlling deadline/cancellation reason before dependent CDP
+      // operations synchronously reject their own promises in abort listeners.
+      controller.abort();
     };
-    const timer = setTimeout(stop, timeoutMs);
+    timer = setTimeout(stop, timeoutMs);
     this.opts.signal?.addEventListener("abort", stop, { once: true });
     try {
       const result = await Promise.race([operation(controller.signal, timeoutMs), aborted]);
       this.check();
       return result;
+    } catch (error) {
+      this.check();
+      throw error;
     } finally {
       clearTimeout(timer);
       this.opts.signal?.removeEventListener("abort", stop);

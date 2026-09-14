@@ -3,6 +3,12 @@
  * run_task / rework / verify 依赖 AppContext 提供的 manager/engine/services。
  */
 import fsp from "node:fs/promises";
+import {
+  prepareBaseline,
+  approveBaseline,
+  PrepareBaselineSchema,
+  ApproveBaselineSchema,
+} from "../visual/baselines.js";
 import { assertSafeProjectDir, normPath, resolveProjectDir } from "../util/path.js";
 import { execFileAsync } from "../verify/exec.js";
 import {
@@ -71,6 +77,24 @@ export interface Defaults {
 
 export function makeHandlers(ctx: AppContext, defaults: Defaults) {
   return {
+    prepare_visual_baseline: async (args: Record<string, unknown>) =>
+      textResult(
+        JSON.stringify(
+          await ctx.engine.runVisualOperation((signal) =>
+            prepareBaseline(ctx.dataHome.dir, PrepareBaselineSchema.parse(args), signal),
+          ),
+          null,
+          2,
+        ),
+      ),
+    approve_visual_baseline: async (args: Record<string, unknown>) =>
+      textResult(
+        JSON.stringify(
+          await approveBaseline(ctx.dataHome.dir, ApproveBaselineSchema.parse(args)),
+          null,
+          2,
+        ),
+      ),
     run_task: runTaskHandler(ctx, defaults),
     query_task: queryTaskHandler(ctx),
     list_tasks: listTasksHandler(ctx),
@@ -146,7 +170,8 @@ function runTaskHandler(ctx: AppContext, defaults: Defaults): Handler {
       if (args.mode !== undefined) return errorResult("Codex 不支持 mode 参数；请移除 mode 后重试");
       try {
         const refs = [args.planDoc, args.designSystem].filter((v): v is string => Boolean(v));
-        if (refs.length) validateTaskReferences(refs.map((r) => `\`${r}\``).join(" "), undefined, norm);
+        if (refs.length)
+          validateTaskReferences(refs.map((r) => `\`${r}\``).join(" "), undefined, norm);
       } catch (e) {
         return errorResult(e instanceof Error ? e.message : String(e));
       }
@@ -311,9 +336,7 @@ function cancelTaskHandler(ctx: AppContext): Handler {
     if (meta) {
       // settled=false：GUI 侧停止尚未确认（issue #6 语义），明示编排方稍后复核
       const note =
-        res.settled === false
-          ? "（尚未落终态：GUI 侧停止可能未完成，请稍后 query_task 复核）"
-          : "";
+        res.settled === false ? "（尚未落终态：GUI 侧停止可能未完成，请稍后 query_task 复核）" : "";
       return formatToolResult((res.reason ?? `已取消 ${args.taskId}。`) + note, metaFromTask(meta));
     }
     return errorResult(res.reason ?? `任务不存在: ${args.taskId}`);
@@ -393,7 +416,7 @@ function verifyTaskHandler(ctx: AppContext): Handler {
     });
 
     // round 分配：手动验收写入任务目录时不能覆盖已有 report-0.*，分配下一可用轮次
-    const round = await nextReportRound(store, taskId);
+    let round = await nextReportRound(store, taskId);
 
     const verifyTaskId = taskId ?? `vfy_${Date.now()}`;
     const req = {
@@ -411,6 +434,7 @@ function verifyTaskHandler(ctx: AppContext): Handler {
       logger,
     };
     const { report, passed } = await engine.runVerify(req);
+    round = report.round;
     const head = passed
       ? `[PASS] 手动验收通过（reportRound ${round}）：${report.checks.filter((c) => c.passed).length}/${report.checks.length} 项检查通过。`
       : `[FAIL] 手动验收失败（reportRound ${round}）：${report.checks.filter((c) => !c.passed && !c.skipped).length} 项检查未通过。`;
@@ -437,7 +461,7 @@ function verifyTaskHandler(ctx: AppContext): Handler {
       // 独立 projectPath 验收：创建并持久化独立 vfy 记录
       resultMeta = {
         taskId: verifyTaskId,
-        status: passed ? "succeeded" : "failed",
+        status: passed ? "succeeded" : report.blockingIssues?.length ? "needs_attention" : "failed",
         projectPath,
         displayPath,
         agentId: "manual-verify",

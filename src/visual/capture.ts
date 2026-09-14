@@ -133,6 +133,7 @@ export class VisualBrowser {
         void (ok ? request.continue() : request.abort("blockedbyclient")).catch(() => {});
       });
       // WebSockets bypass HTTP interception. Enforce exact origin policy before construction.
+      await page.exposeFunction("__tianshuBlockedOrigin", (origin: string) => blocked.add(origin));
       await page.evaluateOnNewDocument(
         (origins: string[]) => {
           const Original = globalThis.WebSocket;
@@ -140,7 +141,11 @@ export class VisualBrowser {
             constructor(url: string | URL, protocols?: string | string[]) {
               const parsed = new URL(url, location.href);
               if (!origins.includes(parsed.origin)) {
-                document.documentElement?.setAttribute("data-tianshu-blocked-ws", parsed.origin);
+                void (
+                  globalThis as unknown as {
+                    __tianshuBlockedOrigin: (origin: string) => Promise<void>;
+                  }
+                ).__tianshuBlockedOrigin(parsed.origin);
                 throw new Error("Visual resource policy blocked WebSocket origin");
               }
               super(url, protocols);
@@ -252,6 +257,10 @@ export class VisualBrowser {
       }
       const capture = rule.capture ?? this.config.defaults.capture;
       const selector = rule.selector ?? this.config.defaults.selector;
+      if (capture === "element") {
+        const element = await page.$(selector!);
+        if (element) await element.scrollIntoView();
+      }
       if (capture === "fullPage") {
         let y = 0;
         while (true) {
@@ -344,10 +353,6 @@ export class VisualBrowser {
       let previous: Buffer | undefined;
       for (let sample = 0; sample < this.config.limits.stabilitySamples; sample++) {
         this.budget.timeout(this.config.limits.itemTimeoutMs, deadline);
-        const ws = await page.evaluate(() =>
-          document.documentElement.getAttribute("data-tianshu-blocked-ws"),
-        );
-        if (ws) blocked.add(ws);
         if (blocked.size)
           throw new VisualError(
             "RESOURCE_BLOCKED",
@@ -359,7 +364,10 @@ export class VisualBrowser {
           ...(clip ? { clip } : {}),
           captureBeyondViewport: true,
         });
-        const decoded = await sharp(raw).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+        const decoded = await sharp(raw, { limitInputPixels: this.config.limits.decodedPixels })
+          .ensureAlpha()
+          .raw()
+          .toBuffer({ resolveWithObject: true });
         let effective = decoded.info.width * decoded.info.height;
         const excluded = new Uint8Array(effective);
         for (const r of masks)
@@ -402,6 +410,15 @@ export class VisualBrowser {
         await delay(100, undefined, { signal: this.budget.signal });
       }
       throw new VisualError("SCREENSHOT_UNSTABLE", "No two adjacent screenshot samples matched");
+    } catch (error) {
+      this.budget.check();
+      if (blocked.size)
+        throw new VisualError(
+          "RESOURCE_BLOCKED",
+          `Blocked resource origins: ${[...blocked].join(", ")}`,
+        );
+      this.budget.timeout(this.config.limits.itemTimeoutMs, deadline);
+      throw error;
     } finally {
       clearTimeout(timer);
       await context.close().catch(() => {});

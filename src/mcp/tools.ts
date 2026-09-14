@@ -4,6 +4,7 @@
  * 能力标注遵守 R11：读/查询/验收 read；run/cancel/rework write + requireApproval。
  */
 import { z } from "zod";
+import { PrepareBaselineSchema, ApproveBaselineSchema } from "../visual/baselines.js";
 import {
   RunTaskParamsSchema,
   QueryTaskParamsSchema,
@@ -24,6 +25,21 @@ export interface ToolDef {
 }
 
 export const TOOL_DEFS: ToolDef[] = [
+  {
+    name: "prepare_visual_baseline",
+    description: "准备视觉基准候选，返回摘要与预览；不采用正式基准。需要用户授权。",
+    inputSchema: PrepareBaselineSchema,
+    capability: "write",
+    requireApproval: true,
+  },
+  {
+    name: "approve_visual_baseline",
+    description:
+      "仅在用户明确审阅并授权后批准视觉基准。必须核对候选摘要与批准说明；自动返修禁止调用。宿主必须实施实际审批控制。",
+    inputSchema: ApproveBaselineSchema,
+    capability: "write",
+    requireApproval: true,
+  },
   {
     name: "continue_task",
     description:

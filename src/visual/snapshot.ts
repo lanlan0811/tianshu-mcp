@@ -9,6 +9,7 @@ import { writeJsonAtomic } from "../util/fs.js";
 
 export interface VisualSnapshot {
   configDigest: string;
+  config?: VisualConfig | null;
   baselines: Record<string, string | null>;
   createdAt: string;
   approved?: { note: string; at: string; previousDigest: string };
@@ -46,6 +47,7 @@ export async function captureVisualSnapshot(project: string): Promise<VisualSnap
         );
       }
   return {
+    config: config ?? null,
     configDigest: digest(JSON.stringify(config ?? null)),
     baselines,
     createdAt: new Date().toISOString(),
