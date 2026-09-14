@@ -8,7 +8,7 @@
 
 # tianshu-mcp
 
-视觉验收开发进度与使用方式：[中文指南](docs/visual-acceptance.md) · [验证记录](docs/visual-validation.md)。目标 v0.5.0 尚未完成发行验收。
+视觉验收（v0.5.0）：[中文指南](docs/visual-acceptance.md) · [验证记录](docs/visual-validation.md) · [发布说明](<docs/release-v0.5.0.md>)。
 
 **天枢 × AI-Agent 编排 MCP server**
 
@@ -66,7 +66,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 443 项测试：46 个文件，含 Codex/ZCode 单元/假 CDP/重启/恢复/返修闭环
+npm test             # 494 项测试：56 个文件，含 Codex/ZCode/TraeWork 单元/假 CDP/重启/恢复/返修闭环与视觉验收
 ```
 
 ### 安装 npm 包
@@ -190,6 +190,9 @@ ZCode 提问、需要登录、旧实例无 CDP、系统权限不足，或自动�
 | [docs/zcode-windows-smoke.md](docs/zcode-windows-smoke.md) | ZCode Windows 真机开发、同会话返修与提问续跑验收记录 |
 | [docs/codex-gui-cdp.md](docs/codex-gui-cdp.md) | Codex 桌面端 GUI 驱动：MSIX COM 激活、CDP 接管、选择器、运行检测、验收返修 |
 | [docs/codex-windows-smoke.md](docs/codex-windows-smoke.md) | Codex Windows 真机验收记录（含验收失败→自动生成计划→返修通过闭环） |
+| [docs/release-v0.5.0.md](<docs/release-v0.5.0.md>) | v0.5.0 发布说明（可选视觉验收模块：截图对比、图片规格、基准批准、离线报告） |
+| [docs/visual-acceptance.md](<docs/visual-acceptance.md>) | 视觉验收入门与完整配置：三种页面来源、基准候选/批准、规则冻结、阈值与排查 |
+| [docs/visual-validation.md](<docs/visual-validation.md>) | 视觉验收验证进度：已执行证据与未完成门禁（未执行项不记为通过） |
 | [docs/release-v0.4.1.md](<docs/release-v0.4.1.md>) | v0.4.1 发布说明（技能文档对齐 v0.4.0 工具面 + 贡献者名录） |
 | [docs/release-v0.3.4.md](<docs/release-v0.3.4.md>) | v0.3.4 发布说明（ZCode 项目/模型回读、初始化恢复与会话发送确认，issue #8/#9/#10） |
 | [docs/zcode-issue-8-10-validation.md](<docs/zcode-issue-8-10-validation.md>) | ZCode #8/#9/#10 Windows 真机验收记录（冷导入、已导入复用、同任务恢复） |
@@ -295,6 +298,13 @@ ZCode 提问、需要登录、旧实例无 CDP、系统权限不足，或自动�
   - `skills/tianshu-mcp/` 逐项补齐 v0.3.3 → v0.4.0 的工具面变化：projectPath 安全闸门、硬失败错误码速查表、`setup_recovery` 等待类型、codex-cli 无头路径、`ready`/`research` 状态语义、验收默认并行 2 与 `requireChanges` 门禁；usage-examples 新增错误码表、meta 字段全表、项目级验收配置模板与 `codex-cli` 示例
   - 双语 README 新增贡献者名录（头像 + 名字，按首次参与顺序）
   - 本版本**无代码行为变更**，升级无需迁移
+- **M19 — 可选视觉验收模块 + v0.5.0**（2026-09-14）— **486 测试**
+  - **页面截图对比**：三种互斥页面来源（已有服务/命令启动/临时静态托管）、三种截图模式、声明式交互步骤、稳定化采样与显式屏蔽、pixelmatch 抗锯齿排除与连通区域标注；尺寸不一致直接失败
+  - **静态图片规格**：编码格式/扩展名一致性、完整解码、EXIF 方向归一宽高、宽高比/字节数/DPI/真实透明像素；不支持格式明确报告
+  - **基准两阶段与冻结**：候选准备 → 用户批准写入；缺基准不得判通过；自动返修禁止批准；任务动工前冻结配置与基准摘要并每轮核对
+  - **MCP/CLI**：新增 `prepare_visual_baseline` / `approve_visual_baseline` 与 `tianshu-mcp visual` 子命令族；CLI 在 stdio 连接前分流
+  - **报告与恢复**：`VerifyReport` 新增可选 `visual` 与离线 HTML（状态过滤、透明叠加、区域定位）；视觉阻塞进 `needs_attention`，`rework_task` 先重新验收、仅真实缺陷才消耗返修预算
+  - **门禁**：CI 新增真实浏览器四系统三 Node 矩阵与生产包独立消费者验收；release 要求目标提交存在成功 CI，缺少 Gitee 凭据时阻塞不冒充成功
 
 ## Agent 适配现状
 
@@ -368,7 +378,7 @@ run_task(projectPath=/path/to/项目, agentId=codex-cli, task="任务书", autoV
 | 文档 | 内容 |
 |---|---|
 | [HANDOFF.md](HANDOFF.md) | 项目交接文档：当前状态快照、架构导览、硬性红线、已知限制、接手建议 |
-| [CHANGELOG.md](<CHANGELOG.md>) | 版本变更日志（v0.1.0 → v0.4.1） |
+| [CHANGELOG.md](<CHANGELOG.md>) | 版本变更日志（v0.1.0 → v0.5.0） |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 开发环境、工程规范、提交与发布流程、如何新增 agent |
 | [SECURITY.md](SECURITY.md) | 安全模型（凭证零管理/命令白名单/进程与桌面自动化边界）与私密报告渠道 |
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | 贡献者行为准则 |

@@ -10,12 +10,6 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ## [Unreleased]
 
-### Added (in development)
-
-- Optional visual configuration, explicit browser installation/diagnostics, screenshot comparison and static image specification checks.
-- Baseline candidates and user approval, frozen visual rules, visual blockers, evidence and offline reports.
-- Invalid acceptance configuration blocks explicitly; legacy functionality and explicitly empty command sets remain supported. See `docs/visual-validation.en.md` for unfinished acceptance gates.
-
 ### Planned
 
 - More external AI-Agent adapters (a new agent = one profile + an optional adapter file).
@@ -24,6 +18,43 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 - Cancel/rework/new-project matrices for the Codex and ZCode GUI drivers on macOS (both remain `research` on darwin).
 - Best-effort stop of a GUI-side pending session (via a temporary CDP connection) when cancelling
   a task in the `needs_user` state.
+
+---
+
+## [0.5.0] — 2026-09-14
+
+Adds an **optional visual acceptance module** that wires screenshot comparison and static image specification checks into the "develop → verify → repair → re-verify" loop. Projects that do not enable visuals behave compatibly, and legacy reports and task snapshots remain readable. See the [v0.5.0 release notes](docs/release-v0.5.0.en.md) for the full description.
+
+### Added
+
+- **Page sources**: mutually exclusive `existing` / `command` / `static`; identical service definitions share one managed instance per round; the static host rejects traversal and out-of-project symlinks; an occupied port blocks instead of reusing or terminating another service.
+- **Screenshots and interaction**: `viewport` / `fullPage` / `element` modes with declarative `click` / `input` / `hover` / `scroll` / `wait` steps; a fixed readiness flow (isolated context, login state, fonts and images, disabled animations, masks, sampling); bounded full-page scrolling to trigger lazy loading.
+- **Stabilization and masks**: up to 3 samples taking two adjacent identical captures; continuously changing pages, exceeded pixel budgets and unstable captures block; an unmatchable mask selector or a fully masked image never passes.
+- **Pixel comparison**: unified PNG; size mismatches fail without scaling; masked regions are excluded from numerator and denominator; pixelmatch antialiasing is excluded by default; connected-component analysis outputs coordinates, areas and an annotated image, keeping at most 100 regions while recording the remaining count and overall bounds.
+- **Static image specifications**: explicit file lists; encoded-format/extension consistency, existence with complete decoding, EXIF-orientation-normalized dimensions, aspect ratio, byte size, optional DPI and real-transparent-pixel detection; unsupported formats are reported explicitly.
+- **Two-phase baselines**: `prepare` produces a candidate (candidate ID, digest, target paths, preview) and `approve` verifies candidate/original-baseline/configuration digests before atomically writing the official baseline and manifest; a missing baseline can only produce a candidate and never a pass; automatic repair never calls the approval entry point.
+- **Rule freezing**: visual configuration and baseline digests are saved before the agent starts and checked around each round; changes require a new snapshot through the dedicated `rules review` / `rules approve` flow.
+- **MCP tools**: new `prepare_visual_baseline` and `approve_visual_baseline`, both side-effecting `write` operations requiring host approval.
+- **CLI**: new `tianshu-mcp visual` subcommand (`init`, `browser install`, `doctor`, `baseline prepare/approve`, `rules review/approve`, `artifacts clean`), dispatched before the stdio connection.
+- **Reports and artifacts**: `VerifyReport` gains an optional `visual` field and `files.html`; the offline HTML supports status filtering, side-by-side images, opacity overlays and region location with only local artifacts, escaped text and no CDN; each round's artifacts live at `<home>/tasks/<taskId>/visual/<round>/` with rounds allocated by a unified task-level lock.
+- **Blockers and recovery**: distinguishes repairable defects, environment blockers and user cancellation; visual blockers enter `needs_attention` with a re-verification-pending marker; `rework_task` re-verifies first for visually blocked tasks and only real defects consume the repair budget; both the generic and Codex-specific repair plans include visual evidence and state that baselines, thresholds and switches must not be modified to bypass failures.
+- **Configuration robustness**: an invalid acceptance configuration blocks explicitly instead of falling back silently; only an explicit `checks: []` disables command checks; `extraChecks` and `checksMode=replace` never override the visual gate; `visual` strictly validates unknown fields, duplicate IDs, empty rules and conflicting options.
+- **Dependencies and runtime**: pinned `puppeteer-core@24.43.1`, `@puppeteer/browsers@2.13.2`, `sharp@0.34.5`, `pixelmatch@7.2.0`; the image library is an optional dynamic dependency whose absence does not prevent startup; browsers are installed explicitly on demand with no download during npm install or MCP startup; the visual module requires Node.js >=20.3 while non-visual features retain >=20.
+- **Docs and gates**: new bilingual visual acceptance guide and validation progress; CI adds a real-browser matrix (ubuntu/windows/macos-intel/macos × Node 20/22/24) plus production-package consumer acceptance; release requires a successful CI for the target commit and blocks when mirror credentials are missing.
+
+### Fixed
+
+- The acceptance engine no longer silently falls back to default checks when a project configuration is invalid; it blocks explicitly with a reason.
+- Manual and automatic verification share the task-level lock for report round allocation, preventing concurrency or recovery from overwriting historical evidence.
+- Manual verification now lands a visually blocked task in `needs_attention` instead of misreporting `failed`.
+- `rework_task` allows a visually blocked task that lacks original session location information to re-verify first instead of being rejected outright.
+- The ZCode recovery budget now determines the controlling reason before aborting dependent operations, so the reason is not overwritten by downstream abort listeners.
+- `TaskOrchestrator` distinguishes "cancelled" from "blocked" when a visual integrity problem appears during startup, so cancellation is no longer misrecorded as `needs_attention`.
+
+### Tests
+
+- Full suite: **486 passed / 8 skipped** (Windows 10 x64, Node 24.18.0), adding visual configuration, image specification, report, baseline, budget, snapshot, service, real-browser capture, flow and repair cases.
+- The 8 real-browser-gated cases pass separately with `TIANSHU_VISUAL_BROWSER_TEST=1`; the production tarball visual smoke test passes in an isolated consumer.
 
 ---
 

@@ -8,7 +8,7 @@
 
 # tianshu-mcp
 
-Visual acceptance development: [English guide](docs/visual-acceptance.en.md) · [Validation record](docs/visual-validation.en.md). Target v0.5.0 has not completed release acceptance.
+Visual acceptance (v0.5.0): [English guide](docs/visual-acceptance.en.md) · [Validation record](docs/visual-validation.en.md) · [Release notes](<docs/release-v0.5.0.en.md>).
 
 **Tianshu × AI-Agent orchestration MCP server**
 
@@ -66,7 +66,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 443 tests across 46 files, including Codex/ZCode unit/fake-CDP/restart/recovery/repair coverage
+npm test             # 494 tests across 56 files, including Codex/ZCode/TraeWork unit/fake-CDP/restart/recovery/repair loops and visual acceptance
 ```
 
 ### Install the npm package
@@ -195,6 +195,9 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 | [docs/codex-gui-cdp.en.md](docs/codex-gui-cdp.en.md) | Codex desktop GUI driver: MSIX COM activation, CDP attach, selectors, run detection, verify/repair |
 | [docs/codex-windows-smoke.en.md](docs/codex-windows-smoke.en.md) | Codex Windows hardware record (incl. verify-fail → auto plan → repair-pass loop) |
 | [docs/release-v0.3.4.en.md](<docs/release-v0.3.4.en.md>) | v0.3.4 release notes (ZCode project/model read-back, initialization recovery, session dispatch confirmation, issues #8/#9/#10) |
+| [docs/release-v0.5.0.en.md](<docs/release-v0.5.0.en.md>) | v0.5.0 release notes (optional visual acceptance: screenshots, image specs, baseline approval, offline report) |
+| [docs/visual-acceptance.en.md](<docs/visual-acceptance.en.md>) | Visual acceptance primer and full configuration: three page sources, baseline candidates/approval, rule freezing, thresholds and troubleshooting |
+| [docs/visual-validation.en.md](<docs/visual-validation.en.md>) | Visual acceptance validation progress: executed evidence and remaining gates (unexecuted checks are not recorded as passing) |
 | [docs/release-v0.4.1.en.md](<docs/release-v0.4.1.en.md>) | v0.4.1 release notes (skill docs aligned with the v0.4.0 tool surface + contributor credits) |
 | [docs/zcode-issue-8-10-validation.en.md](<docs/zcode-issue-8-10-validation.en.md>) | ZCode #8/#9/#10 Windows hardware record (cold import, imported-project reuse, same-task recovery) |
 | [docs/release-v0.3.3.en.md](<docs/release-v0.3.3.en.md>) | v0.3.3 release notes (ZCode 3.11.2 adaptation + fail-closed acceptance engine) |
@@ -296,6 +299,13 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
   - `skills/tianshu-mcp/` now covers every v0.3.3 → v0.4.0 tool-surface change: the projectPath safety gate, the hard-failure error-code reference, the `setup_recovery` wait kind, the codex-cli headless path, `ready`/`research` status semantics, default-parallel-2 acceptance and the `requireChanges` gate; usage-examples adds the error-code table, the full meta field table, a project-level acceptance-config template and a `codex-cli` example
   - Bilingual README gains a contributor credits section (avatar + name, in order of first participation)
   - **No code behaviour changes**; no migration needed
+- **M19 — optional visual acceptance module + v0.5.0** (2026-09-14) — **486 tests**
+  - **Page screenshot comparison**: three mutually exclusive page sources (existing service / command startup / temporary static host), three capture modes, declarative interaction steps, stabilization sampling with explicit masks, pixelmatch antialiasing exclusion and connected-region annotation; size mismatches fail directly
+  - **Static image specifications**: encoded-format/extension consistency, complete decoding, EXIF-orientation-normalized dimensions, aspect ratio/byte size/DPI/real transparent pixels; unsupported formats reported explicitly
+  - **Two-phase baselines and freezing**: candidate preparation → user approval; a missing baseline never passes; automatic repair may not approve; configuration and baseline digests are frozen before the agent starts and checked every round
+  - **MCP/CLI**: new `prepare_visual_baseline` / `approve_visual_baseline` and the `tianshu-mcp visual` subcommand family, dispatched before the stdio connection
+  - **Reports and recovery**: `VerifyReport` gains an optional `visual` section and offline HTML (status filter, opacity overlay, region location); visual blockers enter `needs_attention` and `rework_task` re-verifies first so only real defects consume repair budget
+  - **Gates**: CI adds a four-system, three-Node real-browser matrix plus isolated production-package consumer acceptance; release requires a successful CI for the target commit and blocks when Gitee credentials are missing rather than claiming success
 
 ## Agent support status
 
@@ -368,7 +378,7 @@ Behavior and limits:
 
 | Document | Content |
 |---|---|
-| [CHANGELOG.en.md](<CHANGELOG.en.md>) | Version history (v0.1.0 → v0.4.1) |
+| [CHANGELOG.en.md](<CHANGELOG.en.md>) | Version history (v0.1.0 → v0.5.0) |
 | [CONTRIBUTING.en.md](CONTRIBUTING.en.md) | Dev setup, conventions, commit/release flow, adding an agent |
 | [SECURITY.en.md](SECURITY.en.md) | Security model (zero credentials / command whitelist / process & desktop-automation boundaries) and private reporting |
 | [CODE_OF_CONDUCT.en.md](CODE_OF_CONDUCT.en.md) | Contributor Code of Conduct |
