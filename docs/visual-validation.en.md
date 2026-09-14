@@ -74,6 +74,16 @@ Note: these are real macOS systems and real architectures on GitHub-hosted macOS
 - Both repos are consistent: `github/master`, `gitee/master`, both remotes' `v0.5.0` tags and the local tag all resolve to `b1505f5` (later `master` advanced to the record commit `de34278`).
 - **npm publish (outside the plan, per explicit user instruction)**: the maintainer's npm account is logged in and owns the package; `npm publish` successfully published `tianshu-mcp@0.5.0` to `latest` (confirmed by a direct registry query; `dist.shasum` = `85c39756…`, matching the local build). A fresh `npm install tianshu-mcp@0.5.0` in an isolated directory passes all four `visual doctor` checks. Plan §7 originally stated "does not additionally add npm registry publishing"; this publish was performed on the user's explicit instruction so the README's "published continuously" statement stays consistent across versions.
 
+### v0.5.1 (documentation/evidence completion, no runtime changes)
+
+- The `Release` workflow succeeded (including the "require a successful CI for this commit" and "mirror credentials present" gates). Link: https://github.com/lanlan0811/tianshu-mcp/actions/runs/34847120767
+- The `CI` workflow for the target commit `c24fc67` is fully green: all 22 jobs succeeded, including all 12 `visual-browser` jobs (6 of them macOS).
+- GitHub release: `tag v0.5.1` (not a draft) with asset `tianshu-mcp-0.5.1.tgz` and a bilingual body containing the Full Changelog and npm link.
+- Gitee release: `tag v0.5.1` (id 1143824) targeting `c24fc67`, with a bilingual body.
+- Both repos are consistent: `github/master`, `gitee/master`, both remotes' `v0.5.1` tags and the local tag all resolve to `c24fc67`.
+- npm: `tianshu-mcp@0.5.1` published to `latest` (confirmed by a direct registry query; `dist.shasum` = `529efba6…`, matching the local build); an isolated install passes all four `visual doctor` checks.
+- Side fix: the `package-lock.json` root version was synced from the stale `0.4.1` to `0.5.1`.
+
 ## 4. Known limitations
 
 - macOS evidence comes from CI-hosted runners and was not re-verified on a maintainer's personal macOS device.

@@ -74,6 +74,16 @@
 - 双仓一致：`github/master`、`gitee/master`、两仓 `v0.5.0` 标签与本地标签均指向 `b1505f5`（其后 `master` 前进到 `de34278` 的记录提交）。
 - **npm 发布（计划外，按用户指示执行）**：维护者 npm 账号已登录且为包所有者，`npm publish` 成功将 `tianshu-mcp@0.5.0` 发布到 `latest`（registry 直查确认，`dist.shasum` = `85c39756…`，与本地构建一致）。独立目录 `npm install tianshu-mcp@0.5.0` 后 `visual doctor` 四项全通过。开发计划 §7 原本「不额外增加 npm registry 发布」，本次按用户明确指示补发，以保持 README「持续发布」表述与历史版本一致。
 
+### v0.5.1（文档/证据补齐，无运行时变更）
+
+- `Release` 工作流成功（含「要求目标提交存在成功 CI」与「要求镜像凭据存在」两闸门）。链接：https://github.com/lanlan0811/tianshu-mcp/actions/runs/34847120767
+- 目标提交 `c24fc67` 的 `CI` 全绿：22 个作业全部成功，其中 12 个 `visual-browser` 作业（含 6 个 macOS）全绿。
+- GitHub 发行：`tag v0.5.1`（非草稿），资产 `tianshu-mcp-0.5.1.tgz`，正文双语含 Full Changelog 与 npm 链接。
+- Gitee 发行：`tag v0.5.1`（id 1143824），目标提交 `c24fc67`，正文双语。
+- 双仓一致：`github/master`、`gitee/master`、两仓 `v0.5.1` 标签与本地标签均指向 `c24fc67`。
+- npm：`tianshu-mcp@0.5.1` 已发布到 `latest`（registry 直查确认 `dist.shasum` = `529efba6…`，与本地构建一致）；独立目录安装后 `visual doctor` 四项通过。
+- 附带修复：`package-lock.json` 根包版本从滞后的 `0.4.1` 同步为 `0.5.1`。
+
 ## 四、已知限制
 
 - macOS 证据来自 CI 托管 runner，未在维护者个人 macOS 设备上复核。
