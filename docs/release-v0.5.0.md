@@ -68,7 +68,8 @@
   - `typecheck` / `lint` / `build` / `pack:check` / 严格 stdio 检查通过。
 - **CI**：新增 `visual-browser` 矩阵（ubuntu/windows/macos-15-intel/macos-15 × Node 20/22/24），显式安装固定浏览器后跑真实浏览器视觉测试与生产包消费者验收；`build-test` 与 `pack-check` 保留。
 - **发布门禁**：release 工作流要求目标提交存在**成功 CI**，且缺少 `GITEE_TOKEN` 时阻塞——不以跳过镜像发行或 Release 运行冒充双仓发布完成。
-- **未完成门禁（如实保留阻塞）**：macOS 13+ Intel 与 Apple Silicon 的真实系统/Node/浏览器证据、Windows 10 的完整功能矩阵，以及 v0.5.0 的双仓标签与发行记录核实，以 [验证进度](visual-validation.md) 为准。未执行项不记为通过。
+- **发布结果（已核实）**：目标提交 `b1505f5` 的 CI 全绿（视觉矩阵四系统 × Node 20/22/24 全部成功）；`Release` 工作流成功，GitHub 发行（非草稿，含 `tianshu-mcp-0.5.0.tgz` 资产）与 Gitee 发行（id 1143672，目标提交 `b1505f5`）均已创建，双仓 `master` 与 `v0.5.0` 标签指向同一提交。
+- **未完成门禁（如实保留阻塞）**：macOS 13+ Intel 与 Apple Silicon 的真实设备系统/Node/浏览器证据，以及 Windows 10 的完整功能矩阵，以 [验证进度](visual-validation.md) 为准。未执行项不记为通过。
 
 ## 升级注意
 

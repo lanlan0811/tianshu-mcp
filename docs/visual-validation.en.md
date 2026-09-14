@@ -18,11 +18,17 @@ Plan: local `.codex/plans/2026-09-14-issue-3-visual-acceptance-plan.en.md` (Chin
     node scripts/check-visual-consumer.mjs --package-dir <consumer>/node_modules/tianshu-mcp
   ```
 - `typecheck`, `lint`, `build`, `pack:check` and the strict stdio check all pass; the build leaves no unexpected tracked changes.
+- **CI on the target commit succeeded**: the `CI` workflow for `b1505f5` is fully green (`visual-browser` all four systems × Node 20/22/24 succeeded, `build-test` and `pack-check` succeeded). The earlier `df7eb18` CI failed once in `Build & Test (ubuntu-latest / Node 20)` on a `zcode-flow` task-deadline timing race unrelated to the visual module; that case passes locally and in later CI.
+  - Link: https://github.com/lanlan0811/tianshu-mcp/actions/runs/34838565104
+- **v0.5.0 release completed and verified**:
+  - The `Release` workflow succeeded, including the "require a successful CI for this commit" and "mirror credentials present" gates and the GitHub/Gitee publish steps. Link: https://github.com/lanlan0811/tianshu-mcp/actions/runs/34839014803
+  - GitHub release: `tag v0.5.0` (not a draft) with asset `tianshu-mcp-0.5.0.tgz` and a bilingual body.
+  - Gitee release: `tag v0.5.0` (id 1143672) created, targeting `b1505f5`, with a bilingual body.
+  - Both repos are consistent: `github/master`, `gitee/master`, both remotes' `v0.5.0` tags and the local tag all resolve to `b1505f5`.
+- **npm registry is out of scope this round**: per the plan ("does not additionally add npm registry publishing"), the npm package remains at `0.4.1`.
 
 ## Remaining gates
 
-- Real **macOS 13+ Intel and Apple Silicon** system/Node/browser evidence; the full Windows 10 functional matrix (port conflicts, readiness failure, cancellation cleanup, Chinese and space-containing paths, out-of-project symlinks, managed vs local browser and version mismatch).
-- **CI**: the new `visual-browser` matrix (ubuntu/windows/macos-15-intel/macos-15 × Node 20/22/24) must actually run green on the target commit; locally only Windows 10 x64 with Node 24 was verified.
-- **Release**: matching GitHub/Gitee `master`, v0.5.0 dual-repo tags, the release workflow result and both actual release records. The release requires a successful CI for the target commit and blocks when `GITEE_TOKEN` is missing.
+- Real **macOS 13+ Intel and Apple Silicon** system/Node/browser evidence; the full Windows 10 functional matrix (port conflicts, readiness failure, cancellation cleanup, Chinese and space-containing paths, out-of-project symlinks, managed vs local browser and version mismatch). CI macOS runner results cannot substitute for a maintainer's verification record on real macOS hardware.
 
-Unexecuted checks must not be reported as passing. Missing target platforms or release credentials remain blockers.
+Unexecuted checks must not be reported as passing. Missing target-platform evidence remains a blocker.

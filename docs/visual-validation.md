@@ -18,11 +18,17 @@
     node scripts/check-visual-consumer.mjs --package-dir <消费目录>/node_modules/tianshu-mcp
   ```
 - `typecheck`、`lint`、`build`、`pack:check`、严格 stdio 检查全部通过；构建后无意外已跟踪文件变更。
+- **CI 目标提交成功**：`b1505f5` 的 `CI` 工作流全绿（`visual-browser` 四系统 × Node 20/22/24 全部成功，`build-test`、`pack-check` 成功）。早期 `df7eb18` 的 CI 在 `Build & Test (ubuntu-latest / Node 20)` 因 `zcode-flow` 任务总时限时序竞态失败一次，与视觉模块无关；该用例在本机与后续 CI 均通过。
+  - 链接：https://github.com/lanlan0811/tianshu-mcp/actions/runs/34838565104
+- **v0.5.0 发布完成并核实**：
+  - `Release` 工作流成功：包含「要求目标提交存在成功 CI」「镜像凭据存在」两道闸门与 GitHub/Gitee 双发行步骤。链接：https://github.com/lanlan0811/tianshu-mcp/actions/runs/34839014803
+  - GitHub 发行：`tag v0.5.0`（非草稿），资产 `tianshu-mcp-0.5.0.tgz`，正文为双语发行说明。
+  - Gitee 发行：`tag v0.5.0`（id 1143672）已创建，目标提交 `b1505f5`，正文为双语发行说明。
+  - 双仓一致：`github/master`、`gitee/master`、两仓 `v0.5.0` 标签与本地标签均指向 `b1505f5`。
+- **npm registry 未在本次范围内**：按计划「不额外增加 npm registry 发布」，npm 包仍停留在 `0.4.1`。
 
 ## 待完成门禁
 
-- **macOS 13+ Intel 与 Apple Silicon** 的真实系统/Node/浏览器证据；Windows 10 的完整功能矩阵（含端口冲突、就绪失败、取消清理、中文/带空格路径、项目外符号链接、托管/本机浏览器与版本不匹配）。
-- **CI**：新增 `visual-browser` 矩阵（ubuntu/windows/macos-15-intel/macos-15 × Node 20/22/24）需在目标提交上实际跑绿；本机只验证了 Windows 10 x64 与 Node 24。
-- **发行**：GitHub/Gitee `master` 指向一致、v0.5.0 双仓标签、release 工作流结果与两个实际发行记录。release 要求目标提交存在成功 CI，且缺少 `GITEE_TOKEN` 时阻塞。
+- **macOS 13+ Intel 与 Apple Silicon** 的真实系统/Node/浏览器证据；Windows 10 的完整功能矩阵（含端口冲突、就绪失败、取消清理、中文/带空格路径、项目外符号链接、托管/本机浏览器与版本不匹配）。CI 的 macOS runner 结果不能替代维护者在真实 macOS 设备上的验证记录。
 
-禁止将未执行项目标记为通过；缺少目标平台或发行凭据时保留阻塞。
+禁止将未执行项目标记为通过；缺少目标平台证据时保留阻塞。

@@ -68,7 +68,8 @@ After adding a `visual` object with `enabled: true` to a project's `.tianshu-mcp
   - `typecheck` / `lint` / `build` / `pack:check` / strict stdio check pass.
 - **CI**: a new `visual-browser` matrix (ubuntu/windows/macos-15-intel/macos-15 × Node 20/22/24) explicitly installs the pinned browser and then runs real-browser visual tests plus production-package consumer acceptance; `build-test` and `pack-check` are retained.
 - **Release gates**: the release workflow requires a **successful CI** for the target commit and blocks when `GITEE_TOKEN` is missing, so skipping the mirror release or substituting the Release run cannot masquerade as a completed dual-repo release.
-- **Remaining gates (kept as explicit blockers)**: real macOS 13+ Intel and Apple Silicon system/Node/browser evidence, the full Windows 10 functional matrix, and verification of v0.5.0 dual-repo tags and release records, tracked in [validation progress](visual-validation.en.md). Unexecuted checks are not recorded as passing.
+- **Release outcome (verified)**: CI for the target commit `b1505f5` is fully green (all four visual-matrix systems × Node 20/22/24 succeeded); the `Release` workflow succeeded, and both the GitHub release (not a draft, with the `tianshu-mcp-0.5.0.tgz` asset) and the Gitee release (id 1143672, targeting `b1505f5`) were created, with both repos' `master` and `v0.5.0` tags pointing at the same commit.
+- **Remaining gates (kept as explicit blockers)**: real macOS 13+ Intel and Apple Silicon hardware system/Node/browser evidence, and the full Windows 10 functional matrix, tracked in [validation progress](visual-validation.en.md). Unexecuted checks are not recorded as passing.
 
 ## Upgrade notes
 
