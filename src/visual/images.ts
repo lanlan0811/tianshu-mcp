@@ -1,10 +1,10 @@
 import fs from "node:fs/promises";
-
+import path from "node:path";
 import { loadSharp } from "./runtime.js";
-import { VisualError } from "./errors.js";
-
-
-
+import { VisualError, visualError } from "./errors.js";
+import { projectFile } from "./paths.js";
+import type { VisualImage } from "./schema.js";
+import type { VisualResult } from "./types.js";
 import type { VisualBudget } from "./budget.js";
 
 export async function decodeImage(filename: string, budget: VisualBudget) {
@@ -72,4 +72,79 @@ export async function decodeImage(filename: string, budget: VisualBudget) {
     if (/timeout/i.test(String(e))) throw new VisualError("ITEM_TIMEOUT", "Image decoding deadline exceeded");
     throw new VisualError("IMAGE_CORRUPT", "Image cannot be fully decoded", "failed");
   }
+}
+export async function checkImage(
+  project: string,
+  rule: VisualImage,
+  file: string,
+  budget: VisualBudget,
+): Promise<VisualResult> {
+  const started = Date.now();
+  const result: VisualResult = {
+    id: rule.id,
+    kind: "image",
+    target: file,
+    optional: rule.optional,
+    status: "passed",
+    code: "IMAGE_MATCH",
+    message: "Image meets specifications",
+    repairable: false,
+    durationMs: 0,
+    rules: rule,
+  };
+  try {
+    const decoded = await decodeImage(await projectFile(project, file), budget);
+    const { width, height } = decoded.info;
+    let transparentPixels = 0;
+    for (let i = 3; i < decoded.data.length; i += 4)
+      if (decoded.data[i]! < 255) transparentPixels++;
+    const metrics = {
+      width,
+      height,
+      aspectRatio: width / height,
+      fileSizeBytes: decoded.input.length,
+      format: decoded.metadata.format,
+      dpi: decoded.metadata.density ?? null,
+      transparentPixels,
+    };
+    result.metrics = metrics;
+    const failures: string[] = [];
+    const extension = path.extname(file).slice(1).toLowerCase().replace(/^jpg$/, "jpeg");
+    if (extension !== metrics.format) failures.push("File extension does not match encoded format");
+    if (rule.formats && !rule.formats.includes(metrics.format as "png" | "jpeg" | "webp"))
+      failures.push("Encoded format is not allowed");
+    for (const key of ["width", "height", "aspectRatio", "fileSizeBytes", "dpi"] as const) {
+      const range = rule[key],
+        actual = metrics[key];
+      if (
+        range &&
+        (actual === null ||
+          (range.exact !== undefined && actual !== range.exact) ||
+          (range.min !== undefined && actual < range.min) ||
+          (range.max !== undefined && actual > range.max))
+      )
+        failures.push(`${key}: expected ${JSON.stringify(range)}, actual ${actual ?? "unknown"}`);
+    }
+    if (rule.transparency === "transparent" && !transparentPixels)
+      failures.push("No actual transparent pixels");
+    if (rule.transparency === "opaque" && transparentPixels)
+      failures.push("Image contains transparent pixels");
+    if (failures.length)
+      Object.assign(result, {
+        status: "failed",
+        code: "IMAGE_SPEC_MISMATCH",
+        message: failures.join("; "),
+        repairable: true,
+      });
+  } catch (e) {
+    const error = visualError(e);
+    Object.assign(result, {
+      status: error.kind === "cancelled" ? "skipped" : error.kind,
+      code: error.code,
+      message: error.message,
+      repairable: error.kind === "failed",
+    });
+  }
+  result.durationMs = Date.now() - started;
+  return result;
 }
