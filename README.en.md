@@ -236,9 +236,9 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
   - Zcode headless entry (Z1) verified: ZCode desktop ships no headless CLI → unsupported
 - **R1–R8 / S1–S6 — two acceptance hardening rounds** ✅ (cancel / timeout / baseline attribution / parameter semantics / hot reload / CI hardening) — **72 tests**
 - **Engineering / CI** ✅
-  - GitHub Actions: `CI` (ubuntu/windows/macos × Node 20/22/24 + pack-check, **10/10 green**, re-verified with the v0.4.1 tag) and `Release` (tag-triggered) both green
+  - GitHub Actions: `CI` (`build-test` ubuntu/windows/macos × Node 20/22/24 + `pack-check`, plus a `visual-browser` real-browser matrix ubuntu/windows/macos-15-intel/macos-15 × Node 20/22/24, all green with the v0.5.0 tag) and `Release` (tag-triggered) both green
   - Skill self-install verified idempotent on this machine's real `~/.rivet/skills/tianshu-mcp`
-  - npm package name `tianshu-mcp` published continuously since v0.1.1 (currently `0.4.1`)
+  - npm package name `tianshu-mcp` published continuously since v0.1.1 (currently `0.5.0`)
 - **Real Tianshu host integration (DoD #6)** ✅ (2026-09-07)
   - Configured the local mode in the real `D:\Tianshu` desktop host `mcp.servers` → sidecar reported `MCP: 2 servers connected, 10 tools` (including this server's 8 tools), spawned the child process and connected over stdio
   - Exposed and fixed a skill-install source-path bug (fileURLToPath, commit 55cf2d0)

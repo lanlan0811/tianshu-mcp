@@ -235,9 +235,9 @@ ZCode 提问、需要登录、旧实例无 CDP、系统权限不足，或自动�
   - Zcode 无头接口（Z1）实测定论：ZCode 桌面无随包 headless CLI → unsupported
 - **R1–R8 / S1–S6 — 两轮验收整改** ✅（取消/超时/基线归因/参数语义/热加载/CI 加固）— **72 测试**
 - **工程 / CI** ✅
-  - GitHub Actions：`CI`（ubuntu/windows/macos × Node 20/22/24 + pack-check，**10/10 全绿**，随 v0.4.1 tag 再次校验）与 `Release`（tag 触发）均绿
+  - GitHub Actions：`CI`（`build-test` ubuntu/windows/macos × Node 20/22/24 + `pack-check`，另加 `visual-browser` 真实浏览器矩阵 ubuntu/windows/macos-15-intel/macos-15 × Node 20/22/24，随 v0.5.0 tag 全绿）与 `Release`（tag 触发）均绿
   - 技能自检安装已在本机真实 `~/.rivet/skills/tianshu-mcp` 验证生效且幂等
-  - npm 包名 `tianshu-mcp` 自 v0.1.1 起持续发布（当前 `0.4.1`）
+  - npm 包名 `tianshu-mcp` 自 v0.1.1 起持续发布（当前 `0.5.0`）
 - **天枢宿主真实接入（DoD #6）** ✅（2026-09-07，[host-integration-record.md](docs/host-integration-record.md)）
   - 在真实 `D:\Tianshu` 桌面宿主 `mcp.servers` 配置本地模式 → sidecar `MCP: 2 servers connected, 10 tools`（含本 server 8 工具），spawn 子进程并 stdio 连通
   - 实测暴露并修复技能安装源路径 bug（fileURLToPath，提交 55cf2d0）

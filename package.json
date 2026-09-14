@@ -34,7 +34,8 @@
     "CHANGELOG.en.md",
     "LICENSE",
     "scripts/gitee-release.mjs",
-    "scripts/release-body.mjs"
+    "scripts/release-body.mjs",
+    "scripts/evidence-visual-windows.mjs"
   ],
   "main": "dist/index.js",
   "exports": {
