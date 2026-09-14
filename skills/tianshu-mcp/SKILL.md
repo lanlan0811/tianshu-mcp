@@ -42,12 +42,13 @@ triggers: '开发|编码|写代码|改代码|实现功能|加功能|修复|重�
 
 参数要点：
 
-- `projectPath`：**必须**是项目绝对路径（如 `D:\repo\my-app`），且提交即过安全闸门（见 §2.1）。
+- `projectPath`：项目绝对路径（如 `D:\repo\my-app`），提交即过安全闸门（见 §2.1）。**ZCode 可省略**（issue #12）：省略时进入无项目模式——在 ZCode 的 `default` 工作区执行，不登记/导入项目、不采集 Git 基线、不执行项目验收（`autoVerify` 固定 `false`、`autoFixRounds` 固定 `0`，显式开启会报错）。其他 agent 省略该参数会在排队前报错；空串 / `null` / 相对路径 / 不存在的目录**不视为**无项目模式。详见 [ZCode CDP 适配器](../../docs/zcode-cdp.md)。
 - `task`：自然语言任务书。要写清 **目标 / 验收要点 / 约束 / 相关文件 / 上下文**，模板见 usage-examples.md。
 - `agentId`：默认取项目 default 或 codex；`model`/`mode`/`reasoningLevel` 等约束见 §1（按 agent 生效，传错会被明确拒绝）。
 - `context`：补充上下文/约束文本，会以【上下文与约束】拼进 agent 初始指令。task/context 中反引号包裹或路径形态的引用会在发送前校验（必须存在且在项目内），写错立即报错。
 - `autoVerify: true`：跑完自动验收（命令检查 + 代码分析；启用视觉的项目再加视觉检查）。
 - `autoFixRounds: N`（0–10）：>0 才开启失败自动返修。优先级：调用参数 > agent 缺省（codex 5、zcode 2；traework 未设缺省）> server 默认 0（不开启）。
+- `allowCreateProject: false`（仅 ZCode，作用于有项目模式）：目标目录未登记即**在任何导入副作用之前**停止派发，返回 `project_not_registered`（不打开原生文件夹对话框、不添加项目）。省略 = 保持既有自动导入行为；其他 agent 传入会得到「不支持」错误。
 - `taskTimeoutMs`：任务级超时。优先级：调用参数 > profile 的 `timeoutMs` > server 默认 30 分钟。
 
 返回立刻给 `taskId`（异步契约）。**不要把任务书当同步调用等结果。**

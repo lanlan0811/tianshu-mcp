@@ -42,6 +42,7 @@
 - **验收并行度**：命令检查默认**有界并行**（`verifyConcurrency`，默认 2、范围 1–4）。检查项之间有顺序依赖时（后续检查读取 build 产物、带 `--fix`、共享缓存目录）请设 `1` 完全退化为串行；项目级 `.tianshu-mcp/acceptance.json` 可覆盖，server 级在 `config.json`。报告与日志格式不变（结果按声明顺序返回）。
 - **失败返修闭环**：自动返修（`autoFixRounds`）+ 手动 `rework_task`；验收失败时自动生成修复计划文件并回填给 agent；轮次用尽 → `needs_attention` 等天枢裁决。
 - **执行面**：`driver: "gui"` 由显式 adapter 驱动桌面 UI（Codex / TraeWork / ZCode 各自使用隔离的 CDP 流程）；`driver: "spawn"` 走外部 CLI 子进程。
+- **无项目派发（ZCode，issue #12）**：`run_task` 的 `projectPath` 可省略——ZCode 在 `default` 工作区承接任务，不登记/导入项目、不采集 Git 基线、不执行项目验收（结果以 `verificationNotApplicable: "no_project"` 结构化标注，`verify_task`/`get_task_report` 返回不适用说明）。配套 `allowCreateProject: false` 可在目标目录未登记时于任何导入副作用之前停止派发。详见 [ZCode CDP 适配器](docs/zcode-cdp.md)。
 - **调度纪律**：每项目串行队列 + 全局并发上限（默认 2，可配）。
 - **不碰密钥**：各 agent 用自己的登录态；本 server 不保存/转发任何 API key。
 - **可扩展**：新 agent = 一个 profile（数据）+（如需）一个 adapter 文件，零改编排核心。

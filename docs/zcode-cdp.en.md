@@ -66,6 +66,38 @@ Projects are matched by normalized absolute path. Windows matching is case-insen
 
 When import is required, the adapter snapshots existing dialogs before clicking Choose Folder. Windows accepts only a new ZCode-owned `#32770` window and sets/reads the path through UI Automation. macOS operates only ZCode's sheet/window, passes the POSIX path through `osascript` argv, and prefers the locale-independent default-button accessibility role. Both platforms verify that the submitted picker closed; the final full path is then read back from ZCode.
 
+## Project-less dispatch (`default` workspace)
+
+`projectPath` may be omitted (issue #12). When omitted, the task runs in ZCode's `default` workspace: no directory assigned, no project registered or imported, no Git baseline, no project snapshot freeze, no project lock, and no project acceptance.
+
+```text
+run_task(
+  agentId=zcode,
+  model=DeepSeek/deepseek-flash,
+  task=Answer in one sentence: what is the current workspace?
+)
+```
+
+Constraints:
+
+- Project-less dispatch currently **supports ZCode only**. When `projectPath` is omitted and the resolved agent is anything else, the call fails with a parameter error before queueing; it is never silently re-routed to ZCode.
+- An omitted `autoVerify` is frozen to `false` and an omitted `autoFixRounds` to `0`; an explicit `autoVerify=true` or `autoFixRounds>0` errors out before submission (there is no project directory to verify).
+- An empty string, `null`, a relative path, or a non-existent directory is **not** treated as project-less mode and is still rejected as project mode.
+- When the task text contains an explicit local file reference (backticked path, absolute path, `./` or `../`), submission fails before sending and asks for a `projectPath` — project-less mode never falls back to resolving references against the cwd.
+- On success the terminal message states "no project acceptance performed" and the task metadata carries `verificationNotApplicable: "no_project"`. `verify_task` and `get_task_report` return a not-applicable explanation (`not_applicable: no_project`) for such tasks instead of deriving a directory from cwd.
+- Project-less and project tasks share one queue but use a **distinct resource key**; the ZCode driver serialises all tasks globally, so they never race for the same GUI instance.
+
+Before sending, the adapter confirms the session is genuinely in the unbound `default` workspace (the trigger text matches a placeholder such as "Select project" and no project path reads back). **"Not clicking the project button" is not proof** — the UI may inherit a previous binding. If another project is still bound, or the state cannot be confirmed reliably, the task pauses as `needs_user/setup_recovery` and preserves the scene instead of sending to the wrong project.
+
+### Disabling automatic project creation (`allowCreateProject`)
+
+ZCode-only optional boolean; it affects **project mode** only:
+
+- omitted = when the target directory is not in ZCode's project list, import it automatically as before (native folder picker).
+- `false` = when the target is unregistered, stop dispatch **before any import side effect** and return `project_not_registered` with remediation; no native folder dialog is opened and no project is added. Register the project in ZCode manually, then resubmit.
+- The policy is persisted with the task metadata and never reverts to allow-create after resume.
+- Other agents passing this parameter get an explicit "not supported" error rather than a silent ignore.
+
 ## Liveness, verification, and repair
 
 Each poll samples the Stop button, loading card, active tool, last assistant hash, question UI, composer, and Send button. Any authoritative running signal keeps the task running. Progress summaries are persisted every 30 seconds.
@@ -102,3 +134,14 @@ Transient observations retry within limits after reconciling import and binding.
 Unresolved recovery pauses as `needs_user/setup_recovery`. Complete the indicated project action in ZCode, then call `continue_task`; the acknowledgement is not sent to the model, and the original task and acceptance baseline remain intact. macOS permission errors retain `system_permission`; failed/unknown observations are never treated as an empty sheet baseline. The overall task deadline takes precedence as `task_timeout`.
 
 Model readback supports provider/model labels split across text nodes and excludes transparent ancestors and clipped outgoing animation nodes. Residual menus are dismissed after binding so they cannot trap input focus. Dispatch waits for a unique, enabled, unobstructed send button; these checks are read-only and do not repeat submission. Windows native operations filter by process and dialog handle before querying the target accessibility tree; native phase logs use the `native:` prefix.
+
+## Troubleshooting
+
+- `close_existing_instance`: save your ZCode work, quit ZCode manually, then call `continue_task`.
+- `model_unavailable` / `model_mismatch`: check UI drift with `node scripts/probe-zcode.mjs selectors` and the profile selector overrides.
+- `project_ambiguous` / `project_mismatch`: make sure the sidebar exposes full paths and remove duplicate names that cannot be disambiguated.
+- `system_permission`: grant ZCode / System Events Accessibility permission manually in macOS System Settings.
+- `cdp_disconnected`: preserve the scene and confirm the instance and port ownership before deciding manually.
+- `project_not_registered`: this call used `allowCreateProject=false` and the target directory is unregistered. Register the project in ZCode manually and resubmit, or drop the parameter to allow automatic import.
+- Project-less mode parked at `needs_user/setup_recovery`: ZCode is still bound to another project, or the `default` workspace cannot be confirmed. Switch to an unbound new session, then call `continue_task`.
+- Project-trigger failures are no longer collapsed into "timed out": the message names the actual class — "not unique (N matches)", "mounted but invisible or clipped", "covered by another element", or "the project menu did not open after the click" — and carries `selector`, match count and hit-node attributes, while diagnostics log attempt count, elapsed time and remaining budget.

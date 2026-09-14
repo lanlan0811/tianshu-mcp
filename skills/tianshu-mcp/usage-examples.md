@@ -78,6 +78,37 @@ continue_task(taskId=tsk_..., message=采用 PostgreSQL 方案)
 - `needsUserKind=close_existing_instance / login_required / system_permission / setup_recovery`：先让用户处理（关旧实例 / 登录 / 授系统权限 / 在 ZCode 里确认目标项目），message 仅作为用户已处理的确认。
 - **traework 不支持 `continue_task`**；若 traework 任务停在 `needs_user`，需人工处理后重派新任务。
 
+### 2.2.1 ZCode 无项目派发（省略 `projectPath`）
+
+只支持 ZCode：任务在 `default` 工作区执行，不登记/导入项目、不采集 Git 基线、不执行项目验收。
+
+```text
+run_task(
+  agentId=zcode,
+  model=DeepSeek/deepseek-flash,
+  task=用一句话说明当前工作区状态，不要读写任何文件
+)
+```
+
+- 省略 `autoVerify` / `autoFixRounds` 即为关；显式写 `autoVerify=true` 或 `autoFixRounds>0` 会在提交前被拒绝。
+- 任务书里不要写反引号路径或 `./`、`../` 引用——无项目模式无法解析，会在发送前报错并要求提供 `projectPath`。
+- 成功后终态文案是「未进行项目验收」；对该任务调 `verify_task` / `get_task_report` 会得到 `not_applicable: no_project`，不从 cwd 推导目录。
+- 省略 `projectPath` 但解析出的 agent 不是 ZCode（例如默认 agent 为 codex）时，会在排队前返回参数错误——不会被悄悄改判为 ZCode。
+
+### 2.2.2 派到 ZCode 但禁止自动创建项目
+
+```text
+run_task(
+  projectPath=D:/repo/my-app,
+  agentId=zcode,
+  model=DeepSeek/deepseek-flash,
+  task=修复登录超时,
+  allowCreateProject=false
+)
+```
+
+目标目录不在 ZCode 项目列表中时返回 `project_not_registered`，**不产生任何导入副作用**（不打开原生文件夹对话框、不添加项目）；在 ZCode 中手动登记该项目后重新提交即可。省略该参数则保持既有自动导入行为。
+
 ### 2.3 traework（model 可选；唯一支持 mode）
 
 ```text

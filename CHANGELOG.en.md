@@ -10,6 +10,17 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ## [Unreleased]
 
+### Added
+
+- **Project-less dispatch for ZCode (issue #12)**: `run_task`'s `projectPath` is now optional. When omitted, ZCode runs the task in its `default` workspace — no directory assigned, no project registered or imported, no Git baseline, no project snapshot freeze, no project lock, no project acceptance. On success the task is marked structurally as `not_applicable: no_project` and the terminal message states "no project acceptance performed". `query_task` / `list_tasks` display such tasks normally; `verify_task` / `get_task_report` return an explicit not-applicable explanation instead of deriving a directory from cwd.
+- **`allowCreateProject` (ZCode-only, optional boolean)**: omitted keeps the existing "auto-import when the target is unregistered" behaviour; explicit `false` stops dispatch **before any import side effect** when the target is unregistered, returning a recognisable `project_not_registered` reason with remediation (no native folder dialog, no project added). Other agents passing this parameter get an explicit "not supported" error rather than a silent ignore.
+
+### Fixed
+
+- **Divergent project-trigger readiness criteria (issue #12 §5)**: waiting used `exists` (element has width/height only) while clicking went through `pick` (exactly one unclipped visible node in the winning tier), so an `exists=true` / `click=false` window existed. Waiting and clicking now share one **structured probe** that distinguishes not-mounted / mounted-but-invisible-or-clipped / ambiguous / disabled / covered / ready, plus a post-click condition: the project menu must actually open, and `menu-not-open` is classified separately.
+- **Error message contradicting behaviour**: "waiting for the project trigger timed out" is no longer used for early exits (multiple matches, disabled) or a menu that never opened; failure text carries `selector`, match count and minimal hit-node attributes, and diagnostics log attempt count, elapsed time and remaining budget.
+- **Centralised timeout**: new `gui.projectTriggerTimeoutMs` (default 15s) replaces the two hard-coded `15_000` literals; the whole "wait → one sidebar fallback → wait" sequence shares a single deadline, retries do not reset the budget, and it is clamped by the setup-recovery budget and the task deadline.
+
 ### Planned
 
 - **Visual acceptance phase 2 — AI visual content validation** (issue #13): validate whether image/page-screenshot *content* matches the task description (logo elements, style match, page semantics, etc.). Marked in issue #3 as an "optional extension"; its pixel-comparison phase 1 shipped with v0.5.0. Requires settling the model/credential source (without breaking the "zero credential management" red line), judgement debouncing, and gate placement (warning-only by default is suggested).

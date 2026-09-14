@@ -76,6 +76,38 @@ continue_task(taskId=tsk_..., message=选择 PostgreSQL)
 
 找不到项目时，adapter 记录已有原生对话框，再点击 ZCode 的“选择文件夹”。Windows 只处理新出现且进程属于 ZCode 的 `#32770` 窗口，通过 UI Automation 设置并回读路径；macOS 只操作 ZCode 的 sheet/window，通过 `osascript` argv 传入路径，并优先使用与本地化无关的默认按钮语义。两端都会确认刚提交的面板已经关闭，随后仍需从 ZCode 回读完整项目路径。
 
+## 无项目（`default` 工作区）
+
+`projectPath` 可以省略（issue #12）。省略时任务在 ZCode 的 `default` 工作区运行：不分配目录、不登记或导入项目、不采集 Git 基线、不冻结项目快照、不进入项目锁，也不执行项目验收。
+
+```text
+run_task(
+  agentId=zcode,
+  model=DeepSeek/deepseek-flash,
+  task=只回答一句话：当前工作区是什么
+)
+```
+
+约束：
+
+- 无项目派发当前**只支持 ZCode**。省略 `projectPath` 而解析出的目标是其他 agent 时，在排队前返回参数错误；不会擅自改判为 ZCode。
+- 省略 `autoVerify` 固定为 `false`、省略 `autoFixRounds` 固定为 `0`；显式传 `autoVerify=true` 或 `autoFixRounds>0` 会在提交前报错（没有项目目录可验）。
+- 空字符串、`null`、相对路径、不存在的目录**不视为**无项目模式，仍按有项目模式拒绝。
+- 任务书里出现明确的本地文件引用（反引号路径、绝对路径、`./` 或 `../`）时，发送前报错并要求提供 `projectPath`——无项目模式不会退回 cwd 解析引用。
+- 执行成功后终态文案明示「未进行项目验收」，任务元数据以 `verificationNotApplicable: "no_project"` 结构化标注；`verify_task` 与 `get_task_report` 对该类任务返回不适用说明（`not_applicable: no_project`），不从 cwd 推导目录。
+- 无项目任务与有项目任务共用同一队列但使用**独立资源键**；ZCode 驱动对所有任务全局串行，因此不会争抢同一 GUI 实例。
+
+发送前会确认当前会话确实处于未绑定项目的 `default` 工作区（触发器文本命中「选择项目」等占位词，且回读不到任何项目路径）。**「不点击项目按钮」不算证明**——当前 UI 可能继承上一次绑定。若仍绑定其他项目、或无法可靠确认，任务进入 `needs_user/setup_recovery` 并保留现场，不会向错误项目发送。
+
+### 禁止自动创建项目（`allowCreateProject`）
+
+ZCode 专用可选布尔，只影响**有项目模式**：
+
+- 省略 = 目标目录未在 ZCode 项目列表中登记时，按既有行为自动导入（打开原生文件夹面板）。
+- `false` = 目标未登记时**在任何导入副作用之前**停止派发，返回 `project_not_registered` 与处理说明；不打开原生文件夹对话框、不添加项目。请在 ZCode 中手动登记该项目后重新提交。
+- 该策略随任务元数据持久化，恢复/续跑后不回退为允许创建。
+- 其他 agent 显式传入该参数会得到明确的「不支持」错误，而不是被静默忽略。
+
 ## 运行、验收与返修
 
 轮询同时读取停止按钮、加载卡、活动工具、助手回复哈希、问题卡、输入框和发送按钮。停止、加载或活动工具任一存在即保持 `running`；文本短暂停顿不会提前完成。默认每 30 秒写一条结构化进度摘要。
@@ -89,6 +121,9 @@ continue_task(taskId=tsk_..., message=选择 PostgreSQL)
 - `project_ambiguous/project_mismatch`：确保侧栏能暴露完整路径，移除无法消歧的同名项。
 - `system_permission`：在 macOS 系统设置中手动授予 ZCode/System Events Accessibility 权限。
 - `cdp_disconnected`：保留当前现场，确认实例仍在及端口归属后人工裁决。
+- `project_not_registered`：本次调用 `allowCreateProject=false` 且目标目录未登记。请在 ZCode 中手动添加该项目后重新提交，或省略该参数以允许自动导入。
+- 无项目模式停在 `needs_user/setup_recovery`：ZCode 当前仍绑定其他项目，或无法确认 `default` 工作区。请切换到未绑定项目的新会话后调用 `continue_task`。
+- 项目触发器相关失败不再统一成「等待超时」：文案会指出「不唯一（匹配 N）」「已挂载但不可见或被裁剪」「被其他元素遮挡」「点击后项目菜单未打开」中的具体一类，并附带 `selector`、匹配数与命中节点属性；诊断日志含尝试次数、实际耗时与剩余预算。
 
 ## 真机证据状态（2026-09-11）
 
