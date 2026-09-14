@@ -9,17 +9,6 @@
 
 ## [未发布]
 
-### 新增
-
-- **ZCode 无项目派发（issue #12）**：`run_task` 的 `projectPath` 改为可选。省略时 ZCode 在 `default` 工作区承接任务——不分配目录、不登记/导入项目、不采集 Git 基线、不冻结项目快照、不进入项目锁与项目验收；成功后以结构化字段标注 `not_applicable: no_project`，终态文案明示「未进行项目验收」。`query_task` / `list_tasks` 正常展示该类任务；`verify_task` / `get_task_report` 返回明确的不适用说明，不从 cwd 推导目录。
-- **`allowCreateProject`（ZCode 专用，可选布尔）**：省略 = 保持既有「目标未登记即自动导入」行为；显式 `false` 时，目标目录未登记即在**任何导入副作用之前**停止派发，返回可识别的 `project_not_registered` 与处理说明（不打开原生文件夹对话框、不添加项目）。其他 agent 显式传入该参数会得到明确的「不支持」错误，而不是被静默忽略。
-
-### 修复
-
-- **ZCode 项目触发器就绪判据不一致（issue #12 §五）**：等待用的是 `exists`（只看元素宽高），点击走的是 `pick`（要求该优先级层恰好一个未被裁剪的可见节点），两者判据不同，因此存在 `exists=true` 但 `click=false` 的窗口。现在等待与点击**共用同一份结构化探测**，区分未挂载 / 已挂载但不可见或被裁剪 / 不唯一 / 禁用 / 被遮挡 / 就绪；并新增点击后置检查——项目菜单必须真正打开，`menu-not-open` 单独归类。
-- **错误信息与行为失实**：「等待项目触发器超时」不再被用来描述早退（多匹配、禁用）或菜单未打开；失败文案携带 `selector`、匹配数与命中节点最小属性，诊断日志记录尝试次数、实际耗时与剩余预算。
-- **集中超时**：新增 `gui.projectTriggerTimeoutMs`（默认 15s）替换原先写死的两处 `15_000`；整个「等待 → 回退一次侧栏新建任务 → 再等待」共享同一截止时间，重试不重置预算，并被 setup 恢复预算与任务总时限夹住。
-
 ### 计划中
 
 - **视觉验收第二阶段——AI 视觉内容校验**（issue #13）：校验图片/页面截图**内容**是否符合任务描述（Logo 元素、风格匹配、页面语义等）。issue #3 中标注为「可选扩展」，其像素级对比第一阶段已随 v0.5.0 完成。需先确认模型与凭证来源（不得破坏「凭证零管理」红线）、判定防抖与门禁定位（建议默认仅告警）。
@@ -28,6 +17,27 @@
 - 可选的项目级技能播种（默认不写入目标项目仓库）。
 - Codex 与 ZCode GUI 的 macOS 取消/返修/新建项目矩阵（当前两者 darwin 均保持 `research`）。
 - `needs_user` 状态下取消任务时经临时 CDP 连接尽力停止 GUI 内等待中的会话。
+- ZCode 无项目派发在 macOS 上的真机验证（本轮仅 Windows 10 实测）。
+
+---
+
+## [0.5.2] — 2026-09-14
+
+**ZCode 无项目派发（issue #12）**：`run_task` 的 `projectPath` 变为可选，ZCode 在 `default` 工作区承接任务；配套 `allowCreateProject` 可禁止自动导入项目。完整说明见 [v0.5.2 发布说明](docs/release-v0.5.2.md)，真机证据见 [Windows 10 验收记录](docs/zcode-issue-12-windows-evidence.md)。
+
+### 新增
+
+- **ZCode 无项目派发（issue #12）**：`run_task` 的 `projectPath` 改为可选。省略时 ZCode 在 `default` 工作区承接任务——不分配目录、不登记/导入项目、不采集 Git 基线、不冻结项目快照、不进入项目锁与项目验收；成功后以结构化字段标注 `not_applicable: no_project`，终态文案明示「未进行项目验收」。`query_task` / `list_tasks` 正常展示该类任务；`verify_task` / `get_task_report` 返回明确的不适用说明，不从 cwd 推导目录。
+- **`allowCreateProject`（ZCode 专用，可选布尔）**：省略 = 保持既有「目标未登记即自动导入」行为；显式 `false` 时，目标目录未登记即在**任何导入副作用之前**停止派发，返回可识别的 `project_not_registered` 与处理说明（不打开原生文件夹对话框、不添加项目）。其他 agent 显式传入该参数会得到明确的「不支持」错误，而不是被静默忽略。
+- **Windows 10 真机验收记录**（`docs/zcode-issue-12-windows-evidence{,.en}.md`）：ZCode 3.11.2.6792 上无项目派发与 `allowCreateProject=false` 的完整证据，含「派发前后 ZCode 项目条目 34 → 34、新增 0 / 消失 0」的对比。
+
+### 修复
+
+- **ZCode 项目触发器就绪判据不一致（issue #12 §五）**：等待用的是 `exists`（只看元素宽高），点击走的是 `pick`（要求该优先级层恰好一个未被裁剪的可见节点），两者判据不同，因此存在 `exists=true` 但 `click=false` 的窗口。现在等待与点击**共用同一份结构化探测**，区分未挂载 / 已挂载但不可见或被裁剪 / 不唯一 / 禁用 / 被遮挡 / 就绪；并新增点击后置检查——项目菜单必须真正打开，`menu-not-open` 单独归类。
+- **错误信息与行为失实**：「等待项目触发器超时」不再被用来描述早退（多匹配、禁用）或菜单未打开；失败文案携带 `selector`、匹配数与命中节点最小属性，诊断日志记录尝试次数、实际耗时与剩余预算。
+- **集中超时**：新增 `gui.projectTriggerTimeoutMs`（默认 15s）替换原先写死的两处 `15_000`；整个「等待 → 回退一次侧栏新建任务 → 再等待」共享同一截止时间，重试不重置预算，并被 setup 恢复预算与任务总时限夹住。
+- **`projectPath` 未在 MCP schema 层放开（真机发现）**：handler 已支持无项目分支，但 `RunTaskParamsSchema.projectPath` 仍是必填，真实 `run_task` 会在协议层被 SDK 拒成 `-32602 Required at projectPath`；而单元测试直接调 handler、绕过了 `inputSchema`，所以全绿也没抓到。已改为 `AbsPath.optional()`，并在 `test/integration/task-flow.test.ts` 补协议层回归用例（断言文本不出现 `-32602` / `Input validation error`）。
+- **缺少「不在项目中工作」切换，且项目菜单已开时点击被 toggle 反噬（真机发现）**：ZCode「新建任务」会继承上一次绑定，使无项目派发永久停在 `needs_user`；同时 `clickProjectTriggerAndConfirm` 在项目菜单**已经打开**时仍点击触发器，把 Radix 下拉关掉后一路轮询到 deadline，误报「项目菜单未打开」。现新增 `workOutsideProject` 选择器与 `enterDefaultWorkspace()` 显式切换（切换后以 `workspaceBinding` 回读为准），点击前先查菜单是否已开；`confirmDefaultWorkspace` 对「明确绑定着项目」立即返回而非空等。
 
 ---
 
