@@ -64,7 +64,7 @@
 - **全量测试 486 passed / 10 skipped**（Windows 10 x64，Node 24.18.0）；10 项真实浏览器门禁用例以 `TIANSHU_VISUAL_BROWSER_TEST=1` 单独跑通 **10/10**。
 - **生产 tarball 独立消费者验收通过**：`npm pack` → 装入无开发依赖目录 → 批准基准 → 图片规格 → 检出真实像素缺陷 → 离线 HTML 断网可用（状态过滤、透明叠加、区域定位）。
 - `typecheck`、`lint`、`build`、`pack:check`、严格 stdio 检查全部通过；构建后无意外已跟踪文件变更。
-- **CI 目标提交成功**：`b1505f5` 与 `de34278` 的 `CI` 工作流全绿（`visual-browser` 四系统 × Node 20/22/24 全部成功，`build-test`、`pack-check` 成功）。早期 `df7eb18` 的 CI 在 `Build & Test (ubuntu-latest / Node 20)` 因 `zcode-flow` 任务总时限时序竞态失败一次，与视觉模块无关。
+- **CI 目标提交成功**：`b1505f5`、`de34278` 与最终提交 `fb18249` 的 `CI` 工作流全绿。`fb18249` 的 12 个 `visual-browser` 作业（含 6 个 macOS：`macos-15-intel` 与 `macos-15` × Node 20/22/24）全部成功，`build-test` 与 `pack-check` 亦成功。早期 `df7eb18` 的 CI 在 `Build & Test (ubuntu-latest / Node 20)` 因 `zcode-flow` 任务总时限时序竞态失败一次，与视觉模块无关。链接：https://github.com/lanlan0811/tianshu-mcp/actions/runs/34841685757
 
 ## 三、发行结果（已核实）
 

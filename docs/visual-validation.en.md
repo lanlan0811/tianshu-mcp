@@ -64,7 +64,7 @@ Note: these are real macOS systems and real architectures on GitHub-hosted macOS
 - **Full suite: 486 passed / 10 skipped** (Windows 10 x64, Node 24.18.0); the 10 real-browser-gated cases pass **10/10** when run with `TIANSHU_VISUAL_BROWSER_TEST=1`.
 - **Isolated production-tarball consumer acceptance passed**: `npm pack` → install into a directory without dev dependencies → approve a baseline → image specification check → detect a real pixel defect → offline HTML usable with networking off (status filter, opacity overlay, region selection).
 - `typecheck`, `lint`, `build`, `pack:check` and the strict stdio check all pass; the build leaves no unexpected tracked changes.
-- **CI on the target commits succeeded**: the `CI` workflow is fully green for `b1505f5` and `de34278` (`visual-browser` all four systems × Node 20/22/24 succeeded; `build-test` and `pack-check` succeeded). The earlier `df7eb18` CI failed once in `Build & Test (ubuntu-latest / Node 20)` on a `zcode-flow` task-deadline timing race unrelated to the visual module.
+- **CI on the target commits succeeded**: the `CI` workflow is fully green for `b1505f5`, `de34278` and the final commit `fb18249`. For `fb18249`, all 12 `visual-browser` jobs succeeded (including 6 macOS jobs: `macos-15-intel` and `macos-15` × Node 20/22/24), along with `build-test` and `pack-check`. The earlier `df7eb18` CI failed once in `Build & Test (ubuntu-latest / Node 20)` on a `zcode-flow` task-deadline timing race unrelated to the visual module. Link: https://github.com/lanlan0811/tianshu-mcp/actions/runs/34841685757
 
 ## 3. Release outcome (verified)
 
