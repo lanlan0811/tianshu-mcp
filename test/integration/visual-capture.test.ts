@@ -15,8 +15,8 @@ const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close();
 });
-async function fixture(html: string, overrides: Record<string, unknown> = {}) {
-  const project = await fs.mkdtemp(path.join(os.tmpdir(), "visual-capture-"));
+async function fixture(html: string, overrides: Record<string, unknown> = {}, prefix = "visual-capture-") {
+  const project = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
   cleanup.push(() => fs.rm(project, { recursive: true, force: true }));
   await fs.writeFile(path.join(project, "index.html"), html);
   const config = VisualConfigSchema.parse({
@@ -133,5 +133,63 @@ describe.skipIf(process.env.TIANSHU_VISUAL_BROWSER_TEST !== "1")("real visual ca
     await blocked.closeBrowser();
     const allowed = await fixture(html, { allowedOrigins: [origin] });
     expect((await allowed.capture()).image.length).toBeGreaterThan(0);
+  });
+  it("captures a project whose path contains CJK characters and spaces", async () => {
+    const h = await fixture(`<main>Unicode path</main>`, {}, "视觉 验收 capture-");
+    expect(h.project).toMatch(/视觉 验收/);
+    const captured = await h.capture({ readySelector: "main" });
+    const sharp = await loadSharp();
+    expect((await sharp(captured.image).metadata()).width).toBe(240);
+  });
+  it("blocks a main-document redirect to a disallowed origin and allows it when listed", async () => {
+    const target = http.createServer((_req, res) => {
+      res.setHeader("Content-Type", "text/html");
+      res.end("<main>Redirect target</main>");
+    });
+    await new Promise<void>((resolve) => target.listen(0, "127.0.0.1", resolve));
+    const targetOrigin = `http://127.0.0.1:${(target.address() as AddressInfo).port}`;
+    const redirector = http.createServer((_req, res) => {
+      res.writeHead(302, { Location: `${targetOrigin}/` });
+      res.end();
+    });
+    await new Promise<void>((resolve) => redirector.listen(0, "127.0.0.1", resolve));
+    const redirectOrigin = `http://127.0.0.1:${(redirector.address() as AddressInfo).port}`;
+    cleanup.push(async () => {
+      for (const server of [redirector, target]) {
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    });
+    const project = await fs.mkdtemp(path.join(os.tmpdir(), "visual-redirect-"));
+    cleanup.push(() => fs.rm(project, { recursive: true, force: true }));
+    const viewport = { id: "test", width: 240, height: 160, deviceScaleFactor: 1 };
+    const page = () =>
+      PageSchema.parse({
+        id: "redirect",
+        source: { type: "existing", url: redirectOrigin },
+        route: "/",
+      });
+    const makeBrowser = async (allowedOrigins: string[]) => {
+      const config = VisualConfigSchema.parse({
+        limits: { itemTimeoutMs: 20000, navigationTimeoutMs: 10000 },
+        allowedOrigins,
+      });
+      const budget = new VisualBudget(config.limits);
+      const browser = new VisualBrowser(config, resolveDataHome(), budget);
+      cleanup.push(async () => {
+        await browser.close();
+        budget.dispose();
+      });
+      await browser.start();
+      return browser;
+    };
+    const blocked = await makeBrowser([]);
+    await expect(blocked.capture(project, page(), viewport, redirectOrigin)).rejects.toMatchObject({
+      code: "RESOURCE_BLOCKED",
+    });
+    const allowed = await makeBrowser([targetOrigin]);
+    expect(
+      (await allowed.capture(project, page(), viewport, redirectOrigin)).image.length,
+    ).toBeGreaterThan(0);
   });
 });

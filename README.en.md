@@ -66,7 +66,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 494 tests across 56 files, including Codex/ZCode/TraeWork unit/fake-CDP/restart/recovery/repair loops and visual acceptance
+npm test             # 496 tests across 56 files, including Codex/ZCode/TraeWork unit/fake-CDP/restart/recovery/repair loops and visual acceptance
 ```
 
 ### Install the npm package

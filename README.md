@@ -66,7 +66,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 494 项测试：56 个文件，含 Codex/ZCode/TraeWork 单元/假 CDP/重启/恢复/返修闭环与视觉验收
+npm test             # 496 项测试：56 个文件，含 Codex/ZCode/TraeWork 单元/假 CDP/重启/恢复/返修闭环与视觉验收
 ```
 
 ### 安装 npm 包

@@ -10,6 +10,10 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ## [Unreleased]
 
+### Tests
+
+- Two additional real-browser-gated visual cases (added after v0.5.0): screenshots succeed when the project path contains CJK characters and spaces; a main-document 302 redirect to a non-allowlisted origin is blocked by policy and passes once explicitly allowed. Full suite: **486 passed / 10 skipped**.
+
 ### Planned
 
 - More external AI-Agent adapters (a new agent = one profile + an optional adapter file).
