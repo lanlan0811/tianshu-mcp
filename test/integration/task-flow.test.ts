@@ -199,3 +199,28 @@ describe("cancel_task", () => {
     expect(parseMeta(q.text).meta?.status).toBe("cancelled");
   }, 60_000);
 });
+
+describe("run_task 协议层：projectPath 可省略（issue #12）", () => {
+  it("省略 projectPath 不再被 MCP schema 拒（无 -32602），交由语义层给出明确错误", async () => {
+    const { res, text } = await callTool(ts.client, "run_task", {
+      agentId: "stub",
+      task: "任意任务：不需要真正执行。",
+    });
+    // 关键回归门：协议层必须放行，否则真机上 run_task 会被 inputSchema 直接拒成 -32602，
+    // 无项目派发根本没机会进入 handler（本仓曾漏改 schema 而单测全绿）。
+    expect(text).not.toMatch(/-32602/);
+    expect(text).not.toMatch(/Input validation error/);
+    // stub 不是 ZCode：应由语义层拒绝并说明需要 projectPath。
+    expect(res.isError).toBe(true);
+    expect(text).toMatch(/projectPath/);
+  });
+
+  it("空字符串 projectPath 仍被 schema 拒绝（不等同于省略）", async () => {
+    const { text } = await callTool(ts.client, "run_task", {
+      projectPath: "",
+      agentId: "stub",
+      task: "任意任务：不需要真正执行。",
+    });
+    expect(text).toMatch(/projectPath/);
+  });
+});

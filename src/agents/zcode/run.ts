@@ -448,11 +448,50 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
         // eslint-disable-next-line no-await-in-loop
         last = await cdp!.workspaceBinding();
         if (workspaceIsDefault(last)) return { ok: true, binding: last };
+        // 明确绑定着某个项目：继续等不会变成 default——立即返回，让上层执行显式切换。
+        if (last.projectPath && !last.ambiguous)
+          return { ok: false, reason: describeDefaultWorkspaceFailure(last), binding: last };
         if (Date.now() >= deadline) break;
         // eslint-disable-next-line no-await-in-loop
         await deps.sleep(Math.min(300, Math.max(0, deadline - Date.now())));
       }
       return { ok: false, reason: describeDefaultWorkspaceFailure(last), binding: last };
+    };
+    /**
+     * 无项目模式：把当前会话切到 ZCode 的 default 工作区。
+     *
+     * 真机实测（3.11.2-Windows）：新建任务会**继承上一次绑定**，所以必须先显式点开项目菜单并
+     * 选择「不在项目中工作」；点击后触发器回读为占位词「选择项目」。切换仍以 workspaceBinding
+     * 回读为准，不靠「点击成功」推断。
+     */
+    const enterDefaultWorkspace = async (): Promise<boolean> => {
+      const deadline = projectTriggerDeadline();
+      for (;;) {
+        // eslint-disable-next-line no-await-in-loop
+        await cdp!.dismissMenus();
+        // eslint-disable-next-line no-await-in-loop
+        const menu = await cdp!.clickProjectTriggerAndConfirm(deadline);
+        if (menu.opened) {
+          // eslint-disable-next-line no-await-in-loop
+          const clicked = await cdp!.clickWorkOutsideProject();
+          if (!clicked.clicked) {
+            logger.warn(
+              `[zcode] 「不在项目中工作」项不可用（匹配 ${clicked.count} 个可见节点）：无法自动切换到 default 工作区`,
+            );
+          } else {
+            // eslint-disable-next-line no-await-in-loop
+            await deps.sleep(300);
+            // eslint-disable-next-line no-await-in-loop
+            if (workspaceIsDefault(await cdp!.workspaceBinding())) {
+              logger.info("[zcode] 已切到 default 工作区（不在项目中工作）");
+              return true;
+            }
+          }
+        }
+        if (Date.now() >= deadline) return false;
+        // eslint-disable-next-line no-await-in-loop
+        await deps.sleep(Math.min(300, Math.max(0, deadline - Date.now())));
+      }
     };
     const ensureProjectBound = async (
       initialItem?: ZcodeProjectItem,
@@ -517,7 +556,12 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
       // 无项目模式（issue #12）：只确认 default 工作区，不进入任何项目选择/绑定/导入路径。
       if (defaultWorkspace) {
       budget.setStage("确认无项目工作区");
-      const confirmed = await confirmDefaultWorkspace();
+      let confirmed = await confirmDefaultWorkspace();
+      if (!confirmed.ok && !confirmed.binding?.ambiguous) {
+        // 新建任务继承了旧绑定：显式切到「不在项目中工作」后重新确认。
+        budget.setStage("切换到 default 工作区");
+        if (await enterDefaultWorkspace()) confirmed = await confirmDefaultWorkspace();
+      }
       if (!confirmed.ok)
         return result({
           endReason: "needs_user",
@@ -543,6 +587,8 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
       const attemptProjectMenu = async (): Promise<ZcodeProjectMenuResult> => {
         const deadline = projectTriggerDeadline();
         const attemptStarted = Date.now();
+        // 与无项目分支保持一致：先收起可能残留的菜单，避免这次点击被 toggle 成关闭。
+        await cdp!.dismissMenus();
         let attempts = 0;
         let last: ZcodeProjectMenuResult = {
           opened: false,

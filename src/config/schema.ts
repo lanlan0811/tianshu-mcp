@@ -19,7 +19,12 @@ export const ReasoningLevelSchema = z.enum(["低", "中", "高", "low", "medium"
 export type ReasoningLevel = z.infer<typeof ReasoningLevelSchema>;
 
 export const RunTaskParamsSchema = z.object({
-  projectPath: AbsPath,
+  /**
+   * 项目绝对路径。**省略** = 无项目模式（issue #12）：目前仅 ZCode 支持——任务在其 `default`
+   * 工作区执行，不登记/导入项目、不采集 Git 基线、不执行项目验收。
+   * 空串 / `null` / 相对路径 / 不存在的目录**不视为**无项目模式，仍按有项目模式拒绝。
+   */
+  projectPath: AbsPath.optional(),
   task: z.string().min(1, "task 任务书不能为空"),
   agentId: z.string().min(1).optional(),
   /**

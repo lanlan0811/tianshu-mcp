@@ -11,6 +11,7 @@ import {
   projectTriggerDom,
   projectTriggerProbeExpression,
   projectMenuOpenExpression,
+  workOutsideProjectExpression,
   workspaceBindingExpression,
   modelSelectionExpression,
   sendButtonPointExpression,
@@ -198,6 +199,10 @@ export class ZcodeCdpClient {
    */
   async clickProjectTriggerAndConfirm(deadline: number): Promise<ZcodeProjectMenuResult> {
     const probe = await this.probeProjectTrigger();
+    // 菜单可能**已经开着**（上一次尝试或外部操作的残留）。Radix 下拉是 toggle：此时再点
+    // 触发器会把它关掉，随后整段等待都会落到 menu-not-open（3.11.2 真机实测踩过）。
+    // 所以先查后点。
+    if (await this.projectMenuOpen()) return { opened: true, probe };
     if (!probe.ready || !probe.point) return { opened: false, reason: "not-ready", probe };
     await this.clickAt(probe.point.x, probe.point.y);
     while (Date.now() < deadline) {
@@ -207,6 +212,19 @@ export class ZcodeCdpClient {
       await new Promise((resolve) => setTimeout(resolve, PROJECT_MENU_POLL_MS));
     }
     return { opened: false, reason: "menu-not-open", probe };
+  }
+
+  /**
+   * 点击「不在项目中工作」（要求该层唯一可见）：进入 ZCode 的 default（无项目）工作区。
+   * 新建任务会继承上一次绑定，所以无项目派发必须先显式执行这一步。
+   */
+  async clickWorkOutsideProject(): Promise<{ clicked: boolean; count: number }> {
+    const found = await this.evaluate<{ count: number; point?: { x: number; y: number } }>(
+      workOutsideProjectExpression(this.selectors),
+    );
+    if (!found.point) return { clicked: false, count: found.count };
+    await this.clickAt(found.point.x, found.point.y);
+    return { clicked: true, count: 1 };
   }
 
   async clickExact(key: ZcodeSelectorKey, value: string): Promise<ZcodeClickExactResult> {

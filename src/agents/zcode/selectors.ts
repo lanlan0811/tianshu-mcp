@@ -28,6 +28,7 @@ export type ZcodeSelectorKey =
   | "permissionTrigger"
   | "permissionValue"
   | "permissionOption"
+  | "workOutsideProject"
   | "loginPage";
 
 export const ZCODE_SELECTORS: Record<ZcodeSelectorKey, ZcodeSelectorSpec> = {
@@ -185,6 +186,15 @@ export const ZCODE_SELECTORS: Record<ZcodeSelectorKey, ZcodeSelectorSpec> = {
     fallbacks: ['[role="option"][data-permission]'],
     verifiedVersion: "3.11.x",
     note: "权限候选",
+  },
+  workOutsideProject: {
+    primary: '[data-testid="composer-work-outside-project"]',
+    fallbacks: [
+      '[role="menuitemcheckbox"][aria-label*="不在项目中"]',
+      '[role="menuitemcheckbox"][aria-label*="outside a project"]',
+    ],
+    verifiedVersion: "3.11.2-Windows",
+    note: "工作区下拉中的「不在项目中工作」项：进入 ZCode default（无项目）工作区。真机实测：点击后触发器回读为占位词「选择项目」",
   },
   loginPage: {
     primary: '[data-testid="login-page"]',

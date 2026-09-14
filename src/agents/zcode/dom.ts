@@ -125,3 +125,17 @@ export function projectMenuOpenExpression(): string {
     return [...document.querySelectorAll('[role="menuitemcheckbox"]')].some(visible);
   })()`;
 }
+
+/**
+ * 「不在项目中工作」菜单项（`composer-work-outside-project`）：ZCode 用它进入 default
+ * （无项目）工作区。要求命中层唯一可见，否则不点击——多匹配说明菜单结构已漂移，
+ * 猜一个点会把任务送到错误的工作区。
+ */
+export function workOutsideProjectExpression(overrides: Record<string, string>): string {
+  return `(function(){${ZCODE_DOM}
+    const found = pick(${candidateExpr("workOutsideProject", overrides)});
+    if (!found.node) return { count: found.count };
+    const r = found.node.getBoundingClientRect();
+    return { count: found.count, point: { x: r.left + r.width / 2, y: r.top + r.height / 2 } };
+  })()`;
+}

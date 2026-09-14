@@ -108,6 +108,10 @@ class FakeZcode {
       ? { opened: true, probe: await this.probeProjectTrigger() }
       : { opened: false, reason: "not-ready", probe: await this.probeProjectTrigger() };
   }
+  /** 「不在项目中工作」菜单项：进入 default 工作区。默认视为可用。 */
+  async clickWorkOutsideProject(): Promise<{ clicked: boolean; count: number }> {
+    return { clicked: true, count: 1 };
+  }
   async projects(): Promise<ZcodeProjectItem[]> {
     return [{ name: path.basename(this.projectPath), path: this.projectPath, id: "p1" }];
   }
@@ -1690,5 +1694,66 @@ describe("ZCode 无项目（default 工作区）派发", () => {
     expect(result.endReason).toBe("needs_user");
     expect(result.pendingQuestion).toMatch(/无法确认/);
     expect(fake.sent).toBe(0);
+  });
+
+  it("新建任务继承旧绑定时，自动切到「不在项目中工作」并完成派发", async () => {
+    const project = await makeTmpRoot("zcode-default-switch");
+    cleanup.push(project);
+    let switched = false;
+    let switchedBeforeSend = false;
+    class BoundThenDefaultZcode extends FakeZcode {
+      override async workspaceBinding() {
+        return switched
+          ? { triggerText: "选择项目", projectPath: "" }
+          : { triggerText: "other-project", projectPath: "D:/other/project" };
+      }
+      override async clickWorkOutsideProject() {
+        switched = true;
+        return { clicked: true, count: 1 };
+      }
+      override async sendMessage() {
+        switchedBeforeSend = switched;
+        return super.sendMessage();
+      }
+    }
+    const fake = new BoundThenDefaultZcode(project);
+    const result = await runZcodeTask({
+      ctx: defaultCtx(project),
+      resolved: resolved({ projectTriggerTimeoutMs: 600 }),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.ok).toBe(true);
+    expect(fake.sent).toBe(1);
+    // 必须在发送之前完成切换，且不得点击任何项目项。
+    expect(switchedBeforeSend).toBe(true);
+    expect(fake.projectClicks).toBe(0);
+  });
+
+  it("「不在项目中工作」不可用时保留现场，不向错误项目发送", async () => {
+    const project = await makeTmpRoot("zcode-default-switch-fail");
+    cleanup.push(project);
+    class BoundNoSwitchZcode extends FakeZcode {
+      override async workspaceBinding() {
+        return { triggerText: "other-project", projectPath: "D:/other/project" };
+      }
+      override async clickWorkOutsideProject() {
+        return { clicked: false, count: 0 };
+      }
+    }
+    const fake = new BoundNoSwitchZcode(project);
+    const result = await runZcodeTask({
+      ctx: defaultCtx(project),
+      resolved: resolved({ projectTriggerTimeoutMs: 500 }),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.endReason).toBe("needs_user");
+    expect(result.needsUserKind).toBe("setup_recovery");
+    expect(result.pendingQuestion).toMatch(/不在项目中工作|default 工作区/);
+    expect(fake.sent).toBe(0);
+    expect(fake.projectClicks).toBe(0);
   });
 });

@@ -294,4 +294,15 @@ describe("ZCode project trigger probe", () => {
     expect(outcome.opened).toBe(false);
     expect(outcome.reason).toBe("menu-not-open");
   });
+
+  it("treats an already-open menu as opened without clicking the trigger", async () => {
+    // Radix 下拉是 toggle：菜单已开时再点触发器会把它关掉，随后整段等待都会失败。
+    const { client, send, document } = fixture(
+      `${primary}<div role="menu"><button role="menuitemcheckbox">Demo</button></div>`,
+    );
+    pointAt(document, triggerSelector);
+    const outcome = await client.clickProjectTriggerAndConfirm(Date.now() + 300);
+    expect(outcome.opened).toBe(true);
+    expect(send).not.toHaveBeenCalled();
+  });
 });
