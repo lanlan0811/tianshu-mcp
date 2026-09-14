@@ -8,7 +8,7 @@
 
 # tianshu-mcp
 
-视觉验收（v0.5.0）：[中文指南](docs/visual-acceptance.md) · [验证记录](docs/visual-validation.md) · [发布说明](<docs/release-v0.5.0.md>)。
+视觉验收（v0.5.0 起）：[中文指南](docs/visual-acceptance.md) · [验证记录](docs/visual-validation.md) · [最新发布说明](<docs/release-v0.5.1.md>)。
 
 **天枢 × AI-Agent 编排 MCP server**
 
@@ -36,7 +36,7 @@
 
 天枢的角色是总指挥；本 MCP server 是**调度层 + 执行面 + 客观验收仪**；外部 AI-Agent（Codex / TraeWork / ZCode GUI）是执行开发的「工人」。
 
-- **9 个 MCP 工具**：`run_task / continue_task / query_task / list_tasks / get_task_report / cancel_task / verify_task / rework_task / get_profiles`。
+- **11 个 MCP 工具**：`run_task / continue_task / query_task / list_tasks / get_task_report / cancel_task / verify_task / rework_task / get_profiles`，外加视觉验收的 `prepare_visual_baseline / approve_visual_baseline`
 - **异步契约**：`run_task` 秒回 `taskId`，长任务用 `query_task` 轮询（长任务不卡 `tools/call`）。
 - **客观验收**：自动命令检查（typecheck/lint/test/build，缺则跳过 + 技术栈推导）+ 程序化代码分析（变更清单/diffstat/TODO·debugger·密钥形态等可疑标记），全部相对 **git 基线**，不自动 commit/stash。验收引擎 **fail-closed**：测试命令退出码为 0 但输出显示零用例时判失败；git 项目默认要求相对动工前基线产生变更（纯分析任务可在 `.tianshu-mcp/acceptance.json` 设 `"requireChanges": false` 显式关闭）。
 - **验收并行度**：命令检查默认**有界并行**（`verifyConcurrency`，默认 2、范围 1–4）。检查项之间有顺序依赖时（后续检查读取 build 产物、带 `--fix`、共享缓存目录）请设 `1` 完全退化为串行；项目级 `.tianshu-mcp/acceptance.json` 可覆盖，server 级在 `config.json`。报告与日志格式不变（结果按声明顺序返回）。
@@ -88,7 +88,7 @@ npm install -g tianshu-mcp
 | 命令 | `npx` | `node` |
 | 参数（空格分隔） | `-y tianshu-mcp` | `<仓库绝对路径>/dist/index.js` |
 
-> - 服务器 ID 即工具前缀：填 `tianshu-mcp` 后工具名为 `mcp__tianshu-mcp__run_task` 等 9 个。
+> - 服务器 ID 即工具前缀：填 `tianshu-mcp` 后工具名为 `mcp__tianshu-mcp__run_task` 等 11 个。
 > - 参数按空格分隔填写，**不要加引号**；本地开发模式请把 `<仓库绝对路径>` 换成真实绝对路径（如 `D:/Trae项目/tianshu-mcp/dist/index.js`）。
 > - 界面未提供环境变量输入框；如需自定义数据目录，改用下面的 `config.json` 方式设置 `TIANSHU_MCP_HOME`。
 > - 添加后连接成功即完成；新开会话即可看到 11 个工具。
@@ -190,6 +190,7 @@ ZCode 提问、需要登录、旧实例无 CDP、系统权限不足，或自动�
 | [docs/zcode-windows-smoke.md](docs/zcode-windows-smoke.md) | ZCode Windows 真机开发、同会话返修与提问续跑验收记录 |
 | [docs/codex-gui-cdp.md](docs/codex-gui-cdp.md) | Codex 桌面端 GUI 驱动：MSIX COM 激活、CDP 接管、选择器、运行检测、验收返修 |
 | [docs/codex-windows-smoke.md](docs/codex-windows-smoke.md) | Codex Windows 真机验收记录（含验收失败→自动生成计划→返修通过闭环） |
+| [docs/release-v0.5.1.md](<docs/release-v0.5.1.md>) | v0.5.1 发布说明（技能/验证文档补齐、平台证据归档、锁文件版本同步；无运行时变更） |
 | [docs/release-v0.5.0.md](<docs/release-v0.5.0.md>) | v0.5.0 发布说明（可选视觉验收模块：截图对比、图片规格、基准批准、离线报告） |
 | [docs/visual-acceptance.md](<docs/visual-acceptance.md>) | 视觉验收入门与完整配置：三种页面来源、基准候选/批准、规则冻结、阈值与排查 |
 | [docs/visual-validation.md](<docs/visual-validation.md>) | 视觉验收验证进度：Windows 10 完整功能矩阵与 macOS Intel/Apple Silicon 平台证据（系统/Node/浏览器/命令/结果） |
@@ -235,9 +236,9 @@ ZCode 提问、需要登录、旧实例无 CDP、系统权限不足，或自动�
   - Zcode 无头接口（Z1）实测定论：ZCode 桌面无随包 headless CLI → unsupported
 - **R1–R8 / S1–S6 — 两轮验收整改** ✅（取消/超时/基线归因/参数语义/热加载/CI 加固）— **72 测试**
 - **工程 / CI** ✅
-  - GitHub Actions：`CI`（`build-test` ubuntu/windows/macos × Node 20/22/24 + `pack-check`，另加 `visual-browser` 真实浏览器矩阵 ubuntu/windows/macos-15-intel/macos-15 × Node 20/22/24，随 v0.5.0 tag 全绿）与 `Release`（tag 触发）均绿
+  - GitHub Actions：`CI`（`build-test` ubuntu/windows/macos × Node 20/22/24 + `pack-check`，另加 `visual-browser` 真实浏览器矩阵 ubuntu/windows/macos-15-intel/macos-15 × Node 20/22/24，随 v0.5.1 tag 全绿）与 `Release`（tag 触发）均绿
   - 技能自检安装已在本机真实 `~/.rivet/skills/tianshu-mcp` 验证生效且幂等
-  - npm 包名 `tianshu-mcp` 自 v0.1.1 起持续发布（当前 `0.5.0`）
+  - npm 包名 `tianshu-mcp` 自 v0.1.1 起持续发布（当前 `0.5.1`）
 - **天枢宿主真实接入（DoD #6）** ✅（2026-09-07，[host-integration-record.md](docs/host-integration-record.md)）
   - 在真实 `D:\Tianshu` 桌面宿主 `mcp.servers` 配置本地模式 → sidecar `MCP: 2 servers connected, 10 tools`（含本 server 8 工具），spawn 子进程并 stdio 连通
   - 实测暴露并修复技能安装源路径 bug（fileURLToPath，提交 55cf2d0）
@@ -306,6 +307,11 @@ ZCode 提问、需要登录、旧实例无 CDP、系统权限不足，或自动�
   - **MCP/CLI**：新增 `prepare_visual_baseline` / `approve_visual_baseline` 与 `tianshu-mcp visual` 子命令族；CLI 在 stdio 连接前分流
   - **报告与恢复**：`VerifyReport` 新增可选 `visual` 与离线 HTML（状态过滤、透明叠加、区域定位）；视觉阻塞进 `needs_attention`，`rework_task` 先重新验收、仅真实缺陷才消耗返修预算
   - **门禁**：CI 新增真实浏览器四系统三 Node 矩阵与生产包独立消费者验收；release 要求目标提交存在成功 CI，缺少 Gitee 凭据时阻塞不冒充成功
+- **M20 — 技能/验证文档对齐 + 平台证据归档 + v0.5.1**（2026-09-14）— **486 测试**
+  - 技能文档逐项对齐代码实况：11 工具表（补能力/审批列）、视觉验收独立成节、错误码补 `setup_recovery`、修正 agent 状态语义与 `get_task_report`/`repair-plan` 的文档偏差
+  - 归档视觉验收平台证据：Windows 10 本机完整功能矩阵 **9/9**（`npm run evidence:visual:windows`）、macOS 15 真机 Intel x64 与 Apple Silicon arm64 各 10 文件 51 用例
+  - 修复 `package-lock.json` 根包版本滞后（v0.5.0 时为 `0.4.1`）
+  - 本版本**无运行时行为变更**，升级无需迁移
 
 ## Agent 适配现状
 
@@ -379,7 +385,7 @@ run_task(projectPath=/path/to/项目, agentId=codex-cli, task="任务书", autoV
 | 文档 | 内容 |
 |---|---|
 | [HANDOFF.md](HANDOFF.md) | 项目交接文档：当前状态快照、架构导览、硬性红线、已知限制、接手建议 |
-| [CHANGELOG.md](<CHANGELOG.md>) | 版本变更日志（v0.1.0 → v0.5.0） |
+| [CHANGELOG.md](<CHANGELOG.md>) | 版本变更日志（v0.1.0 → v0.5.1） |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 开发环境、工程规范、提交与发布流程、如何新增 agent |
 | [SECURITY.md](SECURITY.md) | 安全模型（凭证零管理/命令白名单/进程与桌面自动化边界）与私密报告渠道 |
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | 贡献者行为准则 |

@@ -10,18 +10,6 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ## [Unreleased]
 
-### Tests
-
-- Two additional real-browser-gated visual cases (added after v0.5.0): screenshots succeed when the project path contains CJK characters and spaces; a main-document 302 redirect to a non-allowlisted origin is blocked by policy and passes once explicitly allowed. Full suite: **486 passed / 10 skipped**.
-- New `npm run evidence:visual:windows` (`scripts/evidence-visual-windows.mjs`): collects the full Windows 10 local functional matrix (existing/static/command sources, port conflict that blocks without terminating another service, bounded readiness failure that cleans up the child process, local Edge isolated instance and version mismatch, missing-browser blocker), 9/9 passed.
-- Collected macOS 13+ platform evidence: on macOS 15 hardware runners, Intel x64 and Apple Silicon arm64 (Node 20/22/24) each passed 10 files with 51 cases; raw records are committed under `docs/visual-validation-evidence/`.
-
-### Docs
-
-- **Skill docs (`skills/tianshu-mcp/`) aligned with the code**: `SKILL.md` now lists all 11 tools with capability/approval columns (including `prepare_visual_baseline`/`approve_visual_baseline`), gives visual acceptance its own section (blockers do not trigger repair; `rework_task` re-verifies first; baseline approval and freezing), adds `setup_recovery` and the `errorType` value set to the error table, corrects agent status semantics (`traework` is always `ready`; `codex` is platform-dependent) and notes that `continue_task` only supports codex/zcode. `usage-examples.md` fixes the claim that `get_task_report` carries a meta block, removes the mis-listed `reasoningLevel` from the meta table, distinguishes the auto repair-plan location per agent (codex writes inside the project's `.zcode/plans/`; others write to the task directory), and adds the actual `list_tasks` output columns plus the visual CLI commands.
-- `docs/visual-validation{,.en}.md` rewritten with full platform evidence tables (system, Node, browser version, command, result), plus the new `docs/visual-validation-evidence/` raw machine-readable records.
-- `tianshu-mcp@0.5.0` published to npm `latest` (on user instruction, beyond the original plan scope), keeping the "published continuously since v0.1.1" continuity intact.
-
 ### Planned
 
 - More external AI-Agent adapters (a new agent = one profile + an optional adapter file).
@@ -30,6 +18,32 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 - Cancel/rework/new-project matrices for the Codex and ZCode GUI drivers on macOS (both remain `research` on darwin).
 - Best-effort stop of a GUI-side pending session (via a temporary CDP connection) when cancelling
   a task in the `needs_user` state.
+
+---
+
+## [0.5.1] — 2026-09-14
+
+Documentation and validation-evidence completion; **no runtime behaviour changes**. See the [v0.5.1 release notes](docs/release-v0.5.1.en.md) for details.
+
+### Added
+
+- `npm run evidence:visual:windows` (`scripts/evidence-visual-windows.mjs`): collects the full Windows 10 local functional matrix (existing/static/command sources, port conflict that blocks without terminating another service, bounded readiness failure that cleans up the child process, local Edge isolated instance and version mismatch, missing-browser blocker), 9/9 passed.
+- `docs/visual-validation-evidence/`: raw machine-readable validation records (Windows 10 matrix JSON and test output, macOS dual-architecture `environment.json`, macOS CI summaries), distributed with the package.
+
+### Fixed
+
+- Stale `package-lock.json` root version: the lockfile still said `0.4.1` at the v0.5.0 release while `package.json` said `0.5.0`; both are now synced to `0.5.1`.
+
+### Tests
+
+- Two additional real-browser-gated visual cases: screenshots succeed when the project path contains CJK characters and spaces; a main-document 302 redirect to a non-allowlisted origin is blocked by policy and passes once explicitly allowed. Full suite: **486 passed / 10 skipped**.
+- Collected macOS 13+ platform evidence: on macOS 15 hardware runners, Intel x64 and Apple Silicon arm64 (Node 20/22/24) each passed 10 files with 51 cases.
+
+### Docs
+
+- **Skill docs (`skills/tianshu-mcp/`) aligned with the code**: `SKILL.md` now lists all 11 tools with capability/approval columns (including `prepare_visual_baseline`/`approve_visual_baseline`), gives visual acceptance its own section (blockers do not trigger repair; `rework_task` re-verifies first; baseline approval and freezing), adds `setup_recovery` and the `errorType` value set to the error table, corrects agent status semantics (`traework` is always `ready`; `codex` is platform-dependent) and notes that `continue_task` only supports codex/zcode. `usage-examples.md` fixes the claim that `get_task_report` carries a meta block, removes the mis-listed `reasoningLevel` from the meta table, distinguishes the auto repair-plan location per agent (codex writes inside the project's `.zcode/plans/`; others write to the task directory), and adds the actual `list_tasks` output columns plus the visual CLI commands.
+- `docs/visual-validation{,.en}.md` rewritten with full platform evidence tables (system, Node, browser version, command, result).
+- Bilingual README and HANDOFF updated against the current code and commit history.
 
 ---
 

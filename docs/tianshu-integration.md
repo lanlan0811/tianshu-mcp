@@ -1,6 +1,6 @@
 # 天枢接入教程（tianshu-integration.md）
 
-本 MCP server（`tianshu-mcp`）是标准 **MCP stdio server**（TypeScript + 官方 `@modelcontextprotocol/sdk`）。天枢把它当作普通 MCP server 接入后，会话里会出现 8 个工具（`mcp__tianshu-mcp__*`），由天枢调度去驱动外部 AI-Agent 完成「派活 → 验收 → 返修 → 再验收」闭环。
+本 MCP server（`tianshu-mcp`）是标准 **MCP stdio server**（TypeScript + 官方 `@modelcontextprotocol/sdk`）。天枢把它当作普通 MCP server 接入后，会话里会出现 11 个工具（`mcp__tianshu-mcp__*`），由天枢调度去驱动外部 AI-Agent 完成「派活 → 验收 → 返修 → 再验收」闭环。
 
 > 天枢官方仓库：[github.com/huiliyi37/Tianshu-harness](https://github.com/huiliyi37/Tianshu-harness)（基于 harness 工程的终端编程智能体运行时，TUI × GUI）。
 
@@ -25,7 +25,7 @@
 | 命令 | `npx` | `node` |
 | 参数（空格分隔） | `-y tianshu-mcp` | `<仓库绝对路径>/dist/index.js` |
 
-- 服务器 ID 决定工具前缀：填 `tianshu-mcp` → 工具名 `mcp__tianshu-mcp__run_task` 等 8 个。
+- 服务器 ID 决定工具前缀：填 `tianshu-mcp` → 工具名 `mcp__tianshu-mcp__run_task` 等 11 个。
 - 参数按空格分隔，不要加引号；本地开发需把 `<仓库绝对路径>` 换成真实绝对路径。
 - 界面没有环境变量输入框；需要自定义数据目录（`TIANSHU_MCP_HOME`）时用下面的 `config.json` 方式。
 
@@ -76,32 +76,37 @@
     "query_task":   { "capability": "read" },
     "list_tasks":   { "capability": "read" },
     "get_task_report": { "capability": "read" },
-    "get_profiles": { "capability": "read" }
+    "get_profiles": { "capability": "read" },
+    "prepare_visual_baseline": { "capability": "write", "requireApproval": true },
+    "approve_visual_baseline": { "capability": "write", "requireApproval": true }
   }
 }
 ```
 
 > 若天枢实测要求"能跑构建命令"的工具必须具备 execute 能力，把 `verify_task` 上调为 `execute`（仍免审批）——配置调整即可，属联调确认项。
 
-## 3. 工具面（8 个）
+## 3. 工具面（11 个）
 
 | 工具 | 能力/审批 | 作用 |
 |---|---|---|
 | `run_task` | write + 审批 | 派活（可带自动验收/自动返修），异步返回 taskId |
+| `continue_task` | write + 审批 | 恢复 `needs_user` 的原会话（仅 codex/zcode） |
 | `query_task` | read | 轮询状态 / 日志尾 |
 | `list_tasks` | read | 历史任务过滤列表 |
 | `get_task_report` | read | 某轮验收报告全文 |
-| `cancel_task` | write + 审批 | 取消（kill 进程树） |
+| `cancel_task` | write + 审批 | 取消（CLI kill 进程树；GUI agent 经 CDP 点击停止并等待空闲） |
 | `verify_task` | read | 对任务/项目路径做一次验收（不改源码） |
 | `rework_task` | write + 审批 | 手动返修（失败报告喂回同一 agent） |
 | `get_profiles` | read | 查看 agent 探测结果 |
+| `prepare_visual_baseline` | write + 审批 | 视觉基准候选准备（截图或导入参考图，不采用正式基准） |
+| `approve_visual_baseline` | write + 审批 | 用户审阅后批准候选，写入正式基准与审批记录 |
 
-返回统一：`人类可读文本 + ---tianshu-mcp-meta--- JSON 块`。
+返回统一：`人类可读文本 + ---tianshu-mcp-meta--- JSON 块`（`get_task_report` 例外，直接返回报告 Markdown 原文）。
 
 ## 4. 操作步骤（天枢会话冒烟）
 
 1. **设置/API 加 server**：用上面任一模式配置并连接；`GET /mcp/status` 应 connected。
-2. **新开会话**，确认工具面出现 8 个 `mcp__tianshu-mcp__*` 工具。
+2. **新开会话**，确认工具面出现 11 个 `mcp__tianshu-mcp__*` 工具。
 3. **stub 预演**（不碰真实登录态）：`test/stub-agent/stub-agent.mjs` 配成 profile，跑一次 `run_task(autoVerify:true)` → query_task → succeeded。
 4. **真实 agent**：切 codex profile，跑 `run_task`（见 skills/tianshu-mcp/SKILL.md 用法）。
 5. **热路径验证**：热重启/热注入一次；删除 server 一次（任务应标 interrupted 且可查历史）。

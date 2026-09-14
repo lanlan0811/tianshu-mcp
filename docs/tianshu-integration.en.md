@@ -1,6 +1,6 @@
 # Tianshu Integration Guide
 
-`tianshu-mcp` is a standard **MCP stdio server** (TypeScript + official `@modelcontextprotocol/sdk`). Register it in Tianshu as a normal MCP server and its 8 tools (`mcp__tianshu-mcp__*`) become available to drive external AI-Agents through the "dispatch → accept → rework → re-accept" loop.
+`tianshu-mcp` is a standard **MCP stdio server** (TypeScript + official `@modelcontextprotocol/sdk`). Register it in Tianshu as a normal MCP server and its 11 tools (`mcp__tianshu-mcp__*`) become available to drive external AI-Agents through the "dispatch → accept → rework → re-accept" loop.
 
 > Official Tianshu repository: [github.com/huiliyi37/Tianshu-harness](https://github.com/huiliyi37/Tianshu-harness) (a harness-engineering terminal coding-agent runtime, TUI × GUI).
 
@@ -65,29 +65,34 @@ In Tianshu go to **Settings → MCP Servers → Add** and fill in (transport: `s
   "query_task":   { "capability": "read" },
   "list_tasks":   { "capability": "read" },
   "get_task_report": { "capability": "read" },
-  "get_profiles": { "capability": "read" }
+  "get_profiles": { "capability": "read" },
+  "prepare_visual_baseline": { "capability": "write", "requireApproval": true },
+  "approve_visual_baseline": { "capability": "write", "requireApproval": true }
 }}
 ```
 
-## 3. Tool surface (8)
+## 3. Tool surface (11)
 
 | Tool | capability/approval | Purpose |
 |---|---|---|
 | `run_task` | write + approval | dispatch (optional auto-verify / auto-fix), async → taskId |
+| `continue_task` | write + approval | resume a `needs_user` session (codex/zcode only) |
 | `query_task` | read | poll status / log tail |
 | `list_tasks` | read | filter history |
 | `get_task_report` | read | full acceptance report |
-| `cancel_task` | write + approval | cancel (kill tree) |
+| `cancel_task` | write + approval | cancel (CLI: kill tree; GUI agents: CDP stop click + bounded wait) |
 | `verify_task` | read | one acceptance round (no source edits) |
 | `rework_task` | write + approval | manual rework (feed failure back to same agent) |
 | `get_profiles` | read | agent probe results |
+| `prepare_visual_baseline` | write + approval | prepare a visual baseline candidate (never adopts the official baseline) |
+| `approve_visual_baseline` | write + approval | adopt a reviewed candidate into the official baseline with an approval record |
 
-Return format: human text + `---tianshu-mcp-meta---` JSON block.
+Return format: human text + `---tianshu-mcp-meta---` JSON block (`get_task_report` is the exception: it returns the report Markdown verbatim).
 
 ## 4. Smoke steps
 
 1. Add the server via settings/API and connect; `GET /mcp/status` shows connected.
-2. New session → confirm 8 `mcp__tianshu-mcp__*` tools.
+2. New session → confirm 11 `mcp__tianshu-mcp__*` tools.
 3. Rehearse with the stub agent, then switch to the `codex` profile.
 4. Validate hot-restart / hot-inject and delete-server paths.
 

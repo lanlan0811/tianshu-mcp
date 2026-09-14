@@ -8,7 +8,7 @@
 
 # tianshu-mcp
 
-Visual acceptance (v0.5.0): [English guide](docs/visual-acceptance.en.md) · [Validation record](docs/visual-validation.en.md) · [Release notes](<docs/release-v0.5.0.en.md>).
+Visual acceptance (since v0.5.0): [English guide](docs/visual-acceptance.en.md) · [Validation record](docs/visual-validation.en.md) · [Latest release notes](<docs/release-v0.5.1.en.md>).
 
 **Tianshu × AI-Agent orchestration MCP server**
 
@@ -36,7 +36,7 @@ Registered by Tianshu as a standard MCP server, it dispatches external AI-Agents
 
 Tianshu plays the role of the overall commander; this MCP server is the **scheduler + execution surface + objective acceptance gate**; the external AI-Agent (Codex / TraeWork / ZCode GUI) is the "worker" that does the development.
 
-- **9 MCP tools**: `run_task / continue_task / query_task / list_tasks / get_task_report / cancel_task / verify_task / rework_task / get_profiles`.
+- **11 MCP tools**: `run_task / continue_task / query_task / list_tasks / get_task_report / cancel_task / verify_task / rework_task / get_profiles`, plus `prepare_visual_baseline / approve_visual_baseline` for visual acceptance
 - **Async contract**: `run_task` returns a `taskId` immediately; long-running work is polled via `query_task` (never blocks `tools/call`).
 - **Objective acceptance**: automated command checks (typecheck/lint/test/build — skipped when absent, plus tech-stack derivation) + programmatic code analysis (changed-file list / diffstat / suspicious signals such as TODO, debugger, secret-like patterns), all relative to a **git baseline**; never auto-commits or stashes. The acceptance engine is **fail-closed**: a test check fails when its output reports zero executed tests even if the exit code is 0; git projects must produce changes relative to the pre-work baseline by default (pure analysis tasks can opt out with `"requireChanges": false` in `.tianshu-mcp/acceptance.json`).
 - **Acceptance parallelism**: command checks run **bounded-parallel** by default (`verifyConcurrency`, default 2, range 1–4). When checks depend on an order (a later check reading build output, `--fix`, shared cache dirs), set it to `1` for fully serial behaviour; a project can override it in `.tianshu-mcp/acceptance.json`, and the server level lives in `config.json`. Report and log formats are unchanged (results are returned in declaration order).
@@ -195,6 +195,7 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 | [docs/codex-gui-cdp.en.md](docs/codex-gui-cdp.en.md) | Codex desktop GUI driver: MSIX COM activation, CDP attach, selectors, run detection, verify/repair |
 | [docs/codex-windows-smoke.en.md](docs/codex-windows-smoke.en.md) | Codex Windows hardware record (incl. verify-fail → auto plan → repair-pass loop) |
 | [docs/release-v0.3.4.en.md](<docs/release-v0.3.4.en.md>) | v0.3.4 release notes (ZCode project/model read-back, initialization recovery, session dispatch confirmation, issues #8/#9/#10) |
+| [docs/release-v0.5.1.en.md](<docs/release-v0.5.1.en.md>) | v0.5.1 release notes (skill/validation docs, archived platform evidence, lockfile version sync; no runtime changes) |
 | [docs/release-v0.5.0.en.md](<docs/release-v0.5.0.en.md>) | v0.5.0 release notes (optional visual acceptance: screenshots, image specs, baseline approval, offline report) |
 | [docs/visual-acceptance.en.md](<docs/visual-acceptance.en.md>) | Visual acceptance primer and full configuration: three page sources, baseline candidates/approval, rule freezing, thresholds and troubleshooting |
 | [docs/visual-validation.en.md](<docs/visual-validation.en.md>) | Visual acceptance validation progress: full Windows 10 matrix and macOS Intel/Apple Silicon platform evidence (system/Node/browser/command/result) |
@@ -236,9 +237,9 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
   - Zcode headless entry (Z1) verified: ZCode desktop ships no headless CLI → unsupported
 - **R1–R8 / S1–S6 — two acceptance hardening rounds** ✅ (cancel / timeout / baseline attribution / parameter semantics / hot reload / CI hardening) — **72 tests**
 - **Engineering / CI** ✅
-  - GitHub Actions: `CI` (`build-test` ubuntu/windows/macos × Node 20/22/24 + `pack-check`, plus a `visual-browser` real-browser matrix ubuntu/windows/macos-15-intel/macos-15 × Node 20/22/24, all green with the v0.5.0 tag) and `Release` (tag-triggered) both green
+  - GitHub Actions: `CI` (`build-test` ubuntu/windows/macos × Node 20/22/24 + `pack-check`, plus a `visual-browser` real-browser matrix ubuntu/windows/macos-15-intel/macos-15 × Node 20/22/24, all green with the v0.5.1 tag) and `Release` (tag-triggered) both green
   - Skill self-install verified idempotent on this machine's real `~/.rivet/skills/tianshu-mcp`
-  - npm package name `tianshu-mcp` published continuously since v0.1.1 (currently `0.5.0`)
+  - npm package name `tianshu-mcp` published continuously since v0.1.1 (currently `0.5.1`)
 - **Real Tianshu host integration (DoD #6)** ✅ (2026-09-07)
   - Configured the local mode in the real `D:\Tianshu` desktop host `mcp.servers` → sidecar reported `MCP: 2 servers connected, 10 tools` (including this server's 8 tools), spawned the child process and connected over stdio
   - Exposed and fixed a skill-install source-path bug (fileURLToPath, commit 55cf2d0)
@@ -307,6 +308,11 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
   - **MCP/CLI**: new `prepare_visual_baseline` / `approve_visual_baseline` and the `tianshu-mcp visual` subcommand family, dispatched before the stdio connection
   - **Reports and recovery**: `VerifyReport` gains an optional `visual` section and offline HTML (status filter, opacity overlay, region location); visual blockers enter `needs_attention` and `rework_task` re-verifies first so only real defects consume repair budget
   - **Gates**: CI adds a four-system, three-Node real-browser matrix plus isolated production-package consumer acceptance; release requires a successful CI for the target commit and blocks when Gitee credentials are missing rather than claiming success
+- **M20 — skill/validation docs aligned + platform evidence archived + v0.5.1** (2026-09-14) — **486 tests**
+  - Skill docs aligned item by item with the code: a full 11-tool table with capability/approval columns, visual acceptance given its own section, `setup_recovery` added to the error table, and fixes to agent status semantics plus the `get_task_report`/`repair-plan` doc drift
+  - Visual acceptance platform evidence archived: Windows 10 local full functional matrix **9/9** (`npm run evidence:visual:windows`), and macOS 15 hardware Intel x64 plus Apple Silicon arm64 with 10 files / 51 cases each
+  - Fixed the stale `package-lock.json` root version (was `0.4.1` at v0.5.0)
+  - **No runtime behaviour changes**; no migration needed
 
 ## Agent support status
 
@@ -379,7 +385,7 @@ Behavior and limits:
 
 | Document | Content |
 |---|---|
-| [CHANGELOG.en.md](<CHANGELOG.en.md>) | Version history (v0.1.0 → v0.5.0) |
+| [CHANGELOG.en.md](<CHANGELOG.en.md>) | Version history (v0.1.0 → v0.5.1) |
 | [CONTRIBUTING.en.md](CONTRIBUTING.en.md) | Dev setup, conventions, commit/release flow, adding an agent |
 | [SECURITY.en.md](SECURITY.en.md) | Security model (zero credentials / command whitelist / process & desktop-automation boundaries) and private reporting |
 | [CODE_OF_CONDUCT.en.md](CODE_OF_CONDUCT.en.md) | Contributor Code of Conduct |

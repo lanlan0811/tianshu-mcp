@@ -9,18 +9,6 @@
 
 ## [未发布]
 
-### 测试
-
-- 视觉验收补两条真实浏览器门禁用例（v0.5.0 之后补充）：项目路径含中文与空格时截图正常；主文档 302 跳转到未放行来源时按策略拦截，显式放行后通过。全量测试 **486 passed / 10 skipped**。
-- 新增 `npm run evidence:visual:windows`（`scripts/evidence-visual-windows.mjs`）：在 Windows 10 本机采集完整功能矩阵证据（`existing`/静态/命令三种来源、端口冲突阻塞且不结束他人服务、就绪失败有界阻塞并清理子进程、本机 Edge 独立实例与版本不匹配、缺浏览器阻塞），9/9 通过。
-- 采集 macOS 13+ 平台证据：macOS 15 真机 runner 上 Intel x64 与 Apple Silicon arm64（Node 20/22/24）各跑通 10 文件 51 用例；原始记录随 `docs/visual-validation-evidence/` 入库。
-
-### 文档
-
-- **技能文档（`skills/tianshu-mcp/`）对齐代码实况**：`SKILL.md` 补全 11 个工具表与能力/审批列（含 `prepare_visual_baseline`/`approve_visual_baseline`），视觉验收独立成节（阻塞不触发返修、`rework_task` 先重新验收、基准审批与冻结），错误码表补 `setup_recovery` 与 `errorType` 取值，修正 agent 状态语义（`traework` 恒为 `ready`、`codex` 平台相关）与 `continue_task` 仅支持 codex/zcode；`usage-examples.md` 修正 `get_task_report` 不带 meta 块、移除 meta 表误列的 `reasoningLevel`、按 agent 区分自动修复计划落盘位置（codex 在项目内 `.zcode/plans/`、其余在任务目录），并补 `list_tasks` 实际输出列与视觉 CLI 命令。
-- `docs/visual-validation{,.en}.md` 重写为完整平台证据表（系统、Node、浏览器版本、命令、结果），并新增 `docs/visual-validation-evidence/` 原始机器可读记录。
-- `tianshu-mcp@0.5.0` 已发布到 npm `latest`（按用户指示，超出原计划范围），保持「自 v0.1.1 起持续发布」的连续性。
-
 ### 计划中
 
 - 更多外部 AI-Agent 适配（新 agent = 一个 profile +（如需）一个 adapter 文件）。
@@ -28,6 +16,32 @@
 - 可选的项目级技能播种（默认不写入目标项目仓库）。
 - Codex 与 ZCode GUI 的 macOS 取消/返修/新建项目矩阵（当前两者 darwin 均保持 `research`）。
 - `needs_user` 状态下取消任务时经临时 CDP 连接尽力停止 GUI 内等待中的会话。
+
+---
+
+## [0.5.1] — 2026-09-14
+
+文档与验证证据补齐；**无运行时行为变更**。完整说明见 [v0.5.1 发布说明](docs/release-v0.5.1.md)。
+
+### 新增
+
+- `npm run evidence:visual:windows`（`scripts/evidence-visual-windows.mjs`）：在 Windows 10 本机采集完整功能矩阵证据（`existing`/静态/命令三种来源、端口冲突阻塞且不结束他人服务、就绪失败有界阻塞并清理子进程、本机 Edge 独立实例与版本不匹配、缺浏览器阻塞），9/9 通过。
+- `docs/visual-validation-evidence/`：视觉验收验证的原始机器可读记录（Windows 10 矩阵 JSON 与测试输出、macOS 双架构 `environment.json`、macOS CI 摘要），随包分发。
+
+### 修复
+
+- `package-lock.json` 根包版本滞后：v0.5.0 发布时锁文件仍为 `0.4.1`（与 `package.json` 的 `0.5.0` 不一致），本版本同步为 `0.5.1`。
+
+### 测试
+
+- 视觉验收补两条真实浏览器门禁用例：项目路径含中文与空格时截图正常；主文档 302 跳转到未放行来源时按策略拦截，显式放行后通过。全量测试 **486 passed / 10 skipped**。
+- 采集 macOS 13+ 平台证据：macOS 15 真机 runner 上 Intel x64 与 Apple Silicon arm64（Node 20/22/24）各跑通 10 文件 51 用例。
+
+### 文档
+
+- **技能文档（`skills/tianshu-mcp/`）对齐代码实况**：`SKILL.md` 补全 11 个工具表与能力/审批列（含 `prepare_visual_baseline`/`approve_visual_baseline`），视觉验收独立成节（阻塞不触发返修、`rework_task` 先重新验收、基准审批与冻结），错误码表补 `setup_recovery` 与 `errorType` 取值，修正 agent 状态语义（`traework` 恒为 `ready`、`codex` 平台相关）与 `continue_task` 仅支持 codex/zcode；`usage-examples.md` 修正 `get_task_report` 不带 meta 块、移除 meta 表误列的 `reasoningLevel`、按 agent 区分自动修复计划落盘位置（codex 在项目内 `.zcode/plans/`、其余在任务目录），并补 `list_tasks` 实际输出列与视觉 CLI 命令。
+- `docs/visual-validation{,.en}.md` 重写为完整平台证据表（系统、Node、浏览器版本、命令、结果）。
+- 双语 README 与 HANDOFF 按当前代码与提交历史更新。
 
 ---
 
