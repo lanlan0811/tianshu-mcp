@@ -9,6 +9,21 @@ import { VISUAL_DEFAULTS } from "./defaults.js";
 export async function runVisualCli(args: string[]): Promise<void> {
   const home = resolveDataHome();
   const [command, ...rest] = args;
+  if (command === "baseline" && rest.length === 2 && ["prepare", "approve"].includes(rest[0]!)) {
+    const { prepareBaseline, approveBaseline, PrepareBaselineSchema, ApproveBaselineSchema } =
+      await import("./baselines.js");
+    const input: unknown = JSON.parse(await fs.readFile(path.resolve(rest[1]!), "utf8"));
+    console.log(
+      JSON.stringify(
+        rest[0] === "prepare"
+          ? await prepareBaseline(home, PrepareBaselineSchema.parse(input))
+          : await approveBaseline(home, ApproveBaselineSchema.parse(input)),
+        null,
+        2,
+      ),
+    );
+    return;
+  }
   if (command === "browser" && rest[0] === "install" && rest.length === 1) {
     console.log(await installBrowser(home));
     return;
@@ -49,6 +64,6 @@ export async function runVisualCli(args: string[]): Promise<void> {
     return;
   }
   throw new Error(
-    "Usage: tianshu-mcp visual init [project] | doctor [project] | browser install",
+    "Usage: tianshu-mcp visual init [project] | doctor [project] | browser install | baseline prepare/approve <request.json>",
   );
 }

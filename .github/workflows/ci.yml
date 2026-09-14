@@ -28,7 +28,24 @@ jobs:
       - run: npm ci
       - run: npm run build
       - name: Explicitly install pinned browser
-        run: node dist/index.js visual browser install
+        id: browser
+        shell: bash
+        run: |
+          BROWSER=$(node dist/index.js visual browser install)
+          echo "executable=$BROWSER" >> "$GITHUB_OUTPUT"
+      - name: Allow Chrome sandbox user namespaces on Ubuntu
+        if: runner.os == 'Linux'
+        env:
+          BROWSER_PATH: ${{ steps.browser.outputs.executable }}
+        run: |
+          sudo tee /etc/apparmor.d/tianshu-visual-chrome >/dev/null <<EOF
+          abi <abi/4.0>,
+          include <tunables/global>
+          profile tianshu-visual-chrome "$BROWSER_PATH" flags=(unconfined) {
+            userns,
+          }
+          EOF
+          sudo apparmor_parser -r /etc/apparmor.d/tianshu-visual-chrome
       - name: Real browser and image acceptance
         run: npx vitest run test/integration/visual-browser-smoke.test.ts test/integration/visual-flow.test.ts test/unit/visual-images.test.ts test/unit/visual-config.test.ts --maxWorkers=1
       - uses: actions/upload-artifact@v4

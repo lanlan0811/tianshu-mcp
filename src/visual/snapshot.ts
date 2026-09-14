@@ -1,0 +1,79 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+import { readAcceptanceConfig } from "./config.js";
+import { digest } from "./lock.js";
+import { projectFile } from "./paths.js";
+import type { VisualConfig, VisualPage } from "./schema.js";
+import { VisualError } from "./errors.js";
+import { writeJsonAtomic } from "../util/fs.js";
+
+export interface VisualSnapshot {
+  configDigest: string;
+  baselines: Record<string, string | null>;
+  createdAt: string;
+  approved?: { note: string; at: string; previousDigest: string };
+}
+export function baselineRelative(config: VisualConfig, page: VisualPage, viewport: string): string {
+  return (
+    page.baseline ??
+    path.join(
+      config.baselineRoot,
+      process.platform,
+      config.browser.mode,
+      page.id,
+      `${viewport}.png`,
+    )
+  );
+}
+export async function fileDigest(filename: string): Promise<string | null> {
+  try {
+    return digest(await fs.readFile(filename));
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw e;
+  }
+}
+export async function captureVisualSnapshot(project: string): Promise<VisualSnapshot> {
+  const config = (await readAcceptanceConfig(project))?.visual;
+  const baselines: Record<string, string | null> = {};
+  if (config?.enabled)
+    for (const page of config.pages)
+      for (const viewport of page.viewports ?? config.viewports.map((v) => v.id)) {
+        const relative = baselineRelative(config, page, viewport);
+        baselines[relative] = await fileDigest(await projectFile(project, relative));
+        baselines[`${relative}.manifest.json`] = await fileDigest(
+          await projectFile(project, `${relative}.manifest.json`),
+        );
+      }
+  return {
+    configDigest: digest(JSON.stringify(config ?? null)),
+    baselines,
+    createdAt: new Date().toISOString(),
+  };
+}
+export async function checkVisualSnapshot(project: string, frozen: VisualSnapshot): Promise<void> {
+  const current = await captureVisualSnapshot(project);
+  if (
+    current.configDigest !== frozen.configDigest ||
+    JSON.stringify(current.baselines) !== JSON.stringify(frozen.baselines)
+  )
+    throw new VisualError(
+      "VISUAL_INTEGRITY",
+      "Visual rules or approved baselines changed. Use visual rules review/approve; agents must not weaken acceptance rules.",
+    );
+}
+export async function freezeVisualSnapshot(
+  project: string,
+  taskDirectory: string,
+): Promise<VisualSnapshot> {
+  const filename = path.join(taskDirectory, "visual-snapshot.json");
+  try {
+    return JSON.parse(await fs.readFile(filename, "utf8")) as VisualSnapshot;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT")
+      throw new VisualError("SNAPSHOT_INVALID", "Cannot read frozen visual snapshot");
+  }
+  const snapshot = await captureVisualSnapshot(project);
+  await writeJsonAtomic(filename, snapshot);
+  return snapshot;
+}
