@@ -1,0 +1,11 @@
+{
+  "platform": "darwin",
+  "arch": "x64",
+  "os": "Darwin Kernel Version 24.6.0: Tue Jul 21 20:50:07 PDT 2026; root:xnu-11417.140.69.711.44~1/RELEASE_X86_64",
+  "release": "24.6.0",
+  "node": "24.19.0",
+  "browser": "Chrome/148.0.7778.97",
+  "executablePath": "/Users/runner/.tianshu-mcp/browsers/chrome/mac-148.0.7778.97/chrome-mac-x64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+  "timestamp": "2026-09-14T11:55:12.967Z",
+  "result": "passed"
+}

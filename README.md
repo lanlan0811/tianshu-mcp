@@ -192,7 +192,8 @@ ZCode 提问、需要登录、旧实例无 CDP、系统权限不足，或自动�
 | [docs/codex-windows-smoke.md](docs/codex-windows-smoke.md) | Codex Windows 真机验收记录（含验收失败→自动生成计划→返修通过闭环） |
 | [docs/release-v0.5.0.md](<docs/release-v0.5.0.md>) | v0.5.0 发布说明（可选视觉验收模块：截图对比、图片规格、基准批准、离线报告） |
 | [docs/visual-acceptance.md](<docs/visual-acceptance.md>) | 视觉验收入门与完整配置：三种页面来源、基准候选/批准、规则冻结、阈值与排查 |
-| [docs/visual-validation.md](<docs/visual-validation.md>) | 视觉验收验证进度：已执行证据与未完成门禁（未执行项不记为通过） |
+| [docs/visual-validation.md](<docs/visual-validation.md>) | 视觉验收验证进度：Windows 10 完整功能矩阵与 macOS Intel/Apple Silicon 平台证据（系统/Node/浏览器/命令/结果） |
+| [docs/visual-validation-evidence/](<docs/visual-validation-evidence/>) | 上述验证的原始机器可读记录（环境 JSON、矩阵结果、测试输出与 macOS CI 摘要） |
 | [docs/release-v0.4.1.md](<docs/release-v0.4.1.md>) | v0.4.1 发布说明（技能文档对齐 v0.4.0 工具面 + 贡献者名录） |
 | [docs/release-v0.3.4.md](<docs/release-v0.3.4.md>) | v0.3.4 发布说明（ZCode 项目/模型回读、初始化恢复与会话发送确认，issue #8/#9/#10） |
 | [docs/zcode-issue-8-10-validation.md](<docs/zcode-issue-8-10-validation.md>) | ZCode #8/#9/#10 Windows 真机验收记录（冷导入、已导入复用、同任务恢复） |

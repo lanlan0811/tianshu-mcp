@@ -12,6 +12,12 @@
 ### 测试
 
 - 视觉验收补两条真实浏览器门禁用例（v0.5.0 之后补充）：项目路径含中文与空格时截图正常；主文档 302 跳转到未放行来源时按策略拦截，显式放行后通过。全量测试 **486 passed / 10 skipped**。
+- 新增 `npm run evidence:visual:windows`（`scripts/evidence-visual-windows.mjs`）：在 Windows 10 本机采集完整功能矩阵证据（`existing`/静态/命令三种来源、端口冲突阻塞且不结束他人服务、就绪失败有界阻塞并清理子进程、本机 Edge 独立实例与版本不匹配、缺浏览器阻塞），9/9 通过。
+- 采集 macOS 13+ 平台证据：macOS 15 真机 runner 上 Intel x64 与 Apple Silicon arm64（Node 20/22/24）各跑通 10 文件 51 用例；原始记录随 `docs/visual-validation-evidence/` 入库。
+
+### 文档
+
+- `docs/visual-validation{,.en}.md` 重写为完整平台证据表（系统、Node、浏览器版本、命令、结果），并新增 `docs/visual-validation-evidence/` 原始机器可读记录。
 
 ### 计划中
 

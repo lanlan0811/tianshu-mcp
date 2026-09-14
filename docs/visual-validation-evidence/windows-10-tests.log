@@ -1,0 +1,22 @@
+
+ RUN  v4.1.11 D:/Trae项目/tianshu-mcp
+
+ ✓  integration  test/integration/visual-browser-smoke.test.ts (1 test) 4623ms
+   ✓ launches isolated pinned Chrome and decodes a real screenshot  4620ms
+ ✓  integration  test/integration/visual-capture.test.ts (8 tests) 50343ms
+     ✓ records blocked WebSockets even before the document root exists  4018ms
+     ✓ executes input, click, hover, tab selection and readiness before element capture  4117ms
+     ✓ captures full-page lazy images with bounded scrolling  3806ms
+     ✓ stabilizes only explicit masks and rejects missing or complete masks  7001ms
+     ✓ loads isolated Cookie/localStorage state and diagnoses expiration  14619ms
+     ✓ blocks unapproved resource origins and accepts explicit allowlisting  6806ms
+     ✓ captures a project whose path contains CJK characters and spaces  3081ms
+     ✓ blocks a main-document redirect to a disallowed origin and allows it when listed  6889ms
+ ✓  integration  test/integration/visual-flow.test.ts (1 test) 15172ms
+   ✓ requires explicit approval then detects page defects and protects frozen rules  15168ms
+
+ Test Files  3 passed (3)
+      Tests  10 passed (10)
+   Start at  20:03:07
+   Duration  73.55s (transform 1.09s, setup 0ms, import 1.72s, tests 70.14s, environment 1ms)
+

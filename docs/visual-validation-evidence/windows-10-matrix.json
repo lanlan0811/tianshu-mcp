@@ -1,0 +1,75 @@
+{
+  "platform": "win32",
+  "arch": "x64",
+  "os": "Windows 10 Pro",
+  "release": "10.0.19045",
+  "node": "24.18.0",
+  "pinnedChrome": "148.0.7778.97",
+  "timestamp": "2026-09-14T12:02:33.209Z",
+  "passed": true,
+  "results": [
+    {
+      "id": "existing-source-capture",
+      "passed": true,
+      "note": "existing local service captured without managing or terminating its process"
+    },
+    {
+      "id": "managed-chrome-viewports-fullpage-element",
+      "passed": true,
+      "browser": "Chrome/148.0.7778.97",
+      "desktop": "1280x720",
+      "mobile": "390x844",
+      "fullPageHeight": 960,
+      "element": "120x60",
+      "note": "desktop/mobile viewports, fullPage, element on static source"
+    },
+    {
+      "id": "command-port-conflict-blocks",
+      "passed": true,
+      "actualCode": "PORT_CONFLICT",
+      "message": "Cannot exclusively bind configured service port",
+      "note": "configured port already held by another listener — expected PORT_CONFLICT, got PORT_CONFLICT"
+    },
+    {
+      "id": "existing-listener-not-terminated",
+      "passed": true,
+      "note": "original listener still bound after blocked auto-start (listening=true)"
+    },
+    {
+      "id": "command-readiness-failure-blocks",
+      "passed": true,
+      "actualCode": "ITEM_TIMEOUT",
+      "message": "Visual item deadline exceeded",
+      "note": "service never becomes ready — expected ITEM_TIMEOUT, got ITEM_TIMEOUT"
+    },
+    {
+      "id": "readiness-failure-cleans-process",
+      "passed": true,
+      "childPid": 2372,
+      "note": "spawned service process removed after bounded readiness timeout"
+    },
+    {
+      "id": "local-edge-launches-and-reports-version",
+      "passed": true,
+      "executablePath": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+      "browserVersion": "Edg/144.0.3719.104",
+      "environmentBrowser": "Edg/144.0.3719.104",
+      "differsFromPinned": true,
+      "note": "local Edge runs in an isolated acceptance profile; actual version recorded"
+    },
+    {
+      "id": "version-mismatch-is-observable",
+      "passed": true,
+      "pinnedChrome": "148.0.7778.97",
+      "localBrowser": "Edg/144.0.3719.104",
+      "note": "local browser version differs from pinned Chrome; managed mode enforces the pin"
+    },
+    {
+      "id": "missing-explicit-browser-blocks",
+      "passed": true,
+      "actualCode": "BROWSER_MISSING",
+      "message": "Selected browser missing; configure browser.executablePath",
+      "note": "explicit executable path does not exist — expected BROWSER_MISSING, got BROWSER_MISSING"
+    }
+  ]
+}

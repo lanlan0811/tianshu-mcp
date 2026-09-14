@@ -23,6 +23,7 @@
     "docs/visual-acceptance.en.md",
     "docs/visual-validation.md",
     "docs/visual-validation.en.md",
+    "docs/visual-validation-evidence",
     "scripts/probe-zcode.mjs",
     "scripts/probe-codex.mjs",
     "scripts/smoke-zcode.mjs",
@@ -56,7 +57,8 @@
     "check:stdio:src": "node scripts/check-stdio.mjs --entry src/index.ts --tsx",
     "smoke:zcode": "node scripts/smoke-zcode.mjs",
     "fixture:zcode": "node scripts/prepare-zcode-fixture.mjs",
-    "pack:check": "npm pack --dry-run"
+    "pack:check": "npm pack --dry-run",
+    "evidence:visual:windows": "node scripts/evidence-visual-windows.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.15.0",

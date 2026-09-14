@@ -197,7 +197,8 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 | [docs/release-v0.3.4.en.md](<docs/release-v0.3.4.en.md>) | v0.3.4 release notes (ZCode project/model read-back, initialization recovery, session dispatch confirmation, issues #8/#9/#10) |
 | [docs/release-v0.5.0.en.md](<docs/release-v0.5.0.en.md>) | v0.5.0 release notes (optional visual acceptance: screenshots, image specs, baseline approval, offline report) |
 | [docs/visual-acceptance.en.md](<docs/visual-acceptance.en.md>) | Visual acceptance primer and full configuration: three page sources, baseline candidates/approval, rule freezing, thresholds and troubleshooting |
-| [docs/visual-validation.en.md](<docs/visual-validation.en.md>) | Visual acceptance validation progress: executed evidence and remaining gates (unexecuted checks are not recorded as passing) |
+| [docs/visual-validation.en.md](<docs/visual-validation.en.md>) | Visual acceptance validation progress: full Windows 10 matrix and macOS Intel/Apple Silicon platform evidence (system/Node/browser/command/result) |
+| [docs/visual-validation-evidence/](<docs/visual-validation-evidence/>) | Raw machine-readable records for the above (environment JSON, matrix results, test output and macOS CI summaries) |
 | [docs/release-v0.4.1.en.md](<docs/release-v0.4.1.en.md>) | v0.4.1 release notes (skill docs aligned with the v0.4.0 tool surface + contributor credits) |
 | [docs/zcode-issue-8-10-validation.en.md](<docs/zcode-issue-8-10-validation.en.md>) | ZCode #8/#9/#10 Windows hardware record (cold import, imported-project reuse, same-task recovery) |
 | [docs/release-v0.3.3.en.md](<docs/release-v0.3.3.en.md>) | v0.3.3 release notes (ZCode 3.11.2 adaptation + fail-closed acceptance engine) |

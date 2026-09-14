@@ -1,0 +1,32 @@
+# macOS CI visual acceptance summaries (run 34840415189, target commit de34278)
+# Command (per job): TIANSHU_VISUAL_BROWSER_TEST=1 npx vitest run visual --maxWorkers=1
+
+## macos-15 (Apple Silicon arm64) / Node 24
+ ✓  unit  test/unit/visual-images.test.ts (13 tests) 304ms
+ ✓  unit  test/unit/visual-report.test.ts (3 tests) 96ms
+ ✓  unit  test/unit/visual-config.test.ts (14 tests) 130ms
+ ✓  unit  test/unit/visual-baselines.test.ts (3 tests) 76ms
+ ✓  unit  test/unit/visual-runtime.test.ts (2 tests) 1ms
+ ✓  integration  test/integration/visual-capture.test.ts (8 tests) 31930ms
+ ✓  integration  test/integration/visual-rework.test.ts (2 tests) 200ms
+ ✓  integration  test/integration/visual-services.test.ts (4 tests) 437ms
+ ✓  integration  test/integration/visual-flow.test.ts (1 test) 5178ms
+ ✓  integration  test/integration/visual-browser-smoke.test.ts (1 test) 1098ms
+   ✓ launches isolated pinned Chrome and decodes a real screenshot  1097ms
+ Test Files  10 passed (10)
+      Tests  51 passed (51)
+
+## macos-15-intel (x64) / Node 24
+ ✓  unit  test/unit/visual-images.test.ts (13 tests) 560ms
+ ✓  unit  test/unit/visual-report.test.ts (3 tests) 262ms
+ ✓  unit  test/unit/visual-config.test.ts (14 tests) 333ms
+ ✓  unit  test/unit/visual-baselines.test.ts (3 tests) 249ms
+ ✓  unit  test/unit/visual-runtime.test.ts (2 tests) 3ms
+ ✓  integration  test/integration/visual-capture.test.ts (8 tests) 55032ms
+ ✓  integration  test/integration/visual-rework.test.ts (2 tests) 494ms
+ ✓  integration  test/integration/visual-services.test.ts (4 tests) 658ms
+ ✓  integration  test/integration/visual-flow.test.ts (1 test) 15812ms
+ ✓  integration  test/integration/visual-browser-smoke.test.ts (1 test) 2599ms
+   ✓ launches isolated pinned Chrome and decodes a real screenshot  2597ms
+ Test Files  10 passed (10)
+      Tests  51 passed (51)

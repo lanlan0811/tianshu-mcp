@@ -13,6 +13,12 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 ### Tests
 
 - Two additional real-browser-gated visual cases (added after v0.5.0): screenshots succeed when the project path contains CJK characters and spaces; a main-document 302 redirect to a non-allowlisted origin is blocked by policy and passes once explicitly allowed. Full suite: **486 passed / 10 skipped**.
+- New `npm run evidence:visual:windows` (`scripts/evidence-visual-windows.mjs`): collects the full Windows 10 local functional matrix (existing/static/command sources, port conflict that blocks without terminating another service, bounded readiness failure that cleans up the child process, local Edge isolated instance and version mismatch, missing-browser blocker), 9/9 passed.
+- Collected macOS 13+ platform evidence: on macOS 15 hardware runners, Intel x64 and Apple Silicon arm64 (Node 20/22/24) each passed 10 files with 51 cases; raw records are committed under `docs/visual-validation-evidence/`.
+
+### Docs
+
+- `docs/visual-validation{,.en}.md` rewritten with full platform evidence tables (system, Node, browser version, command, result), plus the new `docs/visual-validation-evidence/` raw machine-readable records.
 
 ### Planned
 
