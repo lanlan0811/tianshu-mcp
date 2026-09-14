@@ -12,6 +12,11 @@ import { resolveDataHome } from "./config/store.js";
 import { Logger } from "./util/log.js";
 
 async function main(): Promise<void> {
+  if (process.argv[2] === "visual") {
+    const { runVisualCli } = await import("./visual/cli.js");
+    await runVisualCli(process.argv.slice(3));
+    return;
+  }
   const home = resolveDataHome();
   const logger = await Logger.create(path.join(home, "logs"));
   const skipSkillInstall =

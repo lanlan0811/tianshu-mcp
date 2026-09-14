@@ -8,6 +8,35 @@ on:
   workflow_dispatch:
 
 jobs:
+  visual-browser:
+    name: Visual browser (${{ matrix.os }} / Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-15-intel, macos-15]
+        node: [20, 22, 24]
+    env:
+      TIANSHU_VISUAL_BROWSER_TEST: "1"
+      TIANSHU_VISUAL_EVIDENCE: .tmp-check/visual-evidence
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Explicitly install pinned browser
+        run: node dist/index.js visual browser install
+      - name: Real browser and image acceptance
+        run: npx vitest run test/integration/visual-browser-smoke.test.ts test/integration/visual-flow.test.ts test/unit/visual-images.test.ts test/unit/visual-config.test.ts --maxWorkers=1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: visual-${{ matrix.os }}-node-${{ matrix.node }}
+          path: .tmp-check/visual-evidence
+
   build-test:
     name: Build & Test (${{ matrix.os }} / Node ${{ matrix.node }})
     runs-on: ${{ matrix.os }}

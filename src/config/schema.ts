@@ -3,6 +3,7 @@
  * 所有外部输入都经这里解析，失败给默认值或明确报错（开发计划 §13）。
  */
 import { z } from "zod";
+import { VisualConfigSchema } from "../visual/schema.js";
 
 /* ---------------- 工具入参 ---------------- */
 
@@ -337,6 +338,7 @@ export type ProjectsFile = z.infer<typeof ProjectsFileSchema>;
 
 export const AcceptanceConfigSchema = z.object({
   checks: z.array(AcceptanceCheckSchema).default([]),
+  visual: VisualConfigSchema.optional(),
   requireChanges: z.boolean().default(true),
   /** 命令检查并行度：1=串行（与历史行为一致）；缺省继承 server config.json 的 verifyConcurrency（默认 2）。越界值 clamp 到 1..4（不再株连整份 acceptance.json 失效） */
   verifyConcurrency: z

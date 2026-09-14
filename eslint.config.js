@@ -33,5 +33,9 @@ export default [
       "no-console": ["error", { allow: ["error"] }],
     },
   },
+  {
+    files: ["src/visual/cli.ts"],
+    rules: { "no-console": "off" },
+  },
   prettier,
 ];

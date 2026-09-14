@@ -19,6 +19,10 @@
     "dist",
     "skills",
     "assets",
+    "docs/visual-acceptance.md",
+    "docs/visual-acceptance.en.md",
+    "docs/visual-validation.md",
+    "docs/visual-validation.en.md",
     "scripts/probe-zcode.mjs",
     "scripts/probe-codex.mjs",
     "scripts/smoke-zcode.mjs",
@@ -56,7 +60,10 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.15.0",
+    "@puppeteer/browsers": "2.13.2",
     "cross-spawn": "^7.0.6",
+    "pixelmatch": "7.2.0",
+    "puppeteer-core": "24.43.1",
     "zod": "^3.24.1"
   },
   "devDependencies": {
@@ -82,5 +89,8 @@
     "zcode",
     "traework",
     "tianshu"
-  ]
+  ],
+  "optionalDependencies": {
+    "sharp": "0.34.5"
+  }
 }
