@@ -24,7 +24,7 @@ import { writeRepairPlan } from "./repair-plan.js";
 import { writeCodexFixPlan } from "../agents/codex/fixplan.js";
 import { buildFixPrompt } from "../agents/codex/input.js";
 import { extractFailureEvidence } from "../agents/codex/verify.js";
-import type { TaskMeta } from "../tasks/task.js";
+import { type TaskMeta, isProjectWorkspace } from "../tasks/task.js";
 import { TaskStore } from "../tasks/task-store.js";
 import type { DataHome } from "../config/store.js";
 import { Logger } from "../util/log.js";
@@ -66,28 +66,48 @@ export class TaskOrchestrator {
     const { meta } = this;
     const logger = this.deps.logger;
     const store = this.deps.store;
+    // issue #12：按工作区模式分流。无项目任务（default 工作区）不得进入项目级基础设施
+    // ——Git 基线、项目快照冻结、项目锁、项目验收与验收驱动的自动返修。
+    const projectMode = isProjectWorkspace(meta);
 
     try {
-      // ---- 采集 git 基线（动工前，R12）----
-      await store.appendEvent(meta.taskId, "note", meta.status, "采集 git 基线…");
-      await mkdirp(store.dir(meta.taskId));
-      const savedBaseline = await readJsonSafe<Baseline>(store.baselinePath(meta.taskId));
-      const baseline = savedBaseline ?? (await captureBaseline(meta.projectPath));
-      if (!savedBaseline) await writeJsonAtomic(store.baselinePath(meta.taskId), baseline);
-      try {
-        const frozen = await freezeVisualSnapshot(meta.projectPath, store.dir(meta.taskId));
-        await checkVisualSnapshot(meta.projectPath, frozen);
-      } catch (e) {
-        if (this.aborted()) return this.abortTerminal();
-        meta.pendingVisualVerification = true;
-        return this.finish("needs_attention", "verify_failed", String(e));
+      let baseline: Baseline | undefined;
+      if (projectMode) {
+        // ---- 采集 git 基线（动工前，R12）----
+        await store.appendEvent(meta.taskId, "note", meta.status, "采集 git 基线…");
+        await mkdirp(store.dir(meta.taskId));
+        const savedBaseline = await readJsonSafe<Baseline>(store.baselinePath(meta.taskId));
+        baseline = savedBaseline ?? (await captureBaseline(meta.projectPath));
+        if (!savedBaseline) await writeJsonAtomic(store.baselinePath(meta.taskId), baseline);
+        try {
+          const frozen = await freezeVisualSnapshot(meta.projectPath, store.dir(meta.taskId));
+          await checkVisualSnapshot(meta.projectPath, frozen);
+        } catch (e) {
+          if (this.aborted()) return this.abortTerminal();
+          meta.pendingVisualVerification = true;
+          return this.finish("needs_attention", "verify_failed", String(e));
+        }
+      } else {
+        await mkdirp(store.dir(meta.taskId));
+        await store.appendEvent(
+          meta.taskId,
+          "note",
+          meta.status,
+          "无项目模式：跳过 Git 基线、项目快照/锁与项目验收",
+        );
       }
 
       let resumedFeedback: string | undefined;
       if (meta.pendingVisualVerification) {
+        if (!projectMode)
+          return this.finish(
+            "needs_attention",
+            "internal",
+            "无项目任务携带 pendingVisualVerification：状态不一致，拒绝进入项目视觉返修。",
+          );
         await store.updateStatus(meta, "running", "恢复视觉阻塞：先重新验收");
         await store.updateStatus(meta, "verify_start", "恢复视觉阻塞：先重新验收");
-        const retry = await this.runVerifyOnce(meta, meta.roundsUsed, baseline);
+        const retry = await this.runVerifyOnce(meta, meta.roundsUsed, baseline!);
         if (this.aborted()) return this.abortTerminal();
         if (retry.report.blockingIssues?.length)
           return this.finish("needs_attention", "verify_failed", retry.report.message);
@@ -122,17 +142,19 @@ export class TaskOrchestrator {
           delete meta.continueReobserve;
           await store.writeSnapshot(meta);
         }
-        const runRes = await withVisualLock(
-          path.dirname(path.dirname(store.dir(meta.taskId))),
-          await fsp.realpath(meta.projectPath),
-          async () => {
-            await checkVisualSnapshot(
-              meta.projectPath,
-              await freezeVisualSnapshot(meta.projectPath, store.dir(meta.taskId)),
-            );
-            return this.runAgentOnce(ctx, resolved);
-          },
-        );
+        const runRes = projectMode
+          ? await withVisualLock(
+              path.dirname(path.dirname(store.dir(meta.taskId))),
+              await fsp.realpath(meta.projectPath),
+              async () => {
+                await checkVisualSnapshot(
+                  meta.projectPath,
+                  await freezeVisualSnapshot(meta.projectPath, store.dir(meta.taskId)),
+                );
+                return this.runAgentOnce(ctx, resolved);
+              },
+            )
+          : await this.runAgentOnce(ctx, resolved);
         meta.logFile = runRes.logFile;
         meta.agentEndReason = runRes.endReason;
         meta.lastRunSignal = runRes.endReason ?? meta.lastRunSignal;
@@ -201,12 +223,23 @@ export class TaskOrchestrator {
 
         // ---- 验收 ----
         if (!meta.autoVerify) {
+          if (!projectMode) meta.verificationNotApplicable = "no_project";
           return this.finish(
             "succeeded",
             null,
-            `任务完成：agent 退出码 0（耗时 ${runRes.durationMs}ms，未启用验收）。日志 ${runRes.logFile}`,
+            projectMode
+              ? `任务完成：agent 退出码 0（耗时 ${runRes.durationMs}ms，未启用验收）。日志 ${runRes.logFile}`
+              : `任务完成：agent 退出码 0（无项目模式，未进行项目验收）。日志 ${runRes.logFile}`,
           );
         }
+
+        // 到这里只可能是 project 模式：无项目模式在提交时已强制 autoVerify=false。
+        if (!projectMode || !baseline)
+          return this.finish(
+            "failed",
+            "internal",
+            "无项目任务或缺少动工前基线时不得进入项目验收：状态不一致，已拒绝。",
+          );
 
         await store.updateStatus(meta, "verify_start", `第 ${round} 轮验收开始`);
         const verdict = await this.runVerifyOnce(meta, round, baseline);

@@ -26,7 +26,7 @@ import type { TaskManager } from "../tasks/task-manager.js";
 import type { AcceptanceEngine } from "../verify/acceptance.js";
 import type { AgentAdapterRegistry } from "../agents/registry.js";
 import type { TaskStore } from "../tasks/task-store.js";
-import type { TaskMeta } from "../tasks/task.js";
+import { isDefaultWorkspace, type TaskMeta } from "../tasks/task.js";
 import type { Logger } from "../util/log.js";
 import {
   formatToolResult,
@@ -130,6 +130,9 @@ function runTaskHandler(ctx: AppContext, defaults: Defaults): Handler {
   const { manager, dataHome, logger } = ctx;
   return async (rawArgs) => {
     const args = rawArgs as RunTaskParams;
+    // 无项目模式（issue #12）：省略 projectPath 时不做目录校验与项目登记，
+    // 待解析出最终 agent 之后再判断它是否支持无项目。
+    if (args.projectPath === undefined) return runTaskWithoutProject(ctx, defaults, args);
     // 安全闸门：绝对路径 + 存在 + realpath 消除符号链接 + 拒绝主目录/系统根目录
     let dir: ReturnType<typeof assertSafeProjectDir>;
     try {
@@ -156,6 +159,11 @@ function runTaskHandler(ctx: AppContext, defaults: Defaults): Handler {
         agentId: finalAgentId,
         message: resolved.message,
       });
+    }
+    if (finalAgentId !== "zcode" && args.allowCreateProject !== undefined) {
+      return errorResult(
+        `allowCreateProject 是 ZCode 专用参数，agent '${finalAgentId}' 不支持；请移除该参数后重试`,
+      );
     }
     if (finalAgentId === "zcode") {
       if (args.mode !== undefined) return errorResult("ZCode 不支持 mode 参数；请移除 mode 后重试");
@@ -192,6 +200,7 @@ function runTaskHandler(ctx: AppContext, defaults: Defaults): Handler {
       planDoc: args.planDoc,
       designSystem: args.designSystem,
       mode: args.mode,
+      allowCreateProject: args.allowCreateProject,
       autoVerify: args.autoVerify ?? defaults.defaultAutoVerify,
       autoFixRounds:
         args.autoFixRounds ??
@@ -215,6 +224,85 @@ function runTaskHandler(ctx: AppContext, defaults: Defaults): Handler {
     }
     return formatToolResult(lines.join("\n"), metaFromTask(meta));
   };
+}
+
+/**
+ * 无项目派发（issue #12）：ZCode 的 default 工作区承接任务。
+ *
+ * 契约：不做项目登记、不分配目录；验收与自动返修强制关闭（无目录可验）；
+ * 语义校验在解析出最终 agent 之后进行——默认 agent 不支持就报错，不擅自改判为 ZCode。
+ */
+async function runTaskWithoutProject(
+  ctx: AppContext,
+  defaults: Defaults,
+  args: RunTaskParams,
+): Promise<ToolResult> {
+  const { manager, logger } = ctx;
+  const agentId = args.agentId ?? defaults.defaultAgentId;
+  const resolved = await ctx.registry.resolve(agentId, true);
+  if (!resolved.ok) {
+    return formatToolResult(`agent '${agentId}' 当前不可用：${resolved.message}`, {
+      ok: false,
+      agentId,
+      message: resolved.message,
+    });
+  }
+  if (agentId !== "zcode") {
+    return errorResult(
+      `agent '${agentId}' 需要 projectPath；无项目派发当前仅支持 ZCode（default 工作区）。请提供 projectPath 或改用 agentId=zcode。`,
+    );
+  }
+  if (args.autoVerify === true) {
+    return errorResult(
+      "无项目模式不支持 autoVerify=true：没有项目目录可执行验收。请提供 projectPath，或省略该参数。",
+    );
+  }
+  if ((args.autoFixRounds ?? 0) > 0) {
+    return errorResult(
+      "无项目模式不支持 autoFixRounds>0：自动返修依赖项目验收。请提供 projectPath，或传 0。",
+    );
+  }
+  if (args.mode !== undefined) return errorResult("ZCode 不支持 mode 参数；请移除 mode 后重试");
+  try {
+    parseZcodeModel(args.model);
+    // 无项目模式不做项目引用解析：识别到本地引用就在发送前说明需要 projectPath。
+    validateTaskReferences(args.task, args.context, undefined);
+  } catch (e) {
+    return errorResult(e instanceof Error ? e.message : String(e));
+  }
+
+  const cfg = await ctx.dataHome.loadConfig();
+  const taskTimeoutMs =
+    args.taskTimeoutMs ?? resolved.profile.timeoutMs ?? cfg.defaultTaskTimeoutMs ?? 30 * 60_000;
+  const meta = await manager.submit({
+    workspaceMode: "default",
+    projectPath: "",
+    displayPath: "",
+    agentId,
+    task: args.task,
+    context: args.context,
+    model: args.model,
+    reasoningLevel: args.reasoningLevel,
+    planDoc: args.planDoc,
+    designSystem: args.designSystem,
+    mode: args.mode,
+    allowCreateProject: args.allowCreateProject,
+    autoVerify: false,
+    autoFixRounds: 0,
+    taskTimeoutMs,
+  });
+  logger.info(`run_task 已提交 ${meta.taskId}（agent=${agentId}，无项目模式）`);
+  return formatToolResult(
+    [
+      `任务已提交：${meta.taskId}`,
+      `Agent: ${agentId}（无项目模式：ZCode default 工作区）`,
+      `模式: default —— 不采集 Git 基线、不执行项目验收、不创建/登记 ZCode 项目`,
+      `自动验收: 关（无项目模式固定关闭，执行完成后不会生成验收报告）`,
+      `队列位置：全局并发 ${ctx.manager.getMaxRunning()}。请用 query_task(${meta.taskId}) 轮询（建议间隔 5–10 秒）。`,
+      `任务书摘要: ${args.task.slice(0, 120)}${args.task.length > 120 ? "…" : ""}`,
+    ].join("\n"),
+    metaFromTask(meta),
+  );
 }
 
 function queryTaskHandler(ctx: AppContext): Handler {
@@ -312,6 +400,10 @@ function getReportHandler(ctx: AppContext): Handler {
     const args = rawArgs as GetReportParams;
     const meta = await manager.getMeta(args.taskId);
     if (!meta) return errorResult(`任务不存在: ${args.taskId}`);
+    if (isDefaultWorkspace(meta))
+      return errorResult(
+        `任务 ${args.taskId} 是无项目模式（default 工作区）：不产生项目验收报告（not_applicable: no_project）。执行结果请用 query_task 查看。`,
+      );
     // round 缺省（undefined）取最新；显式 0 取第 0 轮（R4：0-based 合法）
     let round = args.round;
     if (round === undefined) {
@@ -377,6 +469,10 @@ function verifyTaskHandler(ctx: AppContext): Handler {
     } else if (taskId) {
       const meta = await manager.getMeta(taskId);
       if (!meta) return errorResult(`任务不存在: ${taskId}`);
+      if (isDefaultWorkspace(meta))
+        return errorResult(
+          `任务 ${taskId} 是无项目模式（default 工作区）：没有项目可验收（not_applicable: no_project）。请对真实 projectPath 发起独立验收，或改用 projectPath 参数。`,
+        );
       projectPath = meta.projectPath;
       displayPath = meta.displayPath;
       taskText = meta.task;

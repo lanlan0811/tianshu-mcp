@@ -6,6 +6,7 @@
 import type { SpawnSpec } from "./spawn.js";
 import type { AgentProfile, TraeworkMode } from "../config/schema.js";
 import type { ReasoningLevel } from "../config/schema.js";
+import type { WorkspaceMode } from "../tasks/task.js";
 
 export interface ResolvedAgent {
   id: string;
@@ -21,6 +22,8 @@ export interface ResolvedAgent {
 
 export interface TaskContext {
   taskId: string;
+  /** 工作区模式；缺省按 project 处理。default 模式下 projectPath/displayPath 为空串。 */
+  workspaceMode?: WorkspaceMode;
   projectPath: string; // norm
   displayPath: string;
   agentId: string;
@@ -41,6 +44,11 @@ export interface TaskContext {
   designSystem?: string;
   /** GUI 类 agent（traework）使用的面板模式；CLI 类忽略 */
   mode?: TraeworkMode;
+  /**
+   * ZCode：目标项目未登记时是否允许自动导入（添加项目）。省略视为允许，
+   * 显式 false 时驱动层必须在任何导入动作之前停止派发。
+   */
+  allowCreateProject?: boolean;
   /** needs_user / 返修时恢复原 GUI 会话。 */
   resume?: {
     kind: "continue" | "rework";

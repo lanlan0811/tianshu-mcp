@@ -8,7 +8,13 @@
  * 单任务实际推进委托 TaskOrchestrator。
  */
 import { TaskStore } from "./task-store.js";
-import { type TaskMeta, ACTIVE_STATUSES, isTerminal } from "./task.js";
+import {
+  type TaskMeta,
+  type WorkspaceMode,
+  ACTIVE_STATUSES,
+  isTerminal,
+  isProjectWorkspace,
+} from "./task.js";
 import type { TraeworkMode, ReasoningLevel } from "../config/schema.js";
 import { TaskOrchestrator } from "../loop/fix-loop.js";
 import { genTaskId, nowIso } from "../util/id.js";
@@ -20,7 +26,9 @@ import { Logger } from "../util/log.js";
 import { normPath } from "../util/path.js";
 
 export interface NewTaskInput {
-  projectPath: string; // norm
+  /** 工作区模式；缺省按 project（兼容既有调用方）。 */
+  workspaceMode?: WorkspaceMode;
+  projectPath: string; // norm；default 模式为空串
   displayPath: string;
   agentId: string;
   task: string;
@@ -35,6 +43,8 @@ export interface NewTaskInput {
   designSystem?: string;
   /** GUI 类 agent（traework）使用的面板模式；CLI 类忽略 */
   mode?: TraeworkMode;
+  /** ZCode 专用：目标项目未登记时是否允许自动导入（省略 = 允许）。 */
+  allowCreateProject?: boolean;
   autoVerify: boolean;
   autoFixRounds: number;
   taskTimeoutMs: number;
@@ -46,6 +56,16 @@ export interface NewTaskInput {
  * 再加轮询与快照写入余量；两处约束需同步调整。
  */
 const CANCEL_SETTLE_TIMEOUT_MS = 30_000;
+
+/**
+ * 队列资源键（issue #12）：真实项目按规范化路径串行；无项目任务使用固定常量键。
+ * 绝不以 undefined / 空串为键——否则无项目任务会与「空路径」混成一队，
+ * 且 projectBusy 的判等会失去意义。
+ */
+const DEFAULT_WORKSPACE_QUEUE_KEY = "__zcode_default_workspace__";
+function queueKeyOf(meta: Pick<TaskMeta, "workspaceMode" | "projectPath">): string {
+  return isProjectWorkspace(meta) ? meta.projectPath : DEFAULT_WORKSPACE_QUEUE_KEY;
+}
 
 export class TaskManager {
   private tasks = new Map<string, TaskMeta>();
@@ -118,6 +138,7 @@ export class TaskManager {
     const now = nowIso();
     const meta: TaskMeta = {
       taskId: genTaskId(),
+      workspaceMode: input.workspaceMode,
       projectPath: input.projectPath,
       displayPath: input.displayPath,
       agentId: input.agentId,
@@ -128,6 +149,7 @@ export class TaskManager {
       planDoc: input.planDoc,
       designSystem: input.designSystem,
       mode: input.mode,
+      allowCreateProject: input.allowCreateProject,
       autoVerify: input.autoVerify,
       autoFixRounds: input.autoFixRounds,
       taskTimeoutMs: input.taskTimeoutMs,
@@ -369,7 +391,7 @@ export class TaskManager {
   }
 
   private enqueue(meta: TaskMeta): void {
-    const key = meta.projectPath;
+    const key = queueKeyOf(meta);
     if (!this.queue.has(key)) this.queue.set(key, []);
     const q = this.queue.get(key)!;
     if (!q.includes(meta.taskId)) q.push(meta.taskId);
@@ -380,7 +402,7 @@ export class TaskManager {
   private projectBusy(key: string): boolean {
     for (const id of this.running) {
       const m = this.tasks.get(id);
-      if (m && m.projectPath === key) return true;
+      if (m && queueKeyOf(m) === key) return true;
     }
     return false;
   }

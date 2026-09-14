@@ -100,9 +100,10 @@ describe("ZCode real CDP expressions against DOM", () => {
     ).toThrow(/编码/);
   });
   it("reads and clicks the primary despite add/move/detach buttons", async () => {
-    const { client, send } = fixture(`${primary}${row}
+    const { client, send, document } = fixture(`${primary}${row}
       <button aria-label="添加项目">添加</button><button aria-label="移动项目分区">移动</button>
       <button aria-label="取消选择当前项目">取消</button>`);
+    pointAt(document, triggerSelector);
     expect(await client.workspaceBinding()).toMatchObject({
       projectPath: "D:/项目/Demo",
       ambiguous: false,
@@ -195,5 +196,102 @@ describe("ZCode real CDP expressions against DOM", () => {
       display: "current",
       internal: "current",
     });
+  });
+});
+
+const triggerSelector = '[data-testid="composer-workspace-trigger"]';
+
+/** 把 elementFromPoint 指向指定节点（夹具默认返回 null，会让探测判为「被遮挡」）。 */
+function pointAt(document: ReturnType<typeof fixture>["document"], selector: string): void {
+  document.elementFromPoint = () => document.querySelector(selector) as never;
+}
+
+describe("ZCode project trigger probe", () => {
+  it("reports missing when no trigger is mounted", async () => {
+    const { client } = fixture("<div>empty</div>");
+    expect(await client.probeProjectTrigger()).toMatchObject({
+      state: "missing",
+      mounted: 0,
+      count: 0,
+      ready: false,
+    });
+  });
+
+  it("distinguishes mounted-but-hidden from never mounted", async () => {
+    const { client } = fixture(primary.replace("<button ", "<button hidden "));
+    expect(await client.probeProjectTrigger()).toMatchObject({
+      state: "hidden",
+      mounted: 1,
+      count: 0,
+      ready: false,
+    });
+  });
+
+  it("reports ambiguity with the match count and never a click point", async () => {
+    const { client } = fixture(`${primary}${primary}`);
+    const probe = await client.probeProjectTrigger();
+    expect(probe).toMatchObject({ state: "ambiguous", count: 2, ready: false });
+    expect(probe.point).toBeUndefined();
+  });
+
+  it("reports an aria-disabled trigger as not ready", async () => {
+    const { client } = fixture(
+      '<button data-testid="composer-workspace-trigger" aria-disabled="true">Demo</button>',
+    );
+    expect(await client.probeProjectTrigger()).toMatchObject({ state: "disabled", ready: false });
+  });
+
+  it("reports a covered trigger as not ready and names the covering node", async () => {
+    const { client, document } = fixture(`${primary}<div data-testid="overlay">遮罩</div>`);
+    pointAt(document, '[data-testid="overlay"]');
+    const probe = await client.probeProjectTrigger();
+    expect(probe).toMatchObject({ state: "covered", count: 1, ready: false });
+    expect(probe.detail).toContain("overlay");
+  });
+
+  it("accepts a descendant under the centre point as a hit on the trigger", async () => {
+    const { client, document } = fixture(
+      '<button data-testid="composer-workspace-trigger"><span id="trigger-label">Demo</span></button>',
+    );
+    pointAt(document, "#trigger-label");
+    const probe = await client.probeProjectTrigger();
+    expect(probe).toMatchObject({ state: "ready", ready: true, count: 1 });
+    expect(probe.point).toEqual({ x: 50, y: 10 });
+  });
+
+  it("reports ready with the click point for a single visible trigger", async () => {
+    const { client, document } = fixture(primary);
+    pointAt(document, triggerSelector);
+    expect(await client.probeProjectTrigger()).toMatchObject({
+      state: "ready",
+      ready: true,
+      count: 1,
+      selector: triggerSelector,
+      point: { x: 50, y: 10 },
+    });
+  });
+
+  it("refuses to click a trigger the probe is not ready for", async () => {
+    const { client, send } = fixture(`${primary}${primary}`);
+    expect(await client.click("projectTrigger")).toBe(false);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("confirms the project menu opened after a real click", async () => {
+    const { client, document } = fixture(
+      `${primary}<div role="menu"><button role="menuitemcheckbox">Demo</button></div>`,
+    );
+    pointAt(document, triggerSelector);
+    expect(await client.projectMenuOpen()).toBe(true);
+    const outcome = await client.clickProjectTriggerAndConfirm(Date.now() + 1_000);
+    expect(outcome.opened).toBe(true);
+  });
+
+  it("reports a click that leaves the menu closed as not opened", async () => {
+    const { client, document } = fixture(primary);
+    pointAt(document, triggerSelector);
+    const outcome = await client.clickProjectTriggerAndConfirm(Date.now() + 200);
+    expect(outcome.opened).toBe(false);
+    expect(outcome.reason).toBe("menu-not-open");
   });
 });

@@ -15,6 +15,7 @@ export interface AppServices {
 export function makeBuildCtx(services: AppServices) {
   return (meta: TaskMeta, round: number, feedback?: string): TaskContext => ({
     taskId: meta.taskId,
+    workspaceMode: meta.workspaceMode,
     projectPath: meta.projectPath,
     displayPath: meta.displayPath,
     agentId: meta.agentId,
@@ -25,6 +26,7 @@ export function makeBuildCtx(services: AppServices) {
     planDoc: meta.planDoc,
     designSystem: meta.designSystem,
     mode: meta.mode,
+    allowCreateProject: meta.allowCreateProject,
     round,
     feedback,
     taskDir: services.store.dir(meta.taskId),

@@ -8,16 +8,29 @@ import { writeJsonAtomic } from "../util/fs.js";
 import { projectFile } from "./paths.js";
 import { visualHtml } from "./report.js";
 import { reportToMd } from "../verify/report.js";
-import type { TaskMeta, VerifyReport } from "../tasks/task.js";
+import { isDefaultWorkspace, type TaskMeta, type VerifyReport } from "../tasks/task.js";
 
 function taskDirectory(home: string, taskId: string): string {
   if (!/^(?:tsk|vfy)_[A-Za-z0-9_-]+$/.test(taskId))
     throw new VisualError("TASK_ID_INVALID", "Invalid task ID");
   return path.join(home, "tasks", taskId);
 }
+
+/**
+ * 无项目任务（default 工作区，issue #12）没有项目可做视觉规则检查/基准审批/证据清理：
+ * 明确拒绝，避免用空路径去猜一个项目目录。
+ */
+function requireProjectTask(meta: TaskMeta): void {
+  if (isDefaultWorkspace(meta))
+    throw new VisualError(
+      "TASK_NO_PROJECT",
+      "Project-less (default workspace) tasks have no project visual rules or baselines",
+    );
+}
 export async function reviewRules(home: string, taskId: string) {
   const directory = taskDirectory(home, taskId);
   const meta = JSON.parse(await fs.readFile(path.join(directory, "task.json"), "utf8")) as TaskMeta;
+  requireProjectTask(meta);
   const current = await captureVisualSnapshot(meta.projectPath);
   const previous = JSON.parse(
     await fs.readFile(path.join(directory, "visual-snapshot.json"), "utf8"),
@@ -58,6 +71,7 @@ export async function approveRules(
     const meta = JSON.parse(
       await fs.readFile(path.join(directory, "task.json"), "utf8"),
     ) as TaskMeta;
+    requireProjectTask(meta);
     if (
       meta.status !== "needs_attention" ||
       (await fs.realpath(meta.projectPath)) !== review.projectPath ||
@@ -109,6 +123,7 @@ export async function cleanArtifacts(home: string, taskId: string, apply = false
     const meta = JSON.parse(
       await fs.readFile(path.join(directory, "task.json"), "utf8"),
     ) as TaskMeta;
+    requireProjectTask(meta);
     if (["queued", "running", "verify_start", "fixing"].includes(meta.status))
       throw new VisualError("TASK_ACTIVE", "Cannot clean active task evidence");
     const target = await projectFile(directory, "visual");

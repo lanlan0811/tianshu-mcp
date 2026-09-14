@@ -20,6 +20,10 @@ import { TaskManager } from "../../src/tasks/task-manager.js";
 import { makeBuildCtx } from "../../src/mcp/context.js";
 import { normPath } from "../../src/util/path.js";
 import { CdpDisconnectedError, CdpUnavailableError } from "../../src/agents/zcode/cdp.js";
+import type {
+  ZcodeProjectMenuResult,
+  ZcodeTriggerProbe,
+} from "../../src/agents/zcode/cdp.js";
 import type { ZcodeProjectItem } from "../../src/agents/zcode/project.js";
 import { ZcodeSetupPause } from "../../src/agents/zcode/recovery.js";
 
@@ -83,6 +87,26 @@ class FakeZcode {
   }
   async click(key: string) {
     return ["newTask", "projectTrigger", "modelTrigger", "permissionTrigger"].includes(key);
+  }
+  /** 项目触发器结构化探测：默认返回「唯一可见且未被遮挡」。 */
+  async probeProjectTrigger(): Promise<ZcodeTriggerProbe> {
+    return {
+      state: "ready",
+      selector: '[data-testid="composer-workspace-trigger"]',
+      count: 1,
+      mounted: 1,
+      ready: true,
+      point: { x: 10, y: 10 },
+    };
+  }
+  async projectMenuOpen(): Promise<boolean> {
+    return true;
+  }
+  async clickProjectTriggerAndConfirm(): Promise<ZcodeProjectMenuResult> {
+    const clicked = await this.click("projectTrigger");
+    return clicked
+      ? { opened: true, probe: await this.probeProjectTrigger() }
+      : { opened: false, reason: "not-ready", probe: await this.probeProjectTrigger() };
   }
   async projects(): Promise<ZcodeProjectItem[]> {
     return [{ name: path.basename(this.projectPath), path: this.projectPath, id: "p1" }];
@@ -488,6 +512,44 @@ class SwallowedAddProjectZcode extends MissingProjectZcode {
     if (key === "chooseFolder" && this.addProjectClicks < 2)
       return { clicked: false, count: 0, available: [] };
     return super.clickExact(key, value);
+  }
+}
+
+/** 触发器选择器命中两个可见节点（DOM 漂移）：就绪判据必须报「不唯一」且不点击。 */
+class AmbiguousTriggerZcode extends FakeZcode {
+  sidebarClicks = 0;
+  override async click(key: string) {
+    if (key === "newTaskSidebar") this.sidebarClicks++;
+    return super.click(key);
+  }
+  override async probeProjectTrigger(): Promise<ZcodeTriggerProbe> {
+    return {
+      state: "ambiguous",
+      selector: '[data-testid="composer-workspace-trigger"]',
+      count: 2,
+      mounted: 2,
+      ready: false,
+    };
+  }
+  override async clickProjectTriggerAndConfirm(): Promise<ZcodeProjectMenuResult> {
+    return { opened: false, reason: "not-ready", probe: await this.probeProjectTrigger() };
+  }
+}
+
+/** 触发器从未挂载：与「不唯一」「被遮挡」必须区分归类。 */
+class UnmountedTriggerZcode extends FakeZcode {
+  override async probeProjectTrigger(): Promise<ZcodeTriggerProbe> {
+    return { state: "missing", selector: "", count: 0, mounted: 0, ready: false };
+  }
+  override async clickProjectTriggerAndConfirm(): Promise<ZcodeProjectMenuResult> {
+    return { opened: false, reason: "not-ready", probe: await this.probeProjectTrigger() };
+  }
+}
+
+/** 点击事件发出但项目菜单始终没打开：事件本身不算成功。 */
+class MenuNeverOpensZcode extends FakeZcode {
+  override async clickProjectTriggerAndConfirm(): Promise<ZcodeProjectMenuResult> {
+    return { opened: false, reason: "menu-not-open", probe: await this.probeProjectTrigger() };
   }
 }
 
@@ -1438,4 +1500,195 @@ it("closes the project menu before typing when binding and controls are already 
   const fake=new MenuBlockingZcode(project);
   const result=await runZcodeTask({ctx:ctx(project),resolved:resolved(),opts:opts(),logFile:path.join(project,"agent.log"),deps:depsFor(fake)});
   expect(result.ok).toBe(true);expect(fake.sent).toBe(1);expect(fake.projectClicks).toBe(0);
+});
+
+describe("ZCode 项目触发器就绪判据", () => {
+  it("多匹配时早退并报「不唯一」，而不是等待超时", async () => {
+    const project = await makeTmpRoot("zcode-trigger-ambiguous");
+    cleanup.push(project);
+    const fake = new AmbiguousTriggerZcode(project);
+    const startedAt = Date.now();
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved({ projectTriggerTimeoutMs: 400 }),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.hardFailure).toBe(true);
+    expect(result.error).toMatch(/不唯一/);
+    expect(result.error).toMatch(/2/);
+    expect(result.error).not.toMatch(/等待项目触发器超时/);
+    expect(fake.sent).toBe(0);
+    // 早退：不得烧掉整个等待窗口，也不得触发侧栏回退新建草稿。
+    expect(Date.now() - startedAt).toBeLessThan(2_000);
+    expect(fake.sidebarClicks).toBe(0);
+  });
+
+  it("触发器始终未挂载时归类为「未挂载」并保留现场", async () => {
+    const project = await makeTmpRoot("zcode-trigger-unmounted");
+    cleanup.push(project);
+    const fake = new UnmountedTriggerZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved({ projectTriggerTimeoutMs: 300 }),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.hardFailure).toBe(true);
+    expect(result.error).toMatch(/未挂载/);
+    expect(result.error).not.toMatch(/不唯一|被遮挡/);
+    expect(fake.sent).toBe(0);
+  });
+
+  it("点击后项目菜单未打开时归因 menu-not-open，不谎报超时", async () => {
+    const project = await makeTmpRoot("zcode-trigger-menu-closed");
+    cleanup.push(project);
+    const fake = new MenuNeverOpensZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved({ projectTriggerTimeoutMs: 300 }),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.hardFailure).toBe(true);
+    expect(result.error).toMatch(/项目菜单未打开/);
+    expect(result.error).not.toMatch(/不唯一|未挂载/);
+    expect(fake.sent).toBe(0);
+  });
+});
+
+describe("ZCode 项目创建策略", () => {
+  it("allowCreateProject=false 且目标项目未登记时停止派发，不产生导入副作用", async () => {
+    const project = await makeTmpRoot("zcode-no-create");
+    cleanup.push(project);
+    const fake = new MissingProjectZcode(project);
+    let folderSelected = false;
+    const result = await runZcodeTask({
+      ctx: { ...ctx(project), allowCreateProject: false },
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: {
+        ...depsFor(fake),
+        selectFolder: async () => {
+          folderSelected = true;
+          return { ok: true, message: "selected" };
+        },
+      },
+    });
+    expect(result.hardFailure).toBe(true);
+    expect(result.endReason).toBe("project_not_registered");
+    expect(result.error).toMatch(/未在 ZCode 项目列表/);
+    expect(result.error).toMatch(/手动/);
+    // 无导入副作用：既没打开 folder 菜单项，也没调原生文件夹对话框。
+    expect(fake.chooseFolderClicked).toBe(false);
+    expect(folderSelected).toBe(false);
+    expect(fake.sent).toBe(0);
+  });
+
+  it("省略 allowCreateProject 时保持既有自动导入行为", async () => {
+    const project = await makeTmpRoot("zcode-create-default");
+    cleanup.push(project);
+    const fake = new MissingProjectZcode(project);
+    const result = await runZcodeTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: {
+        ...depsFor(fake),
+        selectFolder: async () => {
+          fake.folderSelected = true;
+          return { ok: true, message: "selected" };
+        },
+      },
+    });
+    expect(result.ok).toBe(true);
+    expect(fake.chooseFolderClicked).toBe(true);
+    expect(fake.sent).toBe(1);
+  });
+});
+
+function defaultCtx(taskDir: string): TaskContext {
+  return {
+    taskId: "tsk_zcode_default",
+    workspaceMode: "default",
+    projectPath: "",
+    displayPath: "",
+    agentId: "zcode",
+    task: "完成开发",
+    model: "DeepSeek/deepseek-flash",
+    round: 0,
+    taskDir,
+    workDir: "",
+    taskTimeoutMs: 10_000,
+  };
+}
+
+describe("ZCode 无项目（default 工作区）派发", () => {
+  it("确认 default 工作区后直接发送，不做项目绑定与导入", async () => {
+    const project = await makeTmpRoot("zcode-default-ws");
+    cleanup.push(project);
+    class DefaultWorkspaceZcode extends FakeZcode {
+      override async workspaceBinding() {
+        return { triggerText: "选择项目", projectPath: "" };
+      }
+      override async projects(): Promise<ZcodeProjectItem[]> {
+        return [];
+      }
+    }
+    const fake = new DefaultWorkspaceZcode(project);
+    const result = await runZcodeTask({
+      ctx: defaultCtx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.ok).toBe(true);
+    expect(fake.sent).toBe(1);
+    // 无项目模式不得点击项目项（clickProject 计数即绑定路径的证据）。
+    expect(fake.projectClicks).toBe(0);
+  });
+
+  it("当前仍绑定其他项目时保留现场等待用户，不向错误项目发送", async () => {
+    const project = await makeTmpRoot("zcode-default-bound");
+    cleanup.push(project);
+    const fake = new FakeZcode(project);
+    const result = await runZcodeTask({
+      ctx: defaultCtx(project),
+      resolved: resolved({ projectTriggerTimeoutMs: 300 }),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.endReason).toBe("needs_user");
+    expect(result.needsUserKind).toBe("setup_recovery");
+    expect(result.pendingQuestion).toMatch(/仍绑定项目/);
+    expect(fake.sent).toBe(0);
+  });
+
+  it("工作区状态无法确认时不把「空路径」当作 default", async () => {
+    const project = await makeTmpRoot("zcode-default-unknown");
+    cleanup.push(project);
+    class UnknownBindingZcode extends FakeZcode {
+      override async workspaceBinding() {
+        return { triggerText: "", projectPath: "" };
+      }
+    }
+    const fake = new UnknownBindingZcode(project);
+    const result = await runZcodeTask({
+      ctx: defaultCtx(project),
+      resolved: resolved({ projectTriggerTimeoutMs: 300 }),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.endReason).toBe("needs_user");
+    expect(result.pendingQuestion).toMatch(/无法确认/);
+    expect(fake.sent).toBe(0);
+  });
 });

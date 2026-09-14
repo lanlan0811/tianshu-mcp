@@ -12,13 +12,19 @@ import { ZCODE_SETUP_DEFAULTS, type GuiProfile } from "../../config/schema.js";
 import { mkdirp } from "../../util/fs.js";
 import { parseZcodeModel, exactUiName, ZcodeModelReadbackError } from "./model.js";
 import { validateTaskReferences } from "./references.js";
-import { matchZcodeProject, normalizeProjectPath, type ZcodeProjectItem } from "./project.js";
+import {
+  matchZcodeProject,
+  normalizeProjectPath,
+  isUnboundTriggerText,
+  type ZcodeProjectItem,
+} from "./project.js";
 import { judgeZcodePoll, type ZcodePollState } from "./liveness.js";
 import {
   ZcodeCdpClient,
   CdpDisconnectedError,
   CdpUnavailableError,
   type ZcodeClickExactResult,
+  type ZcodeProjectMenuResult,
 } from "./cdp.js";
 import {
   ensureZcodeInstance,
@@ -69,6 +75,8 @@ function guiOf(resolved: ResolvedAgent): GuiProfile {
   return {
     setupRecoveryTimeoutMs:
       g?.setupRecoveryTimeoutMs ?? ZCODE_SETUP_DEFAULTS.setupRecoveryTimeoutMs,
+    projectTriggerTimeoutMs:
+      g?.projectTriggerTimeoutMs ?? ZCODE_SETUP_DEFAULTS.projectTriggerTimeoutMs,
     dialogProbeTimeoutMs: g?.dialogProbeTimeoutMs ?? ZCODE_SETUP_DEFAULTS.dialogProbeTimeoutMs,
     dialogOperationTimeoutMs:
       g?.dialogOperationTimeoutMs ?? ZCODE_SETUP_DEFAULTS.dialogOperationTimeoutMs,
@@ -221,6 +229,28 @@ async function clickAnyExactWhenReady(
   return last;
 }
 
+/**
+ * 项目触发器失败的归类文案：区分未挂载、不可见/裁剪、不唯一、遮挡与点击后无响应，
+ * 不让早退（不唯一/禁用）被含糊成「等待超时」。
+ */
+function describeProjectTriggerFailure(outcome: ZcodeProjectMenuResult): string {
+  const { probe, reason } = outcome;
+  if (reason === "menu-not-open")
+    return `点击项目触发器后项目菜单未打开（selector=${probe.selector || "n/a"}，匹配 ${probe.count} 个可见节点）`;
+  switch (probe.state) {
+    case "ambiguous":
+      return `无法打开 ZCode 项目列表：项目触发器不唯一（匹配 ${probe.count} 个可见节点，selector=${probe.selector}）`;
+    case "disabled":
+      return `无法打开 ZCode 项目列表：项目触发器处于禁用状态（selector=${probe.selector}）`;
+    case "hidden":
+      return `无法打开 ZCode 项目列表：项目触发器已挂载但不可见或被裁剪（selector=${probe.selector || "n/a"}）`;
+    case "covered":
+      return `无法打开 ZCode 项目列表：项目触发器被其他元素遮挡（selector=${probe.selector}${probe.detail ? `，命中=${probe.detail}` : ""}）`;
+    default:
+      return "无法打开 ZCode 项目列表：项目触发器始终未挂载（等待项目触发器超时）";
+  }
+}
+
 export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> {
   const started = Date.now(),
     { ctx, resolved, opts, logFile } = args,
@@ -270,7 +300,13 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
   try {
     await mkdirp(path.dirname(logFile));
     const spec = parseZcodeModel(ctx.model);
-    const refs = validateTaskReferences(ctx.task, ctx.context, ctx.projectPath);
+    // 无项目模式（issue #12）：进入 ZCode 的 default 工作区，不解析项目引用、不绑定/导入项目。
+    const defaultWorkspace = ctx.workspaceMode === "default";
+    const refs = validateTaskReferences(
+      ctx.task,
+      ctx.context,
+      defaultWorkspace ? undefined : ctx.projectPath,
+    );
     if (!resolved.command)
       return result({
         hardFailure: true,
@@ -368,6 +404,56 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
     let session = activeSession;
     let permission = ctx.resume?.permissionMode ?? gui.defaultPermissionMode ?? "完全访问";
     let answeredQuestion = false;
+    // 等待并确认项目触发器就绪的共享截止时间：上限来自集中配置（gui.projectTriggerTimeoutMs），
+    // 并被 setup 恢复预算与任务总时限夹住。回退重试不重置它，也不新增第二个魔法超时值。
+    const projectTriggerDeadline = (): number =>
+      Math.min(
+        Date.now() + gui.projectTriggerTimeoutMs,
+        started + ctx.taskTimeoutMs,
+        started + gui.setupRecoveryTimeoutMs,
+      );
+    /**
+     * 无项目模式的就绪判据：必须确认当前会话真的处于「未绑定项目的 default 工作区」。
+     * 「不点击项目按钮」不足以证明——当前 UI 可能继承上一次绑定，所以要求触发器文本
+     * 命中未绑定占位词、且没有回读到任何项目路径，且不处于歧义态。
+     */
+    const workspaceIsDefault = (binding: {
+      triggerText: string;
+      projectPath: string;
+      ambiguous?: boolean;
+    }): boolean =>
+      !binding.ambiguous && !binding.projectPath && isUnboundTriggerText(binding.triggerText);
+    const describeDefaultWorkspaceFailure = (binding?: {
+      triggerText: string;
+      projectPath: string;
+      ambiguous?: boolean;
+    }): string => {
+      if (!binding) return "未能读取 ZCode 工作区状态";
+      if (binding.ambiguous) return "ZCode 项目触发器不唯一，无法确认工作区状态";
+      if (binding.projectPath)
+        return `当前 ZCode 会话仍绑定项目 ${binding.projectPath}，未处于 default 工作区`;
+      return `无法确认 ZCode 处于 default 工作区（触发器文本=${binding.triggerText || "空"}）`;
+    };
+    const confirmDefaultWorkspace = async (): Promise<
+      | { ok: true; binding: { triggerText: string; projectPath: string; ambiguous?: boolean } }
+      | {
+          ok: false;
+          reason: string;
+          binding?: { triggerText: string; projectPath: string; ambiguous?: boolean };
+        }
+    > => {
+      const deadline = projectTriggerDeadline();
+      let last: { triggerText: string; projectPath: string; ambiguous?: boolean } | undefined;
+      for (;;) {
+        // eslint-disable-next-line no-await-in-loop
+        last = await cdp!.workspaceBinding();
+        if (workspaceIsDefault(last)) return { ok: true, binding: last };
+        if (Date.now() >= deadline) break;
+        // eslint-disable-next-line no-await-in-loop
+        await deps.sleep(Math.min(300, Math.max(0, deadline - Date.now())));
+      }
+      return { ok: false, reason: describeDefaultWorkspaceFailure(last), binding: last };
+    };
     const ensureProjectBound = async (
       initialItem?: ZcodeProjectItem,
     ): Promise<{ bound: boolean; ambiguous: boolean }> => {
@@ -384,7 +470,8 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
           // eslint-disable-next-line no-await-in-loop
           await cdp!.dismissMenus();
           // eslint-disable-next-line no-await-in-loop
-          if (!(await cdp!.click("projectTrigger"))) continue;
+          if (!(await cdp!.clickProjectTriggerAndConfirm(projectTriggerDeadline())).opened)
+            continue;
           // eslint-disable-next-line no-await-in-loop
           await deps.sleep(300);
           // eslint-disable-next-line no-await-in-loop
@@ -427,37 +514,80 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
     }
 
     if (!answeredQuestion) {
+      // 无项目模式（issue #12）：只确认 default 工作区，不进入任何项目选择/绑定/导入路径。
+      if (defaultWorkspace) {
+      budget.setStage("确认无项目工作区");
+      const confirmed = await confirmDefaultWorkspace();
+      if (!confirmed.ok)
+        return result({
+          endReason: "needs_user",
+          needsUserKind: "setup_recovery",
+          pendingQuestion: `${confirmed.reason}。请在 ZCode 中切换到未绑定项目的新会话（default 工作区）后调用 continue_task；不会向其它项目发送任务。`,
+          session: {
+            id: session.id,
+            title: session.title,
+            provider: spec.provider,
+            model: spec.model,
+            permissionMode: permission,
+          },
+          progressSummary: "等待 ZCode 进入 default 工作区",
+        });
+      logger.info("[zcode] 已确认 default 工作区（无项目模式），跳过项目绑定与导入");
+      await cdp.dismissMenus();
+      budget.finishSetup();
+      } else {
       budget.setStage("确认项目绑定");
-      // 冷启动时 composer/项目触发器挂载可超过 10s（macOS 实测）——首次点击未命中时
-      // 有界等待其挂载再重试；首点即中（Windows/假 CDP 主路径）不进入等待，行为不变。
-      const waitProjectTrigger = async (timeoutMs: number): Promise<boolean> => {
-        const deadline = Date.now() + timeoutMs;
-        while (Date.now() < deadline) {
+      // 等待与点击共用同一就绪判据（结构化探测），并在点击后确认项目菜单真正打开——
+      // 鼠标事件发出不等于成功。整个「等待 → 回退一次侧栏新建任务 → 再等待」共享
+      // projectTriggerDeadline，重试不重置预算。
+      const attemptProjectMenu = async (): Promise<ZcodeProjectMenuResult> => {
+        const deadline = projectTriggerDeadline();
+        const attemptStarted = Date.now();
+        let attempts = 0;
+        let last: ZcodeProjectMenuResult = {
+          opened: false,
+          reason: "not-ready",
+          probe: { state: "missing", selector: "", count: 0, mounted: 0, ready: false },
+        };
+        for (;;) {
+          attempts += 1;
           // eslint-disable-next-line no-await-in-loop
-          if (await cdp!.exists("projectTrigger")) return true;
+          last = await cdp!.clickProjectTriggerAndConfirm(deadline);
+          if (last.opened) {
+            logger.debug(
+              `[zcode] 项目触发器就绪且项目菜单已打开；attempts=${attempts}；elapsed=${Date.now() - attemptStarted}ms；selector=${last.probe.selector}；count=${last.probe.count}`,
+            );
+            return last;
+          }
+          // 「不唯一」「禁用」不是再等一会儿就会好的状态：继续重试只会烧掉预算，
+          // 且会触发多余的回退草稿，因此在这里早退并如实归类原因。
+          if (last.probe.state === "ambiguous" || last.probe.state === "disabled") break;
+          if (Date.now() >= deadline) break;
           // eslint-disable-next-line no-await-in-loop
-          await deps.sleep(300);
+          await deps.sleep(Math.min(300, Math.max(0, deadline - Date.now())));
         }
-        return false;
+        logger.warn(
+          `[zcode] 项目触发器未就绪；state=${last.probe.state}；reason=${last.reason ?? "n/a"}；attempts=${attempts}；elapsed=${Date.now() - attemptStarted}ms；剩余预算=${Math.max(0, deadline - Date.now())}ms；selector=${last.probe.selector || "n/a"}；count=${last.probe.count}；mounted=${last.probe.mounted}${last.probe.detail ? `；命中=${last.probe.detail}` : ""}`,
+        );
+        return last;
       };
-      let triggerReady = true;
-      if (!(await cdp.click("projectTrigger"))) {
-        triggerReady = await waitProjectTrigger(15_000);
-        if (!triggerReady) {
-          // macOS 实测：palette 首页也带 composer-input（无工作区触发器），不能以 chatInput
-          // 判断任务 composer 已打开——触发器持续缺席即回退侧栏新建任务大按钮。
-          // 代价上限是多一个空草稿（此时任何已开 composer 都不是可用态），可接受。
-          logger.warn("[zcode] 项目触发器未命中，回退侧栏新建任务按钮后重试");
-          await cdp.click("newTaskSidebar");
-          triggerReady = await waitProjectTrigger(15_000);
-        }
-        // eslint-disable-next-line no-await-in-loop
-        if (triggerReady && !(await cdp.click("projectTrigger"))) triggerReady = false;
+      let triggerOutcome = await attemptProjectMenu();
+      if (
+        !triggerOutcome.opened &&
+        triggerOutcome.probe.state !== "ambiguous" &&
+        triggerOutcome.probe.state !== "disabled"
+      ) {
+        // macOS 实测：palette 首页也带 composer-input（无工作区触发器），不能以 chatInput
+        // 判断任务 composer 已打开——触发器持续缺席即回退侧栏新建任务大按钮。
+        // 只回退一次（不无限新建草稿），且不重置截止时间。
+        logger.warn("[zcode] 项目触发器未就绪，回退侧栏新建任务按钮后重试一次");
+        await cdp.click("newTaskSidebar");
+        triggerOutcome = await attemptProjectMenu();
       }
-      if (!triggerReady)
+      if (!triggerOutcome.opened)
         return result({
           hardFailure: true,
-          error: "无法打开 ZCode 项目列表（等待项目触发器超时）",
+          error: describeProjectTriggerFailure(triggerOutcome),
           endReason: "setup_failed",
         });
       await deps.sleep(300);
@@ -483,6 +613,13 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
             needsUserKind: "setup_recovery",
             pendingQuestion: "项目绑定尚未确认，请在 ZCode 中确认目标项目后调用 continue_task。",
           });
+      } else if (ctx.allowCreateProject === false) {
+        // 明确禁止创建：在打开文件夹面板等任何导入副作用之前停止派发。
+        return result({
+          hardFailure: true,
+          endReason: "project_not_registered",
+          error: `目标目录未在 ZCode 项目列表中登记，且本次调用禁止自动创建项目（allowCreateProject=false）：${ctx.projectPath}。请在 ZCode 中手动添加该项目后重新提交，或省略 allowCreateProject 以允许自动导入。`,
+        });
       } else {
         budget.setStage("准备文件夹面板");
         let pids: number[] = [];
@@ -639,6 +776,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
       logger.info(`[zcode] 项目绑定回读通过：${ctx.projectPath}`);
       await cdp.dismissMenus();
       budget.finishSetup();
+      }
 
       const readModel = async (waitForExpected = false) => {
         const until = Math.min(started + ctx.taskTimeoutMs, Date.now() + 5_000);

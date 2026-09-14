@@ -5,6 +5,14 @@
 import type { TraeworkMode, ReasoningLevel } from "../config/schema.js";
 import type { VisualReport } from "../visual/types.js";
 
+/**
+ * 任务工作区模式（issue #12）：
+ * - project：绑定了真实项目目录，projectPath/displayPath 为规范化绝对路径；
+ * - default：ZCode 无项目会话（default 工作区），projectPath/displayPath 为空串，
+ *   不采集 Git 基线、不进入项目验收与项目级锁。
+ */
+export type WorkspaceMode = "project" | "default";
+
 export const TASK_STATUSES = [
   "queued",
   "running",
@@ -113,6 +121,11 @@ export interface VerifyReport {
 export interface TaskMeta {
   taskId: string;
   status: TaskStatus;
+  /**
+   * 工作区模式。旧 task.json 无此字段时按 project 归一化（见 workspaceModeOf）——
+   * 绝不把旧记录或损坏记录默认当成无项目。
+   */
+  workspaceMode?: WorkspaceMode;
   projectPath: string;
   displayPath: string;
   agentId: string;
@@ -128,6 +141,11 @@ export interface TaskMeta {
   designSystem?: string;
   /** GUI 类 agent（traework）使用的面板模式（Work/Code/Design）；CLI 类忽略 */
   mode?: TraeworkMode;
+  /**
+   * ZCode 专用：目标项目未登记时是否允许自动导入。省略视为允许；
+   * 显式 false 时驱动层在导入动作之前停止派发（project_not_registered）。
+   */
+  allowCreateProject?: boolean;
   autoVerify: boolean;
   autoFixRounds: number;
   taskTimeoutMs: number;
@@ -161,6 +179,11 @@ export interface TaskMeta {
   abortSource?: "user" | "shutdown" | "timeout" | "internal";
   /** rework_task 注入的追加指示（仅作用于下一轮 agent） */
   reworkFeedback?: string;
+  /**
+   * 结构化「本轮不适用项目验收」的原因。无项目模式（default 工作区）执行成功后置为
+   * "no_project"——用结构化字段表达跳过，而不是生成虚假的验收通过报告。
+   */
+  verificationNotApplicable?: "no_project";
   /** S4：最近一次验收的报告轮次（0-based，reportRound）——区别于 agent roundsUsed */
   reportRound?: number;
   pendingVisualVerification?: boolean;
@@ -225,4 +248,17 @@ export const TRANSITIONS: Record<TaskStatus, readonly TaskStatus[]> = {
 
 export function isTerminal(s: TaskStatus): boolean {
   return TERMINAL_STATUSES.includes(s);
+}
+
+/** 归一化工作区模式：缺字段一律按 project（保守，绝不把旧记录或损坏记录当作无项目）。 */
+export function workspaceModeOf(meta: Pick<TaskMeta, "workspaceMode">): WorkspaceMode {
+  return meta.workspaceMode === "default" ? "default" : "project";
+}
+
+export function isProjectWorkspace(meta: Pick<TaskMeta, "workspaceMode">): boolean {
+  return workspaceModeOf(meta) === "project";
+}
+
+export function isDefaultWorkspace(meta: Pick<TaskMeta, "workspaceMode">): boolean {
+  return workspaceModeOf(meta) === "default";
 }

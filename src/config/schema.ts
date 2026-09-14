@@ -50,6 +50,12 @@ export const RunTaskParamsSchema = z.object({
   designSystem: z.string().min(1).optional(),
   autoVerify: z.boolean().optional(),
   autoFixRounds: z.number().int().min(0).max(10).optional(),
+  /**
+   * 仅 ZCode 生效：目标目录未在 ZCode 项目列表中登记时，是否允许自动导入（添加项目）。
+   * 省略 = 允许（保持既有自动导入行为）；false = 停止派发并返回 project_not_registered，
+   * 不打开原生文件夹对话框、不添加项目。其他 agent 显式传入即报错。
+   */
+  allowCreateProject: z.boolean().optional(),
   context: z.string().optional(),
   taskTimeoutMs: z.number().int().positive().optional(),
 });
@@ -190,6 +196,8 @@ export const ZCODE_SETUP_DEFAULTS = {
   dialogProbeTimeoutMs: 30_000,
   dialogOperationTimeoutMs: 60_000,
   setupRecoveryMaxRetries: 2,
+  /** 等待并确认 ZCode 项目触发器就绪的上限（含点击后确认项目菜单打开的预算）。 */
+  projectTriggerTimeoutMs: 15_000,
 } as const;
 
 export const GuiProfileSchema = z.object({
@@ -198,6 +206,15 @@ export const GuiProfileSchema = z.object({
     .int()
     .positive()
     .default(ZCODE_SETUP_DEFAULTS.setupRecoveryTimeoutMs),
+  /**
+   * 等待 ZCode 项目触发器挂载并就绪的上限（ms）；点击后确认项目菜单打开的窗口也取自这里。
+   * 整个「等待 → 回退一次 → 再等待」共享一个截止时间，重试不重置预算。
+   */
+  projectTriggerTimeoutMs: z
+    .number()
+    .int()
+    .positive()
+    .default(ZCODE_SETUP_DEFAULTS.projectTriggerTimeoutMs),
   dialogProbeTimeoutMs: z
     .number()
     .int()

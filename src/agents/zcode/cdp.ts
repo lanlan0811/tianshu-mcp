@@ -9,6 +9,8 @@ import { projectDisplayName, type ZcodeProjectItem } from "./project.js";
 import { normalizeZcodeModelSelection, type ZcodeModelSelectionRaw } from "./model.js";
 import {
   projectTriggerDom,
+  projectTriggerProbeExpression,
+  projectMenuOpenExpression,
   workspaceBindingExpression,
   modelSelectionExpression,
   sendButtonPointExpression,
@@ -53,6 +55,38 @@ export interface ZcodeClickExactResult {
   available: string[];
   testids?: string[];
 }
+
+/** 项目触发器就绪状态：每个取值对应一种可区分的失败面，禁止统一降级为「超时」。 */
+export type ZcodeTriggerState =
+  | "missing"
+  | "hidden"
+  | "ambiguous"
+  | "disabled"
+  | "covered"
+  | "ready";
+
+export interface ZcodeTriggerProbe {
+  state: ZcodeTriggerState;
+  /** 命中优先级层的选择器（未命中时为空串） */
+  selector: string;
+  /** 命中层内的可见匹配数 */
+  count: number;
+  /** 全部候选选择器命中的节点数（含不可见），用于区分「未挂载」与「已挂载但不可见」 */
+  mounted: number;
+  ready: boolean;
+  point?: { x: number; y: number };
+  /** 命中/遮挡节点的最小诊断属性（tag#testid[aria-label]），不含页面正文 */
+  detail?: string;
+}
+
+export interface ZcodeProjectMenuResult {
+  opened: boolean;
+  reason?: "not-ready" | "menu-not-open";
+  probe: ZcodeTriggerProbe;
+}
+
+/** 点击后确认菜单打开的轮询间隔（不是独立超时；窗口由调用方从集中配置与总预算算出）。 */
+const PROJECT_MENU_POLL_MS = 100;
 
 export class ZcodeCdpClient {
   private readonly inner: TraeworkCdpClient;
@@ -134,11 +168,10 @@ export class ZcodeCdpClient {
   }
   async click(key: ZcodeSelectorKey): Promise<boolean> {
     if (key === "projectTrigger") {
-      const point = await this.evaluate<{ x: number; y: number } | null>(
-        `(function(){${projectTriggerDom(this.selectors)}if(!trigger)return null;const r=trigger.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()`,
-      );
-      if (!point) return false;
-      await this.clickAt(point.x, point.y);
+      // 与等待共用同一就绪判据：多匹配、不可见、禁用、被遮挡一律不算就绪，不发鼠标事件。
+      const probe = await this.probeProjectTrigger();
+      if (!probe.ready || !probe.point) return false;
+      await this.clickAt(probe.point.x, probe.point.y);
       return true;
     }
     const point = await this.evaluate<{ x: number; y: number } | null>(
@@ -148,6 +181,34 @@ export class ZcodeCdpClient {
     await this.clickAt(point.x, point.y);
     return true;
   }
+
+  /** 项目触发器结构化探测（只读，不发事件）。 */
+  async probeProjectTrigger(): Promise<ZcodeTriggerProbe> {
+    return this.evaluate<ZcodeTriggerProbe>(projectTriggerProbeExpression(this.selectors));
+  }
+
+  /** 项目菜单是否已真正可见（点击后置条件）。 */
+  async projectMenuOpen(): Promise<boolean> {
+    return this.evaluate<boolean>(projectMenuOpenExpression());
+  }
+
+  /**
+   * 探测 → 点击 → 确认项目菜单打开。事件发出不算成功：菜单没开就返回 menu-not-open。
+   * deadline 由调用方从集中配置与 setup/task 总预算取上限（重试不重置截止时间）。
+   */
+  async clickProjectTriggerAndConfirm(deadline: number): Promise<ZcodeProjectMenuResult> {
+    const probe = await this.probeProjectTrigger();
+    if (!probe.ready || !probe.point) return { opened: false, reason: "not-ready", probe };
+    await this.clickAt(probe.point.x, probe.point.y);
+    while (Date.now() < deadline) {
+      // eslint-disable-next-line no-await-in-loop
+      if (await this.projectMenuOpen()) return { opened: true, probe };
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => setTimeout(resolve, PROJECT_MENU_POLL_MS));
+    }
+    return { opened: false, reason: "menu-not-open", probe };
+  }
+
   async clickExact(key: ZcodeSelectorKey, value: string): Promise<ZcodeClickExactResult> {
     const found = await this.evaluate<{
       count: number;

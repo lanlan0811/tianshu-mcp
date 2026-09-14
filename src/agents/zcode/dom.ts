@@ -79,3 +79,49 @@ export function sendButtonPointExpression(overrides: Record<string, string>): st
     return hit && (hit===e || e.contains(hit)) ? {x,y} : null;
   })()`;
 }
+
+/**
+ * 项目触发器结构化探测：等待与点击共用这一份就绪判据，消除「exists 说有、click 说没有」
+ * （exists 只看宽高，pick 还要求该优先级层唯一且未被祖先裁剪）。
+ *
+ * 返回 selector / 该层匹配数 count / 全部候选命中的挂载数 mounted / 命中节点最小诊断属性，
+ * 让上层区分未挂载、不可见、不唯一、禁用、遮挡与真实超时，而不是统统归成「等待超时」。
+ * 只用于项目触发器；登录页等其它 exists 调用语义不变。
+ */
+export function projectTriggerProbeExpression(overrides: Record<string, string>): string {
+  return `(function(){${ZCODE_DOM}
+    const describe = e => e ? String(e.tagName || '')
+      + (e.getAttribute('data-testid') ? '#' + e.getAttribute('data-testid') : '')
+      + (e.getAttribute('aria-label') ? '[' + e.getAttribute('aria-label') + ']' : '') : '';
+    const sels = ${candidateExpr("projectTrigger", overrides)};
+    const mountedNodes = new Set();
+    for (const s of sels) for (const e of document.querySelectorAll(s)) mountedNodes.add(e);
+    const mounted = mountedNodes.size;
+    const m = pick(sels);
+    const base = { selector: m.selector, count: m.count, mounted, ready: false };
+    if (!mounted) return Object.assign({}, base, { state: 'missing' });
+    if (m.count === 0)
+      return Object.assign({}, base, { state: 'hidden', detail: describe(mountedNodes.values().next().value) });
+    if (m.count > 1) return Object.assign({}, base, { state: 'ambiguous' });
+    const node = m.node;
+    if (node.disabled || node.getAttribute('aria-disabled') === 'true')
+      return Object.assign({}, base, { state: 'disabled', detail: describe(node) });
+    const r = node.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+    const hit = document.elementFromPoint(x, y);
+    // 命中目标本身或其子树才算命中目标；被别的元素盖住不是可点击状态。
+    if (!hit || !(hit === node || node.contains(hit)))
+      return Object.assign({}, base, { state: 'covered', detail: describe(hit) });
+    return Object.assign({}, base, { state: 'ready', ready: true, point: { x, y }, detail: describe(node) });
+  })()`;
+}
+
+/**
+ * 点击项目触发器后的后置条件：项目菜单必须真正可见。
+ * 鼠标事件发出去本身不算成功——菜单没开就说明这次点击没有生效。
+ */
+export function projectMenuOpenExpression(): string {
+  return `(function(){${ZCODE_DOM}
+    if ([...document.querySelectorAll('[role="menu"]')].some(visible)) return true;
+    return [...document.querySelectorAll('[role="menuitemcheckbox"]')].some(visible);
+  })()`;
+}
