@@ -19,6 +19,19 @@
 - `needs_user` 状态下取消任务时经临时 CDP 连接尽力停止 GUI 内等待中的会话。
 - ZCode 无项目派发在 macOS 上的真机验证（本轮仅 Windows 10 实测）。
 
+### 修复
+
+- **新建任务点击返回成功但页面不切换，后续一路静默空等（真机发现）**：ZCode 停在已有会话时，顶部 `conversation-new-task` 是惰性挂载的图标——点击派发成功（返回 `true`）却不切换页面，而会话页的 composer **不挂载** `composer-workspace-trigger`。于是无项目模式的 default 确认、有项目模式的绑定等待都会空等到截止时间，最后只报一句 `needs_user/setup_recovery`（实测空转 30 秒）。现在新建任务后以「项目触发器已挂载」验证草稿**真的**建立；未建立则回退侧栏 `task-new-button`（Windows 3.11.2 实测可靠，此前该兜底只覆盖有项目模式），两者都失败才以 `setup_failed` fail-closed 并报出「触发器仍未挂载」。
+- **发送失败归因误导（真机发现）**：窗口被最小化或完全遮挡时页面被 Chromium 节流（`visibilityState=hidden`），发送按钮「明明在视口内」却点不到，`elementFromPoint` 命中的也不是按钮本身。旧文案只报「ZCode 发送按钮未在观察期内启用或被遮挡」，会把用户引向按钮；现在会识别该状态并报出「ZCode 窗口当前不在前台」及把窗口置于前台的操作指引。`Page.bringToFront` 经真机实测**无法**恢复被遮挡的 Electron 窗口，因此不假装能自动恢复。
+
+### 测试
+
+- 全量 **530 passed / 10 skipped**（Windows 10 x64，Node 24.18.0）：新增 4 项用例——草稿未建立时回退侧栏入口并完成派发、两个入口都建立不了草稿时 fail-closed 且不发送、页面被节流时发送失败归因为窗口不在前台、页面可见时保留原有的按钮归因文案。
+
+### 文档
+
+- [issue #12 Windows 10 真机验收记录](docs/zcode-issue-12-windows-evidence.md) 追加「第二轮回访（v0.5.2 之后）」：6 次真机运行的结果与现场取证、`newTask` 不切页的复现判据、发送阶段各失败面的证据，以及本轮**未复现 / 未验证**的事实（含第 1 次 `send_unknown` 的真因仍未定、`sendMessage` 诊断文案在真机上未走到）。
+
 ---
 
 ## [0.5.2] — 2026-09-14

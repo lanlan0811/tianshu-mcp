@@ -78,6 +78,11 @@ export interface ZcodeTriggerProbe {
   point?: { x: number; y: number };
   /** 命中/遮挡节点的最小诊断属性（tag#testid[aria-label]），不含页面正文 */
   detail?: string;
+  /**
+   * 页面是否处于 hidden（窗口被遮挡/最小化时 Chromium 会节流渲染）。
+   * 这是「点击被吞」的最常见环境原因，必须出现在失败诊断里。
+   */
+  pageHidden?: boolean;
 }
 
 export interface ZcodeProjectMenuResult {
@@ -88,6 +93,13 @@ export interface ZcodeProjectMenuResult {
 
 /** 点击后确认菜单打开的轮询间隔（不是独立超时；窗口由调用方从集中配置与总预算算出）。 */
 const PROJECT_MENU_POLL_MS = 100;
+
+/**
+ * 触发器点击被吞后的重试间隔。真机实测：ZCode 窗口被其他窗口完全遮挡时，Chromium 判定
+ * occluded 并节流页面，合成鼠标事件常被吞掉（首次点击无效、第二次才打开菜单），
+ * 所以「点一次然后干等」会必然失败。重试有界，不重置调用方给的 deadline。
+ */
+const TRIGGER_RECLICK_MS = 1_500;
 
 export class ZcodeCdpClient {
   private readonly inner: TraeworkCdpClient;
@@ -204,8 +216,15 @@ export class ZcodeCdpClient {
     // 所以先查后点。
     if (await this.projectMenuOpen()) return { opened: true, probe };
     if (!probe.ready || !probe.point) return { opened: false, reason: "not-ready", probe };
-    await this.clickAt(probe.point.x, probe.point.y);
+    let lastClick = 0;
     while (Date.now() < deadline) {
+      // 有界重试点击：窗口被遮挡时节流会让首次点击落空（真机实测第二次才生效）。
+      // 每轮都先确认菜单未开，因此不会把已经打开的菜单 toggle 掉。
+      if (Date.now() - lastClick >= TRIGGER_RECLICK_MS) {
+        // eslint-disable-next-line no-await-in-loop
+        await this.clickAt(probe.point.x, probe.point.y);
+        lastClick = Date.now();
+      }
       // eslint-disable-next-line no-await-in-loop
       if (await this.projectMenuOpen()) return { opened: true, probe };
       // eslint-disable-next-line no-await-in-loop
@@ -329,7 +348,24 @@ export class ZcodeCdpClient {
       }
       await this.evaluate("new Promise(resolve=>setTimeout(resolve,200))");
     }
-    throw new Error("ZCode 发送按钮未在观察期内启用或被遮挡；未发送任务");
+    // 窗口被遮挡/最小化时 Chromium 会节流页面：合成鼠标事件与 elementFromPoint 都不可靠，
+    // 按钮「明明在视口内」却点不到（3.11.2-Windows 真机实测 visibilityState=hidden、
+    // elementFromPoint 命中非按钮节点）。此时只报按钮会把用户引向错误方向；
+    // Page.bringToFront 实测无法恢复被遮挡的 Electron 窗口，所以如实报出真因并给出
+    // 可操作指引，不假装能自动恢复。
+    let throttled = false;
+    try {
+      throttled = await this.evaluate<boolean>(
+        "document.visibilityState === 'hidden' || document.hidden === true",
+      );
+    } catch {
+      throttled = false;
+    }
+    throw new Error(
+      throttled
+        ? "ZCode 发送按钮在观察期内不可点击：ZCode 窗口当前不在前台（页面被节流，合成点击不可靠）——请把 ZCode 窗口置于前台后重试；未发送任务"
+        : "ZCode 发送按钮未在观察期内启用或被遮挡；未发送任务",
+    );
   }
   async answerQuestion(answer: string): Promise<ZcodeQuestionAnswerResult> {
     const located = await this.evaluate<{

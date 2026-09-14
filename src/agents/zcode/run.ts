@@ -236,7 +236,7 @@ async function clickAnyExactWhenReady(
 function describeProjectTriggerFailure(outcome: ZcodeProjectMenuResult): string {
   const { probe, reason } = outcome;
   if (reason === "menu-not-open")
-    return `点击项目触发器后项目菜单未打开（selector=${probe.selector || "n/a"}，匹配 ${probe.count} 个可见节点）`;
+    return `点击项目触发器后项目菜单未打开（selector=${probe.selector || "n/a"}，匹配 ${probe.count} 个可见节点${probe.pageHidden ? "；ZCode 窗口当前不可见，浏览器已节流该页面，点击可能被吞——请把 ZCode 窗口置于前台后重试" : ""}）`;
   switch (probe.state) {
     case "ambiguous":
       return `无法打开 ZCode 项目列表：项目触发器不唯一（匹配 ${probe.count} 个可见节点，selector=${probe.selector}）`;
@@ -364,6 +364,50 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
 
     await cdp.dismissMenus();
 
+    // 等待并确认项目触发器就绪的共享截止时间：上限来自集中配置（gui.projectTriggerTimeoutMs），
+    // 并被 setup 恢复预算与任务总时限夹住。回退重试不重置它，也不新增第二个魔法超时值。
+    const projectTriggerDeadline = (): number =>
+      Math.min(
+        Date.now() + gui.projectTriggerTimeoutMs,
+        started + ctx.taskTimeoutMs,
+        started + gui.setupRecoveryTimeoutMs,
+      );
+    /**
+     * 新建任务后必须确认**草稿真的建立了**，不能只信点击的返回值。
+     * 3.11.2-Windows 真机实测：页面停在已有会话时，顶部 `conversation-new-task` 点击返回 true
+     * 却不切换页面，composer 上根本不挂载 `composer-workspace-trigger`（会话页不挂载它），
+     * 于是后续 default 确认与项目绑定会一路空等到 deadline，最后只报一句 needs_user。
+     * 侧栏 `task-new-button` 实测可靠。判据取「项目触发器已挂载」：它只存在于草稿页，
+     * 既证明草稿建立，也证明后续等待有依托。
+     */
+    const draftReady = async (): Promise<boolean> => {
+      const deadline = projectTriggerDeadline();
+      for (;;) {
+        // eslint-disable-next-line no-await-in-loop
+        const probe = await cdp!.probeProjectTrigger();
+        if (probe.mounted > 0) return true;
+        if (Date.now() >= deadline) return false;
+        // eslint-disable-next-line no-await-in-loop
+        await deps.sleep(Math.min(250, Math.max(0, deadline - Date.now())));
+      }
+    };
+    const ensureFreshDraft = async (): Promise<boolean> => {
+      const topClicked = await cdp!.click("newTask");
+      if (topClicked && (await draftReady())) return true;
+      logger.warn(
+        `[zcode] 顶部新建任务按钮未建立草稿（clicked=${topClicked}）；回退侧栏新建任务按钮`,
+      );
+      const sidebarClicked = await cdp!.click("newTaskSidebar");
+      if (sidebarClicked && (await draftReady())) {
+        logger.info("[zcode] 已通过侧栏新建任务按钮进入新草稿");
+        return true;
+      }
+      logger.warn(
+        `[zcode] 未能进入新草稿（顶部点击=${topClicked}，侧栏点击=${sidebarClicked}）：项目触发器始终未挂载`,
+      );
+      return false;
+    };
+
     const initialDispatch =
       !ctx.resume ||
       (ctx.resume.kind === "continue" &&
@@ -383,10 +427,11 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
           error: "无法唯一定位原 ZCode 会话，已 fail-closed",
           endReason: "session_lost",
         });
-    } else if (gui.freshSession && !(await cdp.click("newTask")))
+    } else if (gui.freshSession && !(await ensureFreshDraft()))
       return result({
         hardFailure: true,
-        error: "无法创建新的 ZCode 任务会话",
+        error:
+          "无法创建新的 ZCode 任务会话：点击新建任务后项目触发器仍未挂载，未能进入草稿页",
         endReason: "setup_failed",
       });
     await deps.sleep(500);
@@ -404,14 +449,6 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
     let session = activeSession;
     let permission = ctx.resume?.permissionMode ?? gui.defaultPermissionMode ?? "完全访问";
     let answeredQuestion = false;
-    // 等待并确认项目触发器就绪的共享截止时间：上限来自集中配置（gui.projectTriggerTimeoutMs），
-    // 并被 setup 恢复预算与任务总时限夹住。回退重试不重置它，也不新增第二个魔法超时值。
-    const projectTriggerDeadline = (): number =>
-      Math.min(
-        Date.now() + gui.projectTriggerTimeoutMs,
-        started + ctx.taskTimeoutMs,
-        started + gui.setupRecoveryTimeoutMs,
-      );
     /**
      * 无项目模式的就绪判据：必须确认当前会话真的处于「未绑定项目的 default 工作区」。
      * 「不点击项目按钮」不足以证明——当前 UI 可能继承上一次绑定，所以要求触发器文本
@@ -613,7 +650,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
           await deps.sleep(Math.min(300, Math.max(0, deadline - Date.now())));
         }
         logger.warn(
-          `[zcode] 项目触发器未就绪；state=${last.probe.state}；reason=${last.reason ?? "n/a"}；attempts=${attempts}；elapsed=${Date.now() - attemptStarted}ms；剩余预算=${Math.max(0, deadline - Date.now())}ms；selector=${last.probe.selector || "n/a"}；count=${last.probe.count}；mounted=${last.probe.mounted}${last.probe.detail ? `；命中=${last.probe.detail}` : ""}`,
+          `[zcode] 项目触发器未就绪；state=${last.probe.state}；reason=${last.reason ?? "n/a"}；attempts=${attempts}；elapsed=${Date.now() - attemptStarted}ms；剩余预算=${Math.max(0, deadline - Date.now())}ms；selector=${last.probe.selector || "n/a"}；count=${last.probe.count}；mounted=${last.probe.mounted}；页面隐藏=${last.probe.pageHidden === true}${last.probe.detail ? `；命中=${last.probe.detail}` : ""}`,
         );
         return last;
       };

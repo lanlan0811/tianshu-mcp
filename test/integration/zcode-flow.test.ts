@@ -1756,4 +1756,76 @@ describe("ZCode 无项目（default 工作区）派发", () => {
     expect(fake.sent).toBe(0);
     expect(fake.projectClicks).toBe(0);
   });
+
+  it("停在旧会话页时顶部新建任务按钮不切页：回退侧栏入口后建立草稿", async () => {
+    const project = await makeTmpRoot("zcode-stale-session-newtask");
+    cleanup.push(project);
+    // 真机实测（3.11.2-Windows）：页面停在已有会话时，顶部 `conversation-new-task` 点击
+    // 返回 true 却不切换页面，composer 上根本不挂载 `composer-workspace-trigger`；
+    // 侧栏 `task-new-button` 才真正建立草稿。这里用「触发器是否挂载」复刻两个页面的差别。
+    class StaleSessionPageZcode extends FakeZcode {
+      draft = false;
+      sidebarClicks = 0;
+      override async click(key: string) {
+        if (key === "newTaskSidebar") {
+          this.sidebarClicks++;
+          this.draft = true;
+          return true;
+        }
+        return super.click(key);
+      }
+      override async probeProjectTrigger(): Promise<ZcodeTriggerProbe> {
+        if (!this.draft)
+          return { state: "missing", selector: "", count: 0, mounted: 0, ready: false };
+        return super.probeProjectTrigger();
+      }
+      override async workspaceBinding() {
+        return this.draft
+          ? { triggerText: "选择项目", projectPath: "" }
+          : { triggerText: "", projectPath: "" };
+      }
+    }
+    const fake = new StaleSessionPageZcode(project);
+    const result = await runZcodeTask({
+      ctx: defaultCtx(project),
+      resolved: resolved({ projectTriggerTimeoutMs: 400 }),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.ok).toBe(true);
+    expect(result.endReason).toBe("reply_stable");
+    expect(fake.sidebarClicks).toBe(1);
+    expect(fake.sent).toBe(1);
+  });
+
+  it("两个新建任务入口都建立不了草稿时 fail-closed，不发送任务", async () => {
+    const project = await makeTmpRoot("zcode-no-draft");
+    cleanup.push(project);
+    class NoDraftZcode extends FakeZcode {
+      sidebarClicks = 0;
+      override async click(key: string) {
+        if (key === "newTaskSidebar") {
+          this.sidebarClicks++;
+          return false;
+        }
+        return super.click(key);
+      }
+      override async probeProjectTrigger(): Promise<ZcodeTriggerProbe> {
+        return { state: "missing", selector: "", count: 0, mounted: 0, ready: false };
+      }
+    }
+    const fake = new NoDraftZcode(project);
+    const result = await runZcodeTask({
+      ctx: defaultCtx(project),
+      resolved: resolved({ projectTriggerTimeoutMs: 300 }),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.endReason).toBe("setup_failed");
+    expect(fake.sidebarClicks).toBe(1);
+    expect(fake.sent).toBe(0);
+  });
 });

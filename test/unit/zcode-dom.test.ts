@@ -305,4 +305,36 @@ describe("ZCode project trigger probe", () => {
     expect(outcome.opened).toBe(true);
     expect(send).not.toHaveBeenCalled();
   });
+
+  it("re-clicks the trigger while the menu stays closed (bounded retries)", async () => {
+    // 真机实测：ZCode 窗口被遮挡时页面被节流，首次点击常被吞掉，第二次点击才打开菜单。
+    // 所以「点一次然后干等」是错的——应在等待窗口内有界地重新点击。
+    const { client, send, document } = fixture(primary);
+    pointAt(document, triggerSelector);
+    const outcome = await client.clickProjectTriggerAndConfirm(Date.now() + 3_200);
+    expect(outcome.opened).toBe(false);
+    expect(outcome.reason).toBe("menu-not-open");
+    const presses = send.mock.calls.filter((c) => c[1]?.type === "mousePressed").length;
+    expect(presses).toBeGreaterThan(1);
+  });
+});
+
+describe("ZCode 发送失败诊断", () => {
+  it("页面被节流（visibilityState=hidden）时归因为窗口不在前台，而不是按钮问题", async () => {
+    // 真机证据（3.11.2-Windows）：窗口被遮挡时 document.visibilityState=hidden、
+    // elementFromPoint 命中非按钮节点，sendMessage 连续拿不到可点按钮；
+    // 只报「按钮未启用或被遮挡」会把用户引向按钮，而真因是窗口不在前台。
+    const { client } = fixture('<button data-testid="v4-composer-send" disabled>Send</button>');
+    const evaluate = vi.mocked(client.evaluate).getMockImplementation()!;
+    vi.spyOn(client, "evaluate").mockImplementation(async <T>(expression: string): Promise<T> => {
+      if (expression.includes("visibilityState")) return true as T;
+      return evaluate(expression) as Promise<T>;
+    });
+    await expect(client.sendMessage()).rejects.toThrow(/置于前台/);
+  });
+
+  it("页面可见时保留原有的按钮归因文案", async () => {
+    const { client } = fixture('<button data-testid="v4-composer-send" disabled>Send</button>');
+    await expect(client.sendMessage()).rejects.toThrow(/未在观察期内启用或被遮挡/);
+  });
 });

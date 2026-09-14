@@ -98,7 +98,10 @@ export function projectTriggerProbeExpression(overrides: Record<string, string>)
     for (const s of sels) for (const e of document.querySelectorAll(s)) mountedNodes.add(e);
     const mounted = mountedNodes.size;
     const m = pick(sels);
-    const base = { selector: m.selector, count: m.count, mounted, ready: false };
+    // 窗口被其他窗口完全遮挡时 Chromium 判定 occluded 并节流页面，合成点击常被吞掉——
+    // 这个环境事实必须随探测结果一起回传，否则失败信息会把用户引向错误方向。
+    const pageHidden = document.visibilityState === 'hidden';
+    const base = { selector: m.selector, count: m.count, mounted, ready: false, pageHidden };
     if (!mounted) return Object.assign({}, base, { state: 'missing' });
     if (m.count === 0)
       return Object.assign({}, base, { state: 'hidden', detail: describe(mountedNodes.values().next().value) });

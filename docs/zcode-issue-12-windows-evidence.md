@@ -101,3 +101,81 @@ run_task(
 - **macOS**：本环境无 macOS，ZCode 在 darwin 上的 `default` 工作区切换、`composer-work-outside-project` 选择器与原生行为**未验证**。
 - **Windows 11**：本次为 Windows 10 实测；issue 报告者的 Windows 11 证据未被复现，也不互相替代。
 - `continue_task` / `rework_task` 在无项目模式下的真机续跑：仅单测覆盖（`FakeZcode`）。
+
+## 第二轮回访（v0.5.2 之后，2026-09-15）
+
+v0.5.2 发布后对无项目派发做了 6 次真机回访，目标是确认「触发器点击被吞」的有界重试改动够用，并复验此后新增的修复。
+环境同上（Windows 10 x64、Node `v24.18.0`、ZCode `3.11.2.6792`），驱动方式相同（`dist/server.js` +
+`InMemoryTransport` + 官方 SDK Client，隔离数据目录）。
+
+### 6 次运行的结果
+
+| # | 前置 UI 状态 | 终态 | 现场结论 |
+|---|---|---|---|
+| 1 | 全新 spawn 实例，页面为草稿 | `failed/send_unknown` | 消息未提交（输入框未清空、无运行信号、无新会话）；`用户消息=true` 系假信号 |
+| 2 | 复用实例，停在**已有会话** | `needs_user/setup_recovery` | 30 秒内 `dismissMenus`×50 / `clickProjectTriggerAndConfirm`×49 / `workspaceBinding`×49，`clickWorkOutsideProject` **0 次**——触发器从未就绪 |
+| 3 | 手工用侧栏按钮切到**草稿** | `succeeded/reply_stable` | 采样到完整提交时序（见下） |
+| 4 | 停在会话页 + 窗口被最小化 | `failed/internal` | 修复生效（日志有回退证据，见下）；发送按钮 10 秒内拿不到可点位置 |
+| 5 | 草稿页 + 窗口可见 | `succeeded/reply_stable` | 零警告：`已确认 default 工作区` → 模型/权限回读 → 完成 |
+| 6 | **窗口最小化**（`iconic=True`、`visibility=hidden`） | `succeeded/reply_stable` | 进度含 `运行证据=stop_button` |
+
+### 缺陷：顶部「新建任务」返回成功却不切页
+
+真机复现判据（只读探针，停在已有会话时）：
+
+- 页面 `rows=2`，`[data-testid="composer-workspace-trigger"]` **挂载数 0**；composer 实际挂载的是
+  `v4-composer-input`、`chat-attachment-button`、`chat-mode-select-trigger`、`v4-model-config`、
+  `chat-context-usage-trigger`、`chat-model-select-trigger`、`chat-thought-level-select-trigger`、`v4-composer-send`；
+- 点击 `conversation-new-task` 返回 `true`，但页面**无任何变化**（rows 仍为 2、触发器仍未挂载）；
+- 改用侧栏 `[data-testid="task-new-button"]` 后 2 秒内 `rows=0`、触发器挂载数 1、文本回读为占位词「选择项目」。
+
+修复后的真机证据（第 4 次运行的 agent 日志，逐字）：
+
+```text
+[warn] [zcode] 顶部新建任务按钮未建立草稿（clicked=true）；回退侧栏新建任务按钮
+[info] [zcode] 已通过侧栏新建任务按钮进入新草稿
+[info] [zcode] 已确认 default 工作区（无项目模式），跳过项目绑定与导入
+```
+
+同一次运行中，第 2 次失败的那一步（30 秒空等 → `needs_user`）不再出现。
+
+### 发送阶段的三种形态
+
+| 形态 | 现象 | 归因 |
+|---|---|---|
+| 第 1 次 | `sendMessage` 111ms 返回，随后 60 秒无运行信号 | 未定（见下） |
+| 第 4 次 | `sendMessage` 10 秒内拿不到可点位置并抛错 | 窗口最小化导致页面节流，`elementFromPoint` 命中非按钮节点 |
+| 第 6 次 | 同样窗口最小化，**发送成功** | 说明「窗口最小化即必然失败」不成立 |
+
+第 3 次运行的提交时序（独立只读探针，3 秒粒度）：
+
+```text
+17:14:57  inputLen=93  inputHead="【tianshu:tsk_20260915011"  sendDisabled=false
+17:15:03  inputLen=0   sendDisabled=true                    ← 输入框被清空 = 已提交
+17:15:09  rows=0→2  sessionNodes=10→11                      ← 新会话建立、助手回复出现
+```
+
+以产品同路径（`Input.insertText` + `sendMessage()` 点击 `v4-composer-send`）在既有实例上单独复现，同样提交成功
+（输入框清空、`assistantRows` 0→1、会话节点 8→10）。因此「`insertText` 无效」与「`clickAt` 无效」两个假设均被
+证伪；`sendButton` 在空输入时为 `disabled=true`、注入文本后转 `false`，编辑器 state 确实收到了文本。
+
+### 本轮未复现 / 未验证
+
+- **第 1 次 `send_unknown` 的真因未定**：同路径探针可提交成功，第 6 次在同样「窗口最小化」条件下也成功，因此
+  不能把窗口状态当作该次失败的解释。失败时 `用户消息=true` 是**假信号**——`messageList` 的兜底选择器是 `main`，
+  而实测 `mainContainsComposer=true`，`v4-timeline` 容器文本里含「选择项目 / 完全访问 / DeepSeek/deepseek-flash」
+  等 composer 控件文本；只要输入框里还留着任务标记，`conversationText()` 就会含标记。该假信号掩盖了「消息滞留
+  在输入框」这一真实状态（`seenStateChange=false` 才是真信号），**本轮未修**。
+- **`sendMessage` 的节流诊断文案未在真机走到**：仅单元测试覆盖（页面 `visibilityState=hidden` 时归因「窗口不在
+  前台」）。第 4 次运行使用的是不含该诊断的构建，第 6 次虽最小化却发送成功。
+- **`Page.bringToFront` 无法恢复被遮挡的 Electron 窗口**（真机实测：调用返回 ok，`visibilityState` 仍为
+  `hidden`）——因此该状态只能诊断并指引用户，不能自动恢复。窗口可用 `ShowWindow(SW_RESTORE)` +
+  `SetForegroundWindow` 恢复（本轮多次使用，恢复后 `visibility=visible`、`hasFocus=true`）。
+- **macOS / Windows 11 仍未验证**（与上文「未验证项」一致）。
+
+### 副作用披露（本轮）
+
+- 真机探针直接调用 `sendMessage()` 复现发送路径时，向 ZCode 的 `default` 工作区真实提交了 1 条探针消息
+  （「请只回复一个字：好」），因此 ZCode 会话数 +1；6 次回访各自新建了会话。
+- 项目条目数未统计（本轮未做派发前后对比），但 6 次运行都是无项目模式，不涉及项目登记或导入。
+- 第 4 次运行期间 ZCode 窗口处于最小化状态，回访结束后已用 `ShowWindow(SW_RESTORE)` 恢复为前台可见。

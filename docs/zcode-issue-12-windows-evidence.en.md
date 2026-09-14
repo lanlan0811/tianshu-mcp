@@ -101,3 +101,93 @@ Both were exposed **only** by real-machine runs; unit and integration tests stay
 - **macOS**: no macOS machine here; ZCode's `default` workspace switch, the `composer-work-outside-project` selector, and native behaviour on darwin are **unverified**.
 - **Windows 11**: this run is Windows 10; the issue reporter's Windows 11 evidence was not reproduced and the two do not substitute for each other.
 - `continue_task` / `rework_task` under project-less mode on hardware: covered by unit tests only (`FakeZcode`).
+
+## Second visit (after v0.5.2, 2026-09-15)
+
+After v0.5.2 shipped, project-less dispatch was revisited 6 times on hardware, to check whether the bounded
+trigger-click retry is sufficient and to re-verify the fixes added since. The environment is unchanged
+(Windows 10 x64, Node `v24.18.0`, ZCode `3.11.2.6792`), as is the driving method (`dist/server.js` +
+`InMemoryTransport` + the official SDK client, isolated data directory).
+
+### Results of the 6 runs
+
+| # | Starting UI state | Terminal state | On-site conclusion |
+|---|---|---|---|
+| 1 | freshly spawned instance, draft page | `failed/send_unknown` | message never submitted (input not cleared, no run signal, no new session); `用户消息=true` was a false signal |
+| 2 | reused instance parked on an **existing conversation** | `needs_user/setup_recovery` | within 30s: `dismissMenus`×50 / `clickProjectTriggerAndConfirm`×49 / `workspaceBinding`×49 and `clickWorkOutsideProject` **0 times** — the trigger never became ready |
+| 3 | draft page (switched manually via the sidebar button) | `succeeded/reply_stable` | full submission timeline captured (below) |
+| 4 | conversation page + **minimised** window | `failed/internal` | the fix is live on hardware (fallback logged, below); the send button never became clickable within 10s |
+| 5 | draft page + visible window | `succeeded/reply_stable` | zero warnings: `已确认 default 工作区` → model/permission read-back → finished |
+| 6 | **minimised** window (`iconic=True`, `visibility=hidden`) | `succeeded/reply_stable` | progress reported `运行证据=stop_button` |
+
+### Defect: the top "new task" button returns success without switching pages
+
+Reproduction criteria on hardware (read-only probe, parked on an existing conversation):
+
+- the page shows `rows=2` and `[data-testid="composer-workspace-trigger"]` has **0 mounted nodes**; the composer
+  actually mounts `v4-composer-input`, `chat-attachment-button`, `chat-mode-select-trigger`, `v4-model-config`,
+  `chat-context-usage-trigger`, `chat-model-select-trigger`, `chat-thought-level-select-trigger`, `v4-composer-send`;
+- clicking `conversation-new-task` returns `true` while the page **does not change at all** (rows stay 2, the
+  trigger stays unmounted);
+- switching to the sidebar `[data-testid="task-new-button"]` yields `rows=0`, 1 mounted trigger and the
+  placeholder read-back "选择项目" within 2 seconds.
+
+Hardware evidence after the fix (agent log of run 4, verbatim):
+
+```text
+[warn] [zcode] 顶部新建任务按钮未建立草稿（clicked=true）；回退侧栏新建任务按钮
+[info] [zcode] 已通过侧栏新建任务按钮进入新草稿
+[info] [zcode] 已确认 default 工作区（无项目模式），跳过项目绑定与导入
+```
+
+In the same run, the step that failed in run 2 (30 seconds of dead waiting → `needs_user`) no longer occurs.
+
+### Three shapes of the send stage
+
+| Shape | Symptom | Attribution |
+|---|---|---|
+| run 1 | `sendMessage` returns in 111ms, then 60 seconds with no run signal | undetermined (below) |
+| run 4 | `sendMessage` cannot find a clickable point within 10s and throws | minimised window throttles the page, `elementFromPoint` hits a non-button node |
+| run 6 | same minimised window, **send succeeds** | so "minimised window implies failure" does not hold |
+
+Submission timeline of run 3 (independent read-only probe, 3-second granularity):
+
+```text
+17:14:57  inputLen=93  inputHead="【tianshu:tsk_20260915011"  sendDisabled=false
+17:15:03  inputLen=0   sendDisabled=true                    <- input cleared = submitted
+17:15:09  rows=0→2  sessionNodes=10→11                      <- new session created, reply appeared
+```
+
+Reproducing the same path in isolation on an existing instance (`Input.insertText` + `sendMessage()` clicking
+`v4-composer-send`) also submits successfully (input cleared, `assistantRows` 0→1, session nodes 8→10). Both the
+"`insertText` is ineffective" and "`clickAt` is ineffective" hypotheses are therefore falsified; `sendButton` is
+`disabled=true` with an empty input and flips to `false` after text is injected, so the editor state does receive
+the text.
+
+### Not reproduced / not verified this round
+
+- **The true cause of run 1's `send_unknown` is undetermined**: the same path submits successfully in isolation and
+  run 6 succeeded even with a minimised window, so the window state cannot explain that failure. Its
+  `用户消息=true` is a **false signal** — the `messageList` fallback selector is `main`, and `mainContainsComposer`
+  was measured `true`, with the `v4-timeline` container text containing composer control text such as
+  "选择项目 / 完全访问 / DeepSeek/deepseek-flash"; as long as the task marker remains in the input box,
+  `conversationText()` contains the marker. That false signal masked the real state — the message stuck in the
+  composer (`seenStateChange=false` is the truthful signal). **Not fixed this round.**
+- **The throttling diagnostic for `sendMessage` was never reached on hardware**: covered by unit tests only
+  (a page with `visibilityState=hidden` is attributed to "the window is not in the foreground"). Run 4 used a
+  build without that diagnostic and run 6 succeeded despite being minimised.
+- **`Page.bringToFront` cannot restore an occluded Electron window** (measured on hardware: the call returns ok
+  while `visibilityState` stays `hidden`), so the state can only be diagnosed and handed to the user; restoring
+  requires `ShowWindow(SW_RESTORE)` + `SetForegroundWindow` (used repeatedly this round, after which
+  `visibility=visible` and `hasFocus=true`).
+- **macOS / Windows 11 remain unverified** (consistent with the "Not verified" section above).
+
+### Side-effect disclosure (this round)
+
+- While reproducing the send path, a probe called `sendMessage()` directly and really submitted one probe message
+  ("请只回复一个字：好") into ZCode's `default` workspace, so the ZCode session count grew by one; each of the 6
+  visits created its own session.
+- Project entry counts were not measured (no before/after comparison this round), but all 6 runs were project-less
+  and involved no project registration or import.
+- During run 4 the ZCode window was minimised; it was restored to the foreground with `ShowWindow(SW_RESTORE)`
+  after the visit.
