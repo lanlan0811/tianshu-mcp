@@ -8,6 +8,7 @@ import type { GuiProfile } from "../../config/schema.js";
 import type { AgentRunLogger } from "../adapter.js";
 import { execFileAsync } from "../../verify/exec.js";
 import { TtlCache } from "../../util/ttl-cache.js";
+import { guiInstanceSpawnOptions } from "../gui-instance.js";
 
 export interface ZcodeProcess {
   pid: number;
@@ -200,13 +201,9 @@ export async function ensureZcodeInstance(
   } else if (!(await freePort(port))) throw new Error(`ZCode CDP 端口 ${port} 已被占用`);
   const args = gui.exeArgs.map((arg) => arg.replaceAll("<port>", String(port)));
   options.signal?.throwIfAborted();
-  // POSIX（macOS）必须 detached：实测父进程退出时非 detached 子进程会被进程组连坐杀掉
-  //（codex-gui 同款问题，2026-09-13 真机结论）；detached 后自成进程组组长，实例跨 server 退出驻留。
-  const child = spawn(exePath, args, {
-    detached: process.platform !== "win32",
-    stdio: "ignore",
-    windowsHide: false,
-  });
+  // 桌面实例必须 detached：不变量与实测依据见 guiInstanceSpawnOptions。Windows 上此前按平台
+  // 分支给 false，父进程退出会连坐，实例无法跨 server 退出驻留（2026-09-15 真机实测修正）。
+  const child = spawn(exePath, args, guiInstanceSpawnOptions(false));
   let launchError: Error | undefined;
   child.once("error", (error) => {
     launchError = error;

@@ -14,6 +14,7 @@ import { activateCodexApp, buildActivationArgs, buildSpawnArgs } from "./launche
 import { expandEnvPath } from "../../util/path.js";
 import { execFileAsync } from "../../verify/exec.js";
 import { TtlCache } from "../../util/ttl-cache.js";
+import { guiInstanceSpawnOptions } from "../gui-instance.js";
 
 export interface CodexProcess {
   pid: number;
@@ -245,14 +246,11 @@ export async function ensureCodexInstance(
   } else {
     const argv = buildSpawnArgs(userDataDir, port);
     logger.info(`[codex] 启动受管实例：${candidate.path}，CDP 端口 ${port}，profile=${userDataDir}`);
-    // POSIX 下 detached 让受管实例自成进程组组长——server/probe 退出不连坐（保留实例语义）；
-    // unref 使其不拖住父进程退出。实测：不 detached 时父进程退出会被进程组连坐杀掉主进程。
-    const child = spawn(candidate.path, argv, {
-      detached: process.platform !== "win32",
-      stdio: "ignore",
-    });
+    // 桌面实例必须 detached：不变量与实测依据见 guiInstanceSpawnOptions（Windows 同样适用）；
+    // unref 使其不拖住父进程退出。
+    const child = spawn(candidate.path, argv, guiInstanceSpawnOptions(false));
     spawnState.child = child;
-    if (process.platform !== "win32") child.unref();
+    child.unref();
     child.on("error", (e) => {
       spawnState.error = e instanceof Error ? e : new Error(String(e));
     });

@@ -18,9 +18,11 @@
 - Codex 与 ZCode GUI 的 macOS 取消/返修/新建项目矩阵（当前两者 darwin 均保持 `research`）。
 - `needs_user` 状态下取消任务时经临时 CDP 连接尽力停止 GUI 内等待中的会话。
 - ZCode 无项目派发在 macOS 上的真机验证（本轮仅 Windows 10 实测）。
+- ZCode **未登记项目**的自动导入在 Windows 上无法完成：原生面板脚本靠 `SetForegroundWindow` 抢前台来激活地址栏，而后台 MCP server 的子进程会被 Windows 拒绝，地址栏 Edit 永不出现，脚本空转到 deadline（实测 56s 后由 `budget.check()` 归类为 setup 预算耗尽）；且 PowerShell 的 stdout 在管道里被缓冲、进程被 kill 后缓冲丢失，日志里连一条 `native:` 阶段都看不到，排障方向被误导。临时对策：先在 ZCode 中手动把目标目录加入项目列表；修复方向是脚本内改用 `AttachThreadInput` 抢前台（或改走 ZCode 受支持的登记入口）。
 
 ### 修复
 
+- **ZCode / Codex 桌面实例在 Windows 上无法跨 server 退出驻留（真机发现）**：`zcode`、`codex` 的 GUI 实例此前按平台分支 spawn（`detached: process.platform !== "win32"`），而 `traework` 用的是无条件 `detached: true`。最小实验（Windows 10 / Node 24.18.0）显示同一段 spawn：non-detached 子进程在父进程退出后存活 0，detached 存活 1。因此 Windows 上 MCP server（或一次性 smoke / probe 脚本）一退出，ZCode 就被连坐杀掉，`keptInstance` 的「实例跨 server 退出驻留」形同虚设——`needs_user` 提示「请在 ZCode 中处理后再调用 continue_task」，而窗口其实已经消失。现把该不变量收敛为单一来源 `guiInstanceSpawnOptions()`，三处 GUI 实例共用（`codex` 原先连 `unref()` 都带平台分支，一并去掉）；`verify/runner`、`visual/services`、`agents/spawn` 这些**需要整组终止**的执行型子进程语义相反，继续按平台分支，不受影响。
 - **新建任务点击返回成功但页面不切换，后续一路静默空等（真机发现）**：ZCode 停在已有会话时，顶部 `conversation-new-task` 是惰性挂载的图标——点击派发成功（返回 `true`）却不切换页面，而会话页的 composer **不挂载** `composer-workspace-trigger`。于是无项目模式的 default 确认、有项目模式的绑定等待都会空等到截止时间，最后只报一句 `needs_user/setup_recovery`（实测空转 30 秒）。现在新建任务后以「项目触发器已挂载」验证草稿**真的**建立；未建立则回退侧栏 `task-new-button`（Windows 3.11.2 实测可靠，此前该兜底只覆盖有项目模式），两者都失败才以 `setup_failed` fail-closed 并报出「触发器仍未挂载」。
 - **发送失败归因误导（真机发现）**：窗口被最小化或完全遮挡时页面被 Chromium 节流（`visibilityState=hidden`），发送按钮「明明在视口内」却点不到，`elementFromPoint` 命中的也不是按钮本身。旧文案只报「ZCode 发送按钮未在观察期内启用或被遮挡」，会把用户引向按钮；现在会识别该状态并报出「ZCode 窗口当前不在前台」及把窗口置于前台的操作指引。`Page.bringToFront` 经真机实测**无法**恢复被遮挡的 Electron 窗口，因此不假装能自动恢复。
 

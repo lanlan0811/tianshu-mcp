@@ -16,6 +16,7 @@ import { TraeworkCdpClient } from "./cdp/client.js";
 import type { AgentRunLogger } from "../adapter.js";
 import type { GuiProfile } from "../../config/schema.js";
 import { execFileAsync } from "../../verify/exec.js";
+import { guiInstanceSpawnOptions } from "../gui-instance.js";
 
 /** 端口是否空闲（可绑定） */
 export function isPortFree(port: number, host = "127.0.0.1"): Promise<boolean> {
@@ -133,11 +134,8 @@ export function launchInstance(opts: LaunchOptions): SpawnedInstance {
   const args = gui.exeArgs.map((a) => a.replace(/<port>/g, String(port)));
   // 原生 Windows 路径：确保 exePath 用反斜杠形式传给 GUI 进程
   const nativeExe = process.platform === "win32" ? path.win32.normalize(exePath) : exePath;
-  const child = spawn(nativeExe, args, {
-    detached: true,
-    stdio: "ignore",
-    windowsHide: false, // 窗口必须可见：发送依赖模拟输入
-  });
+  // 窗口必须可见：发送依赖模拟输入
+  const child = spawn(nativeExe, args, guiInstanceSpawnOptions(false));
   child.unref();
   const pid = child.pid ?? -1;
   const commandLine = [nativeExe, ...args].join(" ");
