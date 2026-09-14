@@ -17,6 +17,7 @@
 
 ### 文档
 
+- **技能文档（`skills/tianshu-mcp/`）对齐代码实况**：`SKILL.md` 补全 11 个工具表与能力/审批列（含 `prepare_visual_baseline`/`approve_visual_baseline`），视觉验收独立成节（阻塞不触发返修、`rework_task` 先重新验收、基准审批与冻结），错误码表补 `setup_recovery` 与 `errorType` 取值，修正 agent 状态语义（`traework` 恒为 `ready`、`codex` 平台相关）与 `continue_task` 仅支持 codex/zcode；`usage-examples.md` 修正 `get_task_report` 不带 meta 块、移除 meta 表误列的 `reasoningLevel`、按 agent 区分自动修复计划落盘位置（codex 在项目内 `.zcode/plans/`、其余在任务目录），并补 `list_tasks` 实际输出列与视觉 CLI 命令。
 - `docs/visual-validation{,.en}.md` 重写为完整平台证据表（系统、Node、浏览器版本、命令、结果），并新增 `docs/visual-validation-evidence/` 原始机器可读记录。
 - `tianshu-mcp@0.5.0` 已发布到 npm `latest`（按用户指示，超出原计划范围），保持「自 v0.1.1 起持续发布」的连续性。
 

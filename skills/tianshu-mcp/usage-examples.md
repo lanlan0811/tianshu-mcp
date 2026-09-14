@@ -1,6 +1,6 @@
 # tianshu-mcp 使用示例（子文件）
 
-正文过长方法论不背：任务书模板、四种 agent 派活示例、meta 块字段全表、错误码速查、验收与返修模板、needs_user/取消示例都在这里，按需用读取文件工具查看。
+正文过长方法论不背：任务书模板、四种 agent 派活示例、meta 块字段全表、错误码速查、验收与返修模板、视觉验收与基准保护、needs_user/取消示例都在这里，按需用读取文件工具查看。
 
 ## 1. 任务书模板
 
@@ -76,6 +76,7 @@ continue_task(taskId=tsk_..., message=采用 PostgreSQL 方案)
 
 - `needsUserKind=agent_question`：message 作为答案发送到原会话。
 - `needsUserKind=close_existing_instance / login_required / system_permission / setup_recovery`：先让用户处理（关旧实例 / 登录 / 授系统权限 / 在 ZCode 里确认目标项目），message 仅作为用户已处理的确认。
+- **traework 不支持 `continue_task`**；若 traework 任务停在 `needs_user`，需人工处理后重派新任务。
 
 ### 2.3 traework（model 可选；唯一支持 mode）
 
@@ -102,10 +103,17 @@ run_task(projectPath=/path/to/项目, agentId=codex-cli,
 - `model` 参数对 spawn 类 agent **不生效**：CLI 用 `~/.codex/config.toml` 的默认模型；要锁模型可在 `argsTemplate` 里追加 `"-m", "<模型名>"`。
 - codex CLI 版本要求 ≥0.154.0（≤0.130.0 签名证书已吊销，macOS Gatekeeper 直接 SIGKILL）。
 - 写入被 `workspace-write` 沙箱限制在项目目录内；POSIX 下取消/超时对进程组 SIGTERM→SIGKILL。
+- **无头路径无 GUI 交互**：不存在 `user_confirmation` 这类 GUI 等待，`continue_task` 不适用；失败直接看 `agentEndReason` 与日志。
+
+### 2.5 返回与继续的通用约定
+
+- `run_task` 是**异步契约**：立即返回 `taskId`，不要当同步调用等结果。
+- 轮询间隔约 5–10 秒（`query_task` 缺省返回 agent 日志末 40 行）；同项目串行 + 全局并发默认 2，重复派单只会排队。
+- 只有 `needs_user` 可用 `continue_task` 恢复，且**仅 codex/zcode**；其余状态/agent 会被明确拒绝。
 
 ## 3. meta 块解读（字段全表）
 
-`run_task` / `query_task` 等结果文本末尾的结构化块：
+`run_task` / `query_task` / `verify_task` 等结果文本末尾的结构化块（**例外**：`get_task_report` 直接返回报告 Markdown 原文，不带 meta 块）：
 
 ```text
 ---tianshu-mcp-meta---
@@ -156,7 +164,10 @@ run_task(projectPath=/path/to/项目, agentId=codex-cli,
 | `zcodeSessionId` / `boundProjectPath` | 会话与项目绑定回执（zcode/codex） |
 | `modelProvider` / `permissionMode` | 实际生效的供应商标识与权限模式（zcode） |
 | `progressSummary` | 轮询期进度摘要 |
-| `model` / `mode` / `reasoningLevel` | 本次派单的模型 / 面板模式 / 思考等级（按 agent 生效） |
+| `finishedAt` | 终态落定时间 |
+| `model` / `mode` | 本次派单的模型 / 面板模式（按 agent 生效） |
+
+> `reasoningLevel`（codex）是**入参**，只影响派单，不回显在 meta 块里——要确认实际等级请看 Codex 面板。
 
 规则：`ok=true` 且 status=succeeded → 交付达成；否则先读 `message`，再按 `errorType`/`agentEndReason` 查 §4，最后读 `reportFiles.md` 全文定位。
 
@@ -256,6 +267,8 @@ approve_visual_baseline(candidateId=<uuid>, expectedDigest=<sha256>,
 - 不要为了通过而修改基准、阈值、屏蔽区域或关闭规则——会被规则冻结检测拦截并报 `VISUAL_INTEGRITY`。
 - 配置或基准变化时用 `tianshu-mcp visual rules review/approve` 建立新的任务快照（CLI 在 stdio 前分流）。
 - 视觉缺陷返修时，报告会给出检查 ID、路由/文件、视口、预期与实际指标、差异区域及证据路径。
+- 报告 `visual.results[]` 每项 status 为 `passed`/`failed`/`blocked`/`skipped`，并带 `optional`、稳定原因码 `code`、`repairable` 与产物路径；禁用视觉时整个 `visual` 字段省略（旧报告仍可读）。
+- CLI 辅助命令：`tianshu-mcp visual init|doctor [project]`、`visual browser install`、`visual artifacts clean <taskId> [--apply]`（默认只预览）。
 
 ## 6. 查历史：list_tasks 示例
 
@@ -267,7 +280,7 @@ list_tasks(projectPath=D:/repo/app, status=needs_attention, limit=10)
 list_tasks()
 ```
 
-返回含每条任务的 taskId/status/agentId/时间摘要，可用于接续 `get_task_report` / `rework_task`。
+返回每行一条的文本（列：taskId / status / agent / project / 任务摘要），可用于接续 `get_task_report` / `rework_task`。`projectPath` 会与 run_task 同样做 realpath 归一；`status` 传终态或过程态枚举值（如 `needs_attention`）。
 
 ## 7. 返修提示语模板
 
@@ -293,7 +306,12 @@ list_tasks()
 parameter of type 'number' (src/run.ts:42)。请只修这一处类型问题并重跑 npm run build 确认。
 ```
 
-补充：自动返修（autoFixRounds）路径下，server 会先把失败证据写成修复计划文档（写到项目 `.zcode/plans/`），并在下一轮指令中引用该文档；手动 `rework_task` 的 feedback 则按上面的针对性模板书写。
+补充：自动返修（autoFixRounds）路径下，server 会先把失败证据写成修复计划文档，再把该文档路径引用进下一轮指令。**落盘位置按 agent 不同**：
+
+- `codex`：写到**项目内** `fixPlanDir`（默认项目根 `.zcode/plans/codex-fix-r<N>.md`，文件名含轮次不覆盖历史）——因为 Codex 只能读项目工作区内的文件。
+- `zcode` / `traework` 等其余路径：写到 **MCP 任务数据目录**（`<home>/tasks/<taskId>/rework-<taskId>-r<N>.md`），避免临时计划污染项目工作区。
+
+手动 `rework_task` 的 feedback 则按上面的针对性模板书写，不生成计划文档。
 
 ## 8. needs_user 恢复与取消示例
 

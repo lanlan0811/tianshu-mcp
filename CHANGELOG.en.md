@@ -18,6 +18,7 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ### Docs
 
+- **Skill docs (`skills/tianshu-mcp/`) aligned with the code**: `SKILL.md` now lists all 11 tools with capability/approval columns (including `prepare_visual_baseline`/`approve_visual_baseline`), gives visual acceptance its own section (blockers do not trigger repair; `rework_task` re-verifies first; baseline approval and freezing), adds `setup_recovery` and the `errorType` value set to the error table, corrects agent status semantics (`traework` is always `ready`; `codex` is platform-dependent) and notes that `continue_task` only supports codex/zcode. `usage-examples.md` fixes the claim that `get_task_report` carries a meta block, removes the mis-listed `reasoningLevel` from the meta table, distinguishes the auto repair-plan location per agent (codex writes inside the project's `.zcode/plans/`; others write to the task directory), and adds the actual `list_tasks` output columns plus the visual CLI commands.
 - `docs/visual-validation{,.en}.md` rewritten with full platform evidence tables (system, Node, browser version, command, result), plus the new `docs/visual-validation-evidence/` raw machine-readable records.
 - `tianshu-mcp@0.5.0` published to npm `latest` (on user instruction, beyond the original plan scope), keeping the "published continuously since v0.1.1" continuity intact.
 
