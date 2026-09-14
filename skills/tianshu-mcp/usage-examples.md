@@ -230,6 +230,33 @@ verify_task(projectPath=D:/repo/app, baselineRef=HEAD~1,
 - 非 git 项目跳过零变更门禁并在报告注明。
 - 默认并行 2 是有意为之（提速）；不确定就用 `verifyConcurrency: 1` 换确定性。
 
+### 5.2 视觉验收与基准保护
+
+项目在 `.tianshu-mcp/acceptance.json` 里配置 `visual` 且 `enabled: true` 后，`run_task`/`verify_task` 会自动带上截图对比与静态图片规格检查。**不需要新工具**；读 `get_task_report` 的 visual 段落与离线 HTML 即可看到指标、差异区域与证据。
+
+```text
+# 视觉阻塞（缺基准 / 页面不可达 / 资源被拦）→ needs_attention，等待用户处理
+query_task(taskId=tsk_...)
+# 处理后重新验收：系统先 verify，通过即结束；只有真实缺陷才启动 agent
+rework_task(taskId=tsk_...)
+```
+
+基准必须由用户审阅批准，禁止自动批准：
+
+```text
+# 1) 生成候选（截图或导入参考图），返回 candidateId/digest/preview
+prepare_visual_baseline(projectPath=D:/repo/app)
+# 2) 用户查看 preview 后明确授权，再带摘要批准
+approve_visual_baseline(candidateId=<uuid>, expectedDigest=<sha256>,
+  approvalNote="用户已审阅候选并批准", taskId=tsk_...)
+```
+
+- 两个工具都是 `write` + 需宿主审批的有副作用操作；**自动返修禁止调用批准入口**。
+- 缺基准只能生成候选，**不能判视觉通过**；候选被改、原基准变化、跨项目候选都会拒绝。
+- 不要为了通过而修改基准、阈值、屏蔽区域或关闭规则——会被规则冻结检测拦截并报 `VISUAL_INTEGRITY`。
+- 配置或基准变化时用 `tianshu-mcp visual rules review/approve` 建立新的任务快照（CLI 在 stdio 前分流）。
+- 视觉缺陷返修时，报告会给出检查 ID、路由/文件、视口、预期与实际指标、差异区域及证据路径。
+
 ## 6. 查历史：list_tasks 示例
 
 ```text

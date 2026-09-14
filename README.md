@@ -8,6 +8,8 @@
 
 # tianshu-mcp
 
+视觉验收开发进度与使用方式：[中文指南](docs/visual-acceptance.md) · [验证记录](docs/visual-validation.md)。目标 v0.5.0 尚未完成发行验收。
+
 **天枢 × AI-Agent 编排 MCP server**
 
 由天枢（Tianshu）当作标准 MCP server 接入，调度外部 AI-Agent（Codex 桌面端、TraeWork/TRAE SOLO CN、ZCode 均经 CDP 驱动桌面 UI）完成 **项目开发 → 验收 → 失败返修 → 再验收** 的闭环（架构可横向扩展）。
@@ -89,7 +91,7 @@ npm install -g tianshu-mcp
 > - 服务器 ID 即工具前缀：填 `tianshu-mcp` 后工具名为 `mcp__tianshu-mcp__run_task` 等 9 个。
 > - 参数按空格分隔填写，**不要加引号**；本地开发模式请把 `<仓库绝对路径>` 换成真实绝对路径（如 `D:/Trae项目/tianshu-mcp/dist/index.js`）。
 > - 界面未提供环境变量输入框；如需自定义数据目录，改用下面的 `config.json` 方式设置 `TIANSHU_MCP_HOME`。
-> - 添加后连接成功即完成；新开会话即可看到 9 个工具。
+> - 添加后连接成功即完成；新开会话即可看到 11 个工具。
 
 ### 或改 config.json（可配环境变量）
 
@@ -109,7 +111,7 @@ npm install -g tianshu-mcp
 }
 ```
 
-新开会话后，工具面出现 `mcp__tianshu-mcp__run_task` 等 9 个工具。用 stub 预演（不碰真实登录态）→ 切 codex 跑真实任务：
+新开会话后，工具面出现 `mcp__tianshu-mcp__run_task` 等 11 个工具。用 stub 预演（不碰真实登录态）→ 切 codex 跑真实任务：
 
 ```text
 run_task(projectPath=D:/xxx/my-app, task=「…任务书…」, agentId=codex,
@@ -144,7 +146,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=zcode, task=「按 `./plan.md` 完�
 
 ZCode 提问、需要登录、旧实例无 CDP、系统权限不足，或自动恢复未完成（`needs_user/setup_recovery`）时进入 `needs_user`；处理后调用 `continue_task(taskId, message)` 恢复——确认文本不发给模型，无锚点的环境恢复会补发完整原任务、上下文与已验证引用，且不消耗返修轮数。模型选择已适配 ZCode 3.11.2：直选平铺模型优先，展开 provider/family 分组兜底，新旧布局均兼容。完整约束见 docs/zcode-cdp.md。
 
-## 工具面（9 个）
+## 工具面（11 个）
 
 | 工具 | 能力 / 审批 | 作用 |
 |---|---|---|
@@ -157,6 +159,8 @@ ZCode 提问、需要登录、旧实例无 CDP、系统权限不足，或自动�
 | `verify_task` | read | 对任务/项目路径做一次验收（不改源码） |
 | `rework_task` | write + 审批 | 手动返修（把失败报告喂回同一 agent） |
 | `get_profiles` | read | 查看 agent 适配与可执行探测结果 |
+| `prepare_visual_baseline` | write + 审批 | 截图或导入参考图，生成待审阅候选和摘要 |
+| `approve_visual_baseline` | write + 审批 | 用户审阅后校验摘要并写入基准与审批记录 |
 
 > 返回统一为「人类可读文本 + `---tianshu-mcp-meta---` JSON 块」，便于宿主正则抽取。
 

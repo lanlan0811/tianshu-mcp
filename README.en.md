@@ -8,6 +8,8 @@
 
 # tianshu-mcp
 
+Visual acceptance development: [English guide](docs/visual-acceptance.en.md) · [Validation record](docs/visual-validation.en.md). Target v0.5.0 has not completed release acceptance.
+
 **Tianshu × AI-Agent orchestration MCP server**
 
 Registered by Tianshu as a standard MCP server, it dispatches external AI-Agents (Codex desktop, TraeWork/TRAE SOLO CN and ZCode, all driven through their desktop UIs over CDP) to drive the closed loop of **project development → acceptance → failure rework → re-acceptance** (horizontally extensible).
@@ -90,7 +92,7 @@ In Tianshu go to **Settings → MCP Servers → Add** and fill in the fields bel
 > - The server ID becomes the tool prefix: with `tianshu-mcp` the tools are `mcp__tianshu-mcp__run_task` and 8 others.
 > - Arguments are space-separated, **no quotes**; for local dev replace `<absolute-repo-path>` with a real path (e.g. `D:/TraeProject/tianshu-mcp/dist/index.js`).
 > - The dialog has no env-var field; to customize the data directory, use the `config.json` method below and set `TIANSHU_MCP_HOME`.
-> - Once the server connects, open a new session and the 9 tools appear.
+> - Once the server connects, open a new session and the 11 tools appear.
 
 ### Or edit config.json (supports env vars)
 
@@ -110,7 +112,7 @@ Register as a Tianshu MCP server (local dev mode):
 }
 ```
 
-After opening a new session, the 9 tools such as `mcp__tianshu-mcp__run_task` appear. Rehearse with the stub agent first (no real login state), then switch to the `codex` profile for real tasks:
+After opening a new session, the 11 tools such as `mcp__tianshu-mcp__run_task` appear. Rehearse with the stub agent first (no real login state), then switch to the `codex` profile for real tasks:
 
 ```text
 run_task(projectPath=D:/xxx/my-app, task=「…task brief…」, agentId=codex,
@@ -148,7 +150,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=zcode, task="Implement `./plan.md`",
 
 Questions, login, an existing non-CDP instance, or system permission pause as `needs_user`; call `continue_task(taskId, message)` to resume the recorded session. Model selection is adapted to ZCode 3.11.2: flat models are selected directly first, with provider/family group expansion as a fallback — both new and legacy layouts are supported. See [docs/zcode-cdp.en.md](docs/zcode-cdp.en.md).
 
-## Tool surface (9 tools)
+## Tool surface (11 tools)
 
 | Tool | Capability / approval | Purpose |
 |---|---|---|
@@ -161,6 +163,8 @@ Questions, login, an existing non-CDP instance, or system permission pause as `n
 | `verify_task` | read | Run one verification pass on a task/project path (no source changes) |
 | `rework_task` | write + approval | Manual rework (feed the failure report back to the same agent) |
 | `get_profiles` | read | Inspect agent adapters and executable discovery results |
+| `prepare_visual_baseline` | write + approval | Capture or import reference images into a reviewable candidate with a digest |
+| `approve_visual_baseline` | write + approval | Validate the reviewed digest and write the baseline and approval record |
 
 > Every result is "human-readable text + a `---tianshu-mcp-meta---` JSON block" so the host can extract it with a regex.
 

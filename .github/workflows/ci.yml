@@ -47,7 +47,19 @@ jobs:
           EOF
           sudo apparmor_parser -r /etc/apparmor.d/tianshu-visual-chrome
       - name: Real browser and image acceptance
-        run: npx vitest run test/integration/visual-browser-smoke.test.ts test/integration/visual-flow.test.ts test/unit/visual-images.test.ts test/unit/visual-config.test.ts --maxWorkers=1
+        run: npx vitest run visual --maxWorkers=1
+      - name: Production tarball visual acceptance and offline report
+        shell: bash
+        env:
+          TIANSHU_VISUAL_REPORT_EVIDENCE: .tmp-check/visual-evidence/report.png
+        run: |
+          PACKAGE_DIR="$RUNNER_TEMP/visual-package"
+          CONSUMER="$RUNNER_TEMP/visual-consumer"
+          mkdir -p "$PACKAGE_DIR" "$CONSUMER"
+          npm pack --pack-destination "$PACKAGE_DIR"
+          VERSION=$(node -p "require('./package.json').version")
+          npm install --prefix "$CONSUMER" --omit=dev --no-audit --no-fund "$PACKAGE_DIR/tianshu-mcp-$VERSION.tgz"
+          node scripts/check-visual-consumer.mjs --package-dir "$CONSUMER/node_modules/tianshu-mcp"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

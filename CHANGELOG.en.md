@@ -10,6 +10,12 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ## [Unreleased]
 
+### Added (in development)
+
+- Optional visual configuration, explicit browser installation/diagnostics, screenshot comparison and static image specification checks.
+- Baseline candidates and user approval, frozen visual rules, visual blockers, evidence and offline reports.
+- Invalid acceptance configuration blocks explicitly; legacy functionality and explicitly empty command sets remain supported. See `docs/visual-validation.en.md` for unfinished acceptance gates.
+
 ### Planned
 
 - More external AI-Agent adapters (a new agent = one profile + an optional adapter file).

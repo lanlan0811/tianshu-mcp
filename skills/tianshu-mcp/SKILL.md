@@ -1,10 +1,18 @@
 ---
 name: tianshu-mcp
-description: 让外部 AI-Agent（codex/zcode/traework）做项目开发并自动验收、失败返修的编排方法。当任务需要"叫一个 AI-Agent 去开发/改代码/补测试并验收，不行就返修"时先加载本技能：按它用 mcp__tianshu-mcp__ 的 9 个工具（run_task/continue_task/query_task/list_tasks/get_task_report/verify_task/rework_task/cancel_task/get_profiles）派活、暂停继续、轮询、查历史、读验收报告、驱动返修，并按硬失败错误码快速定位卡点。小改动或纯问答不需要。
+description: 让外部 AI-Agent（codex/zcode/traework）做项目开发并自动验收、失败返修的编排方法。当任务需要"叫一个 AI-Agent 去开发/改代码/补测试并验收，不行就返修"时先加载本技能：按它用 mcp__tianshu-mcp__ 的 11 个工具（run_task/continue_task/query_task/list_tasks/get_task_report/verify_task/rework_task/cancel_task/get_profiles）派活、暂停继续、轮询、查历史、读验收报告、驱动返修，并按硬失败错误码快速定位卡点。小改动或纯问答不需要。
 triggers: '开发|编码|写代码|改代码|实现功能|加功能|修复|重构|补测试|写测试|验收|返修|返工|重做|自动验收|自动返修|任务书|ai.?agent|子代理|外部.?agent|agent|codex|zcode|traework|claude|编排|项目开发|派活|派单'
 ---
 
 # tianshu-mcp 编排技能：叫外部 AI-Agent 开发并验收
+
+## 视觉验收与基准保护
+
+项目启用 visual 后，继续通过 run_task/verify_task 验收，读取报告的独立 visual 结果及 HTML/图片证据。视觉缺陷返修时附检查 ID、路由/文件、视口、实际指标与差异区域。不得修改基准、阈值、屏蔽区域或关闭规则绕过失败。
+
+prepare_visual_baseline 只准备候选；approve_visual_baseline 只能在用户查看候选并明确授权后调用，必须带预期摘要和批准说明。审批标注不能替代宿主实际授权控制。自动返修不得批准基准。needs_attention 的视觉阻塞先处理环境或审批，再 rework_task；系统应先重新验收，通过后无需启动 agent。
+
+Visual acceptance uses the existing task tools and independent visual evidence. Never weaken baselines, thresholds, masks or enabled rules to bypass failures. Baseline approval requires explicit user review and authorization; automatic repair must never approve candidates. Resolve blockers before rework_task, which verifies first.
 
 **首行强指令**：你正处理"派外部 AI-Agent 开发并验收、失败返修"类任务。动手前先通读本技能全文；任务书模板、三种 agent 派活示例、meta 块字段全表、错误码速查、返修提示语模板在同目录 `usage-examples.md`，需要时用读取文件工具查看，长方法论不必背。
 
