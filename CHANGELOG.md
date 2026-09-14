@@ -18,6 +18,7 @@
 ### 文档
 
 - `docs/visual-validation{,.en}.md` 重写为完整平台证据表（系统、Node、浏览器版本、命令、结果），并新增 `docs/visual-validation-evidence/` 原始机器可读记录。
+- `tianshu-mcp@0.5.0` 已发布到 npm `latest`（按用户指示，超出原计划范围），保持「自 v0.1.1 起持续发布」的连续性。
 
 ### 计划中
 

@@ -72,7 +72,7 @@ Note: these are real macOS systems and real architectures on GitHub-hosted macOS
 - GitHub release: `tag v0.5.0` (not a draft) with asset `tianshu-mcp-0.5.0.tgz` and a bilingual body.
 - Gitee release: `tag v0.5.0` (id 1143672) targeting `b1505f5`, with a bilingual body.
 - Both repos are consistent: `github/master`, `gitee/master`, both remotes' `v0.5.0` tags and the local tag all resolve to `b1505f5` (later `master` advanced to the record commit `de34278`).
-- **npm registry is out of scope this round**: per the plan ("does not additionally add npm registry publishing"), the npm package remains at `0.4.1`.
+- **npm publish (outside the plan, per explicit user instruction)**: the maintainer's npm account is logged in and owns the package; `npm publish` successfully published `tianshu-mcp@0.5.0` to `latest` (confirmed by a direct registry query; `dist.shasum` = `85c39756…`, matching the local build). A fresh `npm install tianshu-mcp@0.5.0` in an isolated directory passes all four `visual doctor` checks. Plan §7 originally stated "does not additionally add npm registry publishing"; this publish was performed on the user's explicit instruction so the README's "published continuously" statement stays consistent across versions.
 
 ## 4. Known limitations
 

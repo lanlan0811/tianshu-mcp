@@ -70,6 +70,7 @@
 - **发布门禁**：release 工作流要求目标提交存在**成功 CI**，且缺少 `GITEE_TOKEN` 时阻塞——不以跳过镜像发行或 Release 运行冒充双仓发布完成。
 - **发布结果（已核实）**：目标提交 `b1505f5` 的 CI 全绿（视觉矩阵四系统 × Node 20/22/24 全部成功）；`Release` 工作流成功，GitHub 发行（非草稿，含 `tianshu-mcp-0.5.0.tgz` 资产）与 Gitee 发行（id 1143672，目标提交 `b1505f5`）均已创建，双仓 `master` 与 `v0.5.0` 标签指向同一提交。
 - **平台证据**：Windows 10 x64 本机完整功能矩阵（`existing`/静态/命令/端口冲突/就绪失败/取消清理/本机 Edge/版本不匹配/缺浏览器阻塞）9/9 通过；macOS 15 真机 runner 上 Intel x64 与 Apple Silicon arm64（Node 20/22/24）视觉测试各 10 文件 51 用例通过。系统、Node、浏览器版本、命令与结果见 [验证进度](visual-validation.md)，原始记录见 [visual-validation-evidence/](visual-validation-evidence/)。
+- **npm 发布**：`tianshu-mcp@0.5.0` 已发布到 npm `latest`（registry 直查确认 `dist.shasum` 与本地构建一致；独立目录安装后 `visual doctor` 四项通过）。开发计划 §7 原不含 npm 发布，本次按用户明确指示补发，保持「自 v0.1.1 起持续发布」的连续性。
 - **已知限制**：macOS 证据来自 CI 托管真机 runner，未在维护者个人 macOS 设备复核；官网目录不在范围内。
 
 ## 升级注意

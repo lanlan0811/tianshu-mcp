@@ -19,6 +19,7 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 ### Docs
 
 - `docs/visual-validation{,.en}.md` rewritten with full platform evidence tables (system, Node, browser version, command, result), plus the new `docs/visual-validation-evidence/` raw machine-readable records.
+- `tianshu-mcp@0.5.0` published to npm `latest` (on user instruction, beyond the original plan scope), keeping the "published continuously since v0.1.1" continuity intact.
 
 ### Planned
 

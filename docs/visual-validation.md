@@ -72,7 +72,7 @@
 - GitHub 发行：`tag v0.5.0`（非草稿），资产 `tianshu-mcp-0.5.0.tgz`，正文为双语发行说明。
 - Gitee 发行：`tag v0.5.0`（id 1143672），目标提交 `b1505f5`，正文为双语发行说明。
 - 双仓一致：`github/master`、`gitee/master`、两仓 `v0.5.0` 标签与本地标签均指向 `b1505f5`（其后 `master` 前进到 `de34278` 的记录提交）。
-- **npm registry 未在本次范围内**：按计划「不额外增加 npm registry 发布」，npm 包仍停留在 `0.4.1`。
+- **npm 发布（计划外，按用户指示执行）**：维护者 npm 账号已登录且为包所有者，`npm publish` 成功将 `tianshu-mcp@0.5.0` 发布到 `latest`（registry 直查确认，`dist.shasum` = `85c39756…`，与本地构建一致）。独立目录 `npm install tianshu-mcp@0.5.0` 后 `visual doctor` 四项全通过。开发计划 §7 原本「不额外增加 npm registry 发布」，本次按用户明确指示补发，以保持 README「持续发布」表述与历史版本一致。
 
 ## 四、已知限制
 
