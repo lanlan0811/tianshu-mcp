@@ -46,6 +46,7 @@
 - **调度纪律**：每项目串行队列 + 全局并发上限（默认 2，可配）。
 - **不碰密钥**：各 agent 用自己的登录态；本 server 不保存/转发任何 API key。
 - **可扩展**：新 agent = 一个 profile（数据）+（如需）一个 adapter 文件，零改编排核心。
+- **想理解内部结构**：见 [ARCHITECTURE.md](ARCHITECTURE.md)（分层模型、模块边界、状态机、验收流水线、扩展点与已知缺口）。
 
 ## 快速开始
 
@@ -185,6 +186,7 @@ ZCode 提问、需要登录、旧实例无 CDP、系统权限不足，或自动�
 
 | 文档 | 内容 |
 |---|---|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | **架构说明**：分层模型与模块边界、启动装配、数据目录、状态机、验收与返修流水线、Agent 驱动层契约、GUI 实例生命周期、跨平台策略、安全红线、扩展点、已知缺口 |
 | [docs/tianshu-integration.md](docs/tianshu-integration.md) | 天枢 config.json 两种接入模式、UI/API 操作、冒烟步骤、FAQ |
 | [docs/agent-profiles.md](docs/agent-profiles.md) | agent profiles 字段说明 + 真实机器样例（codex M2 定稿） |
 | [docs/adapter-matrix.md](docs/adapter-matrix.md) | 各 Agent 能力调研矩阵（Codex/Zcode/TraeWork/扩展位） |
@@ -225,7 +227,7 @@ ZCode 提问、需要登录、旧实例无 CDP、系统权限不足，或自动�
 | [docs/s7-session-recheck.md](docs/s7-session-recheck.md) | S7 二次整改真实会话复测记录 |
 | [skills/tianshu-mcp/SKILL.md](skills/tianshu-mcp/SKILL.md) | 教天枢编排本 MCP 的技能（含使用示例） |
 
-> 英文文档见 [README.en.md](README.en.md)；完整文档地图与状态快照见 [HANDOFF.md](HANDOFF.md)。
+> 英文文档见 [README.en.md](README.en.md) 与 [ARCHITECTURE.en.md](ARCHITECTURE.en.md)；完整文档地图与状态快照见 [HANDOFF.md](HANDOFF.md)。
 
 ## 里程碑状态
 

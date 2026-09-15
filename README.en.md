@@ -46,6 +46,7 @@ Tianshu plays the role of the overall commander; this MCP server is the **schedu
 - **Scheduling discipline**: per-project serial queue + global concurrency cap (default 2, configurable).
 - **No key handling**: each agent uses its own login state; this server never stores or forwards any API key.
 - **Extensible**: a new agent = one profile (data) + (if needed) one adapter file — no changes to the orchestration core.
+- **Want the internals?** See [ARCHITECTURE.en.md](ARCHITECTURE.en.md) (layering, module boundaries, state machine, acceptance pipeline, extension points, known gaps).
 
 ## Quick start
 
@@ -187,6 +188,7 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 
 | Doc | Content |
 |---|---|
+| [ARCHITECTURE.en.md](ARCHITECTURE.en.md) | **Architecture**: layering and module boundaries, startup assembly, data home, state machine, verify/rework pipeline, agent driver contract, GUI instance lifecycle, cross-platform strategy, safety invariants, extension points, known gaps |
 | [docs/tianshu-integration.en.md](docs/tianshu-integration.en.md) | Two config.json integration modes, UI/API steps, smoke test, FAQ |
 | [docs/agent-profiles.en.md](docs/agent-profiles.en.md) | Agent profile field reference + real-machine samples |
 | [docs/adapter-matrix.en.md](docs/adapter-matrix.en.md) | Agent capability research matrix (Codex/Zcode/TraeWork/extension slots) |

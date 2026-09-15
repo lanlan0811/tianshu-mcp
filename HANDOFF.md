@@ -11,6 +11,7 @@
 | 你想做什么 | 看哪节 |
 |---|---|
 | 搞清这是什么、为什么这么设计 | §1 |
+| 看系统分层、模块边界、运行流程与扩展点 | **[ARCHITECTURE.md](ARCHITECTURE.md)**（独立架构文档） |
 | 看当前状态（版本 / 测试 / CI / agent 适配） | §2 |
 | 看演进过程与踩过的坑 | §3 |
 | 改 GUI adapter 前必须知道的结构 | §4 架构、§5 硬性红线 |
@@ -138,6 +139,9 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build   # 期
 ---
 
 ## 4. 架构与模块导览
+
+> 本节是**面向交接的快速导览**（目录 + 两条执行面 + 三个 GUI driver 的执行顺序）。
+> 系统分层、模块边界、状态机全貌、验收流水线、跨平台策略与扩展点的**完整架构说明见 [ARCHITECTURE.md](ARCHITECTURE.md)**（英文版 [ARCHITECTURE.en.md](ARCHITECTURE.en.md)）。
 
 ```text
 src/
@@ -367,6 +371,7 @@ npm publish --registry=https://registry.npmjs.org --access public
 3. 真实浏览器用例默认 `skipIf(TIANSHU_VISUAL_BROWSER_TEST !== "1")`；CI 的 `visual-browser` 作业显式开户。本机验证记得带该环境变量，否则会看到「10 skipped」。
 4. **已知偶发**：`test/integration/zcode-flow.test.ts` 的「任务总时限到达时停止 MCP 等待并保留实例」在满负载并行下有时序竞态（`taskTimeoutMs: 2` 与调度竞争），单文件运行与 CI 重试通过。改相关逻辑时注意别把它当成回归。
 5. **已知偶发**：`test/integration/visual-capture.test.ts` 的「loads isolated Cookie/localStorage state and diagnoses expiration」偶发 `PAGE_UNREACHABLE`（导航到 `127.0.0.1` fixture 服务超时），实测**仅个别 job 失败、同 job 内其余视觉用例全过**（v0.5.3 后的文档提交 `8bd0598` 在 `macos-15 / Node 24` 上出现过一次，重跑即绿）。判据：若失败信息是 `PAGE_UNREACHABLE` 且 `blocked.size===0`，先重跑该 job 再怀疑回归。
+6. **已知偶发**：`test/unit/acceptance-parallel.test.ts` 的「慢 check 并行：墙钟 < 串行之和」断言在**全量套件满载并行**时可能偶发失败（本机 2026-09-15 一次全量运行命中：`wallMs` 未小于 `sum`），**单文件运行稳定通过**（7/7）。原因是该用例以墙钟比较证明真并行，属负载敏感的时序断言。判据：若失败的是这条断言且单独重跑该文件即绿，按偶发处理，不要当成并行调度回归。
 
 ---
 
@@ -683,6 +688,7 @@ Windows + Codex 真机模拟实测：模型菜单的 `menuitemradio` 对 trusted
 | 文档 | 内容 |
 |---|---|
 | `README.md` / `README.en.md` | 项目总览、快速开始（含天枢界面配置）、文档索引、里程碑 |
+| `ARCHITECTURE.md` / `.en.md` | **架构说明**：分层模型（L1 协议边 → L5 基础）、模块边界与依赖方向、启动装配与数据目录布局、MCP 返回契约、任务状态机与持久化、编排与验收流水线、Agent 驱动层契约与 `endReason`/`needsUserKind` 取值表、GUI 实例生命周期、视觉链路、配置热加载、跨平台策略、安全红线、扩展点、测试与发布流水线、已知缺口 |
 | `CHANGELOG.md` / `.en.md` | 版本历史 v0.1.0 → v0.5.3（含比较链接） |
 | `CONTRIBUTING.md` / `.en.md` | 开发环境、门禁、规范、提交 / 发布流程、如何新增 agent |
 | `SECURITY.md` / `.en.md` | 安全模型与漏洞报告 |
@@ -719,7 +725,8 @@ Windows + Codex 真机模拟实测：模型菜单的 `menuitemradio` 对 trusted
 ## 12. 接手人下一步建议
 
 1. 先跑 `npm ci && npm run typecheck && npm run lint && npm test && npm run build`，确认基线绿（532 passed / 10 skipped）。
-2. 动 GUI adapter 相关代码前，先读对应文档与本文章节：
+2. 动代码前先读 [ARCHITECTURE.md](ARCHITECTURE.md) 建立整体心智模型（分层、依赖方向、唯一双路径接缝 `adapter.run`、状态机与验收流水线）；再按专题读本文章节：
+   动 GUI adapter 相关代码前，先读对应文档与本文章节：
    TraeWork → `docs/traework-cdp.md` + §9.1 / §9.2；ZCode → `docs/zcode-cdp.md` + §9.5 / §9.6 / §9.9；Codex → `docs/codex-gui-cdp.md` + §9.4。
    项目文件夹绑定出问题时，先看 §9.1 的排障顺序（下拉项 ≠ 项目 map、三处已修缺陷、两个定位陷阱）。
 3. **改任何选择器交互必须真机复验**：trusted 点击与 DOM click 的取舍因控件而异（§9.4 的模型菜单 vs 项目触发器就是反例）。
