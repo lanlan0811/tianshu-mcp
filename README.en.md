@@ -316,13 +316,23 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
   - Visual acceptance platform evidence archived: Windows 10 local full functional matrix **9/9** (`npm run evidence:visual:windows`), and macOS 15 hardware Intel x64 plus Apple Silicon arm64 with 10 files / 51 cases each
   - Fixed the stale `package-lock.json` root version (was `0.4.1` at v0.5.0)
   - **No runtime behaviour changes**; no migration needed
+- **M21 — project-less dispatch for ZCode (issue #12) + v0.5.2** (2026-09-14) — **525 tests**
+  - `run_task.projectPath` became optional: when omitted, ZCode runs the task in its `default` (no-project) workspace — no project registration/import, no Git baseline, no project snapshot, no project lock and no project acceptance; the terminal state is structured as `not_applicable: no_project` (see the [v0.5.2 release notes](<docs/release-v0.5.2.en.md>))
+  - New ZCode-only optional parameter `allowCreateProject`: with `false`, an unregistered target directory stops dispatch before any import side effect and returns `project_not_registered`
+  - Unified the ZCode project-trigger readiness criteria (not mounted / mounted but invisible or clipped / not unique / disabled / covered / ready) and added `gui.projectTriggerTimeoutMs` (15s default), fixing misleading error messages
+  - Two defects found and fixed on hardware: `projectPath` not relaxed at the MCP schema layer, and the missing "work outside a project" switch; Windows 10 hardware acceptance evidence added
+- **M22 — ZCode hardware-revisit fixes (issue #12, second round) + v0.5.3** (2026-09-15) — **532 tests**
+  - Fixed ZCode / Codex desktop instances on Windows failing to **outlive the server exit**: all three GUI instances now share `guiInstanceSpawnOptions()` (unconditional `detached` + `unref`), where the previous Windows branch let the MCP server's exit kill the GUI along with it
+  - Fixed the top-bar "new task" click reporting success without switching pages and then waiting silently for 30 seconds: the draft is now verified by "the project trigger is mounted", falling back to the sidebar `task-new-button`, and failing closed with `setup_failed` only when both entry points fail
+  - Fixed misleading attribution when a covered window fails to send: Chromium throttling (`visibilityState=hidden`) is recognised and reported as "the window is not in the foreground" with instructions to bring it forward
+  - A **PATCH** release; existing caller signatures and report formats remain **backward compatible** (see the [v0.5.3 release notes](<docs/release-v0.5.3.en.md>))
 
 ## Agent support status
 
 | agentId | driver / adapter | status | Notes |
 |---|---|---|---|
 | `codex` | `gui` / `codex-gui` | **ready** (`research` on macOS) | Desktop GUI over CDP (Windows: MSIX COM activation; macOS: spawn .app binary + CDP); supports `model`/`reasoningLevel`/`planDoc`/`designSystem`; wait-user, cancel and dispatch-guard semantics machine-verified (v0.3.2); Windows machine-verified; macOS basic closed loop machine-verified (v0.4.0) — stays `research` until the cancel/rework matrix is covered |
-| `zcode` | `gui` / `zcode-gui` | **research** | CDP GUI adapter with the Windows hardware loop passed; adapted to ZCode 3.11.2 model menu and project binding (v0.3.3), with hardened project/model read-back and initialization recovery (v0.3.4); macOS basic closed loop machine-verified (2026-09-13, v0.4.0) — stays `research` until the cancel/rework/new-project matrix is covered |
+| `zcode` | `gui` / `zcode-gui` | **research** | CDP GUI adapter with the Windows hardware loop passed; adapted to ZCode 3.11.2 model menu and project binding (v0.3.3), with hardened project/model read-back and initialization recovery (v0.3.4); supports project-less dispatch and `allowCreateProject` (v0.5.2, issue #12), and v0.5.3 fixed instance survival across server exit, new-task page switching and send-failure attribution; macOS basic closed loop machine-verified (2026-09-13, v0.4.0) — stays `research` until the cancel/rework/new-project matrix is covered |
 | `traework` | `gui` / `traework-gui` | **ready** | CDP-driven TRAE SOLO CN desktop UI; all three panel modes machine-verified |
 | `stub` | `spawn` | tests only | `test/stub-agent/stub-agent.mjs` with 3 playbooks (good/fix-on-first/never) |
 

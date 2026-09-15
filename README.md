@@ -167,6 +167,8 @@ ZCode 提问、需要登录、旧实例无 CDP、系统权限不足，或自动�
 
 > **路径安全闸门**（v0.4.0 起）：`projectPath` 在提交时校验——必须绝对路径、目录必须存在、符号链接经 realpath 归一（回执明示解析来源）；主目录本身与系统/根级目录直接拒绝，防止 worker 写权限覆盖整棵系统子树；git 仓库有未提交变更时回执附带共处警示。
 
+> **无项目派发**（ZCode 专用，v0.5.2 起）：省略 `projectPath` 时任务在 ZCode 的 `default` 工作区运行，跳过项目登记、Git 基线、项目快照、项目锁与项目验收（终态标注 `not_applicable: no_project`）。`allowCreateProject=false` 可禁止自动导入未登记的项目。详见 [docs/zcode-cdp.md](docs/zcode-cdp.md#无项目default-工作区)。
+
 ## 日志与 stdio 契约
 
 本 server 是标准 MCP **stdio server**，严格遵守传输契约：
@@ -315,13 +317,23 @@ ZCode 提问、需要登录、旧实例无 CDP、系统权限不足，或自动�
   - 归档视觉验收平台证据：Windows 10 本机完整功能矩阵 **9/9**（`npm run evidence:visual:windows`）、macOS 15 真机 Intel x64 与 Apple Silicon arm64 各 10 文件 51 用例
   - 修复 `package-lock.json` 根包版本滞后（v0.5.0 时为 `0.4.1`）
   - 本版本**无运行时行为变更**，升级无需迁移
+- **M21 — ZCode 无项目派发（issue #12）+ v0.5.2**（2026-09-14）— **525 测试**
+  - `run_task.projectPath` 变可选：省略时 ZCode 在 `default`（无项目）工作区承接任务，不登记/导入项目、不采集 Git 基线、不冻结项目快照、不进入项目锁与项目验收；终态以 `not_applicable: no_project` 结构化标注（详见 [v0.5.2 发布说明](<docs/release-v0.5.2.md>)）
+  - 新增 ZCode 专用可选参数 `allowCreateProject`：`false` 时目标目录未登记即在任何导入副作用之前停止派发，返回 `project_not_registered`
+  - 统一 ZCode 项目触发器就绪判据（未挂载 / 不可见或被裁剪 / 不唯一 / 禁用 / 被遮挡 / 就绪六态），新增 `gui.projectTriggerTimeoutMs`（默认 15s），修正错误信息失实
+  - 真机发现并修复两个缺陷：`projectPath` 未在 MCP schema 层放开、缺少「不在项目中工作」切换；补齐 Windows 10 真机验收证据
+- **M22 — ZCode 真机回访修复（issue #12 第二轮）+ v0.5.3**（2026-09-15）— **532 测试**
+  - 修复 Windows 上 ZCode / Codex 桌面实例**跨 server 退出驻留**失效：三处 GUI 实例统一走 `guiInstanceSpawnOptions()`（无条件 `detached` + `unref`），此前 Windows 分支导致 MCP server 一退出 GUI 就被连坐杀掉
+  - 修复顶部「新建任务」点击返回成功却不切页、随后静默空等 30 秒：改以「项目触发器已挂载」验证草稿真的建立，失败回退侧栏 `task-new-button`，两者都失败才 `setup_failed` fail-closed
+  - 修复窗口被遮挡时发送失败归因误导：识别 Chromium 节流（`visibilityState=hidden`）并报「窗口不在前台」及置于前台的操作指引
+  - 本版本为 **PATCH**，既有调用方签名与报告格式**保持向后兼容**（详见 [v0.5.3 发布说明](<docs/release-v0.5.3.md>)）
 
 ## Agent 适配现状
 
 | agentId | driver / adapter | status | 说明 |
 |---|---|---|---|
 | `codex` | `gui` / `codex-gui` | **ready**（macOS 为 `research`） | Codex 桌面端 GUI（Windows：MSIX COM 激活 + CDP；macOS：spawn .app + CDP）；支持 `model`/`reasoningLevel`/`planDoc`/`designSystem`；等待用户确认、取消与重派护栏均已真机验证（v0.3.2）；Windows 真机已验证；macOS 基本闭环已真机验证（v0.4.0），取消/返修矩阵补齐前保持 `research` |
-| `zcode` | `gui` / `zcode-gui` | **research** | CDP GUI adapter 已实现且 Windows 真机闭环通过；已适配 ZCode 3.11.2 模型菜单与项目绑定（v0.3.3），并加固项目/模型回读与初始化恢复（v0.3.4）；macOS 基本闭环已真机验证（2026-09-13，v0.4.0），取消/返修/新建项目矩阵补齐前保持 `research` |
+| `zcode` | `gui` / `zcode-gui` | **research** | CDP GUI adapter 已实现且 Windows 真机闭环通过；已适配 ZCode 3.11.2 模型菜单与项目绑定（v0.3.3），并加固项目/模型回读与初始化恢复（v0.3.4）；支持无项目派发与 `allowCreateProject`（v0.5.2，issue #12），v0.5.3 修复实例跨 server 驻留、新建任务切页与发送失败归因；macOS 基本闭环已真机验证（2026-09-13，v0.4.0），取消/返修/新建项目矩阵补齐前保持 `research` |
 | `traework` | `gui` / `traework-gui` | **ready** | CDP 驱动 TRAE SOLO CN 桌面 UI；三种面板模式真机验证通过 |
 | `stub` | `spawn` | 仅测试 | `test/stub-agent/stub-agent.mjs` 三剧本（good/fix-on-first/never） |
 

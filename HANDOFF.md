@@ -1,6 +1,6 @@
 # HANDOFF.md — 项目交接说明
 
-> **交接快照：2026-09-14 · 版本 `0.5.1`（tag `v0.5.1`，npm / GitHub / Gitee 均已发布）**
+> **交接快照：2026-09-15 · 版本 `0.5.3`（tag `v0.5.3`，npm / GitHub / Gitee 均已发布）**
 > 本文写给**接手本仓库的人**：先说清「这是什么、现在到哪一步」，再给出「怎么跑、怎么改、哪里会踩坑」。
 > 工作区规则见 `AGENTS.md`（gitignore，仅本地）；安装与用法见 `README.md`，本文不重复，只做导览与状态记录。
 
@@ -22,7 +22,7 @@
 
 ```bash
 git clone https://github.com/lanlan0811/tianshu-mcp.git && cd tianshu-mcp
-npm ci && npm run typecheck && npm run lint && npm test && npm run build   # 期望 486 passed / 10 skipped
+npm ci && npm run typecheck && npm run lint && npm test && npm run build   # 期望 532 passed / 10 skipped
 ```
 
 ---
@@ -37,7 +37,7 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build   # 期
 
 - **天枢官方仓库**：<https://github.com/huiliyi37/Tianshu-harness>（基于 harness 工程的终端编程智能体运行时，TUI × GUI；Apache-2.0）
 - **本仓库**：`github.com/lanlan0811/tianshu-mcp`（主）｜`gitee.com/lan0811/tianshu-mcp`（镜像）
-- **npm**：`tianshu-mcp`（当前发布版本 `0.5.1`）
+- **npm**：`tianshu-mcp`（当前发布版本 `0.5.3`）
 - **工具面**：11 个 MCP 工具（`run_task / continue_task / query_task / list_tasks / get_task_report / cancel_task / verify_task / rework_task / get_profiles / prepare_visual_baseline / approve_visual_baseline`）
 
 ### 为什么是这样设计的（四个硬约束，改架构前必读）
@@ -56,13 +56,13 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build   # 期
 | 项 | 状态 |
 |---|---|
 | 分支 | `master`（**只在此分支提交**，不建其他分支） |
-| 版本 / 许可证 | `0.5.1` / Apache-2.0 |
-| 标签 | `v0.1.0` … `v0.5.1`（均已推双仓） |
-| 工作树 | 干净；`github/master` 与 `gitee/master` 均同步（发布提交见 `git log` 的 `chore(release): v0.5.1`） |
-| 测试 | **486 passed / 10 skipped**（56 个测试文件：单元 36 + 集成 19 + 协议 1） |
+| 版本 / 许可证 | `0.5.3` / Apache-2.0 |
+| 标签 | `v0.1.0` … `v0.5.3`（均已推双仓） |
+| 工作树 | 干净；`github/master` 与 `gitee/master` 均同步（发布提交见 `git log` 的 `chore(release): v0.5.3`） |
+| 测试 | **532 passed / 10 skipped**（58 个测试文件：单元 37 + 集成 20 + 协议 1） |
 | 门禁 | lint 0 warning、typecheck clean、build 成功且构建后无跟踪差异、`check:stdio` 6/6 场景通过、`npm pack` 内容校验与干净消费者安装通过 |
-| CI | `build-test`（ubuntu/windows/macos × Node 20/22/24）+ `pack-check`，另加 `visual-browser` 真实浏览器矩阵（ubuntu/windows + macos-15-intel/macos-15 × Node 20/22/24）；随 v0.5.1 tag 全绿 |
-| npm | `tianshu-mcp@0.5.1` 已发布（`latest`）；`npx -y tianshu-mcp` 即为该版本。发布步骤见 `docs/npm-publish-guide.md` |
+| CI | `build-test`（ubuntu/windows/macos × Node 20/22/24）+ `pack-check`，另加 `visual-browser` 真实浏览器矩阵（ubuntu/windows + macos-15-intel/macos-15 × Node 20/22/24）；随 v0.5.3 tag 全绿 |
+| npm | `tianshu-mcp@0.5.3` 已发布（`latest`）；`npx -y tianshu-mcp` 即为该版本。发布步骤见 `docs/npm-publish-guide.md` |
 | GitHub Release | 推送 `v*` tag 触发 `.github/workflows/release.yml`：先跑完整门禁并校验「tag 版本 === package.json 版本」，正文由 `docs/release-v<ver>.md` + `.en.md` 双语合成（缺文档即报错，不产出空壳正文），**要求同 SHA 的成功 CI**，并附 `tianshu-mcp-<ver>.tgz` |
 | Gitee 发行版 | 由 `scripts/gitee-release.mjs` 用仓库 Secret `GITEE_TOKEN` 幂等补齐；**缺少凭据时工作流阻塞**（不再静默跳过、不冒充发布成功） |
 
@@ -71,7 +71,7 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build   # 期
 | agentId | driver / adapter | status | 说明 |
 |---|---|---|---|
 | `codex` | `gui` / `codex-gui` | **ready**（darwin 为 `research`） | Codex 桌面端 GUI（Windows：MSIX COM 激活 + CDP；macOS：spawn .app + CDP），支持 `model`/`reasoningLevel`/`planDoc`/`designSystem`；等待用户检测、取消真停、重派护栏均已真机验证（v0.3.2）；macOS 基本闭环已真机验证（2026-09-13，见 `docs/codex-gui-cdp.md`），取消/返修矩阵未齐故 darwin 保持 `research` |
-| `zcode` | `gui` / `zcode-gui` | **research**（常量，非平台分支） | CDP GUI adapter，Windows 真机闭环通过；已适配 ZCode 3.11.2 模型菜单与项目绑定（v0.3.3）、项目/模型回读加固与初始化恢复（v0.3.4）；macOS 基本闭环已真机验证（`docs/zcode-cdp.md`）。`status` 为常量 `research`，补齐取消/返修/新建项目矩阵后方可改 `ready` |
+| `zcode` | `gui` / `zcode-gui` | **research**（常量，非平台分支） | CDP GUI adapter，Windows 真机闭环通过；已适配 ZCode 3.11.2 模型菜单与项目绑定（v0.3.3）、项目/模型回读加固与初始化恢复（v0.3.4）；**无项目派发（`default` 工作区，`projectPath` 可选）与 `allowCreateProject` 自 v0.5.2 起支持**（issue #12，Windows 真机验收）；v0.5.3 修复实例跨 server 驻留、新建任务切页与发送失败归因三个真机缺陷。macOS 基本闭环已真机验证（`docs/zcode-cdp.md`），但无项目派发仅在 Windows 实测、取消/返修/新建项目矩阵未齐，故 `status` 保持常量 `research` |
 | `traework` | `gui` / `traework-gui` | **ready** | CDP 驱动 TRAE SOLO CN 桌面 UI；三种面板模式真机验证通过。注意 `status` 为常量 `ready`，但 **macOS 分支仍 fail-closed**（可执行探测与原生对话框驱动未在 macOS 实测） |
 | `codex-cli` | `spawn`（用户自建 profile，非内置） | 用户配置 | 无头路径走 `codex exec`；`model` 参数对其不生效（用 `~/.codex/config.toml`）；CLI 需 ≥0.154.0（≤0.130.0 签名证书已吊销）。`get_profiles` 自 v0.4.0 起会列出用户自定义 profile |
 | `stub` | `spawn` | 仅测试 | `test/stub-agent/stub-agent.mjs` 三剧本（good/fix-on-first/never） |
@@ -105,6 +105,8 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build   # 期
 | M18 | 技能文档对齐 v0.4.0 工具面 + 双语 README 贡献者名录；无代码行为变更 | `0.4.1` | 443 |
 | M19 | **可选视觉验收模块**：页面截图对比 + 静态图片规格 + 基准两阶段批准 + 规则冻结 + 离线 HTML + 两个 MCP 工具与 `visual` CLI 子命令族（详见 §9.8 与 `docs/release-v0.5.0.md`） | `0.5.0` | **486** |
 | M20 | 技能/验证文档对齐代码实况 + 平台证据归档（Windows 10 矩阵 9/9、macOS 双架构 51 用例）+ 锁文件版本同步；**无运行时行为变更** | `0.5.1` | 486 |
+| M21 | **ZCode 无项目派发（issue #12）**：`run_task.projectPath` 变可选、`allowCreateProject` 关闸、项目触发器就绪判据统一（详见 §9.9） | `0.5.2` | **525** |
+| M22 | **ZCode 真机回访修复（issue #12 第二轮）**：GUI 实例跨 server 退出驻留、新建任务不切页导致静默空等、发送失败归因误导（详见 §9.9） | `0.5.3` | **532** |
 
 ### 3.2 实现期修复记录（都是真机/CI 逼出来的，改相关代码前先读）
 
@@ -127,6 +129,11 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build   # 期
 | 15 | M19 | 视觉阻塞任务被 `rework_task` 直接拉 agent 返修，浪费轮次 | 引入 `pendingVisualVerification`：阻塞任务恢复时**先重新验收**，通过即结束，仅真实缺陷才进返修 | `test/integration/visual-rework.test.ts` |
 | 16 | M19 | 取消期间视觉操作异常被误记 `needs_attention` | 启动阶段捕获视觉完整性错误时先判 `this.aborted()`，取消路径优先落取消终态 | `test/unit/zcode-recovery.test.ts` + 视觉用例 |
 | 17 | M20 | `package-lock.json` 根包版本滞后（v0.5.0 时为 `0.4.1`） | 发布时未同步锁文件 → `npm version --no-git-tag-version` 并提交锁文件 | CI「构建后无 tracked diff」+ 发布清单 |
+| 18 | M21 | 无项目派发在真实 `run_task` 被 SDK 拒成 `-32602 Required at projectPath`（单元测试全绿） | handler 已支持无项目分支，但 `RunTaskParamsSchema.projectPath` 仍是必填；单测直接调 handler 绕过了 `inputSchema` → 改 `AbsPath.optional()` + 协议层回归用例 | `test/integration/task-flow.test.ts` |
+| 19 | M21 | 无项目派发永久停在 `needs_user/setup_recovery` | 「新建任务」继承上次项目绑定；且项目菜单**已打开**时点击触发器被 Radix toggle 反噬 → 新增 `workOutsideProject` 选择器与 `enterDefaultWorkspace()` 显式切换，点击前先查菜单状态 | `test/unit/zcode-dom.test.ts`、`test/integration/zcode-flow.test.ts` |
+| 20 | M22 | ZCode 一退出 MCP server 就被连坐杀掉，`needs_user` 提示的窗口已不存在 | `zcode`/`codex` 按平台分支 spawn（`detached: process.platform !== "win32"`），Windows 上子进程不驻留（实测存活 0） → 收敛为 `guiInstanceSpawnOptions()`，三处 GUI 实例共用；执行型子进程仍按平台分支 | `test/unit/gui-instance-spawn.test.ts` |
+| 21 | M22 | 顶部「新建任务」返回 `true` 却不切页，随后空转 30 秒只报 `setup_recovery` | `conversation-new-task` 是惰性挂载图标，会话页 composer **不挂载** `composer-workspace-trigger` → 以「触发器已挂载」验证草稿真的建立，失败回退侧栏 `task-new-button`，两者都失败才 `setup_failed` | `test/integration/zcode-flow.test.ts` |
+| 22 | M22 | 窗口被遮挡时的发送失败文案把用户引向按钮 | Chromium 节流（`visibilityState=hidden`）使按钮在视口内却点不到 → 识别该状态并报「窗口不在前台」+ 置于前台的操作指引；`Page.bringToFront` 实测无法恢复被遮挡的 Electron 窗口，不假装能自动恢复 | `test/integration/zcode-flow.test.ts` |
 
 ---
 
@@ -270,7 +277,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 496 项（486 passed / 10 skipped）
+npm test             # 542 项（532 passed / 10 skipped）
 ```
 
 日常循环（改 `src/` 后）：
@@ -347,8 +354,8 @@ npm publish --registry=https://registry.npmjs.org --access public
 
 | 层级 | 位置 | 说明 |
 |---|---|---|
-| 单元 | `test/unit/`（36 文件） | 纯函数与组件逻辑：traework 全套（reply / selectors / launcher / guard / driver / session / liveness / dialog / cdp-client / repair-plan）、codex-core、zcode-core / zcode-handler / zcode-dom / zcode-dialog / zcode-recovery、acceptance（含并行）、baseline（含归因 / 预脏）、atomic-write、log、config / profile 热加载、project-dir-guard、以及视觉模块（visual-config / images / baselines / report / runtime）等 |
-| 集成 | `test/integration/`（19 文件） | stub-agent 三剧本、取消 / 超时 / 基线、traework 假 CDP（单轮 + 返修 + 绑定兜底）、codex-flow、zcode-flow / restart / rework-loop、rework 竞态回归、verify-params、以及视觉（services / capture / flow / rework / browser-smoke） |
+| 单元 | `test/unit/`（37 文件） | 纯函数与组件逻辑：traework 全套（reply / selectors / launcher / guard / driver / session / liveness / dialog / cdp-client / repair-plan）、codex-core、zcode-core / zcode-handler / zcode-dom / zcode-dialog / zcode-recovery、gui-instance-spawn、acceptance（含并行）、baseline（含归因 / 预脏）、atomic-write、log、config / profile 热加载、project-dir-guard、以及视觉模块（visual-config / images / baselines / report / runtime）等 |
+| 集成 | `test/integration/`（20 文件） | stub-agent 三剧本、取消 / 超时 / 基线、traework 假 CDP（单轮 + 返修 + 绑定兜底）、codex-flow、zcode-flow / restart / rework-loop / default-workspace、rework 竞态回归、verify-params、task-flow、以及视觉（services / capture / flow / rework / browser-smoke） |
 | 协议 | `test/protocol/`（1 文件） | 官方 SDK 客户端断言 11 工具面与返回格式 |
 | 真机 | `scripts/probe-*.mjs` / `scripts/smoke-zcode.mjs` / `scripts/evidence-visual-windows.mjs` | **手动**，需真实客户端 / 已安装浏览器 |
 | 消费者 | `scripts/check-visual-consumer.mjs` | 从生产 tarball 安装到无开发依赖目录后跑真实浏览器视觉验收与离线报告 |
@@ -378,6 +385,9 @@ npm publish --registry=https://registry.npmjs.org --access public
   但取消/返修/continue_task/新建项目矩阵未覆盖，二者 darwin 仍标 `research`；
   TraeWork 的原生对话框驱动与真机闭环仍未在 macOS 实测，macOS 分支保持 fail-closed。
 - **`mode` 仅 TraeWork 生效**：ZCode / Codex 会拒绝该参数（返回明确错误）。
+- **无项目派发仅 ZCode 且仅 Windows 实测**：`projectPath` 可选只对 ZCode 生效；macOS 上的无项目派发尚未真机验证（v0.5.3 已修掉 Windows 侧实例驻留、切页与归因三个缺陷，但 macOS 未覆盖）。
+- **ZCode 未登记项目的自动导入在 Windows 上不可用**：需先在 ZCode 中手动登记目录，或传 `allowCreateProject=false` 让它显式失败。原因与修复方向见 §9.9。
+- **Windows 上 GUI 实例跨 server 驻留已修复**（v0.5.3）：三处 GUI 实例统一走 `guiInstanceSpawnOptions()`（无条件 `detached` + `unref`）；执行型子进程（`verify/runner`、`visual/services`、`agents/spawn`）语义相反，仍按平台分支。
 - **`continue_task` 仅 codex/zcode**：traework 与 spawn 类 agent 会被拒绝。
 - **`needs_user` 状态下取消是已知边界**：MCP 侧无 CDP 连接，GUI 内等待中的会话停不掉；终态文案会提示。
   经临时 CDP 连接尽力停止 GUI 内会话列在 `CHANGELOG.md` 的「未发布 / 计划中」。
@@ -401,6 +411,7 @@ npm publish --registry=https://registry.npmjs.org --access public
 | Codex 卡在「等待用户确认」/ `cancel_task` 没真停 | §9.4 |
 | ZCode 模型菜单选不中 / 项目绑定判据漂移 / 验收假绿 | §9.5 |
 | ZCode 项目或模型回读误判 / 原生面板超时 / 恢复后丢会话与上下文 | §9.6 |
+| ZCode 无项目派发报参数错误 / 卡在 `setup_recovery` / 窗口被遮挡时发送失败 | §9.9 |
 | 升级 v0.4.0 后行为变了 / 验收检查互相干扰 / 符号链接路径下历史任务「消失」 | §9.7 |
 | 视觉验收不通过 / 基准待批准 / 规则被冻结判 `VISUAL_INTEGRITY` / 离线报告看不开 | §9.8 |
 
@@ -621,6 +632,39 @@ Windows + Codex 真机模拟实测：模型菜单的 `menuitemradio` 对 trusted
 
 **自检命令**：`tianshu-mcp visual doctor <project>`（检查运行时、图像依赖、配置、浏览器四项）。
 
+### 9.9 ZCode 无项目派发与真机回访（M21 / M22，issue #12）
+
+> v0.5.2 引入无项目派发，v0.5.3 修掉真机回访暴露的三个缺陷。改 ZCode adapter 前先读本节与 `docs/zcode-cdp.md`。
+
+**无项目派发（v0.5.2）**
+
+- `run_task` 省略 `projectPath` 时，ZCode 在其 `default`（无项目）工作区承接任务：不分配目录、不登记/导入项目、不采集 Git 基线、不冻结项目快照、不进入项目锁与项目验收。
+- **只支持 ZCode**；解析出的目标是其他 agent 时，在排队前返回参数错误。空串 / `null` / 相对路径 / 不存在的目录**不视为**无项目模式，仍按有项目模式拒绝。
+- 无项目模式强制关闭验收与返修（`autoVerify=false`、`autoFixRounds=0`），显式开启会在提交前报错；任务书含明确本地文件引用（反引号路径 / 绝对路径 / `./` / `../`）时发送前报错，要求提供 `projectPath`。
+- 终态元数据以 `verificationNotApplicable: "no_project"` 标注；`verify_task` / `get_task_report` 对该类任务返回 `not_applicable: no_project`，不从 cwd 推导目录。
+- `allowCreateProject=false` 时，目标目录未登记会在**任何导入副作用之前**停止派发并返回 `project_not_registered`。
+
+**真机排障三条（v0.5.3 修复，均有回归用例）**
+
+1. **`-32602 Required at projectPath`**：handler 已支持无项目分支，但 MCP schema 仍必填 → 真实调用被 SDK 拒。已改 `AbsPath.optional()`，并补**协议层**回归（单测直接调 handler 会绕过 `inputSchema`，查不出这类问题）。
+2. **停在已有会话时永久 `setup_recovery`**（实测空转 30 秒）：ZCode「新建任务」继承上次项目绑定；且项目菜单**已打开**时点击触发器会被 Radix toggle 关掉菜单。修复要点：新增 `workOutsideProject` 选择器与 `enterDefaultWorkspace()` 显式切换、点击前先查菜单状态、`confirmDefaultWorkspace` 对「明确绑定着项目」立即返回。`projectTriggerTimeoutMs`（默认 15s）统一替换原先写死的两处超时，「等待 → 回退侧栏 → 再等待」共享同一截止时间，重试不重置预算。
+3. **界面停了但报告说按钮被遮挡**：窗口最小化/完全遮挡时 Chromium 节流页面（`visibilityState=hidden`），按钮在视口内却点不到。现在会报「窗口不在前台」；`Page.bringToFront` 实测**无法**恢复被遮挡的 Electron 窗口，故不假装自动恢复——请手工把窗口置于前台。
+
+**真机坑：顶部「新建任务」是惰性挂载图标（v0.5.3 修复）**
+
+| 事实 | 说明 |
+|---|---|
+| 点击返回 `true` ≠ 切页 | 停在已有会话时，顶部 `conversation-new-task` 点击派发成功但页面不变（实测 rows 仍为 2） |
+| 会话页 composer 不挂载项目触发器 | `composer-workspace-trigger` 挂载数为 0，导致后续绑定等待空转到 deadline |
+| 侧栏 `task-new-button` 可靠 | Windows 3.11.2 实测 2 秒内进入草稿（rows=0、触发器挂载数 1、文本为占位词「选择项目」） |
+| 判据 | 新建任务后以「项目触发器已挂载」验证草稿**真的**建立；两个入口都失败才 `setup_failed` fail-closed |
+
+**Windows 上未登记项目的自动导入仍不可用（已知限制）**
+
+原生面板脚本靠 `SetForegroundWindow` 抢前台来激活地址栏，而后台 MCP server 的子进程会被 Windows 拒绝，地址栏 Edit 永不出现，脚本空转到 setup 预算耗尽（实测 56s）；且 PowerShell 的 stdout 在管道里被缓冲、进程被 kill 后缓冲丢失，日志里连一条 `native:` 阶段都看不到。**临时对策**：先在 ZCode 中手动把目标目录加入项目列表（或用 `allowCreateProject=false` 让它显式失败）。修复方向是脚本内改用 `AttachThreadInput` 抢前台，或改走 ZCode 受支持的登记入口。
+
+完整真机证据见 `docs/zcode-issue-12-windows-evidence.md` / `.en.md`（含 v0.5.2 首轮与「第二轮回访」两节）。
+
 ---
 
 ## 10. 凭证与安全红线
@@ -638,7 +682,7 @@ Windows + Codex 真机模拟实测：模型菜单的 `menuitemradio` 对 trusted
 | 文档 | 内容 |
 |---|---|
 | `README.md` / `README.en.md` | 项目总览、快速开始（含天枢界面配置）、文档索引、里程碑 |
-| `CHANGELOG.md` / `.en.md` | 版本历史 v0.1.0 → v0.5.1（含比较链接） |
+| `CHANGELOG.md` / `.en.md` | 版本历史 v0.1.0 → v0.5.3（含比较链接） |
 | `CONTRIBUTING.md` / `.en.md` | 开发环境、门禁、规范、提交 / 发布流程、如何新增 agent |
 | `SECURITY.md` / `.en.md` | 安全模型与漏洞报告 |
 | `CODE_OF_CONDUCT.md` / `.en.md` | 行为准则 |
@@ -655,6 +699,9 @@ Windows + Codex 真机模拟实测：模型菜单的 `menuitemradio` 对 trusted
 | `docs/visual-acceptance.md` / `.en.md` | 视觉验收入门与完整配置：三种页面来源、基准候选/批准、规则冻结、阈值解释与排查表 |
 | `docs/visual-validation.md` / `.en.md` | 视觉验收验证进度：完整平台证据表（系统 / Node / 浏览器 / 命令 / 结果） |
 | `docs/visual-validation-evidence/` | 上述验证的原始机器可读记录（Windows 矩阵 JSON、macOS `environment.json`、CI 摘要） |
+| `docs/zcode-issue-12-windows-evidence.md` / `.en.md` | ZCode 无项目派发与 `allowCreateProject` 的 Windows 10 真机验收记录（含 v0.5.2 首轮与「第二轮回访」） |
+| `docs/release-v0.5.3.md` / `.en.md` | v0.5.3 发布说明（ZCode 真机回访修复：实例跨 server 驻留、新建任务切页、发送失败归因） |
+| `docs/release-v0.5.2.md` / `.en.md` | v0.5.2 发布说明（ZCode 无项目派发与 `allowCreateProject`，issue #12） |
 | `docs/release-v0.5.1.md` / `.en.md` | v0.5.1 发布说明（文档/证据补齐 + 锁文件修复，无运行时变更） |
 | `docs/release-v0.5.0.md` / `.en.md` | v0.5.0 发布说明（可选视觉验收模块） |
 | `docs/release-v0.4.1.md` / `.en.md`、`docs/release-v0.4.0.md` / `.en.md` 等 | 历史版本发布说明（按需查 `docs/release-v*.md`） |
@@ -670,9 +717,9 @@ Windows + Codex 真机模拟实测：模型菜单的 `menuitemradio` 对 trusted
 
 ## 12. 接手人下一步建议
 
-1. 先跑 `npm ci && npm run typecheck && npm run lint && npm test && npm run build`，确认基线绿（486 passed / 10 skipped）。
+1. 先跑 `npm ci && npm run typecheck && npm run lint && npm test && npm run build`，确认基线绿（532 passed / 10 skipped）。
 2. 动 GUI adapter 相关代码前，先读对应文档与本文章节：
-   TraeWork → `docs/traework-cdp.md` + §9.1 / §9.2；ZCode → `docs/zcode-cdp.md` + §9.5 / §9.6；Codex → `docs/codex-gui-cdp.md` + §9.4。
+   TraeWork → `docs/traework-cdp.md` + §9.1 / §9.2；ZCode → `docs/zcode-cdp.md` + §9.5 / §9.6 / §9.9；Codex → `docs/codex-gui-cdp.md` + §9.4。
    项目文件夹绑定出问题时，先看 §9.1 的排障顺序（下拉项 ≠ 项目 map、三处已修缺陷、两个定位陷阱）。
 3. **改任何选择器交互必须真机复验**：trusted 点击与 DOM click 的取舍因控件而异（§9.4 的模型菜单 vs 项目触发器就是反例）。
 4. 若客户端 UI 升级导致选择器失效：用 `scripts/probe-*.mjs` 诊断，优先用 profile `gui.selectors` 覆盖，不改代码。
@@ -685,5 +732,7 @@ Windows + Codex 真机模拟实测：模型菜单的 `menuitemradio` 对 trusted
    （双语正文取 `docs/release-v<ver>.md` + `.en.md`，**缺文档会直接失败**；且要求同 SHA 的成功 CI）。完整步骤见 §6.4。
 9. 未发布计划（见 `CHANGELOG.md` 的「未发布」节）：**视觉验收第二阶段——AI 视觉内容校验（issue #13，前身 issue #3 的「可选扩展」）**、
    更多 agent 适配、TraeWork / ZCode / Codex 的 macOS 验证矩阵、
-   项目级技能播种、`needs_user` 状态取消时经临时 CDP 连接尽力停止 GUI 内等待中的会话。
-   注：issue #3 第一阶段（像素级对比 + 图片规格 + 报告 + 返修闭环 + 基准批准/冻结）已随 v0.5.0 完成，issue #3 已关闭。
+   项目级技能播种、`needs_user` 状态取消时经临时 CDP 连接尽力停止 GUI 内等待中的会话、
+   ZCode 无项目派发的 macOS 真机验证、ZCode 未登记项目自动导入在 Windows 上的修复（§9.9）。
+   注：issue #3 第一阶段（像素级对比 + 图片规格 + 报告 + 返修闭环 + 基准批准/冻结）已随 v0.5.0 完成，issue #3 已关闭；
+   issue #12（无项目派发 + `allowCreateProject`）已随 v0.5.2 完成，其真机回访修复随 v0.5.3 完成。
