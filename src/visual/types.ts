@@ -5,6 +5,13 @@ export interface Rectangle {
   height: number;
   area?: number;
 }
+/** 单次采样判定：passed 缺省表示该次采样未能给出有效判定（防御性，正常契约必填） */
+export interface ContentVote {
+  index: number;
+  passed?: boolean;
+  confidence?: number;
+  reason: string;
+}
 export interface VisualResult {
   id: string;
   kind: "page" | "image";
