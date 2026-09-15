@@ -96,12 +96,13 @@ async function dispatchVisualCli(args: string[], signal: AbortSignal): Promise<v
       allowedOrigins: [],
       pages: [],
       images: [],
+      content: { enabled: false },
     };
     await fs.mkdir(path.dirname(filename), { recursive: true });
     const { writeJsonAtomic } = await import("../util/fs.js");
     await writeJsonAtomic(filename, raw);
     console.log(
-      `Created disabled visual template: ${filename}\nAdd pages or images before enabling. Baselines require explicit user approval.`,
+      `Created disabled visual template: ${filename}\nAdd pages or images before enabling. Baselines require explicit user approval.\nAI content checks are optional: enable visual.content and provide your own judge command (the MCP never handles credentials).`,
     );
     return;
   }

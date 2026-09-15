@@ -22,4 +22,12 @@ export const VISUAL_DEFAULTS = {
     decodedPixels: 32_000_000,
     artifactBytes: 500 * 1024 * 1024,
   },
+  /** AI 内容校验默认值：默认关闭；timeoutMs 与 samples 的乘积必须 ≤ limits.roundTimeoutMs（schema 校验） */
+  content: {
+    enabled: false,
+    allowRemote: false,
+    samples: 3,
+    timeoutMs: 90_000,
+    cache: true,
+  },
 };
