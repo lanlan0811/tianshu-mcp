@@ -44,3 +44,82 @@ it("rejects configuration changes and concurrent adoption", async () => {
   await fs.writeFile(path.join(h.project, ".tianshu-mcp", "acceptance.json"), JSON.stringify(h.config));
   await expect(approveBaseline(h.home, h.approval)).rejects.toMatchObject({ code: "CONFIG_CHANGED" });
 });
+
+/** 语义-only 页面（pixel:false，D9）不参与基准候选 */
+async function semanticFixture(pagePixelFalse: boolean) {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "visual-baselines-semantic-"));
+  dirs.push(root);
+  const project = path.join(root, "project"), home = path.join(root, "home");
+  await fs.mkdir(path.join(project, ".tianshu-mcp"), { recursive: true });
+  const config = {
+    visual: {
+      enabled: true,
+      viewports: [{ id: "test", width: 20, height: 20 }],
+      content: {
+        enabled: true,
+        command: "unused-vision-cli",
+        argsTemplate: ["--image", "<image:path>", "--expect-file", "<expect:file>"],
+      },
+      pages: [
+        { id: "home", source: { type: "static", root: "." } },
+        ...(pagePixelFalse
+          ? [
+              {
+                id: "login-semantic",
+                pixel: false,
+                source: { type: "static", root: "." },
+                content: { expect: "login form with inputs" },
+              },
+            ]
+          : []),
+      ],
+    },
+  };
+  await fs.writeFile(path.join(project, ".tianshu-mcp", "acceptance.json"), JSON.stringify(config));
+  const sharp = await loadSharp();
+  await sharp({ create: { width: 20, height: 20, channels: 3, background: "red" } }).jpeg().toFile(path.join(project, "reference.jpg"));
+  return { project, home };
+}
+it("excludes semantic-only pages from baseline candidates (D9)", async () => {
+  const { project, home } = await semanticFixture(true);
+  const candidate = await prepareBaseline(home, {
+    projectPath: project,
+    imports: [{ caseId: "home", viewportId: "test", file: "reference.jpg" }],
+  });
+  expect(candidate.entries).toHaveLength(1);
+  expect(candidate.entries[0]!.target).toContain("home");
+  await expect(
+    prepareBaseline(home, { projectPath: project, caseIds: ["login-semantic"] }),
+  ).rejects.toMatchObject({ code: "BASELINE_SELECTION" });
+});
+it("refuses baseline preparation when every page is semantic-only", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "visual-baselines-nopixel-"));
+  dirs.push(root);
+  const project = path.join(root, "project"), home = path.join(root, "home");
+  await fs.mkdir(path.join(project, ".tianshu-mcp"), { recursive: true });
+  await fs.writeFile(
+    path.join(project, ".tianshu-mcp", "acceptance.json"),
+    JSON.stringify({
+      visual: {
+        enabled: true,
+        viewports: [{ id: "test", width: 20, height: 20 }],
+        content: {
+          enabled: true,
+          command: "unused-vision-cli",
+          argsTemplate: ["--image", "<image:path>"],
+        },
+        pages: [
+          {
+            id: "login",
+            pixel: false,
+            source: { type: "static", root: "." },
+            content: { expect: "login form" },
+          },
+        ],
+      },
+    }),
+  );
+  await expect(prepareBaseline(home, { projectPath: project })).rejects.toMatchObject({
+    code: "BASELINE_CONFIG",
+  });
+});

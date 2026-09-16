@@ -63,18 +63,23 @@ export async function runVisual(
       ))
         jobs.push(async () => {
           const started = Date.now();
-          const result: VisualResult = {
-            id: rule.id,
-            kind: "page",
-            target: rule.route,
-            viewport: viewport.id,
-            optional: rule.optional,
-            status: "passed",
-            code: "PIXELS_MATCH",
-            message: "Screenshot matches approved baseline",
-            durationMs: 0,
-            repairable: false,
-          };
+          // D9：pixel=false 为语义-only 页面（不产出像素项）；content 声明时复用同一次截图
+          const pixelResult: VisualResult | null = rule.pixel
+            ? {
+                id: rule.id,
+                kind: "page",
+                target: rule.route,
+                viewport: viewport.id,
+                optional: rule.optional,
+                status: "passed",
+                code: "PIXELS_MATCH",
+                message: "Screenshot matches approved baseline",
+                durationMs: 0,
+                repairable: false,
+              }
+            : null;
+          let judgedContent: VisualResult | null = null;
+          let contentFallback: VisualResult | null = null;
           try {
             budget.check();
             if (browserError) throw browserError;
@@ -87,70 +92,110 @@ export async function runVisual(
             const itemDir = path.join(directory, rule.id, viewport.id);
             const actual = path.join(itemDir, "actual.png");
             await budget.write(actual, captured.image);
-            Object.assign(result, {
-              environment: captured.environment,
-              rules: captured.rules,
-              masks: captured.masks,
-              artifacts: { actual },
-            });
-            const baseline = await projectFile(
-              project,
-              baselineRelative(config, rule, viewport.id),
-            );
-            if (
-              (await fileDigest(baseline)) === null ||
-              (await fileDigest(`${baseline}.manifest.json`)) === null
-            )
-              throw new VisualError(
-                "BASELINE_APPROVAL_REQUIRED",
-                "Approved baseline missing. Prepare and review a candidate, then explicitly approve it; this capture does not pass.",
-              );
-            let manifest: { normalizedDigest?: string; approval?: unknown };
-            try {
-              manifest = JSON.parse(
-                await fs.readFile(`${baseline}.manifest.json`, "utf8"),
-              ) as typeof manifest;
-            } catch {
-              throw new VisualError("VISUAL_INTEGRITY", "Baseline manifest is invalid");
-            }
-            if (!manifest.approval || manifest.normalizedDigest !== (await fileDigest(baseline)))
-              throw new VisualError(
-                "VISUAL_INTEGRITY",
-                "Baseline content does not match approved manifest",
-              );
-            const compared = await compareImages(
-              baseline,
-              actual,
-              itemDir,
-              {
-                pixelThreshold: rule.pixelThreshold ?? config.defaults.pixelThreshold,
-                maxDiffRatio: rule.maxDiffRatio ?? config.defaults.maxDiffRatio,
+            if (pixelResult)
+              Object.assign(pixelResult, {
+                environment: captured.environment,
+                rules: captured.rules,
                 masks: captured.masks,
-              },
-              budget,
-            );
-            Object.assign(result, {
-              status: compared.passed ? "passed" : "failed",
-              code: compared.code,
-              message: compared.passed
-                ? result.message
-                : "Screenshot differs from approved baseline",
-              repairable: !compared.passed,
-              metrics: compared.metrics,
-              artifacts: compared.artifacts,
-              regions: compared.regions,
-            });
+                artifacts: { actual },
+              });
+            if (rule.content) {
+              // 一次截图、产出至多两项：内容判定与像素比对共用 actual.png
+              judgedContent = await checkContent(
+                { config, project, taskDir, artifactDir: directory, budget },
+                {
+                  id: `${rule.id}-content`,
+                  target: rule.route,
+                  viewport: viewport.id,
+                  optional: !rule.content.blocking,
+                  check: rule.content,
+                  imagePath: actual,
+                  evidenceDir: path.join(directory, "content", `${rule.id}-content`, viewport.id),
+                },
+              );
+            }
+            if (pixelResult) {
+              const baseline = await projectFile(
+                project,
+                baselineRelative(config, rule, viewport.id),
+              );
+              if (
+                (await fileDigest(baseline)) === null ||
+                (await fileDigest(`${baseline}.manifest.json`)) === null
+              )
+                throw new VisualError(
+                  "BASELINE_APPROVAL_REQUIRED",
+                  "Approved baseline missing. Prepare and review a candidate, then explicitly approve it; this capture does not pass.",
+                );
+              let manifest: { normalizedDigest?: string; approval?: unknown };
+              try {
+                manifest = JSON.parse(
+                  await fs.readFile(`${baseline}.manifest.json`, "utf8"),
+                ) as typeof manifest;
+              } catch {
+                throw new VisualError("VISUAL_INTEGRITY", "Baseline manifest is invalid");
+              }
+              if (!manifest.approval || manifest.normalizedDigest !== (await fileDigest(baseline)))
+                throw new VisualError(
+                  "VISUAL_INTEGRITY",
+                  "Baseline content does not match approved manifest",
+                );
+              const compared = await compareImages(
+                baseline,
+                actual,
+                itemDir,
+                {
+                  pixelThreshold: rule.pixelThreshold ?? config.defaults.pixelThreshold,
+                  maxDiffRatio: rule.maxDiffRatio ?? config.defaults.maxDiffRatio,
+                  masks: captured.masks,
+                },
+                budget,
+              );
+              Object.assign(pixelResult, {
+                status: compared.passed ? "passed" : "failed",
+                code: compared.code,
+                message: compared.passed
+                  ? pixelResult.message
+                  : "Screenshot differs from approved baseline",
+                repairable: !compared.passed,
+                metrics: compared.metrics,
+                artifacts: compared.artifacts,
+                regions: compared.regions,
+              });
+            }
           } catch (e) {
             const error = visualError(e);
-            Object.assign(result, {
-              status: error.kind === "cancelled" ? "skipped" : error.kind,
-              code: error.code,
-              message: error.message,
-              repairable: error.kind === "failed",
-            });
+            if (pixelResult)
+              Object.assign(pixelResult, {
+                status: error.kind === "cancelled" ? "skipped" : error.kind,
+                code: error.code,
+                message: error.message,
+                repairable: error.kind === "failed",
+              });
+            // 无截图不得判通过：捕获失败时内容项以同一原因码镜像为 blocked（取消则 skipped）
+            if (rule.content && !judgedContent)
+              contentFallback = {
+                id: `${rule.id}-content`,
+                kind: "content",
+                target: rule.route,
+                viewport: viewport.id,
+                optional: !rule.content.blocking,
+                status: error.kind === "cancelled" ? "skipped" : "blocked",
+                code: error.code,
+                message: `Page capture failed before content check: ${error.message}`,
+                durationMs: Date.now() - started,
+                repairable: false,
+                rules: rule.content,
+              };
           }
-          result.durationMs = Date.now() - started;
-          return [result];
+          const output: VisualResult[] = [];
+          if (pixelResult) {
+            pixelResult.durationMs = Date.now() - started;
+            output.push(pixelResult);
+          }
+          if (judgedContent) output.push(judgedContent);
+          if (contentFallback) output.push(contentFallback);
+          return output;
         });
     let cursor = 0;
     const collected: VisualResult[][] = new Array(jobs.length);

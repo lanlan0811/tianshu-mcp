@@ -70,11 +70,22 @@ export async function prepareBaseline(
         "BASELINE_CONFIG",
         "Enable visual page rules before preparing baselines",
       );
+    // 语义-only 页面（pixel:false，D9）无像素维度可批：显式跳过，不纳入候选
+    if (!config.pages.some((page) => page.pixel))
+      throw new VisualError(
+        "BASELINE_CONFIG",
+        "No pixel pages to prepare; semantic-only (pixel=false) pages require no baselines",
+      );
     if (
       args.caseIds?.some((id) => !config.pages.some((p) => p.id === id)) ||
       args.viewportIds?.some((id) => !config.viewports.some((v) => v.id === id))
     )
       throw new VisualError("BASELINE_SELECTION", "Unknown check or viewport ID");
+    if (args.caseIds?.some((id) => config.pages.find((p) => p.id === id && !p.pixel)))
+      throw new VisualError(
+        "BASELINE_SELECTION",
+        "Semantic-only (pixel=false) pages cannot prepare baselines",
+      );
     const snapshot = await captureVisualSnapshot(project);
     const id = randomUUID();
     const directory = path.join(home, "visual-candidates", id);
@@ -85,7 +96,9 @@ export async function prepareBaseline(
     const usedImports = new Set<number>();
     let browserStarted = false;
     try {
-      for (const rule of config.pages.filter((p) => !args.caseIds || args.caseIds.includes(p.id))) {
+      for (const rule of config.pages.filter(
+        (p) => p.pixel && (!args.caseIds || args.caseIds.includes(p.id)),
+      )) {
         for (const viewport of config.viewports.filter(
           (v) =>
             (!rule.viewports || rule.viewports.includes(v.id)) &&
