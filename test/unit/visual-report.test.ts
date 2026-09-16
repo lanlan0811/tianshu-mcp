@@ -8,6 +8,7 @@ import { Logger } from "../../src/util/log.js";
 import { loadSharp } from "../../src/visual/runtime.js";
 import { cleanArtifacts } from "../../src/visual/manage.js";
 import { visualEvidence, visualHtml } from "../../src/visual/report.js";
+import { summarizeReport } from "../../src/verify/report.js";
 import type { VerifyReport } from "../../src/tasks/task.js";
 import type { VisualResult } from "../../src/visual/types.js";
 
@@ -150,6 +151,10 @@ it("renders content check details in evidence markdown and offline HTML", () => 
   expect(html).toContain("蓝色齿轮与白色文字 TIANSHU");
   expect(html).toContain("minConfidence did not apply");
   expect(html).toContain("<th>Sample</th>");
+  // §5 B 组：summarizeReport 按 status 泛化输出，uncertain 正常显示（仅补断言，无逻辑改动）
+  const summary = summarizeReport(report);
+  expect(summary).toContain("[uncertain] logo-elements/assets/logo.png: CONTENT_UNCERTAIN");
+  expect(summary).toContain("sample 0: ok");
 });
 it("renders the cache-hit flag for cached content verdicts", () => {
   const report = syntheticReport({ id: "logo-elements", status: "passed", code: "CONTENT_MATCH" });
