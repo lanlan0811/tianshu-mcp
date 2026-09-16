@@ -113,12 +113,17 @@ Engineering gates (local): `npm test` **644 passed / 12 skipped** (67 files); th
 green **12/12** under `TIANSHU_VISUAL_BROWSER_TEST=1` (visual-browser-smoke 1, visual-capture 8, visual-flow 3,
 including the 2 new D9 cases); `typecheck`, `lint` (0 warnings), `build`, and `check:stdio` all pass.
 
+**Real macOS system evidence (CI runner, collected in this phase)**: the `CI` workflow for commit `d762581` is
+fully green ([run 35093217490](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35093217490), all 22 jobs
+succeeded); 6 of those are `visual-browser` jobs covering **macOS 15 (Apple Silicon arm64)** and **macOS 15 Intel
+(x64)** across Node 20/22/24, running this phase's entire visual suite (including the new content-validation and
+D9 semantic-page cases) via `npx vitest run visual --maxWorkers=1`. This is real macOS system and architecture
+evidence from GitHub-hosted runners, not a maintainer's personal device.
+
 **Not covered (stated honestly; not evidence of passing)**:
 
-- **Real macOS system evidence is still pending collection by the CI runner**: this phase's new cases gate
-  through the same job as the v0.5.0 browser cases and are expected to be covered by the `visual-browser` job
-  once the commit is pushed, but **that green run has not been obtained yet**, so no macOS compatibility claim
-  is made here.
+- **Not re-verified on a maintainer's personal macOS device**: the macOS evidence comes from CI-hosted runners
+  (above); the GUI cancel/rework matrices are unrelated to this module.
 - **No measurement against a real third-party vision CLI**: every piece of evidence comes from the in-repo stub.
   A real model/CLI's latency, output style, and confidence habits only become observable once the maintainer
   supplies a command.

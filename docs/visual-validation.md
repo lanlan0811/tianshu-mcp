@@ -112,11 +112,16 @@
 `TIANSHU_VISUAL_BROWSER_TEST=1` 单独跑通 **12/12**（visual-browser-smoke 1、visual-capture 8、visual-flow 3，
 含新增的 2 项 D9 用例）；`typecheck`、`lint`（0 warning）、`build`、`check:stdio` 全绿。
 
+**macOS 真实系统证据（CI runner，本阶段已采集）**：目标提交 `d762581` 的 `CI` 工作流全绿
+（[运行 35093217490](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35093217490)，22 个作业全部成功），
+其中 6 个 `visual-browser` 作业覆盖 **macOS 15（Apple Silicon arm64）** 与 **macOS 15 Intel（x64）** × Node 20/22/24，
+以 `npx vitest run visual --maxWorkers=1` 跑通本阶段全部视觉用例（含新增的内容校验与 D9 语义页面用例）。
+这是 GitHub 托管 macOS runner 的真实系统与真实架构证据，非维护者个人设备留证。
+
 **未覆盖项（如实标注，不得视为通过）**：
 
-- **macOS 的真实系统证据尚待 CI runner 采集**：本阶段新增用例与 v0.5.0 的浏览器用例同门禁，
-  预期在提交推送后由 `visual-browser` 作业覆盖，但**当前尚未取得该次运行的绿色结果**，
-  因此不宣称 macOS 兼容性验收完成。
+- **未在维护者个人 macOS 设备上复核**：macOS 证据来自 CI 托管 runner（见上）；取消/返修等 GUI 矩阵的
+  macOS 覆盖与本模块无关。
 - **未与真实三方视觉 CLI 实测**：全部证据基于仓库内判定桩；真实模型/CLI 的响应延迟、输出风格、
   置信度习惯均在维护者自备命令后才可知。
 - **未验证「图片实际未离开本机」**：MCP 的强制力仅在契约层（未放行 `allowRemote` 时禁用 base64 占位符），

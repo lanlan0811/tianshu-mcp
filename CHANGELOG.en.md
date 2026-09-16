@@ -48,7 +48,8 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 - **644 passed / 12 skipped** overall (Windows 10 x64, Node 24.18.0), 112 cases more than v0.5.3: positive/negative cases for the 10 schema checks (including the budget-consistency counterexample), an exhaustive `tallyContentVotes` suite, cache-key stability and CLI-upgrade invalidation, placeholder expansion and stdout parsing, whole-round blockers producing no result rows (one each for a global and a rule-level override command), single-item failures staying warning-only and visible, repair-plan isolation, zero-rerun cache hits, probe and cache clearing, doctor content diagnostics, verdict-attribution regressions (`uncertain` and `optional:true` never fail a round; only `blocking:true` does), and the semantic-only page recording an explicit null baseline in the frozen snapshot (unaffected by stray baseline files).
 - The 12 browser-gated cases run **12/12** on Windows 10 under `TIANSHU_VISUAL_BROWSER_TEST=1`, including 2 new ones covering the `pixel:false` semantic-page exemption and "one screenshot yields both a pixel and a content item".
-- What is not covered is stated plainly: real macOS system evidence awaits the CI `visual-browser` job; no measurement against a real third-party vision CLI; and "images never leave the machine" is not verifiable at the system level. See [validation progress](docs/visual-validation.en.md).
+- Real macOS system evidence was collected by CI: the target commit's `CI` workflow is green across all 22 jobs, 6 of them `visual-browser` jobs covering macOS 15 (Apple Silicon arm64) and macOS 15 Intel (x64) across Node 20/22/24.
+- What is not covered is stated plainly: no measurement against a real third-party vision CLI; and "images never leave the machine" is not verifiable at the system level. See [validation progress](docs/visual-validation.en.md).
 
 ### Compatibility
 

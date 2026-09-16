@@ -120,4 +120,5 @@ tianshu-mcp visual doctor /path/to/project                   # gains content-com
 - **644 passed / 12 skipped** overall (Windows 10 x64, Node 24.18.0), 112 cases more than v0.5.3.
 - The 12 browser-gated cases run **12/12** on Windows 10 under `TIANSHU_VISUAL_BROWSER_TEST=1`, including 2 new ones covering the `pixel:false` semantic-page exemption and "one screenshot yields both a pixel and a content item".
 - `typecheck` / `lint` (`--max-warnings 0`) / `build` / `check:stdio` all pass.
-- **Not covered (stated plainly)**: real macOS system evidence awaits the CI `visual-browser` job; no measurement against a real third-party vision CLI; and "images never leave the machine" is not verifiable at the system level. See [validation progress](visual-validation.en.md).
+- Real macOS system evidence was collected by CI: the target commit's `CI` workflow is green across all 22 jobs, 6 of them `visual-browser` jobs covering macOS 15 (Apple Silicon arm64) and macOS 15 Intel (x64) across Node 20/22/24.
+- **Not covered (stated plainly)**: no measurement against a real third-party vision CLI (all evidence comes from the in-repo stub); and "images never leave the machine" is not verifiable at the system level. See [validation progress](visual-validation.en.md).

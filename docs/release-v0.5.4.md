@@ -133,5 +133,7 @@ MCP 的强制力仅在契约层——`allowRemote` 默认 `false`，未放行的
 - 12 项真实浏览器门禁用例在 Windows 10 本机以 `TIANSHU_VISUAL_BROWSER_TEST=1` 跑通 **12/12**，其中新增 2 项覆盖
   `pixel:false` 语义页豁免基准与「一次截图产出像素 + 内容两项」。
 - `typecheck` / `lint`（`--max-warnings 0`）/ `build` / `check:stdio` 全部通过。
-- **未覆盖项（如实标注）**：macOS 的真实系统证据待 CI `visual-browser` 作业采集；未与真实三方视觉 CLI 实测；
-  「图片未离开本机」无法在系统层验证。详见 [验证进度](visual-validation.md)。
+- macOS 真实系统证据已由 CI 采集：目标提交的 `CI` 工作流 22 个作业全绿，其中 6 个 `visual-browser` 作业覆盖
+  macOS 15（Apple Silicon arm64）与 macOS 15 Intel（x64）× Node 20/22/24。
+- **未覆盖项（如实标注）**：未与真实三方视觉 CLI 实测（全部证据基于仓库内判定桩）；「图片未离开本机」
+  无法在系统层验证。详见 [验证进度](visual-validation.md)。
