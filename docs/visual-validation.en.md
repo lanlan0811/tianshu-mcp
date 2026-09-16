@@ -93,21 +93,21 @@ vision CLI, and none depends on a browser (the browser-gated cases are listed be
 
 | Verification point | Result | Evidence |
 |---|---|---|
-| Sample votes and majority | ✅ | `visual-content-flow` / `visual-content-verdict`: 3/3, 2/3, 1/2 split, 1/1, and `samples:1` all enumerated |
-| Cache hit runs zero commands | ✅ | `visual-content-flow` "cache makes the second round run zero judge invocations": round 2 invokes the judge 0 times and marks the result `cached:true` |
-| CLI upgrade invalidates the cache | ✅ | `visual-content-cache`: a changed `commandDigest` misses; an uncomputable digest stores nothing |
-| `uncertain` never gates or triggers rework | ✅ | `visual-content-flow` "uncertain verdicts never gate the round" plus `visual-content-warning` (the round message carries the uncertainty line) |
-| Warnings do not gate but stay visible (P4) | ✅ | `visual-content-warning`: an `optional:true` + `blocked` item stays out of `blockingIssues` while the message carries "AI content warning did not pass (does not affect the conclusion): logo [CONTENT_COMMAND_FAILED]" |
-| `blocking:true` fails the round | ✅ | `visual-content-flow` "blocking content mismatches fail the round": verdict fails and `visualFailed` matches |
-| Whole-round blockers produce no result rows (P2/P3) | ✅ | `visual-content-blocked`: an unresolvable global command, an unresolvable **rule-level override**, and a missing env reference each yield a whole-round `configurationError` with an empty `report.visual` |
-| Single-item failures stay warnings | ✅ | `visual-content-blocked`: non-zero exit and invalid output remain single-item results and never escalate the round |
-| Repair plan isolates warnings | ✅ | `traework-repair-plan` + `visual-content-warning`: warnings land under "warning-only items (no fix required)" and section 2 "must fix" excludes them |
-| Confidence-gate semantics | ✅ | `visual-content-verdict` + `visual-content-flow`: unconfigured means inactive; below threshold downgrades to uncertain; a command reporting no confidence is annotated "minConfidence did not apply" |
-| Budget self-consistency hard check (P1) | ✅ | `visual-content-schema`: `samples:3` + `timeoutMs:120000` against the default `roundTimeoutMs:300000` is rejected; per-rule overrides that stay consistent pass |
-| `pixel:false` semantic pages skip baselines (D9, real browser) | ✅ | `visual-flow` "semantic-only pages need no baseline and yield a content result": no baseline directory, no `BASELINE_APPROVAL_REQUIRED`, and a `login-content` result; `visual-snapshot` locks in that its frozen snapshot records null regardless of stray baseline files |
-| One screenshot yields both pixel and content items (real browser) | ✅ | `visual-flow` "pixel pages with content produce both items from one screenshot": the baseline flow is unchanged, both items share the capture, and a new task's cache isolation reruns the judgement |
-| `visual content probe` writes no evidence or cache | ✅ | `visual-content-probe`: neither `visual/` nor `visual-content-cache/` is created; an unknown rule id reports `CONTENT_RULE_UNKNOWN` |
-| `visual doctor` content diagnostics | ✅ | `visual-runtime`: per-rule command resolution plus the `allowRemote` list; an unresolvable command fails that finding; the budget finding reports the total |
+| Sample votes and majority | pass | `visual-content-flow` / `visual-content-verdict`: 3/3, 2/3, 1/2 split, 1/1, and `samples:1` all enumerated |
+| Cache hit runs zero commands | pass | `visual-content-flow` "cache makes the second round run zero judge invocations": round 2 invokes the judge 0 times and marks the result `cached:true` |
+| CLI upgrade invalidates the cache | pass | `visual-content-cache`: a changed `commandDigest` misses; an uncomputable digest stores nothing |
+| `uncertain` never gates or triggers rework | pass | `visual-content-flow` "uncertain verdicts never gate the round" plus `visual-content-warning` (the round message carries the uncertainty line) |
+| Warnings do not gate but stay visible (P4) | pass | `visual-content-warning`: an `optional:true` + `blocked` item stays out of `blockingIssues` while the message carries "AI content warning did not pass (does not affect the conclusion): logo [CONTENT_COMMAND_FAILED]" |
+| `blocking:true` fails the round | pass | `visual-content-flow` "blocking content mismatches fail the round": verdict fails and `visualFailed` matches |
+| Whole-round blockers produce no result rows (P2/P3) | pass | `visual-content-blocked`: an unresolvable global command, an unresolvable **rule-level override**, and a missing env reference each yield a whole-round `configurationError` with an empty `report.visual` |
+| Single-item failures stay warnings | pass | `visual-content-blocked`: non-zero exit and invalid output remain single-item results and never escalate the round |
+| Repair plan isolates warnings | pass | `traework-repair-plan` + `visual-content-warning`: warnings land under "warning-only items (no fix required)" and section 2 "must fix" excludes them |
+| Confidence-gate semantics | pass | `visual-content-verdict` + `visual-content-flow`: unconfigured means inactive; below threshold downgrades to uncertain; a command reporting no confidence is annotated "minConfidence did not apply" |
+| Budget self-consistency hard check (P1) | pass | `visual-content-schema`: `samples:3` + `timeoutMs:120000` against the default `roundTimeoutMs:300000` is rejected; per-rule overrides that stay consistent pass |
+| `pixel:false` semantic pages skip baselines (D9, real browser) | pass | `visual-flow` "semantic-only pages need no baseline and yield a content result": no baseline directory, no `BASELINE_APPROVAL_REQUIRED`, and a `login-content` result; `visual-snapshot` locks in that its frozen snapshot records null regardless of stray baseline files |
+| One screenshot yields both pixel and content items (real browser) | pass | `visual-flow` "pixel pages with content produce both items from one screenshot": the baseline flow is unchanged, both items share the capture, and a new task's cache isolation reruns the judgement |
+| `visual content probe` writes no evidence or cache | pass | `visual-content-probe`: neither `visual/` nor `visual-content-cache/` is created; an unknown rule id reports `CONTENT_RULE_UNKNOWN` |
+| `visual doctor` content diagnostics | pass | `visual-runtime`: per-rule command resolution plus the `allowRemote` list; an unresolvable command fails that finding; the budget finding reports the total |
 
 Engineering gates (local): `npm test` **644 passed / 12 skipped** (67 files); the 12 browser-gated cases run
 green **12/12** under `TIANSHU_VISUAL_BROWSER_TEST=1` (visual-browser-smoke 1, visual-capture 8, visual-flow 3,

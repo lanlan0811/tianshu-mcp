@@ -92,21 +92,21 @@
 
 | 验证点 | 结果 | 证据 |
 |---|---|---|
-| 采样票型与多数票 | ✅ | `visual-content-flow` / `visual-content-verdict`：3/3、2/3、1/2 平票、1/1、`samples:1` 全部穷举 |
-| 缓存命中零重跑 | ✅ | `visual-content-flow`「cache makes the second round run zero judge invocations」：第二轮调用次数为 0，结果标 `cached:true` |
-| 命令二进制升级使缓存失效 | ✅ | `visual-content-cache`：`commandDigest` 变化导致 miss；不可计算时不写缓存 |
-| `uncertain` 不致败、不返修 | ✅ | `visual-content-flow`「uncertain verdicts never gate the round」+ `visual-content-warning`（整轮 message 出现「AI 内容判定不确定（仅告警）」） |
-| 告警不致败但在整轮消息可见（P4） | ✅ | `visual-content-warning`：optional:true + blocked 项不进 `blockingIssues`，message 出现「AI 内容告警未通过（不影响结论）: logo [CONTENT_COMMAND_FAILED]」 |
-| `blocking:true` 致败 | ✅ | `visual-content-flow`「blocking content mismatches fail the round」：verdict 失败、`visualFailed` 命中 |
-| 整轮级阻塞不产结果行（P2/P3） | ✅ | `visual-content-blocked`：全局命令不可解析、**逐规则覆盖命令**不可解析、env 引用缺失三种情形均整轮 `configurationError` 且 `report.visual` 为空 |
-| 单项失败仅告警 | ✅ | `visual-content-blocked`：非零退出/输出非法为单项结果，不升级整轮 |
-| 返修计划隔离告警项 | ✅ | `traework-repair-plan` + `visual-content-warning`：告警项列入「仅告警项（不必修复）」，第 2 节「必须修复」不含告警项 |
-| 置信度闸门语义 | ✅ | `visual-content-verdict` + `visual-content-flow`：未配置不生效；低于阈值降级 uncertain；命令不报 confidence 时标注「minConfidence 未生效」 |
-| 预算自洽硬校验（P1） | ✅ | `visual-content-schema`：`samples:3` + `timeoutMs:120000` + 默认 `roundTimeoutMs:300000` 被拒绝；逐规则覆盖后仍自洽的正例通过 |
-| `pixel:false` 语义页面豁免基准（D9，真实浏览器） | ✅ | `visual-flow`「semantic-only pages need no baseline and yield a content result」：无基准目录、不报 `BASELINE_APPROVAL_REQUIRED`，产出 `login-content` 内容项；`visual-snapshot` 锁定其冻结摘要显式记 null 且不受残留基准文件影响 |
-| 一次截图产出像素+内容两项（真实浏览器） | ✅ | `visual-flow`「pixel pages with content produce both items from one screenshot」：基线流程不变，两项同源，新任务缓存隔离后判定重跑 |
-| `visual content probe` 不写证据/缓存 | ✅ | `visual-content-probe`：不落 `visual/` 目录与 `visual-content-cache/`；未知规则 ID 报 `CONTENT_RULE_UNKNOWN` |
-| `visual doctor` 内容诊断 | ✅ | `visual-runtime`：逐条有效命令解析 + `allowRemote` 清单；命令不可解析时该 finding 判失败；预算 finding 给出总量对比 |
+| 采样票型与多数票 | 通过 | `visual-content-flow` / `visual-content-verdict`：3/3、2/3、1/2 平票、1/1、`samples:1` 全部穷举 |
+| 缓存命中零重跑 | 通过 | `visual-content-flow`「cache makes the second round run zero judge invocations」：第二轮调用次数为 0，结果标 `cached:true` |
+| 命令二进制升级使缓存失效 | 通过 | `visual-content-cache`：`commandDigest` 变化导致 miss；不可计算时不写缓存 |
+| `uncertain` 不致败、不返修 | 通过 | `visual-content-flow`「uncertain verdicts never gate the round」+ `visual-content-warning`（整轮 message 出现「AI 内容判定不确定（仅告警）」） |
+| 告警不致败但在整轮消息可见（P4） | 通过 | `visual-content-warning`：optional:true + blocked 项不进 `blockingIssues`，message 出现「AI 内容告警未通过（不影响结论）: logo [CONTENT_COMMAND_FAILED]」 |
+| `blocking:true` 致败 | 通过 | `visual-content-flow`「blocking content mismatches fail the round」：verdict 失败、`visualFailed` 命中 |
+| 整轮级阻塞不产结果行（P2/P3） | 通过 | `visual-content-blocked`：全局命令不可解析、**逐规则覆盖命令**不可解析、env 引用缺失三种情形均整轮 `configurationError` 且 `report.visual` 为空 |
+| 单项失败仅告警 | 通过 | `visual-content-blocked`：非零退出/输出非法为单项结果，不升级整轮 |
+| 返修计划隔离告警项 | 通过 | `traework-repair-plan` + `visual-content-warning`：告警项列入「仅告警项（不必修复）」，第 2 节「必须修复」不含告警项 |
+| 置信度闸门语义 | 通过 | `visual-content-verdict` + `visual-content-flow`：未配置不生效；低于阈值降级 uncertain；命令不报 confidence 时标注「minConfidence 未生效」 |
+| 预算自洽硬校验（P1） | 通过 | `visual-content-schema`：`samples:3` + `timeoutMs:120000` + 默认 `roundTimeoutMs:300000` 被拒绝；逐规则覆盖后仍自洽的正例通过 |
+| `pixel:false` 语义页面豁免基准（D9，真实浏览器） | 通过 | `visual-flow`「semantic-only pages need no baseline and yield a content result」：无基准目录、不报 `BASELINE_APPROVAL_REQUIRED`，产出 `login-content` 内容项；`visual-snapshot` 锁定其冻结摘要显式记 null 且不受残留基准文件影响 |
+| 一次截图产出像素+内容两项（真实浏览器） | 通过 | `visual-flow`「pixel pages with content produce both items from one screenshot」：基线流程不变，两项同源，新任务缓存隔离后判定重跑 |
+| `visual content probe` 不写证据/缓存 | 通过 | `visual-content-probe`：不落 `visual/` 目录与 `visual-content-cache/`；未知规则 ID 报 `CONTENT_RULE_UNKNOWN` |
+| `visual doctor` 内容诊断 | 通过 | `visual-runtime`：逐条有效命令解析 + `allowRemote` 清单；命令不可解析时该 finding 判失败；预算 finding 给出总量对比 |
 
 工程门禁（本机）：`npm test` **644 passed / 12 skipped**（67 个文件）；12 项浏览器门禁用例以
 `TIANSHU_VISUAL_BROWSER_TEST=1` 单独跑通 **12/12**（visual-browser-smoke 1、visual-capture 8、visual-flow 3，
