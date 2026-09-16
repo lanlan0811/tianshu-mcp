@@ -129,7 +129,7 @@ MCP 的强制力仅在契约层——`allowRemote` 默认 `false`，未放行的
 
 ## 测试与验证
 
-- 全量 **638 passed / 12 skipped**（Windows 10 x64，Node 24.18.0），较 v0.5.3 净增 106 项用例。
+- 全量 **642 passed / 12 skipped**（Windows 10 x64，Node 24.18.0），较 v0.5.3 净增 110 项用例。
 - 12 项真实浏览器门禁用例在 Windows 10 本机以 `TIANSHU_VISUAL_BROWSER_TEST=1` 跑通 **12/12**，其中新增 2 项覆盖
   `pixel:false` 语义页豁免基准与「一次截图产出像素 + 内容两项」。
 - `typecheck` / `lint`（`--max-warnings 0`）/ `build` / `check:stdio` 全部通过。

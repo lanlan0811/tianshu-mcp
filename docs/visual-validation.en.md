@@ -109,7 +109,7 @@ vision CLI, and none depends on a browser (the browser-gated cases are listed be
 | `visual content probe` writes no evidence or cache | ✅ | `visual-content-probe`: neither `visual/` nor `visual-content-cache/` is created; an unknown rule id reports `CONTENT_RULE_UNKNOWN` |
 | `visual doctor` content diagnostics | ✅ | `visual-runtime`: per-rule command resolution plus the `allowRemote` list; an unresolvable command fails that finding; the budget finding reports the total |
 
-Engineering gates (local): `npm test` **638 passed / 12 skipped** (66 files); the 12 browser-gated cases run
+Engineering gates (local): `npm test` **642 passed / 12 skipped** (66 files); the 12 browser-gated cases run
 green **12/12** under `TIANSHU_VISUAL_BROWSER_TEST=1` (visual-browser-smoke 1, visual-capture 8, visual-flow 3,
 including the 2 new D9 cases); `typecheck`, `lint` (0 warnings), `build`, and `check:stdio` all pass.
 

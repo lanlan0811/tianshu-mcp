@@ -69,7 +69,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 638 项测试：66 个文件，含 Codex/ZCode/TraeWork 单元/假 CDP/重启/恢复/返修闭环与视觉验收
+npm test             # 642 项测试：66 个文件，含 Codex/ZCode/TraeWork 单元/假 CDP/重启/恢复/返修闭环与视觉验收
 ```
 
 ### 安装 npm 包
@@ -331,7 +331,7 @@ ZCode 提问、需要登录、旧实例无 CDP、系统权限不足，或自动�
   - 修复顶部「新建任务」点击返回成功却不切页、随后静默空等 30 秒：改以「项目触发器已挂载」验证草稿真的建立，失败回退侧栏 `task-new-button`，两者都失败才 `setup_failed` fail-closed
   - 修复窗口被遮挡时发送失败归因误导：识别 Chromium 节流（`visibilityState=hidden`）并报「窗口不在前台」及置于前台的操作指引
   - 本版本为 **PATCH**，既有调用方签名与报告格式**保持向后兼容**（详见 [v0.5.3 发布说明](<docs/release-v0.5.3.md>)）
-- **M23 — 视觉验收第二阶段「AI 视觉内容校验」（issue #13）+ v0.5.4**（2026-09-16）— **638 测试**
+- **M23 — 视觉验收第二阶段「AI 视觉内容校验」（issue #13）+ v0.5.4**（2026-09-16）— **642 测试**
   - **内容校验维度**：`visual.contents[]`（图片内容规则）与 `pages[].content`（页面语义校验）与既有像素/规格检查平行，作为 `kind:"content"` 独立结果项进入统一报告与离线 HTML；`pages[].pixel:false` 的语义-only 页面豁免基准要求
   - **凭证零管理**：MCP 不读取/存储/转发任何密钥、不实现模型客户端；判定完全委托用户自备命令（占位符模板 + stdout 末行 JSON），期望文本经临时文件传递以规避转义与审计日志
   - **防抖与门禁**：采样多数票 + 任务目录级输入哈希缓存（键含命令二进制身份，升级自备 CLI 即失效）；新增 `uncertain` 状态，票不集中或低于 `minConfidence` 时既不致败也不触发返修；内容项默认**仅告警**，逐规则 `blocking:true` 才升级为致败

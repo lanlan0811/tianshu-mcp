@@ -108,7 +108,7 @@
 | `visual content probe` 不写证据/缓存 | ✅ | `visual-content-probe`：不落 `visual/` 目录与 `visual-content-cache/`；未知规则 ID 报 `CONTENT_RULE_UNKNOWN` |
 | `visual doctor` 内容诊断 | ✅ | `visual-runtime`：逐条有效命令解析 + `allowRemote` 清单；命令不可解析时该 finding 判失败；预算 finding 给出总量对比 |
 
-工程门禁（本机）：`npm test` **638 passed / 12 skipped**（66 个文件）；12 项浏览器门禁用例以
+工程门禁（本机）：`npm test` **642 passed / 12 skipped**（66 个文件）；12 项浏览器门禁用例以
 `TIANSHU_VISUAL_BROWSER_TEST=1` 单独跑通 **12/12**（visual-browser-smoke 1、visual-capture 8、visual-flow 3，
 含新增的 2 项 D9 用例）；`typecheck`、`lint`（0 warning）、`build`、`check:stdio` 全绿。
 
