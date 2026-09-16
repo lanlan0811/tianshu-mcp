@@ -103,12 +103,12 @@
 | 返修计划隔离告警项 | ✅ | `traework-repair-plan` + `visual-content-warning`：告警项列入「仅告警项（不必修复）」，第 2 节「必须修复」不含告警项 |
 | 置信度闸门语义 | ✅ | `visual-content-verdict` + `visual-content-flow`：未配置不生效；低于阈值降级 uncertain；命令不报 confidence 时标注「minConfidence 未生效」 |
 | 预算自洽硬校验（P1） | ✅ | `visual-content-schema`：`samples:3` + `timeoutMs:120000` + 默认 `roundTimeoutMs:300000` 被拒绝；逐规则覆盖后仍自洽的正例通过 |
-| `pixel:false` 语义页面豁免基准（D9，真实浏览器） | ✅ | `visual-flow`「semantic-only pages need no baseline and yield a content result」：无基准目录、不报 `BASELINE_APPROVAL_REQUIRED`，产出 `login-content` 内容项 |
+| `pixel:false` 语义页面豁免基准（D9，真实浏览器） | ✅ | `visual-flow`「semantic-only pages need no baseline and yield a content result」：无基准目录、不报 `BASELINE_APPROVAL_REQUIRED`，产出 `login-content` 内容项；`visual-snapshot` 锁定其冻结摘要显式记 null 且不受残留基准文件影响 |
 | 一次截图产出像素+内容两项（真实浏览器） | ✅ | `visual-flow`「pixel pages with content produce both items from one screenshot」：基线流程不变，两项同源，新任务缓存隔离后判定重跑 |
 | `visual content probe` 不写证据/缓存 | ✅ | `visual-content-probe`：不落 `visual/` 目录与 `visual-content-cache/`；未知规则 ID 报 `CONTENT_RULE_UNKNOWN` |
 | `visual doctor` 内容诊断 | ✅ | `visual-runtime`：逐条有效命令解析 + `allowRemote` 清单；命令不可解析时该 finding 判失败；预算 finding 给出总量对比 |
 
-工程门禁（本机）：`npm test` **642 passed / 12 skipped**（66 个文件）；12 项浏览器门禁用例以
+工程门禁（本机）：`npm test` **644 passed / 12 skipped**（67 个文件）；12 项浏览器门禁用例以
 `TIANSHU_VISUAL_BROWSER_TEST=1` 单独跑通 **12/12**（visual-browser-smoke 1、visual-capture 8、visual-flow 3，
 含新增的 2 项 D9 用例）；`typecheck`、`lint`（0 warning）、`build`、`check:stdio` 全绿。
 

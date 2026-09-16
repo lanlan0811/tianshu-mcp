@@ -104,12 +104,12 @@ vision CLI, and none depends on a browser (the browser-gated cases are listed be
 | Repair plan isolates warnings | ✅ | `traework-repair-plan` + `visual-content-warning`: warnings land under "warning-only items (no fix required)" and section 2 "must fix" excludes them |
 | Confidence-gate semantics | ✅ | `visual-content-verdict` + `visual-content-flow`: unconfigured means inactive; below threshold downgrades to uncertain; a command reporting no confidence is annotated "minConfidence did not apply" |
 | Budget self-consistency hard check (P1) | ✅ | `visual-content-schema`: `samples:3` + `timeoutMs:120000` against the default `roundTimeoutMs:300000` is rejected; per-rule overrides that stay consistent pass |
-| `pixel:false` semantic pages skip baselines (D9, real browser) | ✅ | `visual-flow` "semantic-only pages need no baseline and yield a content result": no baseline directory, no `BASELINE_APPROVAL_REQUIRED`, and a `login-content` result |
+| `pixel:false` semantic pages skip baselines (D9, real browser) | ✅ | `visual-flow` "semantic-only pages need no baseline and yield a content result": no baseline directory, no `BASELINE_APPROVAL_REQUIRED`, and a `login-content` result; `visual-snapshot` locks in that its frozen snapshot records null regardless of stray baseline files |
 | One screenshot yields both pixel and content items (real browser) | ✅ | `visual-flow` "pixel pages with content produce both items from one screenshot": the baseline flow is unchanged, both items share the capture, and a new task's cache isolation reruns the judgement |
 | `visual content probe` writes no evidence or cache | ✅ | `visual-content-probe`: neither `visual/` nor `visual-content-cache/` is created; an unknown rule id reports `CONTENT_RULE_UNKNOWN` |
 | `visual doctor` content diagnostics | ✅ | `visual-runtime`: per-rule command resolution plus the `allowRemote` list; an unresolvable command fails that finding; the budget finding reports the total |
 
-Engineering gates (local): `npm test` **642 passed / 12 skipped** (66 files); the 12 browser-gated cases run
+Engineering gates (local): `npm test` **644 passed / 12 skipped** (67 files); the 12 browser-gated cases run
 green **12/12** under `TIANSHU_VISUAL_BROWSER_TEST=1` (visual-browser-smoke 1, visual-capture 8, visual-flow 3,
 including the 2 new D9 cases); `typecheck`, `lint` (0 warnings), `build`, and `check:stdio` all pass.
 

@@ -69,7 +69,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 642 tests across 66 files, including Codex/ZCode/TraeWork unit/fake-CDP/restart/recovery/repair loops and visual acceptance
+npm test             # 644 tests across 67 files, including Codex/ZCode/TraeWork unit/fake-CDP/restart/recovery/repair loops and visual acceptance
 ```
 
 ### Install the npm package
@@ -330,7 +330,7 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
   - Fixed the top-bar "new task" click reporting success without switching pages and then waiting silently for 30 seconds: the draft is now verified by "the project trigger is mounted", falling back to the sidebar `task-new-button`, and failing closed with `setup_failed` only when both entry points fail
   - Fixed misleading attribution when a covered window fails to send: Chromium throttling (`visibilityState=hidden`) is recognised and reported as "the window is not in the foreground" with instructions to bring it forward
   - A **PATCH** release; existing caller signatures and report formats remain **backward compatible** (see the [v0.5.3 release notes](<docs/release-v0.5.3.en.md>))
-- **M23 — Visual acceptance phase 2, "AI visual content validation" (issue #13) + v0.5.4** (2026-09-16) — **642 tests**
+- **M23 — Visual acceptance phase 2, "AI visual content validation" (issue #13) + v0.5.4** (2026-09-16) — **644 tests**
   - **Content-check dimension**: `visual.contents[]` (image content rules) and `pages[].content` (page semantics) run in parallel with the existing pixel/spec checks and land in the unified report and offline HTML as independent `kind:"content"` results; a `pages[].pixel:false` semantic-only page is exempt from baselines
   - **Zero credential management**: the MCP reads, stores, and forwards no keys and ships no model client; judgement is fully delegated to a user-supplied command (placeholder template + JSON on the last stdout line), and the expectation travels through a temporary file to avoid command-line escaping and audit logs
   - **Debouncing and gates**: majority sampling plus a task-level input-hash cache (the key includes the command's binary identity, so upgrading your CLI invalidates it); a new `uncertain` status neither fails nor triggers rework when votes split or confidence falls below `minConfidence`; content items **warn only** by default, upgrading to failing per rule via `blocking:true`

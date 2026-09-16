@@ -41,10 +41,14 @@ export async function captureVisualSnapshot(project: string): Promise<VisualSnap
     for (const page of config.pages)
       for (const viewport of page.viewports ?? config.viewports.map((v) => v.id)) {
         const relative = baselineRelative(config, page, viewport);
-        baselines[relative] = await fileDigest(await projectFile(project, relative));
-        baselines[`${relative}.manifest.json`] = await fileDigest(
-          await projectFile(project, `${relative}.manifest.json`),
-        );
+        // 语义-only 页面（pixel:false，D9）无像素维度：显式记 null，不去读可能残留的无关基准文件
+        // （否则删掉/改动一个与该页无关的基准会让冻结摘要漂移，误报 VISUAL_INTEGRITY）
+        baselines[relative] = page.pixel
+          ? await fileDigest(await projectFile(project, relative))
+          : null;
+        baselines[`${relative}.manifest.json`] = page.pixel
+          ? await fileDigest(await projectFile(project, `${relative}.manifest.json`))
+          : null;
       }
   return {
     config: config ?? null,

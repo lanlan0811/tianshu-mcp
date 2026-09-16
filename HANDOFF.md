@@ -60,7 +60,7 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build   # 期
 | 版本 / 许可证 | `0.5.4` / Apache-2.0 |
 | 标签 | `v0.1.0` … `v0.5.4`（均已推双仓） |
 | 工作树 | 干净；`github/master` 与 `gitee/master` 均同步（发布提交见 `git log` 的 `chore(release): v0.5.4`） |
-| 测试 | **642 passed / 12 skipped**（66 个测试文件：单元 40 + 集成 25 + 协议 1） |
+| 测试 | **644 passed / 12 skipped**（67 个测试文件：单元 43 + 集成 23 + 协议 1） |
 | 门禁 | lint 0 warning、typecheck clean、build 成功且构建后无跟踪差异、`check:stdio` 6/6 场景通过、`npm pack` 内容校验与干净消费者安装通过；12 项真实浏览器门禁用例在 Windows 10 本机以 `TIANSHU_VISUAL_BROWSER_TEST=1` 跑通 12/12 |
 | CI | `build-test`（ubuntu/windows/macos × Node 20/22/24）+ `pack-check`，另加 `visual-browser` 真实浏览器矩阵（ubuntu/windows + macos-15-intel/macos-15 × Node 20/22/24）；随 v0.5.4 tag 全绿 |
 | npm | `tianshu-mcp@0.5.4` 已发布（`latest`）；`npx -y tianshu-mcp` 即为该版本。发布步骤见 `docs/npm-publish-guide.md` |
@@ -108,7 +108,7 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build   # 期
 | M20 | 技能/验证文档对齐代码实况 + 平台证据归档（Windows 10 矩阵 9/9、macOS 双架构 51 用例）+ 锁文件版本同步；**无运行时行为变更** | `0.5.1` | 486 |
 | M21 | **ZCode 无项目派发（issue #12）**：`run_task.projectPath` 变可选、`allowCreateProject` 关闸、项目触发器就绪判据统一（详见 §9.9） | `0.5.2` | **525** |
 | M22 | **ZCode 真机回访修复（issue #12 第二轮）**：GUI 实例跨 server 退出驻留、新建任务不切页导致静默空等、发送失败归因误导（详见 §9.9） | `0.5.3` | **532** |
-| M23 | **视觉验收第二阶段「AI 视觉内容校验」（issue #13）**：`contents[]`/`pages[].content` 内容维度、委托用户自备命令（凭证零管理）、多数票 + 任务级缓存防抖、`uncertain` 与默认仅告警、`pixel:false` 语义页豁免基准、返修计划隔离告警项（详见 §4.3 与 §9.10） | `0.5.4` | **642** |
+| M23 | **视觉验收第二阶段「AI 视觉内容校验」（issue #13）**：`contents[]`/`pages[].content` 内容维度、委托用户自备命令（凭证零管理）、多数票 + 任务级缓存防抖、`uncertain` 与默认仅告警、`pixel:false` 语义页豁免基准、返修计划隔离告警项（详见 §4.3 与 §9.10） | `0.5.4` | **644** |
 
 ### 3.2 实现期修复记录（都是真机/CI 逼出来的，改相关代码前先读）
 

@@ -501,7 +501,7 @@ HTTP 客户端；判定完全委托用户显式声明的本地命令。MCP 只�
 | 缺失依赖 | `sharp` / `pixelmatch` / `puppeteer-core` 缺失时**明确阻塞**，不静默降级 |
 | 规则冻结 | 任务期内配置或基准被改动 → `VISUAL_INTEGRITY`，防止 agent 削弱验收规则 |
 | 内容判定（v0.5.4） | `src/visual/content*.ts`：命令解析（`where`/`which`）、占位符展开、`runChild` 语义的子进程执行、stdout 末行严格 JSON；纯函数 `tallyContentVotes` 多数票与置信度闸门；任务级缓存含 `commandPath`/`commandDigest` 使自备 CLI 升级即失效 |
-| 语义-only 页面（v0.5.4） | `pages[].pixel:false` 跳过基准要求与像素比对（必须有 `content`），`prepareBaseline` 显式跳过、不纳入候选 |
+| 语义-only 页面（v0.5.4） | `pages[].pixel:false` 跳过基准要求与像素比对（必须有 `content`）；`prepareBaseline` 显式跳过、不纳入候选；`captureVisualSnapshot` 对其基线**显式记 null**（不读可能残留的无关文件，避免冻结摘要误漂移） |
 | 告警隔离（v0.5.4） | `blocking:false` → `optional:true`，不进 `visualBlocked`/`visualFailed`，不触发返修；返修计划列「仅告警项（不必修复）」，并修掉「optional 失败列入必须修复」的既有缺陷 |
 
 CLI 子命令族（`node dist/index.js visual ...`）：`init`（写入禁用的模板配置）、`doctor`（含内容命令解析与预算对比两项 finding）、`browser install`、`baseline prepare|approve`、`rules review|approve`、`artifacts clean`、`content probe <project> [ruleId]`（跑真实判定但不写证据/缓存）、`content cache clear <taskId>`。

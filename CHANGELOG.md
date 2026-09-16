@@ -44,7 +44,7 @@
 
 ### 测试
 
-- 全量 **642 passed / 12 skipped**（Windows 10 x64，Node 24.18.0），较 v0.5.3 净增 110 项用例：schema 10 条校验正反用例（含预算自洽反例）、`tallyContentVotes` 穷举、缓存键稳定性与命令升级失效、占位符展开与 stdout 解析、整轮级阻塞不产结果行（全局命令与逐规则覆盖命令各一）、单项失败仅告警可见、返修计划隔离、缓存零重跑、探测与缓存清理、doctor 内容诊断，以及判定归口回归（`uncertain` 与 `optional:true` 均不致败、`blocking:true` 才致败）。
+- 全量 **644 passed / 12 skipped**（Windows 10 x64，Node 24.18.0），较 v0.5.3 净增 112 项用例：schema 10 条校验正反用例（含预算自洽反例）、`tallyContentVotes` 穷举、缓存键稳定性与命令升级失效、占位符展开与 stdout 解析、整轮级阻塞不产结果行（全局命令与逐规则覆盖命令各一）、单项失败仅告警可见、返修计划隔离、缓存零重跑、探测与缓存清理、doctor 内容诊断、判定归口回归（`uncertain` 与 `optional:true` 均不致败、`blocking:true` 才致败），以及语义-only 页面冻结摘要显式记 null（不受残留基准文件影响）。
 - 12 项真实浏览器门禁用例在 Windows 10 本机以 `TIANSHU_VISUAL_BROWSER_TEST=1` 跑通 **12/12**，其中新增 2 项覆盖 `pixel:false` 语义页豁免基准与「一次截图产出像素 + 内容两项」。
 - 未覆盖项如实标注：macOS 的真实系统证据待 CI `visual-browser` 作业采集；未与真实三方视觉 CLI 实测；「图片未离开本机」无法在系统层验证。详见 [验证进度](docs/visual-validation.md)。
 
