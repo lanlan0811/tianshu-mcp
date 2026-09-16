@@ -1,10 +1,35 @@
 import path from "node:path";
 import type { VerifyReport } from "../tasks/task.js";
+import type { VisualResult } from "./types.js";
 export function escapeHtml(value: unknown): string {
   return String(value).replace(
     /[&<>"']/g,
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
   );
+}
+const CONFIDENCE_GATE_LABELS: Record<string, string> = {
+  off: "未配置",
+  applied: "已生效",
+  downgraded: "低于阈值，降级为不确定",
+  "no-confidence": "命令未提供 confidence，minConfidence 未生效",
+};
+function contentLines(result: VisualResult): string[] {
+  const detail = result.content;
+  if (!detail) return [];
+  const gate = detail.confidenceGate
+    ? (CONFIDENCE_GATE_LABELS[detail.confidenceGate] ?? detail.confidenceGate)
+    : undefined;
+  return [
+    `- 期望描述：${detail.expect}`,
+    `- 采样票型：${detail.votes.length} 次采样：${
+      detail.votes.filter((v) => v.passed === true).length
+    } 通过 / ${detail.votes.filter((v) => v.passed === false).length} 不通过 / ${
+      detail.votes.filter((v) => v.passed === undefined).length
+    } 无效${detail.confidence !== undefined ? `；置信度均值 ${detail.confidence}` : ""}`,
+    ...(gate ? [`- 置信度闸门：${gate}`] : []),
+    `- 判定理由：${detail.votes.map((v) => v.reason).join(" / ")}`,
+    `- 提供者命令：${detail.provider}；命中缓存：${detail.cached ? "是" : "否"}`,
+  ];
 }
 export function visualEvidence(report: VerifyReport): string {
   if (!report.visual) return "";
@@ -12,6 +37,7 @@ export function visualEvidence(report: VerifyReport): string {
     "## 视觉验收",
     "",
     "不得通过修改基准、阈值、屏蔽区域或检查开关绕过失败；基准与规则变更必须由用户审阅批准。",
+    "内容校验项默认为告警（可选：true），不构成门禁；仅 blocking=true 的内容缺陷参与致败与返修。",
     "",
   ];
   if (report.visual.cleanedAt) lines.push(`产物已显式清理：${report.visual.cleanedAt}`, "");
@@ -21,6 +47,7 @@ export function visualEvidence(report: VerifyReport): string {
       `- 目标：${result.target}`,
       `- 原因：${result.code} — ${result.message}`,
       `- 可选：${result.optional}；可自动返修：${result.repairable}`,
+      ...contentLines(result),
       `- 预期规则：${JSON.stringify(result.rules ?? {})}`,
       `- 实际指标：${JSON.stringify(result.metrics ?? {})}`,
       `- 差异区域：${JSON.stringify(result.regions ?? [])}`,
@@ -42,16 +69,17 @@ export function visualHtml(report: VerifyReport): string {
       .map(encodeURIComponent)
       .join("/");
   return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Visual acceptance</title>
-<style>body{font:16px system-ui;margin:2rem;background:#f4f6f8;color:#18212b}article{background:white;padding:1rem;margin:1rem 0;border:1px solid #bbc5d0;border-radius:8px}.images{display:flex;gap:1rem;overflow:auto}figure{margin:0;min-width:200px;flex:1}img{max-width:100%}pre{white-space:pre-wrap;overflow-wrap:anywhere}.overlay{position:relative;width:max-content;max-width:100%}.overlay img+img{position:absolute;left:0;top:0}button,select,input{font:inherit}h2{overflow-wrap:anywhere}</style>
+<style>body{font:16px system-ui;margin:2rem;background:#f4f6f8;color:#18212b}article{background:white;padding:1rem;margin:1rem 0;border:1px solid #bbc5d0;border-radius:8px}.images{display:flex;gap:1rem;overflow:auto}figure{margin:0;min-width:200px;flex:1}img{max-width:100%}pre{white-space:pre-wrap;overflow-wrap:anywhere}.overlay{position:relative;width:max-content;max-width:100%}.overlay img+img{position:absolute;left:0;top:0}button,select,input{font:inherit}h2{overflow-wrap:anywhere}.content-detail table{border-collapse:collapse;margin:.5rem 0}.content-detail td,.content-detail th{border:1px solid #bbc5d0;padding:.2rem .5rem;text-align:left}.content-detail td:last-child{overflow-wrap:anywhere}</style>
 <h1>Visual acceptance — ${escapeHtml(report.verdict)}</h1><p>${escapeHtml(report.message)}</p>
 ${report.visual?.cleanedAt ? `<p>Artifacts explicitly cleaned: ${escapeHtml(report.visual.cleanedAt)}</p>` : ""}
-<label>Status <select id="filter"><option value="all">All</option>${["passed", "failed", "blocked", "skipped"].map((s) => `<option>${s}</option>`).join("")}</select></label>
+<label>Status <select id="filter"><option value="all">All</option>${["passed", "failed", "blocked", "skipped", "uncertain"].map((s) => `<option>${s}</option>`).join("")}</select></label>
 ${
   report.visual?.results
     .map(
       (
         r,
       ) => `<article data-status="${r.status}"><h2>${escapeHtml(r.id)} / ${escapeHtml(r.viewport ?? r.target)} — ${r.status}</h2><p>${escapeHtml(r.code)}: ${escapeHtml(r.message)}</p>
+${r.content ? `<div class="content-detail"><h3>Content check</h3><p><strong>Expectation:</strong> ${escapeHtml(r.content.expect)}</p><table><thead><tr><th>Sample</th><th>Passed</th><th>Confidence</th><th>Reason</th></tr></thead><tbody>${r.content.votes.map((v) => `<tr><td>${v.index + 1}</td><td>${v.passed === undefined ? "undecided" : v.passed ? "yes" : "no"}</td><td>${v.confidence ?? "—"}</td><td>${escapeHtml(v.reason)}</td></tr>`).join("")}</tbody></table><p><strong>Provider:</strong> ${escapeHtml(r.content.provider)}; <strong>cache hit:</strong> ${r.content.cached ? "yes" : "no"}${r.content.confidenceGate === "no-confidence" ? '; <strong>confidence gate:</strong> command reported no confidence, minConfidence did not apply' : ""}</p></div>` : ""}
 <div class="images">${Object.entries(r.artifacts ?? {})
         .filter(([kind]) => kind !== "metrics")
         .filter(() => !report.visual?.cleanedAt)

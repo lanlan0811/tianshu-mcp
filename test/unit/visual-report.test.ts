@@ -7,7 +7,9 @@ import { TaskStore } from "../../src/tasks/task-store.js";
 import { Logger } from "../../src/util/log.js";
 import { loadSharp } from "../../src/visual/runtime.js";
 import { cleanArtifacts } from "../../src/visual/manage.js";
-import { visualHtml } from "../../src/visual/report.js";
+import { visualEvidence, visualHtml } from "../../src/visual/report.js";
+import type { VerifyReport } from "../../src/tasks/task.js";
+import type { VisualResult } from "../../src/visual/types.js";
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -81,4 +83,84 @@ it("refuses visual directory aliases rather than deleting task reports", async (
     code: "ARTIFACT_PATH",
   });
   expect(await fs.readFile(h.report.files.md, "utf8")).toContain("视觉验收");
+});
+
+/** 合成报告：内容项渲染断言（期望原文、票型、缓存与提供者命令；uncertain 档位；闸门未生效标注） */
+function syntheticReport(result: Partial<VisualResult> & Pick<VisualResult, "status" | "code" | "id">): VerifyReport {
+  return {
+    round: 0,
+    taskId: "tsk_content",
+    projectPath: "/project",
+    startedAt: "2026-09-15T00:00:00.000Z",
+    finishedAt: "2026-09-15T00:00:01.000Z",
+    passed: true,
+    verdict: "passed",
+    checks: [],
+    analysis: {
+      changedFiles: [],
+      untrackedFiles: [],
+      diffstat: { totalAdd: 0, totalDel: 0, perFile: [] },
+      signals: { todo: 0, consoleDebug: 0, commentedBlock: 0, secretLike: 0 },
+      bigFileChanges: [],
+      warnings: [],
+      notes: [],
+    },
+    files: { md: "/project/report.md", json: "/project/report.json", html: "/project/report.html" },
+    message: "验收通过。",
+    visual: {
+      results: [
+        {
+          kind: "content",
+          target: "assets/logo.png",
+          optional: true,
+          message: "sample 0: ok",
+          durationMs: 42,
+          repairable: false,
+          content: {
+            provider: "vision-cli",
+            expect: "蓝色齿轮与白色文字 TIANSHU",
+            cacheKey: "k".repeat(64),
+            cached: false,
+            votes: [
+              { index: 0, passed: true, confidence: 0.9, reason: "sample 0: ok" },
+              { index: 1, passed: false, confidence: 0.4, reason: "sample 1: no" },
+            ],
+            confidence: 0.65,
+            confidenceGate: "no-confidence",
+          },
+          ...result,
+        },
+      ],
+      artifactDirectory: "/project/visual/0",
+      artifactBytes: 0,
+    },
+  } as VerifyReport;
+}
+it("renders content check details in evidence markdown and offline HTML", () => {
+  const report = syntheticReport({ id: "logo-elements", status: "uncertain", code: "CONTENT_UNCERTAIN" });
+  const evidence = visualEvidence(report);
+  expect(evidence).toContain("内容校验项默认为告警");
+  expect(evidence).toContain("期望描述：蓝色齿轮与白色文字 TIANSHU");
+  expect(evidence).toContain("2 次采样：1 通过 / 1 不通过 / 0 无效；置信度均值 0.65");
+  expect(evidence).toContain("置信度闸门：命令未提供 confidence，minConfidence 未生效");
+  expect(evidence).toContain("提供者命令：vision-cli；命中缓存：否");
+  const html = visualHtml(report);
+  expect(html).toContain('<option>uncertain</option>');
+  expect(html).toContain('data-status="uncertain"');
+  expect(html).toContain("蓝色齿轮与白色文字 TIANSHU");
+  expect(html).toContain("minConfidence did not apply");
+  expect(html).toContain("<th>Sample</th>");
+});
+it("renders the cache-hit flag for cached content verdicts", () => {
+  const report = syntheticReport({ id: "logo-elements", status: "passed", code: "CONTENT_MATCH" });
+  report.visual!.results[0]!.content!.cached = true;
+  expect(visualEvidence(report)).toContain("命中缓存：是");
+  expect(visualHtml(report)).toContain("<strong>cache hit:</strong> yes");
+});
+it("keeps content detail markup out of non-content results", () => {
+  const report = syntheticReport({ id: "logo-elements", status: "passed", code: "CONTENT_MATCH" });
+  delete report.visual!.results[0]!.content;
+  const html = visualHtml(report);
+  expect(html).not.toContain("Content check");
+  expect(visualEvidence(report)).not.toContain("期望描述");
 });

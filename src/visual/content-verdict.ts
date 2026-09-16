@@ -2,7 +2,7 @@
  * 内容判定防抖的纯函数核心（issue #13 计划 §4.4）：
  * 多次采样多数投票 + 可选置信度闸门。零 IO，便于穷举单测。
  */
-import type { ContentVote } from "./types.js";
+import type { ContentConfidenceGate, ContentVote } from "./types.js";
 
 export type ContentTallyCode = "CONTENT_MATCH" | "CONTENT_MISMATCH" | "CONTENT_UNCERTAIN";
 export type ContentTallyStatus = "passed" | "failed" | "uncertain";
@@ -19,13 +19,11 @@ export interface ContentTally {
   /** 未能给出有效判定（passed 缺省）的采样数 */
   invalidVotes: number;
   /**
-   * 置信度闸门状态：
-   * - off：未配置 minConfidence
-   * - applied：已配置且均值达标（或本就不确定）
-   * - downgraded：已配置且均值低于阈值 → 降级为不确定
-   * - no-confidence：已配置但命令未提供 confidence，闸门未生效（须在报告中可见）
+   * 置信度闸门状态（ContentConfidenceGate）：
+   * off=未配置；applied=已配置且达标；downgraded=低于阈值 → 降级不确定；
+   * no-confidence=已配置但命令未提供 confidence，闸门未生效（须在报告中可见）
    */
-  confidenceGate: "off" | "applied" | "downgraded" | "no-confidence";
+  confidenceGate: ContentConfidenceGate;
 }
 
 export function tallyContentVotes(input: {

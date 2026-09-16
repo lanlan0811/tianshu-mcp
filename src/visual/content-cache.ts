@@ -40,6 +40,11 @@ export function contentCacheKey(input: ContentCacheKeyInput): string {
   return digest(canonicalJson({ v: SCHEMA_VERSION, ...input }));
 }
 
+/** 已解析子进程环境值的哈希（键入缓存键；不落明文） */
+export function contentEnvDigest(env: Record<string, string>): string {
+  return digest(canonicalJson(env));
+}
+
 export interface ContentCacheEntry {
   schemaVersion: number;
   key: string;

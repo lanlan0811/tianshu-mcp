@@ -8,6 +8,7 @@ import { checkImage } from "./images.js";
 import { projectFile } from "./paths.js";
 import { baselineRelative, fileDigest } from "./snapshot.js";
 import { compareImages } from "./compare.js";
+import { assertContentReady, checkContent, hasContentRules } from "./content.js";
 import type { VisualConfig } from "./schema.js";
 import type { VisualReport, VisualResult } from "./types.js";
 
@@ -21,18 +22,41 @@ export async function runVisual(
   const budget = new VisualBudget(config.limits, signal);
   const browser = new VisualBrowser(config, home, budget);
   const services = new VisualServices(project, budget);
+  // directory = <taskDir>/visual/<round>；内容判定缓存落任务目录级
+  const taskDir = path.dirname(path.dirname(directory));
   const results: VisualResult[] = [];
   let browserError: unknown;
   try {
+    // 内容预检（整轮级）：命令不可解析 / env 引用缺失 → 抛错 → 整轮 configurationError，
+    // 不产出任何结果行（P2/P3：预检枚举逐规则有效命令，不得只查全局）
+    if (config.content.enabled && hasContentRules(config)) {
+      await assertContentReady(config, project);
+    }
     if (config.pages.length)
       try {
         await browser.start();
       } catch (e) {
         browserError = e;
       }
-    const jobs: (() => Promise<VisualResult>)[] = [];
+    const jobs: (() => Promise<VisualResult[]>)[] = [];
     for (const rule of config.images)
-      for (const file of rule.files) jobs.push(() => checkImage(project, rule, file, budget));
+      for (const file of rule.files)
+        jobs.push(async () => [await checkImage(project, rule, file, budget)]);
+    for (const rule of config.contents)
+      for (const [fileIndex, file] of rule.files.entries())
+        jobs.push(async () => [
+          await checkContent(
+            { config, project, taskDir, artifactDir: directory, budget },
+            {
+              id: rule.id,
+              target: file,
+              optional: !rule.blocking,
+              check: rule,
+              imagePath: await projectFile(project, file),
+              evidenceDir: path.join(directory, "content", rule.id, String(fileIndex)),
+            },
+          ),
+        ]);
     for (const rule of config.pages)
       for (const viewport of config.viewports.filter(
         (v) => !rule.viewports || rule.viewports.includes(v.id),
@@ -126,17 +150,20 @@ export async function runVisual(
             });
           }
           result.durationMs = Date.now() - started;
-          return result;
+          return [result];
         });
     let cursor = 0;
+    const collected: VisualResult[][] = new Array(jobs.length);
     await Promise.all(
       Array.from({ length: Math.min(config.limits.concurrency, jobs.length) }, async () => {
         while (cursor < jobs.length) {
           const index = cursor++;
-          results[index] = await jobs[index]!();
+          collected[index] = await jobs[index]!();
         }
       }),
     );
+    // 按声明序回填后展平，保证既有顺序与多结果项（页面像素+内容）的确定性
+    results.push(...collected.flat());
     return { results, artifactDirectory: directory, artifactBytes: budget.bytes };
   } finally {
     await browser.close();

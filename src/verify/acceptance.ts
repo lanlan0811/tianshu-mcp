@@ -382,6 +382,10 @@ export class AcceptanceEngine {
     const optFailed = checks.filter((c) => !c.passed && !c.skipped && c.optional);
     // 任务取消：验收被中断（在途 check 被杀、其余跳过），无论检查结果如何都不得落「通过」假绿
     const cancelled = req.signal?.aborted ?? false;
+    // visualBlocked / visualFailed 的归口依据：
+    // - optional（含 blocking=false 的内容告警项）失败/阻塞不参与致败——主观判定默认仅告警（issue #13 D2）
+    // - uncertain 只会由内容校验产生：既非 failed 也非 blocked，天然不进任何归口（D7 的机械保证），
+    //   仅在下方 summaryBits 以告警行呈现
     const visualBlocked =
       visual?.results.filter(
         (r) =>
@@ -392,6 +396,13 @@ export class AcceptanceEngine {
             )),
       ) ?? [];
     const visualFailed = visual?.results.filter((r) => !r.optional && r.status === "failed") ?? [];
+    // P4 收口：仅告警的内容项在整轮消息可见（与 optFailed 摘要行对称）
+    const contentUncertain = visual?.results.filter(
+      (r) => r.kind === "content" && r.status === "uncertain",
+    ) ?? [];
+    const contentWarnBlocked = visual?.results.filter(
+      (r) => r.kind === "content" && r.optional && r.status === "blocked",
+    ) ?? [];
     const blockingIssues = [
       ...(configurationError ? [configurationError] : []),
       ...visualBlocked.map((r) => ({ code: r.code, message: `${r.id}: ${r.message}` })),
@@ -422,6 +433,18 @@ export class AcceptanceEngine {
     if (optFailed.length) {
       summaryBits.push(
         `optional 检查未通过（不影响结论）: ${optFailed.map((c) => c.name).join(", ")}`,
+      );
+    }
+    if (contentUncertain.length) {
+      summaryBits.push(
+        `AI 内容判定不确定（仅告警）: ${contentUncertain.map((r) => r.id).join(", ")}`,
+      );
+    }
+    if (contentWarnBlocked.length) {
+      summaryBits.push(
+        `AI 内容告警未通过（不影响结论）: ${contentWarnBlocked
+          .map((r) => `${r.id} [${r.code}]`)
+          .join(", ")}`,
       );
     }
     if (analysis.signals.consoleDebug || analysis.signals.todo) {
