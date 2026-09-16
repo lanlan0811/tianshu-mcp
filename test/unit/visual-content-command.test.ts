@@ -11,6 +11,9 @@ import {
   runContentCommand,
 } from "../../src/visual/content-command.js";
 import { VisualError } from "../../src/visual/errors.js";
+import { checkContent } from "../../src/visual/content.js";
+import { VisualConfigSchema } from "../../src/visual/schema.js";
+import { VisualBudget } from "../../src/visual/budget.js";
 
 const dirs: string[] = [];
 async function fixture() {
@@ -19,7 +22,13 @@ async function fixture() {
   return dir;
 }
 afterEach(async () => {
-  await Promise.all(dirs.splice(0).map((d) => fs.rm(d, { recursive: true, force: true })));
+  // Windows：被超时杀掉的判定子进程曾把临时目录当作 cwd，句柄释放是异步的；
+  // 立即 rmdir 会 EBUSY/EPERM，故按 Node 官方建议带退避重试。
+  await Promise.all(
+    dirs
+      .splice(0)
+      .map((d) => fs.rm(d, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })),
+  );
 });
 
 const IMAGE_PNG =
@@ -249,4 +258,102 @@ describe("content command contract", () => {
       expect(identity.commandDigest).toBeNull();
     });
   });
+});
+
+/**
+ * 计划 §5 G 要求的两项契约映射断言：判定超时 → 结果码 CONTENT_TIMEOUT（而非仅传输层 timeout），
+ * 以及临时输入文件在成功/失败路径均被删除（易失输入，不得残留）。
+ */
+const JUDGE = path.resolve("test/fixtures/content-judge.mjs");
+
+async function judgeScenario(mode: string): Promise<{
+  config: ReturnType<typeof VisualConfigSchema.parse>;
+  dir: string;
+  restore: () => void;
+}> {
+  const dir = await fixture();
+  await fs.writeFile(path.join(dir, "image.png"), Buffer.from(IMAGE_PNG, "base64"));
+  const config = VisualConfigSchema.parse({
+    enabled: true,
+    content: {
+      enabled: true,
+      command: process.execPath,
+      argsTemplate: [JUDGE, "--image", "<image:path>", "--expect-file", "<expect:file>"],
+      samples: 1,
+      timeoutMs: 1500, // 1 × 1500 ≤ 默认 roundTimeoutMs，满足 schema 预算规则 10
+      cache: false,
+    },
+    contents: [{ id: "logo", files: ["image.png"], expect: "蓝色齿轮与白色文字" }],
+  });
+  const saved = process.env.CONTENT_JUDGE_MODE;
+  process.env.CONTENT_JUDGE_MODE = mode;
+  return {
+    config,
+    dir,
+    restore: () => {
+      if (saved === undefined) delete process.env.CONTENT_JUDGE_MODE;
+      else process.env.CONTENT_JUDGE_MODE = saved;
+    },
+  };
+}
+
+/** 跑一次 checkContent 并在 finally 中释放预算定时器 */
+async function runCheck(scenario: { config: ReturnType<typeof VisualConfigSchema.parse>; dir: string }) {
+  const budget = new VisualBudget(scenario.config.limits);
+  const evidenceDir = path.join(scenario.dir, "evidence");
+  try {
+    return await checkContent(
+      {
+        config: scenario.config,
+        project: scenario.dir,
+        taskDir: path.join(scenario.dir, "task"),
+        artifactDir: scenario.dir,
+        budget,
+      },
+      {
+        id: "logo",
+        target: "image.png",
+        optional: true,
+        check: scenario.config.contents[0]!,
+        imagePath: path.join(scenario.dir, "image.png"),
+        evidenceDir,
+      },
+    );
+  } finally {
+    budget.dispose();
+  }
+}
+
+describe("timeout classification and temp-input lifecycle", () => {
+  it("classifies a judge timeout as CONTENT_TIMEOUT, keeps it a warning, and removes temp inputs", async () => {
+    const scenario = await judgeScenario("sleep");
+    try {
+      const result = await runCheck(scenario);
+      expect(result.status).toBe("blocked");
+      expect(result.code).toBe("CONTENT_TIMEOUT");
+      expect(result.optional).toBe(true); // 默认仅告警：超时是单项 blocked，不升级整轮
+      expect(result.message).toContain("timed out");
+      expect(result.durationMs).toBeGreaterThanOrEqual(1500);
+      const leftovers = await fs
+        .readdir(path.join(scenario.dir, "evidence", "input"))
+        .catch(() => []);
+      expect(leftovers).toEqual([]);
+    } finally {
+      scenario.restore();
+    }
+  }, 30_000);
+
+  it("removes temp inputs on the success path as well", async () => {
+    const scenario = await judgeScenario("pass");
+    try {
+      const result = await runCheck(scenario);
+      expect(result.code).toBe("CONTENT_MATCH");
+      const leftovers = await fs
+        .readdir(path.join(scenario.dir, "evidence", "input"))
+        .catch(() => []);
+      expect(leftovers).toEqual([]);
+    } finally {
+      scenario.restore();
+    }
+  }, 30_000);
 });

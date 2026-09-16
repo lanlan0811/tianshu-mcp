@@ -115,9 +115,10 @@
 | `pixel:false` 语义页面豁免基准（D9，真实浏览器） | 通过 | `visual-flow`「semantic-only pages need no baseline and yield a content result」：无基准目录、不报 `BASELINE_APPROVAL_REQUIRED`，产出 `login-content` 内容项；`visual-snapshot` 锁定其冻结摘要显式记 null 且不受残留基准文件影响 |
 | 一次截图产出像素+内容两项（真实浏览器） | 通过 | `visual-flow`「pixel pages with content produce both items from one screenshot」：基线流程不变，两项同源，新任务缓存隔离后判定重跑 |
 | `visual content probe` 不写证据/缓存 | 通过 | `visual-content-probe`：不落 `visual/` 目录与 `visual-content-cache/`；未知规则 ID 报 `CONTENT_RULE_UNKNOWN` |
+| 判定超时分类 | 通过 | `visual-content-command`：超时 → 单项 blocked + `CONTENT_TIMEOUT`（仅告警、不升级整轮），并断言临时输入文件被删除 |
 | `visual doctor` 内容诊断 | 通过 | `visual-runtime`：逐条有效命令解析 + `allowRemote` 清单；命令不可解析时该 finding 判失败；预算 finding 给出总量对比 |
 
-工程门禁（本机）：`npm test` **644 passed / 12 skipped**（67 个文件）；12 项浏览器门禁用例以
+工程门禁（本机）：`npm test` **647 passed / 12 skipped**（67 个文件；v0.5.4 tag `ea797d1` 为 644，发布后补齐「超时分类」与「临时输入删除」两项契约断言及 doctor 总预算建议分支）；12 项浏览器门禁用例以
 `TIANSHU_VISUAL_BROWSER_TEST=1` 单独跑通 **12/12**（visual-browser-smoke 1、visual-capture 8、visual-flow 3，
 含新增的 2 项 D9 用例）；`typecheck`、`lint`（0 warning）、`build`、`check:stdio` 全绿。
 

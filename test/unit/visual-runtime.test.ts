@@ -78,3 +78,26 @@ it("doctor fails the content command finding when a rule command cannot resolve"
   expect(command.detail).toContain("logo");
   expect(result.passed).toBe(false);
 });
+
+it("doctor reports an advisory when the total content budget exceeds roundTimeoutMs", async () => {
+  // 每条规则自身自洽（3 × 90000 = 270000 ≤ 300000），但两条叠加 540000 > 300000 → 只给建议值，不自动改配置
+  const { project, home } = await doctorFixture(
+    {
+      enabled: true,
+      command: process.execPath,
+      argsTemplate: ["-e", "0", "<image:path>"],
+      samples: 3,
+      timeoutMs: 90_000,
+    },
+    [
+      { id: "logo", files: ["assets/logo.png"], expect: "blue logo" },
+      { id: "hero", files: ["assets/hero.png"], expect: "flat illustration" },
+    ],
+  );
+  const result = await doctor(project, home);
+  const budget = result.findings.find((f) => f.check === "content budget")!;
+  expect(budget.passed).toBe(true); // 建议而非阻塞
+  expect(budget.detail).toContain("advisory");
+  expect(budget.detail).toContain("540000ms");
+  expect(budget.detail).toContain("300000ms");
+});

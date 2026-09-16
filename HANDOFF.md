@@ -60,7 +60,7 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build   # 期
 | 版本 / 许可证 | `0.5.4` / Apache-2.0 |
 | 标签 | `v0.1.0` … `v0.5.4`（均已推双仓） |
 | 工作树 | 干净；`github/master` 与 `gitee/master` 均同步（发布提交见 `git log` 的 `chore(release): v0.5.4`） |
-| 测试 | **644 passed / 12 skipped**（67 个测试文件：单元 43 + 集成 23 + 协议 1） |
+| 测试 | **647 passed / 12 skipped**（67 个测试文件：单元 43 + 集成 23 + 协议 1；v0.5.4 tag `ea797d1` 的用例数为 644，发布后补齐了 §5 G 的两项契约断言） |
 | 门禁 | lint 0 warning、typecheck clean、build 成功且构建后无跟踪差异、`check:stdio` 6/6 场景通过、`npm pack` 内容校验与干净消费者安装通过；12 项真实浏览器门禁用例在 Windows 10 本机以 `TIANSHU_VISUAL_BROWSER_TEST=1` 跑通 12/12 |
 | CI | `build-test`（ubuntu/windows/macos × Node 20/22/24）+ `pack-check`，另加 `visual-browser` 真实浏览器矩阵（ubuntu/windows + macos-15-intel/macos-15 × Node 20/22/24）；提交 `d762581` 的 22 个作业全绿（[run 35093217490](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35093217490)），随 v0.5.4 tag 全绿 |
 | npm | `tianshu-mcp@0.5.4` 已发布（`latest`）；`npx -y tianshu-mcp` 即为该版本。发布步骤见 `docs/npm-publish-guide.md` |
@@ -768,7 +768,7 @@ Windows + Codex 真机模拟实测：模型菜单的 `menuitemradio` 对 trusted
 
 ## 12. 接手人下一步建议
 
-1. 先跑 `npm ci && npm run typecheck && npm run lint && npm test && npm run build`，确认基线绿（644 passed / 12 skipped）。
+1. 先跑 `npm ci && npm run typecheck && npm run lint && npm test && npm run build`，确认基线绿（647 passed / 12 skipped）。
 2. 动代码前先读 [ARCHITECTURE.md](ARCHITECTURE.md) 建立整体心智模型（分层、依赖方向、唯一双路径接缝 `adapter.run`、状态机与验收流水线）；再按专题读本文章节：
    动 GUI adapter 相关代码前，先读对应文档与本文章节：
    TraeWork → `docs/traework-cdp.md` + §9.1 / §9.2；ZCode → `docs/zcode-cdp.md` + §9.5 / §9.6 / §9.9；Codex → `docs/codex-gui-cdp.md` + §9.4。

@@ -20,6 +20,10 @@
 - ZCode **未登记项目**的自动导入在 Windows 上无法完成：原生面板脚本靠 `SetForegroundWindow` 抢前台来激活地址栏，而后台 MCP server 的子进程会被 Windows 拒绝，地址栏 Edit 永不出现，脚本空转到 deadline（实测 56s 后由 `budget.check()` 归类为 setup 预算耗尽）；且 PowerShell 的 stdout 在管道里被缓冲、进程被 kill 后缓冲丢失，日志里连一条 `native:` 阶段都看不到，排障方向被误导。临时对策：先在 ZCode 中手动把目标目录加入项目列表；修复方向是脚本内改用 `AttachThreadInput` 抢前台（或改走 ZCode 受支持的登记入口）。
 - AI 内容校验的跨轮判定翻转熔断（本轮以缓存 + 采样覆盖；若真机数据显示仍扰动再议）、跨任务缓存共享、参考图/设计稿差异比对。
 
+### 修复
+
+- **补齐 issue #13 计划 §5 G 要求的两项契约映射断言（v0.5.4 发布后补）**：`CONTENT_TIMEOUT` 此前只实现了分类逻辑、测试仅断言传输层 `outcome.timeout`，判定桩的 `sleep` 模式从未被用例使用；现补 `visual-content-command` 的端到端断言（超时 → 单项 `blocked` + `CONTENT_TIMEOUT` + 仍为仅告警 + 临时输入文件已删除），并补成功路径的临时输入删除断言，以及 `visual doctor` 的「多规则总预算超 `roundTimeoutMs` 只给建议值」分支断言。v0.5.4 tag（`ea797d1`）的用例数为 644，master 现为 647。
+
 ---
 
 ## [0.5.4] — 2026-09-16

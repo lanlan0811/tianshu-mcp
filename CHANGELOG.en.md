@@ -22,6 +22,10 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 - ZCode's **automatic import of an unregistered project** cannot complete on Windows: the native-panel script relies on `SetForegroundWindow` to bring the dialog forward before activating its address bar, but a child process of a background MCP server is refused by Windows, so the address-bar Edit never appears and the script spins until its deadline (measured: 56s, then classified by `budget.check()` as an exhausted setup budget). PowerShell's stdout is also block-buffered through a pipe, so killing the process loses the buffer and not a single `native:` stage reaches the log, misdirecting diagnosis. Workaround: add the target directory to the ZCode project list manually first; the fix direction is to grab the foreground with `AttachThreadInput` inside the script, or to use a supported ZCode registration entry point.
 - Cross-round verdict-flip circuit breaking for AI content validation (this round covers it with caching plus sampling; reconsider if hardware data still shows churn), cross-task cache sharing, and reference-image/design-diff comparison.
 
+### Fixed
+
+- **Completed the two contract-mapping assertions issue #13's plan §5 G requires (added after the v0.5.4 release)**: `CONTENT_TIMEOUT` had its classification logic implemented but tests only asserted the transport-level `outcome.timeout`, and the stub's `sleep` mode was never exercised by any case. `visual-content-command` now has an end-to-end assertion (a timeout yields a single `blocked` item with `CONTENT_TIMEOUT`, still warning-only, with temp input files removed), plus a success-path temp-input-removal assertion and a `visual doctor` assertion for the "multi-rule total budget exceeds `roundTimeoutMs` → advisory only" branch. The v0.5.4 tag (`ea797d1`) shipped 644 cases; master now has 647.
+
 ---
 
 ## [0.5.4] — 2026-09-16
