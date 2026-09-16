@@ -66,6 +66,7 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build   # 期
 | npm | `tianshu-mcp@0.5.4` 已发布（`latest`）；`npx -y tianshu-mcp` 即为该版本。发布步骤见 `docs/npm-publish-guide.md` |
 | GitHub Release | 推送 `v*` tag 触发 `.github/workflows/release.yml`：先跑完整门禁并校验「tag 版本 === package.json 版本」，正文由 `docs/release-v<ver>.md` + `.en.md` 双语合成（缺文档即报错，不产出空壳正文），**要求同 SHA 的成功 CI**，并附 `tianshu-mcp-<ver>.tgz` |
 | Gitee 发行版 | 由 `scripts/gitee-release.mjs` 用仓库 Secret `GITEE_TOKEN` 幂等补齐；**缺少凭据时工作流阻塞**（不再静默跳过、不冒充发布成功） |
+| 本次发布实测 | CI `ea797d1` 22 作业全绿（[run 35094765071](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35094765071)）；`Release` 全绿并产出 [v0.5.4 发行](https://github.com/lanlan0811/tianshu-mcp/releases/tag/v0.5.4)（[run 35095384929](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35095384929)）；Gitee 镜像发行成功；双仓 `v0.5.4` 与 `master` 均指向 `ea797d1`；npm `dist.shasum` = `eb405680…` |
 
 ### 2.1 Agent 适配现状
 

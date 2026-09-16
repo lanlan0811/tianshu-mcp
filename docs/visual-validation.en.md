@@ -84,6 +84,15 @@ Note: these are real macOS systems and real architectures on GitHub-hosted macOS
 - npm: `tianshu-mcp@0.5.1` published to `latest` (confirmed by a direct registry query; `dist.shasum` = `529efba6…`, matching the local build); an isolated install passes all four `visual doctor` checks.
 - Side fix: the `package-lock.json` root version was synced from the stale `0.4.1` to `0.5.1`.
 
+### v0.5.4 (AI visual content validation, issue #13 phase 2)
+
+- The `Release` workflow succeeded (including the "require a successful CI for the same SHA" and "require mirror release credentials" gates plus both GitHub and Gitee publish steps). Run: https://github.com/lanlan0811/tianshu-mcp/actions/runs/35095384929
+- The `CI` for commit `ea797d1` is fully green: all 22 jobs succeeded (`build-test` × 9, `visual-browser` × 12, `pack-check` × 1), and 6 of the browser jobs cover macOS 15 (Apple Silicon arm64) and macOS 15 Intel (x64) across Node 20/22/24. Run: https://github.com/lanlan0811/tianshu-mcp/actions/runs/35094765071
+- GitHub release: `tag v0.5.4` (not a draft), asset `tianshu-mcp-0.5.4.tgz`, with a bilingual body. See https://github.com/lanlan0811/tianshu-mcp/releases/tag/v0.5.4
+- Gitee release: `tag v0.5.4` at commit `ea797d1` with a bilingual body (idempotently completed by `scripts/gitee-release.mjs` using the `GITEE_TOKEN` secret).
+- Both remotes agree: `github/master`, `gitee/master`, the `v0.5.4` tags on both remotes, and the local tag all point at `ea797d1`.
+- npm: `tianshu-mcp@0.5.4` published to `latest` (a direct registry query confirms `dist.shasum` = `eb405680…`, matching the local `npm pack`).
+
 ## 4. v0.5.4 validation record (AI content validation, issue #13 phase 2)
 
 End-to-end evidence from the stub judge (Windows 10 x64, Node 24.18.0, 2026-09-16). The stub is

@@ -84,6 +84,15 @@
 - npm：`tianshu-mcp@0.5.1` 已发布到 `latest`（registry 直查确认 `dist.shasum` = `529efba6…`，与本地构建一致）；独立目录安装后 `visual doctor` 四项通过。
 - 附带修复：`package-lock.json` 根包版本从滞后的 `0.4.1` 同步为 `0.5.1`。
 
+### v0.5.4（AI 视觉内容校验，issue #13 第二阶段）
+
+- `Release` 工作流成功（含「要求同 SHA 的成功 CI」与「要求镜像凭据存在」两道闸门及 GitHub/Gitee 双发行步骤）。链接：https://github.com/lanlan0811/tianshu-mcp/actions/runs/35095384929
+- 目标提交 `ea797d1` 的 `CI` 全绿：22 个作业全部成功（`build-test` × 9、`visual-browser` × 12、`pack-check` × 1），其中 6 个 `visual-browser` 作业覆盖 macOS 15（Apple Silicon arm64）与 macOS 15 Intel（x64）× Node 20/22/24。链接：https://github.com/lanlan0811/tianshu-mcp/actions/runs/35094765071
+- GitHub 发行：`tag v0.5.4`（非草稿），资产 `tianshu-mcp-0.5.4.tgz`，正文为双语发行说明。链接：https://github.com/lanlan0811/tianshu-mcp/releases/tag/v0.5.4
+- Gitee 发行：`tag v0.5.4`，目标提交 `ea797d1`，正文为双语发行说明（由 `scripts/gitee-release.mjs` 用 `GITEE_TOKEN` 幂等补齐）。
+- 双仓一致：`github/master`、`gitee/master`、两仓 `v0.5.4` 标签与本地标签均指向 `ea797d1`。
+- npm：`tianshu-mcp@0.5.4` 已发布到 `latest`（registry 直查确认 `dist.shasum` = `eb405680…`，与本地 `npm pack` 一致）。
+
 ## 四、v0.5.4 验证记录（AI 内容校验，issue #13 第二阶段）
 
 判定桩端到端证据（Windows 10 x64，Node 24.18.0，2026-09-16）。判定桩为 `test/fixtures/content-judge.mjs`
