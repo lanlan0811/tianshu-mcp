@@ -257,6 +257,8 @@ export class TaskOrchestrator {
         if (verdict.passed) {
           return this.finish("succeeded", null, verdict.summary);
         }
+        // 返修仅由 verdict.passed === false 触发：blocking=true 的内容缺陷经 visualFailed 进入返修，
+        // blocking=false 的内容告警与 uncertain 不改变 verdict，故不会触发返修（issue #13 D2/D7）
         if (maxRounds > round) {
           await store.updateStatus(
             meta,

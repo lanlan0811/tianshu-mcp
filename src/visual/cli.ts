@@ -66,6 +66,25 @@ async function dispatchVisualCli(args: string[], signal: AbortSignal): Promise<v
     );
     return;
   }
+  if (command === "content") {
+    const { clearContentCacheForTask, probeContentRules } = await import("./manage.js");
+    // content probe <project> [ruleId]：按声明规则跑真实判定，不写证据、不写缓存
+    if (rest[0] === "probe" && (rest.length === 2 || rest.length === 3)) {
+      console.log(
+        JSON.stringify(
+          await probeContentRules(home, path.resolve(rest[1]!), rest[2]),
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+    // content cache clear <taskId>：判定缓存是派生物，可重算，故无需 --apply
+    if (rest[0] === "cache" && rest[1] === "clear" && rest.length === 3) {
+      console.log(JSON.stringify(await clearContentCacheForTask(home, rest[2]!), null, 2));
+      return;
+    }
+  }
   if (command === "browser" && rest[0] === "install" && rest.length === 1) {
     console.log(await installBrowser(home));
     return;
@@ -107,6 +126,6 @@ async function dispatchVisualCli(args: string[], signal: AbortSignal): Promise<v
     return;
   }
   throw new Error(
-    "Usage: tianshu-mcp visual init [project] | doctor [project] | browser install | baseline prepare/approve <request.json> | rules review <taskId> | rules approve <taskId> <reviewId> <digest> <approval-note> | artifacts clean <taskId> [--apply]",
+    "Usage: tianshu-mcp visual init [project] | doctor [project] | browser install | baseline prepare/approve <request.json> | rules review <taskId> | rules approve <taskId> <reviewId> <digest> <approval-note> | artifacts clean <taskId> [--apply] | content probe <project> [ruleId] | content cache clear <taskId>",
   );
 }

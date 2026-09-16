@@ -2,6 +2,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { VisualError } from "./errors.js";
+import { projectFile } from "./paths.js";
+import { contentCommandParts, hasContentRules, contentRulesOf } from "./content.js";
+import { resolveCommandPath } from "./content-command.js";
 import type { VisualConfig } from "./schema.js";
 
 export function assertVisualRuntime(version = process.versions.node): void {
@@ -126,5 +129,44 @@ export async function doctor(projectPath: string, home: string) {
       home,
     ),
   );
+  // 内容校验诊断（issue #13 F 组）：逐条有效命令的解析结果 + allowRemote 声明清单、
+  // 规则数 × samples × timeoutMs 与 roundTimeoutMs 的预算对比（超预算给出建议值，不自动改配置）
+  await check("content command", async () => {
+    const visual = (await readAcceptanceConfig(projectPath))?.visual;
+    if (!visual?.content.enabled || !hasContentRules(visual)) return "disabled (no content rules)";
+    const lines: string[] = [];
+    const unresolved: string[] = [];
+    for (const rule of contentRulesOf(visual)) {
+      const effective = contentCommandParts(visual, rule.check);
+      const cwd = await projectFile(projectPath, effective.cwd);
+      const resolved = await resolveCommandPath(effective.command, cwd);
+      if (!resolved) unresolved.push(rule.label);
+      lines.push(
+        `${rule.label}: ${effective.command} -> ${
+          resolved ?? "UNRESOLVED (will block the whole round)"
+        }; allowRemote=${effective.allowRemote}`,
+      );
+    }
+    // 有效命令不可解析会让整轮配置错误（assertContentReady 抛错），诊断必须据实报失败
+    if (unresolved.length)
+      throw new VisualError(
+        "CONTENT_COMMAND_MISSING",
+        `unresolved content judge command for: ${unresolved.join(", ")}; ${lines.join("; ")}`,
+      );
+    return lines.join("; ");
+  });
+  await check("content budget", async () => {
+    const visual = (await readAcceptanceConfig(projectPath))?.visual;
+    if (!visual?.content.enabled || !hasContentRules(visual)) return "disabled (no content rules)";
+    const rules = contentRulesOf(visual);
+    const totalMs = rules.reduce(
+      (sum, r) => sum + (r.check.samples ?? visual.content.samples) * visual.content.timeoutMs,
+      0,
+    );
+    const limit = visual.limits.roundTimeoutMs;
+    if (totalMs > limit)
+      return `advisory: worst case ${totalMs}ms across ${rules.length} content rule(s) exceeds limits.roundTimeoutMs ${limit}ms; raise limits.roundTimeoutMs if rules regularly run uncached`;
+    return `${rules.length} rule(s) x samples x ${visual.content.timeoutMs}ms = ${totalMs}ms <= roundTimeoutMs ${limit}ms`;
+  });
   return { passed: findings.every((f) => f.passed), findings };
 }

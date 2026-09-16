@@ -34,9 +34,16 @@ export interface RepairPlanResult {
 /** 生成修复计划 markdown 正文 */
 export function renderRepairPlan(input: RepairPlanInput): string {
   const { report } = input;
-  const failed = report.checks.filter((c) => !c.passed && !c.skipped);
+  // optional 检查失败只记 warning（与 acceptance.ts 的 optFailed 归口一致），不得列入「必须修复」
+  const failed = report.checks.filter((c) => !c.passed && !c.skipped && !c.optional);
+  const optFailed = report.checks.filter((c) => !c.passed && !c.skipped && c.optional);
   const skipped = report.checks.filter((c) => c.skipped);
   const passed = report.checks.filter((c) => c.passed);
+  // 仅告警的视觉项（optional:true 未通过，或 uncertain）：不构成门禁、不触发返修
+  const visualWarn =
+    report.visual?.results.filter(
+      (r) => r.status !== "passed" && (r.optional || r.status === "uncertain"),
+    ) ?? [];
   const a = report.analysis;
 
   const lines: string[] = [
@@ -83,6 +90,23 @@ export function renderRepairPlan(input: RepairPlanInput): string {
     );
   }
 
+  // 仅告警项：optional 检查失败与 optional/uncertain 视觉项——不必修复，也不得为消除告警伪造产物
+  if (optFailed.length || visualWarn.length) {
+    lines.push("## 3.2 仅告警项（不必修复）", "");
+    for (const c of optFailed) lines.push(`- [WARN] ${c.name}（optional 检查未通过，不影响结论）`);
+    for (const r of visualWarn)
+      lines.push(
+        `- [WARN] ${r.id}${
+          r.viewport ? ` / ${r.viewport}` : ""
+        }（${r.status} [${r.code}]${r.optional ? "，optional:true" : ""}，不构成门禁）`,
+      );
+    lines.push(
+      "",
+      "> 以上为告警项，**不在必须修复范围**；请勿为消除告警而伪造产物或放宽检查。",
+      "",
+    );
+  }
+
   lines.push("## 4. 代码分析结果", "");
   lines.push(`- 变更文件（${a.changedFiles.length + a.untrackedFiles.length} 个）：`);
   const changed = [...a.changedFiles, ...a.untrackedFiles];
@@ -111,7 +135,8 @@ export function renderRepairPlan(input: RepairPlanInput): string {
     "1. **只针对第 2 节的失败项定向修复**，不要大范围重构，不要改动第 3 节已通过的模块。",
     "2. 修复后请在项目内重新运行相应检查命令，确认通过。",
     "3. 如某失败项确认为环境问题（缺依赖、端口占用等），请在回复中明确说明，不要伪造通过。",
-    "4. 修复完成后正常结束本轮，等待重新验收。",
+    "4. 第 3.2 节的仅告警项（含 blocking=false 的 AI 内容告警）**不在必须修复范围**，不得为消除告警而伪造产物或放宽检查。",
+    "5. 修复完成后正常结束本轮，等待重新验收。",
     "",
     `> 完整验收报告：\`${report.files.md}\``,
     "",

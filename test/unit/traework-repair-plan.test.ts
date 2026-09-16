@@ -126,6 +126,94 @@ describe("renderRepairPlan", () => {
     });
     expect(md).toContain("无硬失败项");
   });
+
+  // E 组缺陷修复（issue #13）：optional 检查失败只记 warning，不得列入「必须修复」
+  it("把 optional 检查失败列入仅告警项，而不是必须修复", () => {
+    const plan = renderRepairPlan({
+      ...baseInput(),
+      report: report({
+        checks: [
+          {
+            name: "typecheck",
+            cmd: "npm run typecheck",
+            passed: false,
+            durationMs: 1,
+            exitCode: 2,
+            outputTail: "hard failure",
+            timeout: false,
+          },
+          {
+            name: "optional-lint",
+            cmd: "npm run optional-lint",
+            passed: false,
+            durationMs: 1,
+            exitCode: 1,
+            outputTail: "warning only",
+            timeout: false,
+            optional: true,
+          },
+        ],
+      }),
+    });
+    const section2 = plan.split("## 2. 失败项（必须修复）")[1]!.split("## 3.")[0]!;
+    expect(section2).toContain("typecheck");
+    expect(section2).not.toContain("optional-lint");
+    expect(plan).toContain("仅告警项（不必修复）");
+    expect(plan).toContain("[WARN] optional-lint");
+    expect(plan).toContain("不在必须修复范围");
+  });
+
+  it("把 optional 与 uncertain 的视觉项列入仅告警项", () => {
+    const plan = renderRepairPlan({
+      ...baseInput(),
+      report: report({
+        visual: {
+          results: [
+            {
+              id: "home",
+              kind: "page",
+              target: "/",
+              status: "passed",
+              optional: false,
+              code: "PIXELS_MATCH",
+              message: "ok",
+              durationMs: 1,
+              repairable: false,
+            },
+            {
+              id: "logo",
+              kind: "content",
+              target: "assets/logo.png",
+              status: "blocked",
+              optional: true,
+              code: "CONTENT_COMMAND_FAILED",
+              message: "judge exploded",
+              durationMs: 1,
+              repairable: false,
+            },
+            {
+              id: "hero",
+              kind: "content",
+              target: "assets/hero.png",
+              status: "uncertain",
+              optional: true,
+              code: "CONTENT_UNCERTAIN",
+              message: "votes split",
+              durationMs: 1,
+              repairable: false,
+            },
+          ],
+          artifactDirectory: "/tmp/visual",
+          artifactBytes: 0,
+        },
+      }),
+    });
+    expect(plan).toContain("仅告警项（不必修复）");
+    expect(plan).toContain("[WARN] logo");
+    expect(plan).toContain("[WARN] hero");
+    expect(plan).not.toContain("[WARN] home");
+    expect(plan).toContain("不得为消除告警而伪造产物");
+  });
 });
 
 describe("writeRepairPlan", () => {
