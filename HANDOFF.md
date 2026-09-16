@@ -1,6 +1,6 @@
 # HANDOFF.md — 项目交接说明
 
-> **交接快照：2026-09-15 · 版本 `0.5.3`（tag `v0.5.3`，npm / GitHub / Gitee 均已发布）**
+> **交接快照：2026-09-16 · 版本 `0.5.4`（tag `v0.5.4`，npm / GitHub / Gitee 均已发布）**
 > 本文写给**接手本仓库的人**：先说清「这是什么、现在到哪一步」，再给出「怎么跑、怎么改、哪里会踩坑」。
 > 工作区规则见 `AGENTS.md`（gitignore，仅本地）；安装与用法见 `README.md`，本文不重复，只做导览与状态记录。
 
@@ -38,7 +38,7 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build   # 期
 
 - **天枢官方仓库**：<https://github.com/huiliyi37/Tianshu-harness>（基于 harness 工程的终端编程智能体运行时，TUI × GUI；Apache-2.0）
 - **本仓库**：`github.com/lanlan0811/tianshu-mcp`（主）｜`gitee.com/lan0811/tianshu-mcp`（镜像）
-- **npm**：`tianshu-mcp`（当前发布版本 `0.5.3`）
+- **npm**：`tianshu-mcp`（当前发布版本 `0.5.4`）
 - **工具面**：11 个 MCP 工具（`run_task / continue_task / query_task / list_tasks / get_task_report / cancel_task / verify_task / rework_task / get_profiles / prepare_visual_baseline / approve_visual_baseline`）
 
 ### 为什么是这样设计的（四个硬约束，改架构前必读）
@@ -787,4 +787,5 @@ Windows + Codex 真机模拟实测：模型菜单的 `menuitemradio` 对 trusted
    项目级技能播种、`needs_user` 状态取消时经临时 CDP 连接尽力停止 GUI 内等待中的会话、
    ZCode 无项目派发的 macOS 真机验证、ZCode 未登记项目自动导入在 Windows 上的修复（§9.9）。
    注：issue #3 第一阶段（像素级对比 + 图片规格 + 报告 + 返修闭环 + 基准批准/冻结）已随 v0.5.0 完成，issue #3 已关闭；
-   issue #12（无项目派发 + `allowCreateProject`）已随 v0.5.2 完成，其真机回访修复随 v0.5.3 完成。
+   issue #12（无项目派发 + `allowCreateProject`）已随 v0.5.2 完成，其真机回访修复随 v0.5.3 完成；
+   issue #13（视觉验收第二阶段 AI 内容校验）已随 v0.5.4 完成，见 §4.3 与 §9.10。
