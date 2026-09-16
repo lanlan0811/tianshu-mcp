@@ -38,12 +38,32 @@ Understanding these boundaries helps you judge whether a finding is intended beh
 - This MCP **never stores, reads, or forwards** any external AI-Agent API key or login state.
 - Each agent uses its own login state (e.g. Codex uses `~/.codex`; TraeWork uses its desktop login state).
 - The TraeWork driver only manipulates the UI over CDP and **does not touch** its credential files.
+- **AI content validation (optional, off by default) adds no credential management either**: the MCP reads
+  no keys, implements no model/vendor HTTP client, and ships no agent-CLI presets. Judgement is fully
+  **delegated to a user-declared local command**, which uses its own login state or key. The MCP only
+  expands a template into argv, spawns that command (`shell:false` with structured argv), and parses the
+  JSON on the last stdout line.
+
+**Where the enforcement actually stops (read this literally)**:
+
+- Whether an image leaves the machine **depends on the behaviour of the user's own command**; the MCP
+  cannot block that at the system level.
+- The MCP's enforcement is **contract-level only**: `allowRemote` defaults to `false`, and a rule that has
+  not explicitly opted in may **not** use the byte-egress placeholder `<image:base64:file>` in its
+  `argsTemplate` (the schema rejects that configuration outright rather than warning at runtime).
+- `visual doctor` lists each rule's `allowRemote` declaration for human review.
+- Users must therefore confirm their command's real behaviour themselves; the MCP makes no vague promises
+  about this.
 
 ### 2. Narrow command-execution surface
 
 - Verification commands come from **whitelist-style structured config** (`name` + `cmd` as argv arrays),
   **never string-concatenated shell**, and `shell: true` is not used by default.
 - Commands run inside the **target project directory** and are bounded by `verifyCommandTimeoutMs`.
+- AI content validation commands are likewise spawned with `shell:false` and structured argv, bounded by
+  `visual.content.timeoutMs`, and killed as a process tree. User-declared environment variables use the
+  `{ childVarName: hostVarName }` reference form and block the whole round when missing; the MCP itself
+  does not read the value of that variable.
 - Task artifacts (logs, reports, repair plans) are written only to the task data directory and the
   project's `.tianshu-mcp/`.
 

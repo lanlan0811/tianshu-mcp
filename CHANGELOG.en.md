@@ -12,7 +12,6 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ### Planned
 
-- **Visual acceptance phase 2 — AI visual content validation** (issue #13): validate whether image/page-screenshot *content* matches the task description (logo elements, style match, page semantics, etc.). Marked in issue #3 as an "optional extension"; its pixel-comparison phase 1 shipped with v0.5.0. Requires settling the model/credential source (without breaking the "zero credential management" red line), judgement debouncing, and gate placement (warning-only by default is suggested).
 - More external AI-Agent adapters (a new agent = one profile + an optional adapter file).
 - TraeWork executable discovery and native-dialog driving on macOS (currently fail-closed).
 - Optional project-level skill seeding (by default nothing is written into target repos).
@@ -21,6 +20,39 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
   a task in the `needs_user` state.
 - Real-machine verification of project-less dispatch on macOS (this round covers Windows 10 only).
 - ZCode's **automatic import of an unregistered project** cannot complete on Windows: the native-panel script relies on `SetForegroundWindow` to bring the dialog forward before activating its address bar, but a child process of a background MCP server is refused by Windows, so the address-bar Edit never appears and the script spins until its deadline (measured: 56s, then classified by `budget.check()` as an exhausted setup budget). PowerShell's stdout is also block-buffered through a pipe, so killing the process loses the buffer and not a single `native:` stage reaches the log, misdirecting diagnosis. Workaround: add the target directory to the ZCode project list manually first; the fix direction is to grab the foreground with `AttachThreadInput` inside the script, or to use a supported ZCode registration entry point.
+- Cross-round verdict-flip circuit breaking for AI content validation (this round covers it with caching plus sampling; reconsider if hardware data still shows churn), cross-task cache sharing, and reference-image/design-diff comparison.
+
+---
+
+## [0.5.4] — 2026-09-16
+
+**Visual acceptance phase 2: AI visual content validation (issue #13)** — alongside the existing objective pixel/spec checks, a new **optional, off-by-default** content-check dimension that validates whether the content of an image or page screenshot matches an expectation you declare explicitly. Judgement is fully delegated to a local command you supply (the MCP never reads, stores, or forwards credentials), it warns only by default, and it debounces with majority sampling plus a task-level cache. See the [v0.5.4 release notes](docs/release-v0.5.4.en.md).
+
+### Added
+
+- **Content-check configuration surface**: `visual.content` (global command and budget), `visual.contents[]` (image content rules), `pages[].content` (page semantics), and `pages[].pixel` (defaults to `true`; `false` means a semantic-only page that is exempt from the baseline requirement and pixel comparison but must declare `content`). Everything is off by default and requires an explicit opt-in; declaring rules without enabling them, a missing effective command/template, an unknown placeholder, a byte-egress placeholder without the `allowRemote` opt-in, `samples × timeoutMs` exceeding `limits.roundTimeoutMs`, and derived-id collisions are all rejected at the schema layer.
+- **Command contract**: a placeholder template (`<image:path>` / `<expect:file>` / `<image:base64:file>`) plus strict JSON on the last stdout line (`{passed, confidence?, reason}`). The expectation travels through a temporary file, avoiding command-line escaping and length limits and keeping it out of the process command line and system audit logs; temporary files are deleted in `finally` after each sample. Per rule you may override `command`/`argsTemplate`/`cwd`/`env`/`samples`/`allowRemote`.
+- **Judgement debouncing**: serial sampling within an item plus a majority vote (split votes yield `uncertain`) and an optional confidence gate (`minConfidence`); a task-level input-hash cache whose key covers the image digest, expectation, command string, the **command's absolute path and binary digest**, argument template, cwd, environment-value digest (no plaintext), `allowRemote`, `samples`, and `minConfidence`. Upgrading your CLI invalidates it automatically; when the command's identity cannot be computed reliably nothing is cached; only completed judgements are stored.
+- **Results and reports**: `VisualResult.kind` gains `"content"` and `status` gains `"uncertain"`. Content items render the expectation, sample votes, reasons, provider command, and cache hit in both the Markdown report and the offline HTML, and are annotated with "minConfidence did not apply" when the command reports no confidence. The HTML status filter gains an `uncertain` option.
+- **CLI and diagnostics**: `visual content probe <project> [ruleId]` (runs a real judgement for the declared rules without writing evidence or cache) and `visual content cache clear <taskId>`; `visual doctor` gains `content command` (per-rule effective resolution plus the `allowRemote` declaration list, failing that finding when a command cannot resolve) and `content budget` (`rules × samples × timeoutMs` compared against `roundTimeoutMs` with a suggestion, never editing your configuration).
+
+### Fixed
+
+- **The repair plan listed `optional:true` failures as "must fix"** (the pre-existing defect issue #13's acceptance criteria require fixing): `repair-plan.ts` filtered only on `skipped`, so warning-only failures were listed under section 2. It now also requires `!c.optional` and adds section 3.2 "warning-only items (no fix required)" listing optional check failures plus `optional:true`/`uncertain` visual items, and section 5 states explicitly that artifacts must not be faked and checks must not be relaxed to silence a warning.
+
+### Security
+
+- The "zero credential management" section of [SECURITY.md](SECURITY.md) / [SECURITY.en.md](SECURITY.en.md) now covers the content-check boundary: judgement is delegated to a command you declare and the MCP reads/stores/forwards no credentials; whether images leave the machine depends on that command; and **the MCP's enforcement is contract-level only** (the byte-egress placeholder is disabled without an `allowRemote` opt-in), so it cannot stop a command from sending data out and users must confirm their command's behaviour themselves.
+
+### Tests
+
+- **638 passed / 12 skipped** overall (Windows 10 x64, Node 24.18.0), 106 cases more than v0.5.3: positive/negative cases for the 10 schema checks (including the budget-consistency counterexample), an exhaustive `tallyContentVotes` suite, cache-key stability and CLI-upgrade invalidation, placeholder expansion and stdout parsing, whole-round blockers producing no result rows (one each for a global and a rule-level override command), single-item failures staying warning-only and visible, repair-plan isolation, zero-rerun cache hits, probe and cache clearing, and doctor content diagnostics.
+- The 12 browser-gated cases run **12/12** on Windows 10 under `TIANSHU_VISUAL_BROWSER_TEST=1`, including 2 new ones covering the `pixel:false` semantic-page exemption and "one screenshot yields both a pixel and a content item".
+- What is not covered is stated plainly: real macOS system evidence awaits the CI `visual-browser` job; no measurement against a real third-party vision CLI; and "images never leave the machine" is not verifiable at the system level. See [validation progress](docs/visual-validation.en.md).
+
+### Compatibility
+
+- This is a **PATCH** release: the new capability is optional and **off by default**, and existing caller signatures, report fields, and the default behaviour of `pages`/`images` stay **backward compatible**. The one thing consumer code should note is enum growth — `VisualResult.status` gains `"uncertain"` and `kind` gains `"content"` — so anything that exhaustively switches on `status` must handle it.
 
 ---
 

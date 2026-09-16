@@ -478,10 +478,31 @@ Project .tianshu-mcp/acceptance.json sets visual.enabled=true
     (any change raises VISUAL_INTEGRITY, a blocker)
   → Pages: three source kinds (existing / command / static) + declarative steps + stabilization
         sampling + explicit masking → pixel comparison against the approved baseline (pixelmatch)
+        → if pages[].content is declared, reuse the same screenshot for a content judgement
+          (pixel:false does content judgement only)
   → Images: explicit file list + encoding/size/DPI/transparency spec validation
+  → Content (v0.5.4, optional): judgement of "does the image/screenshot content match the declared
+        expectation" delegated to a user-supplied command
+        → majority sampling + task-level input-hash cache (key includes the command binary identity)
+        → warning-only by default (optional); a per-rule blocking:true joins failure and rework
   → Defects rework per autoFixRounds; blockers → needs_attention
   → rework_task re-verifies a blocked task first instead of starting the agent
 ```
+
+**Credential boundary of AI content validation (v0.5.4, red line §12)**: the MCP reads, stores, and forwards no
+keys and ships no model/vendor HTTP client; judgement is fully delegated to a command the user declares. The MCP
+only expands placeholders (`<image:path>` / `<expect:file>` / `<image:base64:file>`), spawns the child with
+`shell:false` and structured argv, and strictly validates the JSON on the last stdout line. The egress gate is
+**contract-level**: `allowRemote` defaults to `false`, and a rule without the opt-in using `<image:base64:file>`
+is rejected by the schema outright; whether a command actually sends the image out **cannot be blocked at the
+system level** and the user must confirm it (see `SECURITY.en.md`).
+
+**Status semantics of content judgement (v0.5.4)**: `VisualResult.status` gains `uncertain` (split votes or
+confidence below `minConfidence`), which matches neither `visualFailed` (only `failed`) nor `visualBlocked` (only
+`blocked`) and therefore **never affects the verdict**. Whole-round failures (`CONTENT_COMMAND_MISSING` /
+`CONTENT_ENV_MISSING`) are raised during the pre-check (`assertContentReady`, which enumerates each rule's
+**effective** command and env) and escalate through the `acceptance.ts` try/catch into a `configurationError`,
+producing **no result rows at all**.
 
 **Baselines are strictly two-phase**:
 
@@ -501,8 +522,11 @@ Engineering constraints (`src/visual/`):
 | Mutual exclusion | `withVisualLock()`: `<data home>/visual-locks/<sha256(key)>.lock`, returning `VISUAL_BUSY` when held |
 | Missing dependencies | `sharp` / `pixelmatch` / `puppeteer-core` missing **blocks explicitly** rather than degrading silently |
 | Rule freezing | Config or baseline changed during a task → `VISUAL_INTEGRITY`, so an agent cannot weaken the acceptance rules |
+| Content judgement (v0.5.4) | `src/visual/content*.ts`: command resolution (`where`/`which`), placeholder expansion, `runChild`-semantics subprocess execution, strict JSON on the last stdout line; the pure `tallyContentVotes` handles the majority vote and confidence gate; the task-level cache carries `commandPath`/`commandDigest` so upgrading your CLI invalidates it |
+| Semantic-only pages (v0.5.4) | `pages[].pixel:false` skips the baseline requirement and pixel comparison (requires `content`); `prepareBaseline` skips them explicitly and never offers them as candidates |
+| Warning isolation (v0.5.4) | `blocking:false` → `optional:true`, staying out of `visualBlocked`/`visualFailed` and never triggering rework; the repair plan lists "warning-only items (no fix required)" and the pre-existing defect of listing `optional` failures as "must fix" is fixed |
 
-CLI subcommands (`node dist/index.js visual ...`): `init` (writes a disabled template config), `doctor`, `browser install`, `baseline prepare|approve`, `rules review|approve`, `artifacts clean`.
+CLI subcommands (`node dist/index.js visual ...`): `init` (writes a disabled template config), `doctor` (now with content-command resolution and budget-comparison findings), `browser install`, `baseline prepare|approve`, `rules review|approve`, `artifacts clean`, `content probe <project> [ruleId]` (runs a real judgement without writing evidence or cache), `content cache clear <taskId>`.
 
 ---
 
@@ -564,7 +588,7 @@ Violating any of these causes runtime corruption or an incident:
 1. **Never blind-kill TraeWork's process tree**: only terminate PIDs this module created and whose command line it verified, and never with `/T`. (Past incident: a verification-time `taskkill /PID <pid> /T /F` killed an instance the user was actively using.)
 2. **Reuse the user's instance by default**: `gui.windowMode = "reuse"`, never start a second one; managed instances (Codex / ZCode launched with a dedicated `user-data-dir`) likewise never touch an instance the user opened manually.
 3. **computer-use allowlist**: only the TraeWork folder-selection dialog (window title and host process both verified); anything else is `COMPUTER_USE_DENIED`.
-4. **Zero credential handling**: never read, decrypt, or forward any agent credential; GUI adapters only drive the UI.
+4. **Zero credential handling**: never read, decrypt, or forward any agent credential; GUI adapters only drive the UI. **AI content validation (v0.5.4) is bound by the same rule**: no model/vendor HTTP client and no key reads — judgement is delegated to a user-supplied command, and the egress gate is contract-level only (the schema rejects `<image:base64:file>` without an `allowRemote` opt-in). The MCP **cannot block a user command from sending images out at the system level**, and that boundary must be stated plainly (see `SECURITY.en.md`).
 5. **Never build commands through a shell**: verification commands are structured argv with `shell:false`.
 6. **Never auto commit / stash / roll back**: capture a git baseline before work and compute reports relative to it.
 7. **No hard-coded paths**: machine paths, user names, and ports come from profiles or placeholders.

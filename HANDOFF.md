@@ -57,13 +57,13 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build   # 期
 | 项 | 状态 |
 |---|---|
 | 分支 | `master`（**只在此分支提交**，不建其他分支） |
-| 版本 / 许可证 | `0.5.3` / Apache-2.0 |
-| 标签 | `v0.1.0` … `v0.5.3`（均已推双仓） |
-| 工作树 | 干净；`github/master` 与 `gitee/master` 均同步（发布提交见 `git log` 的 `chore(release): v0.5.3`） |
-| 测试 | **532 passed / 10 skipped**（58 个测试文件：单元 37 + 集成 20 + 协议 1） |
-| 门禁 | lint 0 warning、typecheck clean、build 成功且构建后无跟踪差异、`check:stdio` 6/6 场景通过、`npm pack` 内容校验与干净消费者安装通过 |
-| CI | `build-test`（ubuntu/windows/macos × Node 20/22/24）+ `pack-check`，另加 `visual-browser` 真实浏览器矩阵（ubuntu/windows + macos-15-intel/macos-15 × Node 20/22/24）；随 v0.5.3 tag 全绿 |
-| npm | `tianshu-mcp@0.5.3` 已发布（`latest`）；`npx -y tianshu-mcp` 即为该版本。发布步骤见 `docs/npm-publish-guide.md` |
+| 版本 / 许可证 | `0.5.4` / Apache-2.0 |
+| 标签 | `v0.1.0` … `v0.5.4`（均已推双仓） |
+| 工作树 | 干净；`github/master` 与 `gitee/master` 均同步（发布提交见 `git log` 的 `chore(release): v0.5.4`） |
+| 测试 | **638 passed / 12 skipped**（66 个测试文件：单元 40 + 集成 25 + 协议 1） |
+| 门禁 | lint 0 warning、typecheck clean、build 成功且构建后无跟踪差异、`check:stdio` 6/6 场景通过、`npm pack` 内容校验与干净消费者安装通过；12 项真实浏览器门禁用例在 Windows 10 本机以 `TIANSHU_VISUAL_BROWSER_TEST=1` 跑通 12/12 |
+| CI | `build-test`（ubuntu/windows/macos × Node 20/22/24）+ `pack-check`，另加 `visual-browser` 真实浏览器矩阵（ubuntu/windows + macos-15-intel/macos-15 × Node 20/22/24）；随 v0.5.4 tag 全绿 |
+| npm | `tianshu-mcp@0.5.4` 已发布（`latest`）；`npx -y tianshu-mcp` 即为该版本。发布步骤见 `docs/npm-publish-guide.md` |
 | GitHub Release | 推送 `v*` tag 触发 `.github/workflows/release.yml`：先跑完整门禁并校验「tag 版本 === package.json 版本」，正文由 `docs/release-v<ver>.md` + `.en.md` 双语合成（缺文档即报错，不产出空壳正文），**要求同 SHA 的成功 CI**，并附 `tianshu-mcp-<ver>.tgz` |
 | Gitee 发行版 | 由 `scripts/gitee-release.mjs` 用仓库 Secret `GITEE_TOKEN` 幂等补齐；**缺少凭据时工作流阻塞**（不再静默跳过、不冒充发布成功） |
 
@@ -108,6 +108,7 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build   # 期
 | M20 | 技能/验证文档对齐代码实况 + 平台证据归档（Windows 10 矩阵 9/9、macOS 双架构 51 用例）+ 锁文件版本同步；**无运行时行为变更** | `0.5.1` | 486 |
 | M21 | **ZCode 无项目派发（issue #12）**：`run_task.projectPath` 变可选、`allowCreateProject` 关闸、项目触发器就绪判据统一（详见 §9.9） | `0.5.2` | **525** |
 | M22 | **ZCode 真机回访修复（issue #12 第二轮）**：GUI 实例跨 server 退出驻留、新建任务不切页导致静默空等、发送失败归因误导（详见 §9.9） | `0.5.3` | **532** |
+| M23 | **视觉验收第二阶段「AI 视觉内容校验」（issue #13）**：`contents[]`/`pages[].content` 内容维度、委托用户自备命令（凭证零管理）、多数票 + 任务级缓存防抖、`uncertain` 与默认仅告警、`pixel:false` 语义页豁免基准、返修计划隔离告警项（详见 §4.3 与 §9.10） | `0.5.4` | **638** |
 
 ### 3.2 实现期修复记录（都是真机/CI 逼出来的，改相关代码前先读）
 
@@ -234,20 +235,29 @@ MSIX 发现（Appx 查询优先 + 扫盘回退） → COM 激活 + 专属 user-d
 > 停在「等待用户确认」界面（方案确认卡 / 订阅结账页）→ stall 判定转 `needs_user(user_confirmation)`；
 > 用户处理完后 `continue_task` 重新观察（不重发消息）；`login_required` 则复检环境后重派任务书。
 
-### 4.3 视觉验收的一条独立链路（v0.5.0 起）
+### 4.3 视觉验收的一条独立链路（v0.5.0 起，内容校验自 v0.5.4）
 
 ```text
 项目 .tianshu-mcp/acceptance.json 配 visual.enabled=true
   → run_task/verify_task 在命令检查之后追加视觉检查（不需要新工具）
   → 动工前冻结「视觉配置摘要 + 基准摘要」，每轮前后核对（变动即 VISUAL_INTEGRITY 阻塞）
   → 页面：三类来源（existing/command/static）+ 声明式步骤 + 稳定化采样 + 显式屏蔽 → 与已批准基准像素对比
+        → 若声明 pages[].content，复用同一次截图再做内容判定（pixel:false 则只做内容判定）
   → 图片：显式文件清单 + 编码/尺寸/DPI/透明度规格校验
+  → 内容（v0.5.4，可选）：委托用户自备命令判定「图片/截图内容是否符合显式期望」
+        → 采样多数票 + 任务级输入哈希缓存（键含命令二进制身份）
+        → 默认仅告警（optional）；逐规则 blocking:true 才参与致败与返修
   → 缺陷按 autoFixRounds 返修；阻塞（缺基准/不可达/资源被拦/不稳定）→ needs_attention
   → rework_task 对阻塞任务先重新验收，不先启动 agent
 ```
 
 基准必须两阶段：`prepare_visual_baseline`（只生成候选）→ 用户审阅后 `approve_visual_baseline`（核对三向摘要再原子写入）。
 **缺基准不得判通过，自动返修禁止调用批准入口。**
+
+内容校验的凭证边界与红线一致（见 §5.4）：MCP 不读取/存储/转发任何密钥、不实现模型客户端，判定完全委托用户
+自备命令；外发闸门只在**契约层**强制（未放行 `allowRemote` 时 schema 拒绝 `<image:base64:file>`），命令自身
+是否外传图片无法在系统层拦截，须用户自行确认。整轮级失败（命令不可解析 / env 引用缺失）走 `assertContentReady`
+抛错升级为 `configurationError`，**不产出结果行**；`uncertain` 与 `optional` 天然不参与 verdict。
 
 ---
 
@@ -257,7 +267,7 @@ MSIX 发现（Appx 查询优先 + 扫盘回退） → COM 激活 + 专属 user-d
    事故来源：验证期 `taskkill /PID <pid> /T /F` 误杀用户正在使用的实例（数据完好，已恢复）。见 `docs/traework-cdp.md §6`。
 2. **默认复用用户实例**：`gui.windowMode="reuse"`，绝不新起第二个（Codex/ZCode 以专属 user-data-dir 启动的受管实例除外，且不触碰用户手动打开的实例）。
 3. **computer-use 白名单**：仅允许 TraeWork 文件夹选择对话框（窗口标题 + 宿主进程双校验），其他窗口一律 `COMPUTER_USE_DENIED`。
-4. **凭证零管理**：不读取/解密/转发任何 agent 凭证；GUI adapter 只驱动 UI。
+4. **凭证零管理**：不读取/解密/转发任何 agent 凭证；GUI adapter 只驱动 UI。**AI 内容校验（v0.5.4）同样适用**：不实现模型/厂商 HTTP 客户端、不读密钥，判定委托用户自备命令；外发闸门只在契约层强制，命令自身行为无法在系统层审计（见 `SECURITY.md` 与 §9.10）。
 5. **命令不拼 shell**：验收命令是结构化 argv，`shell:false`。
 6. **不自动 commit/stash/回滚**：动工前采集 git 基线，报告相对基线计算。
 7. **路径不硬编码**：机器路径 / 用户名 / 端口走 profile 或占位符（`{LOCALAPPDATA}`、`{PROGRAMFILES}` 等；展开大小写不敏感）。
@@ -420,6 +430,7 @@ npm publish --registry=https://registry.npmjs.org --access public
 | ZCode 无项目派发报参数错误 / 卡在 `setup_recovery` / 窗口被遮挡时发送失败 | §9.9 |
 | 升级 v0.4.0 后行为变了 / 验收检查互相干扰 / 符号链接路径下历史任务「消失」 | §9.7 |
 | 视觉验收不通过 / 基准待批准 / 规则被冻结判 `VISUAL_INTEGRITY` / 离线报告看不开 | §9.8 |
+| AI 内容校验整轮阻塞 / 占位符被拒 / 判定总是 uncertain / 缓存不失效 | §9.10 |
 
 ### 9.1 TraeWork 项目文件夹绑定排障（M6 / M7 实战教训）
 
@@ -671,6 +682,37 @@ Windows + Codex 真机模拟实测：模型菜单的 `menuitemradio` 对 trusted
 
 完整真机证据见 `docs/zcode-issue-12-windows-evidence.md` / `.en.md`（含 v0.5.2 首轮与「第二轮回访」两节）。
 
+### 9.10 AI 内容校验排障（M23 / v0.5.4，issue #13）
+
+**症状 → 处置**
+
+| 症状 | 处置 |
+|---|---|
+| 整轮 `验收阻塞 [CONTENT_COMMAND_MISSING]`，报告里**没有任何内容结果行** | 这是**整轮级**预检失败（`assertContentReady` 枚举每条规则的**有效**命令，含逐规则覆盖）。用 `tianshu-mcp visual content probe <project> [ruleId]` 或 `visual doctor` 定位是哪条规则、哪条命令解析不到。**它不会退化成单项告警**——这是刻意的 fail-closed |
+| `CONTENT_ENV_MISSING` | `content.env` 的值是**宿主环境变量名**（`{ 子进程变量名: 宿主变量名 }`），不是密钥原文；确认该宿主变量在 MCP server 进程里确实存在 |
+| 配置被 schema 拒绝：`<image:base64:file> requires allowRemote = true` | 外发闸门是契约层强制。若确实需要把图片字节交给命令，逐规则设 `allowRemote: true`；否则改用默认的 `<image:path>` |
+| 配置被拒绝：`samples (N) x timeoutMs (M ms) exceeds limits.roundTimeoutMs` | 单项内容规则的 `samples × timeoutMs` 不得超总闸（出厂默认 3 × 90000 = 270000 ≤ 300000）。要么降 `timeoutMs`，要么**成对**上调 `limits.roundTimeoutMs`。此校验是配置期硬拦截，不留到运行期 |
+| 判定总是 `CONTENT_UNCERTAIN` | 1) 采样票不集中——提高 `samples`（≤9）或让命令更稳定；2) 配了 `minConfidence` 而命令返回的 confidence 常低于阈值——调低阈值或让命令不报 confidence（命令不报时**闸门不生效**，报告会标注）。`uncertain` **永不阻塞、不触发返修** |
+| 报告里每条判定理由都是「命令未提供 confidence，minConfidence 未生效」 | 命令的 JSON 没有 `confidence` 字段。这是刻意的：对不输出置信度的命令设默认阈值会把判定全部误伤为不确定 |
+| 改了自备 CLI 但判定没变 | 缓存键含命令绝对路径与二进制摘要（`commandPath`/`commandDigest`），正常升级即失效。若命令身份**无法计算**（解析失败/不可读），该判定**本就不缓存**。仍怀疑时用 `visual content cache clear <taskId>` |
+| 告警项在返修计划里出现，误以为必须修 | 告警项（`blocking:false`）列在 §3.2「仅告警项（不必修复）」，**不在**「必须修复」范围，也不得为消除告警伪造产物。只有逐规则 `blocking:true` 才进致败与返修 |
+| 页面内容判定拿不到截图 | 页面截图失败时内容项会以**同一原因码**镜像为 blocked（不判通过）；先解决页面可达性/稳定性问题 |
+| `visual content probe` 报 `CONTENT_RULE_UNKNOWN` | ruleId 对页面语义项要用派生 id `<pageId>-content`，不是 `pageId` |
+
+**设计要点（改这块代码前先读）**
+
+- **两个整轮级码不产结果行**：`CONTENT_COMMAND_MISSING` / `CONTENT_ENV_MISSING` 抛错经 `acceptance.ts` 的
+  try/catch 升级为 `configurationError`。不要「顺手」把它们实现成单项 blocked——那会被 `!r.optional` 挡在
+  `visualBlocked` 之外，形成「启用了却静默不跑」。
+- **`uncertain` 的归口是机械保证**：`visualFailed` 只取 `failed`、`visualBlocked` 只取 `blocked`，所以 `uncertain`
+  天然不进 verdict。别为它加特判分支，改归口条件会破坏 D7。
+- **`pages[].pixel:false` 的三处联动**：engine 跳过基准要求与像素对比、`snapshot.ts` 对无基准页面记录 `null`、
+  `prepareBaseline` 显式跳过（全部语义页面时以 `BASELINE_CONFIG` 拒绝）。改任一处都要跑 `visual-flow` 的
+  D9 浏览器用例（需 `TIANSHU_VISUAL_BROWSER_TEST=1`）。
+- **返修计划的历史缺陷已修**：`repair-plan.ts` 的 `failed` 过滤条件原先只排除 `skipped`，把 `optional:true` 的失败
+  也列进「必须修复」。现在补 `!c.optional`，并新增 §3.2 仅告警项小节。这是 issue #13 验收标准要求的修复，
+  不是可选项。
+
 ---
 
 ## 10. 凭证与安全红线
@@ -689,7 +731,7 @@ Windows + Codex 真机模拟实测：模型菜单的 `menuitemradio` 对 trusted
 |---|---|
 | `README.md` / `README.en.md` | 项目总览、快速开始（含天枢界面配置）、文档索引、里程碑 |
 | `ARCHITECTURE.md` / `.en.md` | **架构说明**：分层模型（L1 协议边 → L5 基础）、模块边界与依赖方向、启动装配与数据目录布局、MCP 返回契约、任务状态机与持久化、编排与验收流水线、Agent 驱动层契约与 `endReason`/`needsUserKind` 取值表、GUI 实例生命周期、视觉链路、配置热加载、跨平台策略、安全红线、扩展点、测试与发布流水线、已知缺口 |
-| `CHANGELOG.md` / `.en.md` | 版本历史 v0.1.0 → v0.5.3（含比较链接） |
+| `CHANGELOG.md` / `.en.md` | 版本历史 v0.1.0 → v0.5.4（含比较链接） |
 | `CONTRIBUTING.md` / `.en.md` | 开发环境、门禁、规范、提交 / 发布流程、如何新增 agent |
 | `SECURITY.md` / `.en.md` | 安全模型与漏洞报告 |
 | `CODE_OF_CONDUCT.md` / `.en.md` | 行为准则 |
@@ -703,10 +745,11 @@ Windows + Codex 真机模拟实测：模型菜单的 `menuitemradio` 对 trusted
 | `docs/agent-profiles.md` / `.en.md` | profile 字段说明（含 `driver`/`gui`/`stallTimeoutMs`/`cancelWaitMs`/`setupRecovery*`） |
 | `docs/adapter-matrix.md` / `.en.md` | 各 agent 能力调研矩阵 |
 | `docs/acceptance-config.md` / `.en.md` | 项目级验收配置规范（含 `requireChanges`） |
-| `docs/visual-acceptance.md` / `.en.md` | 视觉验收入门与完整配置：三种页面来源、基准候选/批准、规则冻结、阈值解释与排查表 |
-| `docs/visual-validation.md` / `.en.md` | 视觉验收验证进度：完整平台证据表（系统 / Node / 浏览器 / 命令 / 结果） |
+| `docs/visual-acceptance.md` / `.en.md` | 视觉验收入门与完整配置：三种页面来源、基准候选/批准、规则冻结、阈值解释与排查表，以及可选 AI 内容校验（命令契约、原因码、防抖与数据外发声明） |
+| `docs/visual-validation.md` / `.en.md` | 视觉验收验证进度：完整平台证据表（系统 / Node / 浏览器 / 命令 / 结果）+ v0.5.4 判定桩端到端记录与未覆盖项 |
 | `docs/visual-validation-evidence/` | 上述验证的原始机器可读记录（Windows 矩阵 JSON、macOS `environment.json`、CI 摘要） |
 | `docs/zcode-issue-12-windows-evidence.md` / `.en.md` | ZCode 无项目派发与 `allowCreateProject` 的 Windows 10 真机验收记录（含 v0.5.2 首轮与「第二轮回访」） |
+| `docs/release-v0.5.4.md` / `.en.md` | v0.5.4 发布说明（可选 AI 视觉内容校验：自备命令委托、多数票防抖、默认仅告警、返修隔离缺陷修复） |
 | `docs/release-v0.5.3.md` / `.en.md` | v0.5.3 发布说明（ZCode 真机回访修复：实例跨 server 驻留、新建任务切页、发送失败归因） |
 | `docs/release-v0.5.2.md` / `.en.md` | v0.5.2 发布说明（ZCode 无项目派发与 `allowCreateProject`，issue #12） |
 | `docs/release-v0.5.1.md` / `.en.md` | v0.5.1 发布说明（文档/证据补齐 + 锁文件修复，无运行时变更） |

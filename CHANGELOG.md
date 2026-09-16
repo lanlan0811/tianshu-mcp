@@ -11,7 +11,6 @@
 
 ### 计划中
 
-- **视觉验收第二阶段——AI 视觉内容校验**（issue #13）：校验图片/页面截图**内容**是否符合任务描述（Logo 元素、风格匹配、页面语义等）。issue #3 中标注为「可选扩展」，其像素级对比第一阶段已随 v0.5.0 完成。需先确认模型与凭证来源（不得破坏「凭证零管理」红线）、判定防抖与门禁定位（建议默认仅告警）。
 - 更多外部 AI-Agent 适配（新 agent = 一个 profile +（如需）一个 adapter 文件）。
 - TraeWork 在 macOS 下的可执行探测与原生对话框驱动（当前 macOS 分支 fail-closed）。
 - 可选的项目级技能播种（默认不写入目标项目仓库）。
@@ -19,6 +18,39 @@
 - `needs_user` 状态下取消任务时经临时 CDP 连接尽力停止 GUI 内等待中的会话。
 - ZCode 无项目派发在 macOS 上的真机验证（本轮仅 Windows 10 实测）。
 - ZCode **未登记项目**的自动导入在 Windows 上无法完成：原生面板脚本靠 `SetForegroundWindow` 抢前台来激活地址栏，而后台 MCP server 的子进程会被 Windows 拒绝，地址栏 Edit 永不出现，脚本空转到 deadline（实测 56s 后由 `budget.check()` 归类为 setup 预算耗尽）；且 PowerShell 的 stdout 在管道里被缓冲、进程被 kill 后缓冲丢失，日志里连一条 `native:` 阶段都看不到，排障方向被误导。临时对策：先在 ZCode 中手动把目标目录加入项目列表；修复方向是脚本内改用 `AttachThreadInput` 抢前台（或改走 ZCode 受支持的登记入口）。
+- AI 内容校验的跨轮判定翻转熔断（本轮以缓存 + 采样覆盖；若真机数据显示仍扰动再议）、跨任务缓存共享、参考图/设计稿差异比对。
+
+---
+
+## [0.5.4] — 2026-09-16
+
+**视觉验收第二阶段：AI 视觉内容校验（issue #13）**——在既有客观像素/规格检查之外，新增一个**可选、默认关闭**的内容校验维度：校验图片或页面截图的内容是否符合用户显式声明的期望描述。判定完全委托用户自备的本地命令（MCP 全程不读取/存储/转发任何凭证），默认仅告警，采样多数票 + 任务级缓存防抖。完整说明见 [v0.5.4 发布说明](docs/release-v0.5.4.md)。
+
+### 新增
+
+- **内容校验配置面**：`visual.content`（全局命令与预算）、`visual.contents[]`（图片内容规则）、`pages[].content`（页面语义校验）与 `pages[].pixel`（默认 `true`；`false` 表示语义-only 页面，豁免基准要求与像素对比，但必须声明 `content`）。配置默认关闭，需显式启用；声明了规则却不启用、有效命令/模板缺失、未知占位符、未放行 `allowRemote` 却使用字节外传占位符、`samples × timeoutMs` 超出 `limits.roundTimeoutMs`、派生 id 冲突等一律在 schema 层拒绝。
+- **命令契约**：占位符模板（`<image:path>` / `<expect:file>` / `<image:base64:file>`）+ stdout 末行严格 JSON（`{passed, confidence?, reason}`）。期望文本经临时文件传递，规避命令行转义与长度上限，也避免进入进程命令行与系统审计日志；临时文件每轮采样后在 `finally` 中删除。逐规则可覆盖 `command`/`argsTemplate`/`cwd`/`env`/`samples`/`allowRemote`。
+- **判定防抖**：单项内串行采样 + 多数票（票不集中判 `uncertain`）+ 可选置信度闸门（`minConfidence`）；任务目录级输入哈希缓存，键含图片摘要、期望文本、命令字符串、**命令绝对路径与二进制摘要**、参数模板、cwd、环境值摘要（不落明文）、`allowRemote`、`samples`、`minConfidence`。自备 CLI 升级即自动失效；命令身份无法可靠计算时不做缓存；仅成功完成的判定入缓存。
+- **结果与报告**：`VisualResult.kind` 新增 `"content"`、`status` 新增 `"uncertain"`；内容项在报告 md 与离线 HTML 中输出期望描述、采样票型、判定理由、提供者命令与缓存命中，并在命令不报 confidence 时标注「minConfidence 未生效」。HTML 状态筛选新增 `uncertain` 档位。
+- **CLI 与诊断**：`visual content probe <project> [ruleId]`（按声明规则跑真实判定但不写证据、不写缓存）、`visual content cache clear <taskId>`；`visual doctor` 新增 `content command`（逐条有效命令解析结果 + `allowRemote` 声明清单，不可解析即该项失败）与 `content budget`（规则数 × samples × timeoutMs 与 `roundTimeoutMs` 对比并给建议值，不自动改配置）。
+
+### 修复
+
+- **返修计划把 `optional:true` 的失败列为「必须修复」**（issue #13 验收标准要求修复的既有缺陷）：`repair-plan.ts` 的 `failed` 过滤条件原先只排除 `skipped`，导致仅告警的检查失败也被列进第 2 节。现补 `!c.optional`，并新增第 3.2 节「仅告警项（不必修复）」列出 optional 检查失败与 `optional:true`/`uncertain` 的视觉项，同时在第 5 节明确要求不得为消除告警而伪造产物或放宽检查。
+
+### 安全
+
+- [SECURITY.md](SECURITY.md) / [SECURITY.en.md](SECURITY.en.md) 的「凭证零管理」小节增补内容校验的边界：判定委托用户声明的本地命令，MCP 不读取/存储/转发凭证；图片是否离开本机取决于该命令；**MCP 的强制力仅在契约层**（未放行 `allowRemote` 时禁用字节外传占位符），无法在系统层阻止用户命令外传，需用户自行确认其命令行为。
+
+### 测试
+
+- 全量 **638 passed / 12 skipped**（Windows 10 x64，Node 24.18.0），较 v0.5.3 净增 106 项用例：schema 10 条校验正反用例（含预算自洽反例）、`tallyContentVotes` 穷举、缓存键稳定性与命令升级失效、占位符展开与 stdout 解析、整轮级阻塞不产结果行（全局命令与逐规则覆盖命令各一）、单项失败仅告警可见、返修计划隔离、缓存零重跑、探测与缓存清理、doctor 内容诊断。
+- 12 项真实浏览器门禁用例在 Windows 10 本机以 `TIANSHU_VISUAL_BROWSER_TEST=1` 跑通 **12/12**，其中新增 2 项覆盖 `pixel:false` 语义页豁免基准与「一次截图产出像素 + 内容两项」。
+- 未覆盖项如实标注：macOS 的真实系统证据待 CI `visual-browser` 作业采集；未与真实三方视觉 CLI 实测；「图片未离开本机」无法在系统层验证。详见 [验证进度](docs/visual-validation.md)。
+
+### 兼容性
+
+- 本版本为 **PATCH**：新增可选能力且**默认关闭**，既有调用方签名、报告字段与 `pages`/`images` 默认行为**向后兼容**。唯一需要消费方注意的是枚举扩展——`VisualResult.status` 新增 `"uncertain"`、`kind` 新增 `"content"`，严格穷举 `status` 的外部消费方需一并处理。
 
 ---
 

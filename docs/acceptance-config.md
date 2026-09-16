@@ -81,6 +81,34 @@
 - `report.json.checks[]` 每条含 `{name, cmd, passed, durationMs, exitCode, outputTail, timeout, skipped, reason}`。
 - 变更/diffstat/可疑标记在 `report.json.analysis` 段，全部相对 **run_task/rework_task 动工前 git 基线**。
 
+## visual 段：AI 内容校验字段
+
+`visual.contents[]`（图片内容规则）、`visual.content`（全局命令与预算）、`pages[].content` 与 `pages[].pixel`
+为可选字段，**默认关闭**，需显式启用。判定委托用户自备命令，MCP 不读取任何密钥。
+
+| 字段 | 默认 | 说明 |
+|---|---|---|
+| `visual.content.enabled` | `false` | 总开关；声明了任何内容规则却不启用会被 schema 拒绝（禁止「声明了却静默不跑」） |
+| `visual.content.command` | 无 | 自备判定命令；逐规则可用 `command` 覆盖，两者都缺则拒绝 |
+| `visual.content.argsTemplate` | 无 | 参数模板；占位符仅允许 `<image:path>`、`<expect:file>`、`<image:base64:file>` |
+| `visual.content.cwd` | 项目根 | 项目相对路径 |
+| `visual.content.env` | `{}` | `{ 子进程变量名: 宿主环境变量名 }`，缺失宿主变量 → 整轮阻塞 |
+| `visual.content.allowRemote` | `false` | 默认禁止外发；未放行的规则使用 `<image:base64:file>` 会被 schema 拒绝 |
+| `visual.content.samples` | `3` | 采样次数（1～9），多数票 |
+| `visual.content.timeoutMs` | `90000` | 单项超时；硬约束 `samples × timeoutMs ≤ limits.roundTimeoutMs` |
+| `visual.content.minConfidence` | 省略 | 省略即关闭置信度闸门；命令不报 confidence 时闸门不生效（报告会标注） |
+| `visual.content.cache` | `true` | 任务目录级判定缓存 |
+| `visual.contents[].id` | 必填 | 规则 ID，与既有 pages/images/viewports 的大小写不敏感去重 |
+| `visual.contents[].files` | 必填 | 图片项目相对路径列表（大小写不敏感去重） |
+| `visual.contents[].expect` | 必填 | 期望描述（1～4000 字符） |
+| `visual.contents[].blocking` | `false` | `false` 映射为 `optional:true`（仅告警）；`true` 参与致败与返修 |
+| `visual.contents[].samples` / `allowRemote` / `command` / `argsTemplate` / `cwd` / `env` | 继承全局 | 逐规则覆盖 |
+| `visual.pages[].pixel` | `true` | `false` 表示语义-only：跳过像素对比与基准要求（必须声明 `content`，且不得同时声明 `baseline`/`pixelThreshold`/`maxDiffRatio`） |
+| `visual.pages[].content` | 无 | 页面级内容校验，复用同一次截图；派生 id `<pageId>-content` 不得与已声明 id 冲突 |
+
+启用闸门放宽为「至少 `pages` / `images` / `contents` 之一」。原因码、判定防抖、成本边界与外发声明见
+[视觉验收](visual-acceptance.md) 的「AI 内容校验」章节。
+
 ## 常见问题
 
 - **验收命令找不到 node/npx**：tianshu-mcp 子进程会显式继承并前置 PATH（含系统 node 目录与天枢自带 node 目录）。若仍异常，检查你的 PATH。

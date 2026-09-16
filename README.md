@@ -8,7 +8,7 @@
 
 # tianshu-mcp
 
-视觉验收（v0.5.0 起）：[中文指南](docs/visual-acceptance.md) · [验证记录](docs/visual-validation.md) · [最新发布说明](<docs/release-v0.5.3.md>)。
+视觉验收（v0.5.0 起，含 v0.5.4 可选 AI 内容校验）：[中文指南](docs/visual-acceptance.md) · [验证记录](docs/visual-validation.md) · [最新发布说明](<docs/release-v0.5.4.md>)。
 
 **天枢 × AI-Agent 编排 MCP server**
 
@@ -44,7 +44,8 @@
 - **执行面**：`driver: "gui"` 由显式 adapter 驱动桌面 UI（Codex / TraeWork / ZCode 各自使用隔离的 CDP 流程）；`driver: "spawn"` 走外部 CLI 子进程。
 - **无项目派发（ZCode，issue #12）**：`run_task` 的 `projectPath` 可省略——ZCode 在 `default` 工作区承接任务，不登记/导入项目、不采集 Git 基线、不执行项目验收（结果以 `verificationNotApplicable: "no_project"` 结构化标注，`verify_task`/`get_task_report` 返回不适用说明）。配套 `allowCreateProject: false` 可在目标目录未登记时于任何导入副作用之前停止派发。详见 [ZCode CDP 适配器](docs/zcode-cdp.md)。
 - **调度纪律**：每项目串行队列 + 全局并发上限（默认 2，可配）。
-- **不碰密钥**：各 agent 用自己的登录态；本 server 不保存/转发任何 API key。
+- **可选 AI 内容校验（v0.5.4，默认关闭）**：校验图片或页面截图**内容**是否符合你显式声明的期望描述。判定完全**委托给你自备的本地命令**（MCP 不读取、不存储、不转发任何密钥，也不内置模型客户端），默认**仅告警**、逐规则可升级为致败；采样多数票 + 任务级缓存防抖，票不集中或低于置信度阈值判 `uncertain`（永不阻塞、不触发返修）。配置与命令契约见 [视觉验收](docs/visual-acceptance.md)。
+- **不碰密钥**：各 agent 用自己的登录态；本 server 不保存/转发任何 API key。可选 AI 内容校验同样不引入凭证管理——判定命令自己管密钥（见 [SECURITY.md](SECURITY.md)）。
 - **可扩展**：新 agent = 一个 profile（数据）+（如需）一个 adapter 文件，零改编排核心。
 - **想理解内部结构**：见 [ARCHITECTURE.md](ARCHITECTURE.md)（分层模型、模块边界、状态机、验收流水线、扩展点与已知缺口）。
 
@@ -68,7 +69,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 496 项测试：56 个文件，含 Codex/ZCode/TraeWork 单元/假 CDP/重启/恢复/返修闭环与视觉验收
+npm test             # 638 项测试：66 个文件，含 Codex/ZCode/TraeWork 单元/假 CDP/重启/恢复/返修闭环与视觉验收
 ```
 
 ### 安装 npm 包
@@ -195,12 +196,13 @@ ZCode 提问、需要登录、旧实例无 CDP、系统权限不足，或自动�
 | [docs/zcode-windows-smoke.md](docs/zcode-windows-smoke.md) | ZCode Windows 真机开发、同会话返修与提问续跑验收记录 |
 | [docs/codex-gui-cdp.md](docs/codex-gui-cdp.md) | Codex 桌面端 GUI 驱动：MSIX COM 激活、CDP 接管、选择器、运行检测、验收返修 |
 | [docs/codex-windows-smoke.md](docs/codex-windows-smoke.md) | Codex Windows 真机验收记录（含验收失败→自动生成计划→返修通过闭环） |
+| [docs/release-v0.5.4.md](<docs/release-v0.5.4.md>) | v0.5.4 发布说明（可选 AI 视觉内容校验：自备命令委托、多数票防抖、默认仅告警） |
 | [docs/release-v0.5.3.md](<docs/release-v0.5.3.md>) | v0.5.3 发布说明（ZCode 真机回访修复：实例跨 server 驻留、新建任务切页、发送失败归因） |
 | [docs/release-v0.5.2.md](<docs/release-v0.5.2.md>) | v0.5.2 发布说明（ZCode 无项目派发与 `allowCreateProject`，issue #12） |
 | [docs/release-v0.5.1.md](<docs/release-v0.5.1.md>) | v0.5.1 发布说明（技能/验证文档补齐、平台证据归档、锁文件版本同步；无运行时变更） |
 | [docs/release-v0.5.0.md](<docs/release-v0.5.0.md>) | v0.5.0 发布说明（可选视觉验收模块：截图对比、图片规格、基准批准、离线报告） |
-| [docs/visual-acceptance.md](<docs/visual-acceptance.md>) | 视觉验收入门与完整配置：三种页面来源、基准候选/批准、规则冻结、阈值与排查 |
-| [docs/visual-validation.md](<docs/visual-validation.md>) | 视觉验收验证进度：Windows 10 完整功能矩阵与 macOS Intel/Apple Silicon 平台证据（系统/Node/浏览器/命令/结果） |
+| [docs/visual-acceptance.md](<docs/visual-acceptance.md>) | 视觉验收入门与完整配置：三种页面来源、基准候选/批准、规则冻结、阈值排查，以及可选 AI 内容校验（命令契约、原因码、防抖与数据外发声明） |
+| [docs/visual-validation.md](<docs/visual-validation.md>) | 视觉验收验证进度：Windows 10 完整功能矩阵、macOS Intel/Apple Silicon 平台证据，以及 v0.5.4 AI 内容校验的判定桩端到端记录 |
 | [docs/visual-validation-evidence/](<docs/visual-validation-evidence/>) | 上述验证的原始机器可读记录（环境 JSON、矩阵结果、测试输出与 macOS CI 摘要） |
 | [docs/release-v0.4.1.md](<docs/release-v0.4.1.md>) | v0.4.1 发布说明（技能文档对齐 v0.4.0 工具面 + 贡献者名录） |
 | [docs/release-v0.3.4.md](<docs/release-v0.3.4.md>) | v0.3.4 发布说明（ZCode 项目/模型回读、初始化恢复与会话发送确认，issue #8/#9/#10） |
@@ -329,6 +331,13 @@ ZCode 提问、需要登录、旧实例无 CDP、系统权限不足，或自动�
   - 修复顶部「新建任务」点击返回成功却不切页、随后静默空等 30 秒：改以「项目触发器已挂载」验证草稿真的建立，失败回退侧栏 `task-new-button`，两者都失败才 `setup_failed` fail-closed
   - 修复窗口被遮挡时发送失败归因误导：识别 Chromium 节流（`visibilityState=hidden`）并报「窗口不在前台」及置于前台的操作指引
   - 本版本为 **PATCH**，既有调用方签名与报告格式**保持向后兼容**（详见 [v0.5.3 发布说明](<docs/release-v0.5.3.md>)）
+- **M23 — 视觉验收第二阶段「AI 视觉内容校验」（issue #13）+ v0.5.4**（2026-09-16）— **638 测试**
+  - **内容校验维度**：`visual.contents[]`（图片内容规则）与 `pages[].content`（页面语义校验）与既有像素/规格检查平行，作为 `kind:"content"` 独立结果项进入统一报告与离线 HTML；`pages[].pixel:false` 的语义-only 页面豁免基准要求
+  - **凭证零管理**：MCP 不读取/存储/转发任何密钥、不实现模型客户端；判定完全委托用户自备命令（占位符模板 + stdout 末行 JSON），期望文本经临时文件传递以规避转义与审计日志
+  - **防抖与门禁**：采样多数票 + 任务目录级输入哈希缓存（键含命令二进制身份，升级自备 CLI 即失效）；新增 `uncertain` 状态，票不集中或低于 `minConfidence` 时既不致败也不触发返修；内容项默认**仅告警**，逐规则 `blocking:true` 才升级为致败
+  - **fail-closed**：启用后命令不可解析/env 引用缺失 → 整轮 `configurationError` 且不产出结果行；单项命令失败仅产生 blocked 告警项，并在整轮消息与返修计划的「仅告警项（不必修复）」小节可见
+  - **缺陷修复**：返修计划不再把 `optional:true` 的失败列为「必须修复」
+  - **CLI/诊断**：新增 `visual content probe <project> [ruleId]` 与 `visual content cache clear <taskId>`；`visual doctor` 新增内容命令解析与预算对比两项 finding
 
 ## Agent 适配现状
 

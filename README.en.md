@@ -8,7 +8,7 @@
 
 # tianshu-mcp
 
-Visual acceptance (since v0.5.0): [English guide](docs/visual-acceptance.en.md) · [Validation record](docs/visual-validation.en.md) · [Latest release notes](<docs/release-v0.5.3.en.md>).
+Visual acceptance (since v0.5.0, with optional AI content validation since v0.5.4): [English guide](docs/visual-acceptance.en.md) · [Validation record](docs/visual-validation.en.md) · [Latest release notes](<docs/release-v0.5.4.en.md>).
 
 **Tianshu × AI-Agent orchestration MCP server**
 
@@ -44,7 +44,8 @@ Tianshu plays the role of the overall commander; this MCP server is the **schedu
 - **Execution surfaces**: `driver: "gui"` selects an explicit, isolated Codex/TraeWork/ZCode CDP adapter; `driver: "spawn"` runs an external CLI child process.
 - **Project-less dispatch (ZCode, issue #12)**: `run_task`'s `projectPath` may be omitted — ZCode runs the task in its `default` workspace without registering/importing a project, collecting a Git baseline, or running project acceptance (the result is marked structurally as `verificationNotApplicable: "no_project"` and `verify_task`/`get_task_report` return a not-applicable explanation). The companion `allowCreateProject: false` stops dispatch before any import side effect when the target directory is unregistered. See the [ZCode CDP adapter](docs/zcode-cdp.en.md).
 - **Scheduling discipline**: per-project serial queue + global concurrency cap (default 2, configurable).
-- **No key handling**: each agent uses its own login state; this server never stores or forwards any API key.
+- **Optional AI content validation (v0.5.4, off by default)**: validates whether the **content** of an image or page screenshot matches an expectation you declare explicitly. Judgement is fully **delegated to a local command you supply** (the MCP reads, stores, and forwards no keys and ships no model client), it **warns only** by default and can be upgraded to failing per rule, and it debounces with majority sampling plus a task-level cache; split votes or confidence below the threshold yield `uncertain`, which never gates and never triggers rework. Configuration and the command contract are in [visual acceptance](docs/visual-acceptance.en.md).
+- **No key handling**: each agent uses its own login state; this server never stores or forwards any API key. Optional AI content validation adds no credential management either — the judge command manages its own key (see [SECURITY.en.md](SECURITY.en.md)).
 - **Extensible**: a new agent = one profile (data) + (if needed) one adapter file — no changes to the orchestration core.
 - **Want the internals?** See [ARCHITECTURE.en.md](ARCHITECTURE.en.md) (layering, module boundaries, state machine, acceptance pipeline, extension points, known gaps).
 
@@ -68,7 +69,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 496 tests across 56 files, including Codex/ZCode/TraeWork unit/fake-CDP/restart/recovery/repair loops and visual acceptance
+npm test             # 638 tests across 66 files, including Codex/ZCode/TraeWork unit/fake-CDP/restart/recovery/repair loops and visual acceptance
 ```
 
 ### Install the npm package
@@ -198,12 +199,13 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 | [docs/codex-gui-cdp.en.md](docs/codex-gui-cdp.en.md) | Codex desktop GUI driver: MSIX COM activation, CDP attach, selectors, run detection, verify/repair |
 | [docs/codex-windows-smoke.en.md](docs/codex-windows-smoke.en.md) | Codex Windows hardware record (incl. verify-fail → auto plan → repair-pass loop) |
 | [docs/release-v0.3.4.en.md](<docs/release-v0.3.4.en.md>) | v0.3.4 release notes (ZCode project/model read-back, initialization recovery, session dispatch confirmation, issues #8/#9/#10) |
+| [docs/release-v0.5.4.en.md](<docs/release-v0.5.4.en.md>) | v0.5.4 release notes (optional AI visual content validation: user-supplied command delegation, majority-vote debouncing, warning-only by default) |
 | [docs/release-v0.5.3.en.md](<docs/release-v0.5.3.en.md>) | v0.5.3 release notes (ZCode hardware-revisit fixes: instance survival across server exit, new-task page switch, send-failure attribution) |
 | [docs/release-v0.5.2.en.md](<docs/release-v0.5.2.en.md>) | v0.5.2 release notes (ZCode project-less dispatch and `allowCreateProject`, issue #12) |
 | [docs/release-v0.5.1.en.md](<docs/release-v0.5.1.en.md>) | v0.5.1 release notes (skill/validation docs, archived platform evidence, lockfile version sync; no runtime changes) |
 | [docs/release-v0.5.0.en.md](<docs/release-v0.5.0.en.md>) | v0.5.0 release notes (optional visual acceptance: screenshots, image specs, baseline approval, offline report) |
-| [docs/visual-acceptance.en.md](<docs/visual-acceptance.en.md>) | Visual acceptance primer and full configuration: three page sources, baseline candidates/approval, rule freezing, thresholds and troubleshooting |
-| [docs/visual-validation.en.md](<docs/visual-validation.en.md>) | Visual acceptance validation progress: full Windows 10 matrix and macOS Intel/Apple Silicon platform evidence (system/Node/browser/command/result) |
+| [docs/visual-acceptance.en.md](<docs/visual-acceptance.en.md>) | Visual acceptance primer and full configuration: three page sources, baseline candidates/approval, rule freezing, thresholds and troubleshooting, plus optional AI content validation (command contract, reason codes, debouncing, egress statement) |
+| [docs/visual-validation.en.md](<docs/visual-validation.en.md>) | Visual acceptance validation progress: full Windows 10 matrix, macOS Intel/Apple Silicon platform evidence, and the v0.5.4 stub-judge end-to-end record for AI content validation |
 | [docs/visual-validation-evidence/](<docs/visual-validation-evidence/>) | Raw machine-readable records for the above (environment JSON, matrix results, test output and macOS CI summaries) |
 | [docs/release-v0.4.1.en.md](<docs/release-v0.4.1.en.md>) | v0.4.1 release notes (skill docs aligned with the v0.4.0 tool surface + contributor credits) |
 | [docs/zcode-issue-8-10-validation.en.md](<docs/zcode-issue-8-10-validation.en.md>) | ZCode #8/#9/#10 Windows hardware record (cold import, imported-project reuse, same-task recovery) |
@@ -328,6 +330,13 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
   - Fixed the top-bar "new task" click reporting success without switching pages and then waiting silently for 30 seconds: the draft is now verified by "the project trigger is mounted", falling back to the sidebar `task-new-button`, and failing closed with `setup_failed` only when both entry points fail
   - Fixed misleading attribution when a covered window fails to send: Chromium throttling (`visibilityState=hidden`) is recognised and reported as "the window is not in the foreground" with instructions to bring it forward
   - A **PATCH** release; existing caller signatures and report formats remain **backward compatible** (see the [v0.5.3 release notes](<docs/release-v0.5.3.en.md>))
+- **M23 — Visual acceptance phase 2, "AI visual content validation" (issue #13) + v0.5.4** (2026-09-16) — **638 tests**
+  - **Content-check dimension**: `visual.contents[]` (image content rules) and `pages[].content` (page semantics) run in parallel with the existing pixel/spec checks and land in the unified report and offline HTML as independent `kind:"content"` results; a `pages[].pixel:false` semantic-only page is exempt from baselines
+  - **Zero credential management**: the MCP reads, stores, and forwards no keys and ships no model client; judgement is fully delegated to a user-supplied command (placeholder template + JSON on the last stdout line), and the expectation travels through a temporary file to avoid command-line escaping and audit logs
+  - **Debouncing and gates**: majority sampling plus a task-level input-hash cache (the key includes the command's binary identity, so upgrading your CLI invalidates it); a new `uncertain` status neither fails nor triggers rework when votes split or confidence falls below `minConfidence`; content items **warn only** by default, upgrading to failing per rule via `blocking:true`
+  - **Fail-closed**: once enabled, an unresolvable command or a missing env reference yields a whole-round `configurationError` with no result rows; a single command failure produces only a blocked warning item that stays visible in the round message and in the repair plan's "warning-only items (no fix required)" section
+  - **Defect fix**: the repair plan no longer lists `optional:true` failures as "must fix"
+  - **CLI/diagnostics**: added `visual content probe <project> [ruleId]` and `visual content cache clear <taskId>`; `visual doctor` gained content-command resolution and budget-comparison findings
 
 ## Agent support status
 

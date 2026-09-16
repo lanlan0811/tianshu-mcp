@@ -84,7 +84,45 @@
 - npm：`tianshu-mcp@0.5.1` 已发布到 `latest`（registry 直查确认 `dist.shasum` = `529efba6…`，与本地构建一致）；独立目录安装后 `visual doctor` 四项通过。
 - 附带修复：`package-lock.json` 根包版本从滞后的 `0.4.1` 同步为 `0.5.1`。
 
-## 四、已知限制
+## 四、v0.5.4 验证记录（AI 内容校验，issue #13 第二阶段）
+
+判定桩端到端证据（Windows 10 x64，Node 24.18.0，2026-09-16）。判定桩为 `test/fixtures/content-judge.mjs`
+（跨平台 node 脚本，由环境变量决定输出通过 / 不通过 / 平票 / 非法输出 / 非零退出 / 睡眠超时），
+全部用例不依赖真实三方视觉 CLI，也不依赖浏览器（浏览器门禁用例单列在下方）。
+
+| 验证点 | 结果 | 证据 |
+|---|---|---|
+| 采样票型与多数票 | ✅ | `visual-content-flow` / `visual-content-verdict`：3/3、2/3、1/2 平票、1/1、`samples:1` 全部穷举 |
+| 缓存命中零重跑 | ✅ | `visual-content-flow`「cache makes the second round run zero judge invocations」：第二轮调用次数为 0，结果标 `cached:true` |
+| 命令二进制升级使缓存失效 | ✅ | `visual-content-cache`：`commandDigest` 变化导致 miss；不可计算时不写缓存 |
+| `uncertain` 不致败、不返修 | ✅ | `visual-content-flow`「uncertain verdicts never gate the round」+ `visual-content-warning`（整轮 message 出现「AI 内容判定不确定（仅告警）」） |
+| 告警不致败但在整轮消息可见（P4） | ✅ | `visual-content-warning`：optional:true + blocked 项不进 `blockingIssues`，message 出现「AI 内容告警未通过（不影响结论）: logo [CONTENT_COMMAND_FAILED]」 |
+| `blocking:true` 致败 | ✅ | `visual-content-flow`「blocking content mismatches fail the round」：verdict 失败、`visualFailed` 命中 |
+| 整轮级阻塞不产结果行（P2/P3） | ✅ | `visual-content-blocked`：全局命令不可解析、**逐规则覆盖命令**不可解析、env 引用缺失三种情形均整轮 `configurationError` 且 `report.visual` 为空 |
+| 单项失败仅告警 | ✅ | `visual-content-blocked`：非零退出/输出非法为单项结果，不升级整轮 |
+| 返修计划隔离告警项 | ✅ | `traework-repair-plan` + `visual-content-warning`：告警项列入「仅告警项（不必修复）」，第 2 节「必须修复」不含告警项 |
+| 置信度闸门语义 | ✅ | `visual-content-verdict` + `visual-content-flow`：未配置不生效；低于阈值降级 uncertain；命令不报 confidence 时标注「minConfidence 未生效」 |
+| 预算自洽硬校验（P1） | ✅ | `visual-content-schema`：`samples:3` + `timeoutMs:120000` + 默认 `roundTimeoutMs:300000` 被拒绝；逐规则覆盖后仍自洽的正例通过 |
+| `pixel:false` 语义页面豁免基准（D9，真实浏览器） | ✅ | `visual-flow`「semantic-only pages need no baseline and yield a content result」：无基准目录、不报 `BASELINE_APPROVAL_REQUIRED`，产出 `login-content` 内容项 |
+| 一次截图产出像素+内容两项（真实浏览器） | ✅ | `visual-flow`「pixel pages with content produce both items from one screenshot」：基线流程不变，两项同源，新任务缓存隔离后判定重跑 |
+| `visual content probe` 不写证据/缓存 | ✅ | `visual-content-probe`：不落 `visual/` 目录与 `visual-content-cache/`；未知规则 ID 报 `CONTENT_RULE_UNKNOWN` |
+| `visual doctor` 内容诊断 | ✅ | `visual-runtime`：逐条有效命令解析 + `allowRemote` 清单；命令不可解析时该 finding 判失败；预算 finding 给出总量对比 |
+
+工程门禁（本机）：`npm test` **638 passed / 12 skipped**（66 个文件）；12 项浏览器门禁用例以
+`TIANSHU_VISUAL_BROWSER_TEST=1` 单独跑通 **12/12**（visual-browser-smoke 1、visual-capture 8、visual-flow 3，
+含新增的 2 项 D9 用例）；`typecheck`、`lint`（0 warning）、`build`、`check:stdio` 全绿。
+
+**未覆盖项（如实标注，不得视为通过）**：
+
+- **macOS 的真实系统证据尚待 CI runner 采集**：本阶段新增用例与 v0.5.0 的浏览器用例同门禁，
+  预期在提交推送后由 `visual-browser` 作业覆盖，但**当前尚未取得该次运行的绿色结果**，
+  因此不宣称 macOS 兼容性验收完成。
+- **未与真实三方视觉 CLI 实测**：全部证据基于仓库内判定桩；真实模型/CLI 的响应延迟、输出风格、
+  置信度习惯均在维护者自备命令后才可知。
+- **未验证「图片实际未离开本机」**：MCP 的强制力仅在契约层（未放行 `allowRemote` 时禁用 base64 占位符），
+  命令自身行为无法在系统层审计，见 [SECURITY.md](../SECURITY.md)。
+
+## 五、已知限制
 
 - macOS 证据来自 CI 托管 runner，未在维护者个人 macOS 设备上复核。
 - Windows 10 本机矩阵覆盖 `scripts/evidence-visual-windows.mjs` 列出的项；未列出项（如真实 GUI 桌面交互）不在视觉模块范围内。

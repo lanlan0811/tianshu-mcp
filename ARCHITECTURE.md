@@ -462,10 +462,25 @@ DOM 完成标志出现（"由AI生成" 等）                      → 判定完
   → 动工前冻结「视觉配置摘要 + 基准摘要」，每轮前后核对（变动即 VISUAL_INTEGRITY 阻塞）
   → 页面：三类来源（existing / command / static）+ 声明式步骤 + 稳定化采样 + 显式屏蔽
         → 与已批准基准做像素比对（pixelmatch）
+        → 若声明 pages[].content，复用同一次截图再做内容判定（pixel:false 则只做内容判定）
   → 图片：显式文件清单 + 编码/尺寸/DPI/透明度规格校验
+  → 内容（v0.5.4，可选）：委托用户自备命令判定「图片/截图内容是否符合显式期望」
+        → 采样多数票 + 任务级输入哈希缓存（键含命令二进制身份）
+        → 默认仅告警（optional）；逐规则 blocking:true 才参与致败与返修
   → 缺陷按 autoFixRounds 返修；阻塞 → needs_attention
   → rework_task 对阻塞任务先重新验收，不先启动 agent
 ```
+
+**AI 内容校验的凭证边界（v0.5.4，红线 §12）**：MCP 不读取、不存储、不转发任何密钥，也不实现模型/厂商
+HTTP 客户端；判定完全委托用户显式声明的本地命令。MCP 只负责占位符展开（`<image:path>` / `<expect:file>` /
+`<image:base64:file>`）、`shell:false` + 结构化 argv 的子进程执行、stdout 末行的严格 JSON 校验。外发闸门是
+**契约层**强制：`allowRemote` 默认 `false`，未放行的规则使用 `<image:base64:file>` 会被 schema 直接拒绝；
+命令自身是否外传图片**无法在系统层拦截**，须用户自行确认（见 `SECURITY.md`）。
+
+**内容判定的状态语义（v0.5.4）**：`VisualResult.status` 新增 `uncertain`（票不集中或低于 `minConfidence`），
+它既不匹配 `visualFailed`（只取 `failed`）也不匹配 `visualBlocked`（只取 `blocked`），因此**天然不参与 verdict**。
+整轮级失败（`CONTENT_COMMAND_MISSING` / `CONTENT_ENV_MISSING`）在预检阶段（`assertContentReady` 枚举每条规则的
+**有效**命令与 env）抛错、经 `acceptance.ts` 的 try/catch 升级为 `configurationError`，**不产出任何结果行**。
 
 **基准必须两阶段**：
 
@@ -485,8 +500,11 @@ DOM 完成标志出现（"由AI生成" 等）                      → 判定完
 | 互斥 | `withVisualLock()`：`<数据目录>/visual-locks/<sha256(key)>.lock`，占用时返回 `VISUAL_BUSY` |
 | 缺失依赖 | `sharp` / `pixelmatch` / `puppeteer-core` 缺失时**明确阻塞**，不静默降级 |
 | 规则冻结 | 任务期内配置或基准被改动 → `VISUAL_INTEGRITY`，防止 agent 削弱验收规则 |
+| 内容判定（v0.5.4） | `src/visual/content*.ts`：命令解析（`where`/`which`）、占位符展开、`runChild` 语义的子进程执行、stdout 末行严格 JSON；纯函数 `tallyContentVotes` 多数票与置信度闸门；任务级缓存含 `commandPath`/`commandDigest` 使自备 CLI 升级即失效 |
+| 语义-only 页面（v0.5.4） | `pages[].pixel:false` 跳过基准要求与像素比对（必须有 `content`），`prepareBaseline` 显式跳过、不纳入候选 |
+| 告警隔离（v0.5.4） | `blocking:false` → `optional:true`，不进 `visualBlocked`/`visualFailed`，不触发返修；返修计划列「仅告警项（不必修复）」，并修掉「optional 失败列入必须修复」的既有缺陷 |
 
-CLI 子命令族（`node dist/index.js visual ...`）：`init`（写入禁用的模板配置）、`doctor`、`browser install`、`baseline prepare|approve`、`rules review|approve`、`artifacts clean`。
+CLI 子命令族（`node dist/index.js visual ...`）：`init`（写入禁用的模板配置）、`doctor`（含内容命令解析与预算对比两项 finding）、`browser install`、`baseline prepare|approve`、`rules review|approve`、`artifacts clean`、`content probe <project> [ruleId]`（跑真实判定但不写证据/缓存）、`content cache clear <taskId>`。
 
 ---
 
@@ -548,7 +566,7 @@ CLI 子命令族（`node dist/index.js visual ...`）：`init`（写入禁用的
 1. **绝不按进程树盲杀 TraeWork**：只终止本模块创建、且命令行核对通过的 PID，且不带 `/T`。（历史事故：验证期 `taskkill /PID <pid> /T /F` 误杀用户正在使用的实例。）
 2. **默认复用用户实例**：`gui.windowMode = "reuse"`，绝不新起第二个；受管实例（Codex / ZCode 以专属 `user-data-dir` 启动）也不触碰用户手动打开的实例。
 3. **computer-use 白名单**：仅允许 TraeWork 文件夹选择对话框（窗口标题 + 宿主进程双校验），其他窗口一律 `COMPUTER_USE_DENIED`。
-4. **凭证零管理**：不读取 / 解密 / 转发任何 agent 凭证；GUI adapter 只驱动 UI。
+4. **凭证零管理**：不读取 / 解密 / 转发任何 agent 凭证；GUI adapter 只驱动 UI。**AI 内容校验（v0.5.4）同样适用**：不实现模型/厂商 HTTP 客户端、不读密钥，判定委托用户自备命令；外发闸门只在契约层强制（未放行 `allowRemote` 时 schema 拒绝 `<image:base64:file>`），**无法在系统层阻止用户命令外传图片**，此边界必须如实告知（见 `SECURITY.md`）。
 5. **命令不拼 shell**：验收命令是结构化 argv，`shell:false`。
 6. **不自动 commit / stash / 回滚**：动工前采集 git 基线，报告相对基线计算。
 7. **路径不硬编码**：机器路径 / 用户名 / 端口走 profile 或占位符。

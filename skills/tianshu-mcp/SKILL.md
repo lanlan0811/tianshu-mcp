@@ -116,7 +116,19 @@ meta 块中 `needsUserKind` 给出等待类型、`pendingQuestion` 给出问题�
 - **自动返修禁止调用批准入口**；两个工具都是有副作用的 `write` 操作，宿主必须实施实际授权控制（审批标注不能替代）。
 - 阻塞处理流程：先处理环境或完成审批，再 `rework_task`（系统先重新验收，通过后无需启动 agent）。
 
-Visual acceptance reuses the existing task tools with independent evidence. Never weaken baselines, thresholds, masks or enabled rules to bypass failures; baseline approval requires explicit user review and authorization, and automatic repair must never approve candidates. Resolve blockers before `rework_task`, which verifies first.
+### 7.1 AI 内容校验（v0.5.4，可选、默认关闭）
+
+`visual.contents[]`（图片内容规则）与 `pages[].content`（页面语义校验）可选启用，校验图片/截图**内容**是否符合用户显式声明的期望描述。
+
+- **凭证零管理**：判定完全委托用户自备的本地命令，判定命令自己管密钥；MCP 不读取/存储/转发任何凭证、不实现模型客户端。要启用它，需项目在 `.tianshu-mcp/acceptance.json` 配好 `visual.content.command` 与 `argsTemplate`（占位符 `<image:path>` / `<expect:file>` / `<image:base64:file>`），并先用 `tianshu-mcp visual content probe <project> [ruleId]` 验证命令可用。
+- **默认仅告警**：内容项 `blocking:false` 时映射为 `optional:true`，不改变验收结论、不触发返修。整轮消息会出现「AI 内容判定不确定（仅告警）」或「AI 内容告警未通过（不影响结论）」，报告与返修计划另有「仅告警项（不必修复）」小节——**不要为消除告警而伪造产物或放宽检查**。
+- **只有 `blocking:true` 才致败**，此时 `CONTENT_MISMATCH` 进入返修计划第 2 节「必须修复」。
+- **整轮阻塞**：任一规则的**有效**命令不可解析（`CONTENT_COMMAND_MISSING`）或声明的宿主环境变量缺失（`CONTENT_ENV_MISSING`）会让整轮进 `needs_attention`，且**不产出任何视觉结果行**。这是 fail-closed，不是可忽略的告警——先修配置或环境，再 `rework_task`。
+- **`uncertain` 不是失败**：票不集中或低于 `minConfidence` 时判 `uncertain`，永不阻塞、不触发返修；要让判定稳定可提高 `samples` 或让命令输出更一致。`minConfidence` 在命令不报 confidence 时不生效。
+- 排查：`tianshu-mcp visual doctor <project>` 列出每条有效命令的解析结果与 `allowRemote` 声明，并给出多规则总预算建议；`tianshu-mcp visual content cache clear <taskId>` 清理任务级判定缓存。
+- **数据外发**：`allowRemote` 默认 `false`，未放行的规则禁止使用字节外传占位符；图片是否离开本机取决于用户命令的行为，MCP 无法在系统层拦截。
+
+Visual acceptance reuses the existing task tools with independent evidence. Never weaken baselines, thresholds, masks or enabled rules to bypass failures; baseline approval requires explicit user review and authorization, and automatic repair must never approve candidates. Resolve blockers before `rework_task`, which verifies first. Optional AI content validation (v0.5.4) delegates judgement to a user-supplied command, warns only by default, and never lets an `uncertain` or warning item fail a round; only `blocking: true` rules do.
 
 ## 8. 硬失败与错误码速查
 

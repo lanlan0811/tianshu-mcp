@@ -2,7 +2,7 @@
 
 [English](visual-acceptance.en.md)
 
-视觉验收复用 `run_task`、`verify_task`、`get_task_report`、`query_task` 和 `rework_task`，支持客观页面截图对比与静态图片规格检查。没有 AI 内容或风格判断。官网代码不参与本模块开发。
+视觉验收复用 `run_task`、`verify_task`、`get_task_report`、`query_task` 和 `rework_task`，支持客观页面截图对比与静态图片规格检查。**客观检查无 AI 参与**；可选的 AI 内容校验默认关闭，由用户自备命令提供判定（见「AI 内容校验」）。官网代码不参与本模块开发。
 
 ## 安装与环境
 
@@ -102,6 +102,146 @@ tianshu-mcp visual rules approve TASK_ID REVIEW_ID DIGEST "用户确认的批准
 ```
 
 基准/环境阻塞进入 needs_attention，并保留待重新验收标记。处理后 rework_task 先验收，通过则结束，仍阻塞则等待；只有真实缺陷才进入返修。
+
+## AI 内容校验（可选，默认关闭）
+
+校验图片或页面截图**内容**是否符合用户显式声明的期望描述（如「Logo 含蓝色齿轮与文字 TIANSHU」、
+「存在用户名与密码输入框及登录按钮」）。与像素/规格检查平行，作为独立结果项 `kind:"content"` 进入统一报告。
+
+**凭证零管理**：MCP 不读取、不存储、不转发任何密钥，也不实现模型/厂商 HTTP 客户端。判定完全委托给
+用户自备的本地命令，由该命令自己使用它的登录态或密钥。详见 [SECURITY.md](../SECURITY.md)。
+
+### 配置
+
+```json
+{
+  "visual": {
+    "enabled": true,
+    "content": {
+      "enabled": true,
+      "command": "vision-cli",
+      "argsTemplate": ["judge", "--image", "<image:path>", "--expect-file", "<expect:file>"],
+      "cwd": ".",
+      "env": { "VISION_API_KEY": "MY_VISION_KEY" },
+      "allowRemote": false,
+      "samples": 3,
+      "timeoutMs": 90000,
+      "minConfidence": 0.6,
+      "cache": true
+    },
+    "contents": [
+      { "id": "logo-elements", "files": ["assets/logo.png"], "expect": "Logo 含蓝色齿轮图形与白色文字 TIANSHU" }
+    ],
+    "pages": [
+      { "id": "home", "source": { "type": "static", "root": "dist" }, "route": "/" },
+      {
+        "id": "login-semantic",
+        "source": { "type": "static", "root": "dist" },
+        "route": "/login",
+        "pixel": false,
+        "content": { "expect": "存在用户名与密码输入框及登录按钮", "blocking": true }
+      }
+    ]
+  }
+}
+```
+
+| 字段 | 默认 | 说明 |
+|---|---|---|
+| content.enabled | `false` | 总开关；声明了任何内容规则却不启用会被 schema 拒绝 |
+| content.command | — | 自备判定命令；逐规则可用 `command` 覆盖，两者都缺则拒绝 |
+| content.argsTemplate | — | 参数模板（见占位符表）；逐规则可覆盖 |
+| content.cwd | 项目根 | 项目相对路径 |
+| content.env | `{}` | `{ 子进程变量名: 宿主环境变量名 }`，缺失宿主变量 → 整轮阻塞（`CONTENT_ENV_MISSING`） |
+| content.allowRemote | `false` | 默认禁止外发；逐规则可覆盖 |
+| content.samples | `3` | 单次判定采样次数（1～9），多数票 |
+| content.timeoutMs | `90000` | 单项命令超时；硬约束 `samples × timeoutMs ≤ limits.roundTimeoutMs`，违反即配置期拒绝 |
+| content.minConfidence | 省略 | 省略即关闭置信度闸门（见下方语义） |
+| content.cache | `true` | 任务目录级判定缓存 |
+| contents[].id / files | — | 规则 ID 与图片项目相对路径列表（大小写不敏感去重） |
+| contents[].expect | — | 期望描述（必填，1～4000 字符）；不从任务文本自动推导 |
+| contents[].blocking | `false` | `false` 映射为 `optional:true`（仅告警）；`true` 才参与致败与返修 |
+| pages[].pixel | `true` | `false` 表示语义-only：跳过像素对比与基准要求（必须声明 `content`） |
+| pages[].content | — | 页面级内容校验，复用同一次截图，派生 id 为 `<pageId>-content` |
+
+### 命令契约
+
+- **占位符**（未在模板中出现的占位符不会生成对应临时文件）：
+
+| 占位符 | 展开为 | 附加条件 |
+|---|---|---|
+| `<image:path>` | 被检图片的绝对路径（经项目路径闸门） | — |
+| `<expect:file>` | 写入 UTF-8 期望原文的临时文件绝对路径 | — |
+| `<image:base64:file>` | 写入该图片 base64 的临时文件绝对路径 | **必须**该规则有效 `allowRemote === true`，否则 schema 拒绝 |
+
+  出现任何其他 `<...>` token 直接拒绝配置。
+
+- **stdout**：取**最后一行非空文本**解析 JSON：`{ "passed": boolean, "confidence"?: 0..1, "reason": string }`（严格模式，未知字段拒绝）。
+- **退出码**：`0` 表示命令正常执行（**不代表判定通过**，通过与否看 JSON）；非 `0` 表示命令执行失败。
+- 期望描述经临时文件传递，既规避命令行转义与长度上限，也避免期望文本进入进程命令行。
+- 临时输入文件每轮采样后在 `finally` 中删除（属易失输入，不计入产物体积）。
+
+### 判定与防抖
+
+- 单项内**串行**采样（项间仍受 `limits.concurrency` 约束），避免同一命令并发抢占与输出交错。
+- 多数票：通过票 > `samples/2` 判 `CONTENT_MATCH`；不通过票 > `samples/2` 判 `CONTENT_MISMATCH`；否则 `CONTENT_UNCERTAIN`。
+- `confidence` 取已给出置信度的投票的算术均值；命令不报置信度则不参与任何闸门。
+- **`minConfidence` 在命令不报 confidence 时不生效**：该行为是刻意的（对不输出置信度的命令设默认值会把全部
+  判定误伤成不确定），但此时报告 md 与离线 HTML 会明确标注「命令未提供 confidence，minConfidence 未生效」。
+- **任何一次命令级失败（非零退出/超时/输出非法）→ 该项直接判 blocked**，不把基础设施故障混进「不确定」。
+- 缓存键为输入哈希，纳入图片内容摘要、期望文本、命令字符串、**命令绝对路径与二进制摘要**（自备 CLI 升级后旧判定
+  自动失效）、参数模板、cwd、已解析环境值摘要（不落明文）、`allowRemote`、`samples`、`minConfidence`。
+  命令身份无法可靠计算时**不做缓存**。仅成功完成的判定入缓存，blocked 不入缓存；缓存只存期望文本摘要而非原文。
+- 缓存位置 `<taskDir>/visual-content-cache/`。命中缓存时不调用命令，结果标 `cached: true`。
+- 逃生门：`content.cache: false` 关闭；`tianshu-mcp visual content cache clear <taskId>` 清理。
+
+### 原因码
+
+| 原因码 | status | 可返修 | 触发条件 |
+|---|---|---|---|
+| `CONTENT_MATCH` | passed | 否 | 多数票判定满足期望 |
+| `CONTENT_MISMATCH` | failed | 是 | 多数票判定不满足期望 |
+| `CONTENT_UNCERTAIN` | uncertain | 否 | 票不集中，或有效置信度低于 `minConfidence` |
+| `CONTENT_COMMAND_MISSING` | —（整轮） | — | 任一规则的**有效**命令无法解析/不可执行 → 整轮 `configurationError`，不产出结果行 |
+| `CONTENT_COMMAND_FAILED` | blocked | 否 | 命令退出码非 0（单项） |
+| `CONTENT_TIMEOUT` | blocked | 否 | 单项超时（单项） |
+| `CONTENT_OUTPUT_INVALID` | blocked | 否 | stdout 末行缺失/非 JSON/字段不合法（单项） |
+| `CONTENT_ENV_MISSING` | —（整轮） | — | 声明的宿主环境变量缺失 → 整轮 `configurationError`，不产出结果行 |
+| `CONTENT_CONFIG_INVALID` | blocked | 否 | 运行期兜底（正常应由 schema 拦截） |
+
+`CONTENT_COMMAND_MISSING` 与 `CONTENT_ENV_MISSING` 走整轮预检抛错路径：**不产出任何结果行**，只出现在
+`blockingIssues`。这是 fail-closed 的有意设计——启用后依赖缺失绝不静默当成通过。
+
+### 告警、不确定与门禁
+
+- 内容项默认 `blocking:false` → `optional:true`，**仅告警**：不改变 verdict，不触发返修。
+- 逐规则 `blocking:true` 才纳入致败（`visualFailed`/`visualBlocked`）与返修计划。
+- `uncertain` 既不匹配 `failed` 也不匹配 `blocked`，**天然不参与 verdict、不触发返修**。
+- 告警与不确定必须可见：整轮 message 会出现「AI 内容判定不确定（仅告警）: ...」与
+  「AI 内容告警未通过（不影响结论）: <id> [<code>]」；返修计划把它们列入「仅告警项（不必修复）」，
+  并明确要求不得为消除告警而伪造产物或放宽检查。
+
+### 成本边界（本版唯一约束）
+
+不设判定次数或金额的独立上限。成本完全取决于：① 规则数 × 采样数（用户显式声明，`samples` 有 `≤ 9` 上界）；
+② `limits.roundTimeoutMs` 总闸；③ 缓存（同输入零重跑）。`visual doctor` 会按
+`规则数 × 采样数 × timeoutMs` 与 `roundTimeoutMs` 对比给出建议值（不自动修改配置）。启用内容校验时通常需要
+上调 `limits.roundTimeoutMs`。
+
+### 数据外发声明
+
+图片是否离开本机取决于**用户自备命令的行为**，MCP 无法在系统层拦截。MCP 的强制力仅在契约层：未显式放行
+`allowRemote` 的规则禁止使用 `<image:base64:file>`（schema 拒绝）。`visual doctor` 列出各规则的 `allowRemote`
+声明。请自行确认命令的实际行为。
+
+### 验证自备命令
+
+```sh
+tianshu-mcp visual content probe /path/to/project [ruleId]
+```
+
+按声明规则跑一次真实判定但**不写证据、不写缓存**，打印原始票型与命令解析结果，便于先确认命令可用、判定稳定。
+`visual doctor` 另会逐条报告有效命令的解析结果与 `allowRemote` 声明。
 
 ## 报告与保留
 
