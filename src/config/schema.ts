@@ -14,8 +14,23 @@ export const TraeworkModeSchema = z.enum(["Work", "Code", "Design"]);
 /** TraeWork 面板模式类型（单一真源，供 adapter/task/ui 共用） */
 export type TraeworkMode = z.infer<typeof TraeworkModeSchema>;
 
-/** Codex 思考等级：接受中英双语写法，内部归一为 low/medium/high */
-export const ReasoningLevelSchema = z.enum(["低", "中", "高", "low", "medium", "high"]);
+/**
+ * 思考等级：接受中英双语写法，Codex 内部归一为 low/medium/high。
+ * 追加值（各 agent 按自己的档位语义解释，越权档位由 agent 侧显式拒绝）：
+ * - `max`：Kimi Code 官方模型（仅 Low/High/Max 三档）
+ * - `on` / `off`：Kimi Code 非官方模型（仅两档，默认 on）
+ */
+export const ReasoningLevelSchema = z.enum([
+  "低",
+  "中",
+  "高",
+  "low",
+  "medium",
+  "high",
+  "max",
+  "on",
+  "off",
+]);
 export type ReasoningLevel = z.infer<typeof ReasoningLevelSchema>;
 
 export const RunTaskParamsSchema = z.object({
@@ -316,7 +331,7 @@ export const AgentProfileSchema = z.object({
    */
   driver: z.enum(["spawn", "gui"]).default("spawn"),
   /** GUI adapter 显式判别；旧 profile 缺省时保持 TraeWork 兼容行为。 */
-  adapter: z.enum(["traework-gui", "zcode-gui", "codex-gui"]).optional(),
+  adapter: z.enum(["traework-gui", "zcode-gui", "codex-gui", "kimicode-gui"]).optional(),
   status: z.enum(["ready", "research", "unsupported"]).default("ready"),
   command: z.string().nullable().optional(),
   argsTemplate: z.array(z.string()).default([]),

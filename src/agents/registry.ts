@@ -9,8 +9,10 @@ import { CliAdapter } from "./cli.js";
 import { TraeworkGuiAdapter } from "./traework/adapter.js";
 import { ZcodeGuiAdapter } from "./zcode/adapter.js";
 import { CodexGuiAdapter } from "./codex/adapter.js";
+import { KimicodeGuiAdapter } from "./kimicode/adapter.js";
 import { discoverZcode } from "./zcode/discovery.js";
 import { discoverCodex } from "./codex/discovery.js";
+import { discoverKimicode } from "./kimicode/discovery.js";
 import type { AgentProfile } from "../config/schema.js";
 import type { SpawnResult } from "./spawn.js";
 import { Logger } from "../util/log.js";
@@ -27,7 +29,7 @@ export class AgentAdapterRegistry {
   ) {
     // 默认：所有 profile 都用通用 CLI adapter（按 profile.promptMode 传递 prompt）。
     // driver=gui 的 profile 会在 resolve() 时替换为 GUI adapter（见 ensureAdapterFor）。
-    for (const id of ["codex", "zcode", "traework", "stub"]) {
+    for (const id of ["codex", "zcode", "traework", "kimicode", "stub"]) {
       this.adapters.set(id, new CliAdapter(id));
     }
   }
@@ -46,6 +48,9 @@ export class AgentAdapterRegistry {
     } else if (adapterType === "codex-gui") {
       if (!(current instanceof CodexGuiAdapter))
         this.adapters.set(agentId, new CodexGuiAdapter(agentId));
+    } else if (adapterType === "kimicode-gui") {
+      if (!(current instanceof KimicodeGuiAdapter))
+        this.adapters.set(agentId, new KimicodeGuiAdapter(agentId));
     } else if (adapterType === "traework-gui") {
       if (!(current instanceof TraeworkGuiAdapter))
         this.adapters.set(agentId, new TraeworkGuiAdapter(agentId));
@@ -53,6 +58,7 @@ export class AgentAdapterRegistry {
       current instanceof TraeworkGuiAdapter ||
       current instanceof ZcodeGuiAdapter ||
       current instanceof CodexGuiAdapter ||
+      current instanceof KimicodeGuiAdapter ||
       !current
     ) {
       this.adapters.set(agentId, new CliAdapter(agentId));
@@ -152,6 +158,34 @@ export class AgentAdapterRegistry {
         message:
           profile.note ||
           `未探测到 Codex 桌面端（Get-AppxPackage 查询与 ${"WindowsApps"} 扫盘均失败）；请确认已安装 Codex`,
+      };
+    }
+    if (profile.adapter === "kimicode-gui") {
+      const found = await discoverKimicode(profile);
+      if (found)
+        return {
+          id: agentId,
+          displayName: profile.displayName || agentId,
+          profile,
+          command: found.path,
+          argsTemplate: profile.argsTemplate,
+          ok: true,
+          message: `探测到 Kimi Code: ${found.path}${found.version ? ` (v${found.version})` : ""}`,
+          discovered: {
+            source: found.source === "explicit" ? "explicit" : "discovery",
+            version: found.version,
+          },
+        };
+      return {
+        id: agentId,
+        displayName: profile.displayName || agentId,
+        profile,
+        command: "",
+        argsTemplate: profile.argsTemplate,
+        ok: false,
+        message:
+          profile.note ||
+          `未探测到 Kimi Code 桌面端（固定盘相对路径、注册表卸载信息与标准安装目录均未命中）；请确认已安装 Kimi Code`,
       };
     }
     if (profile.status === "research") {
