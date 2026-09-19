@@ -32,14 +32,16 @@ import { makeKimicodeTargets, type FakeKimicodeState, type FakeKimicodeTargets }
 interface DialogDeps {
   listDialogs: typeof listOwnedDialogs;
   selectFolder: typeof selectKimicodeFolder;
+  closeDialogs: (pids: number[]) => Promise<number>;
   sleep: (ms: number) => Promise<void>;
 }
 
 function hermeticDeps(overrides: Partial<DialogDeps> = {}): DialogDeps {
   return {
-    // 真实 listOwnedDialogs 会外呼 PowerShell/osascript，集成测试必须隔离。
+    // 真实 listOwnedDialogs / closeStrayDialogs 会外呼 PowerShell/osascript，集成测试必须隔离。
     listDialogs: async () => [],
     selectFolder: async () => ({ ok: true, message: "hermetic" }),
+    closeDialogs: async () => 0,
     sleep: async () => {
       await new Promise((resolve) => setTimeout(resolve, 1));
     },
@@ -440,7 +442,11 @@ interface M3Harness {
 /** 一站式装配：假 CDP + hermetic 原生对话框桩 + 空 sleep（不触达真实系统与真实时钟） */
 async function m3Harness(
   targets: FakeKimicodeTargets,
-  over: { ctx?: Partial<TaskContext>; gui?: Record<string, unknown> } = {},
+  over: {
+    ctx?: Partial<TaskContext>;
+    gui?: Record<string, unknown>;
+    deps?: Partial<KimicodeRunDeps>;
+  } = {},
 ): Promise<M3Harness> {
   const root = await makeTmpRoot("kimicode-m3");
   m3Cleanup.push(root);
@@ -466,7 +472,9 @@ async function m3Harness(
       createClient: () => clientForFake,
       listDialogs: async () => [],
       selectFolder: async () => ({ ok: true, message: "hermetic" }),
+      closeDialogs: async () => 0,
       sleep: async () => {},
+      ...over.deps,
     },
     events,
   };
@@ -979,6 +987,31 @@ describe("Kimi Code M4 needs_user 五类", () => {
 
 describe("Kimi Code M4 continue_task 恢复", () => {
   const QUESTION_SEED = "用户任务书Kimi 已完成依赖安装，是否继续执行数据库迁移？";
+
+  /**
+   * 真机教训（Codex 同款）：上一轮失败/取消留下的「添加工作区」模态框会吞掉主窗口点击，
+   * 让下一轮把「点新建会话毫无反应」误判成选择器失效。启动时必须先清掉自己 pid 的残留对话框。
+   */
+  it("启动时按实例 pid 清理残留原生对话框（模态框会吞掉主窗口点击）", async () => {
+    const targets = makeKimicodeTargets({
+      workspaces: M3_PROJECT_WORKSPACES,
+      pollScript: [{ stopVisible: true, sendStarting: true }, { stopVisible: false, sendStarting: false }],
+    });
+    const seen: number[][] = [];
+    const result = await runM3(
+      await m3Harness(targets, {
+        deps: {
+          closeDialogs: async (pids) => {
+            seen.push(pids);
+            return 1;
+          },
+        },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    // 必须用受管实例的 pid（4242），不能空集也不能拿别的进程去关。
+    expect(seen).toEqual([[4242]]);
+  });
 
   it("agent_question 恢复：回答写进原会话（不重发任务书）并观察至完成", async () => {
     const targets = makeKimicodeTargets({

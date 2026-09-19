@@ -52,7 +52,7 @@ import {
   type KimicodeProcess,
   type KimicodeReady,
 } from "./instance.js";
-import { listOwnedDialogs, selectKimicodeFolder } from "./dialog.js";
+import { listOwnedDialogs, selectKimicodeFolder, closeStrayDialogs } from "./dialog.js";
 import { ensureFreshDraft, locateSession } from "./session.js";
 import { matchKimicodeWorkspace, normalizeWorkspacePath } from "./workspace.js";
 import {
@@ -100,6 +100,8 @@ export interface KimicodeRunDeps {
   ) => KimicodeCdpClient;
   listDialogs: typeof listOwnedDialogs;
   selectFolder: typeof selectKimicodeFolder;
+  /** 启动时清理残留原生对话框（模态框会吞掉主窗口点击） */
+  closeDialogs: typeof closeStrayDialogs;
   sleep: (ms: number) => Promise<void>;
 }
 
@@ -118,6 +120,7 @@ const DEFAULT_DEPS: KimicodeRunDeps = {
   createClient: (port, timeout, selectors) => new KimicodeCdpClient(port, timeout, selectors),
   listDialogs: listOwnedDialogs,
   selectFolder: selectKimicodeFolder,
+  closeDialogs: closeStrayDialogs,
   sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
 };
 
@@ -650,6 +653,16 @@ export async function runKimicodeTask(args: RunKimicodeArgs): Promise<AgentRunRe
       });
     logger.info("[kimicode] Kimi Code CDP 主窗口与 composer 已就绪");
 
+    /**
+     * 启动清理：关掉本进程残留的原生对话框（Codex 同款教训）。
+     * 上一轮失败/取消留下的「添加工作区」模态框会吞掉主窗口点击，让本轮把「点新建会话毫无反应」
+     * 误判成选择器失效——先把它从变量里消掉，再开始任何交互。
+     */
+    if (ready.pid) {
+      const closed = await deps.closeDialogs([ready.pid]);
+      if (closed > 0) logger.warn(`[kimicode] 已关闭 ${closed} 个残留原生对话框（会阻塞主窗口点击）`);
+    }
+
     // 恢复语义分派（与 zcode/codex 同构）：
     // - user_confirmation 恢复 = 用户在 GUI 处理完等待项后 turn 自行继续 → reobserve（本轮不发送）；
     // - 其余 continue / rework 走正常派发（agent_question 回发回答；环境类补发任务书；rework 发返修）。
@@ -734,9 +747,18 @@ export async function runKimicodeTask(args: RunKimicodeArgs): Promise<AgentRunRe
         deadlineMs: () => stageDeadline(workspaceTriggerBudgetMs(gui)),
       });
       if (!bound.ok) {
+        // 草稿失败最常见的两个环境原因（残留模态框吞点击 / 窗口不在前台）必须出现在诊断里，
+        // 否则下一轮只能看到「选择器没挂载」这种无法定位的结论。
+        let draftHint = "";
+        if (bound.reason === "draft") {
+          const [href, hidden] = await Promise.all([
+            cdp.evaluate<string>("location.href").catch(() => ""),
+            cdp.pageHidden().catch(() => false),
+          ]);
+          draftHint = `（当前页面=${href || "未知"}；窗口前台=${hidden ? "否" : "是"}）`;
+        }
         const describe: Record<string, string> = {
-          draft:
-            "无法进入新的 Kimi Code 草稿页：点击新建会话后工作区触发器（ws-chip）始终未挂载",
+          draft: `无法进入新的 Kimi Code 草稿页：点击新建会话后工作区触发器（ws-chip）始终未挂载${draftHint}`,
           panel: "无法打开 Kimi Code 工作区下拉面板（点击被吞或面板未出现）",
           ambiguous: `工作区同名或路径重复，无法消歧：${bound.candidates?.join("、") ?? ""}`,
           click: "工作区面板里命中条目但点击未生效",

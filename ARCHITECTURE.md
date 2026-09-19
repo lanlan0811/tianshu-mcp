@@ -329,7 +329,7 @@ interface AgentAdapter {
 **唯一的双路径接缝**：`run()` 存在时，`TaskOrchestrator` 不再 spawn 子进程，而是调用它（GUI adapter）；否则走 `runChild()`（CLI adapter）。
 
 - **CLI 路径**（`src/agents/cli.ts` + `src/agents/spawn.ts`）：`cross-spawn` 拉起子进程，stdout/stderr 落日志，退出码判定；`promptMode` 支持 `arg` / `stdin` / `file` 三种任务书投递方式。
-- **GUI 路径**：三个 adapter 的 `buildInvocation()` 直接抛错，`run()` 承担全部 CDP 编排。Codex 与 ZCode 另有一道**模块级串行门**——GUI 是单会话资源，并发派发会互相踩踏。
+- **GUI 路径**：四个 adapter 的 `buildInvocation()` 直接抛错，`run()` 承担全部 CDP 编排。Codex 与 ZCode 另有一道**模块级串行门**——GUI 是单会话资源，并发派发会互相踩踏。
 
 `AgentRunResult` 是跨层信息载体，关键字段：
 
@@ -343,7 +343,7 @@ interface AgentAdapter {
 | `session / keptInstance` | 会话锚点与实例是否保留，供 `continue_task` 恢复 |
 | `progressSummary` | 落盘进 `query_task` 可见的进度 |
 
-### 8.2 三个 GUI driver 的执行顺序（实测结论，勿随意调整）
+### 8.2 四个 GUI driver 的执行顺序（实测结论，勿随意调整）
 
 **TraeWork**（CDP 驱动 TRAE SOLO CN）：
 
@@ -370,9 +370,26 @@ MSIX 发现（Appx 查询优先 + 扫盘回退） → COM 激活 + 专属 user-d
   → 运行检测（停止按钮 + 对话哈希 stall） → 轮询到完成
 ```
 
+**Kimi Code**（CDP 驱动，**双渲染进程**）：
+
+```text
+发现安装 → 启动/复用 CDP 实例（已有非 CDP 实例 → needs_user(close_existing_instance)）
+  → 连接主窗口并置前（bringToFront，等 visibilityState 收敛） → 新建草稿（以 ws-chip 挂载为准的有界重试）
+  → 绑定工作区（完整路径匹配 + 回读；未登记则走原生「添加工作区」对话框）
+  → 选模型（pill 回读 → overlay 快捷菜单 → 「更多模型…」对话框）
+  → 思考档位（按界面实际档位集合校验） → 执行模式「完全自动」
+  → 发送（标记 + 60s 有界确认） → 运行检测（stop 按钮 / send.is-starting） → 轮询到完成
+```
+
+> **模型菜单 / 思考档位 / 执行模式菜单不在主窗口**，而由应用内 `browserOverlayOpenMenu()` 渲染在独立的
+> `Kimi Browser Overlay` 渲染进程；工作区菜单与「切换模型」对话框仍在主窗口。
+> 因此 `src/agents/kimicode/cdp.ts` 是**双页面客户端**（main + overlay），并排除 `Screenshot` target。
+> 判定「菜单是否打开」必须以 overlay 的 `visibilityState` 为准——菜单关闭后内容可能短暂残留。
+> Kimi Code **不支持无项目派发**：任务必须绑定工作区文件夹，`workspaceMode=default` 或缺少 `projectPath` 时以 `setup_failed` 拒绝。
+
 ### 8.3 完成判定：运行信号优先，完成标志其次
 
-三个 driver 共用同一条判据原则（实现分别在各自的 `liveness.ts`）：
+四个 driver 共用同一条判据原则（实现分别在各自的 `liveness.ts`）：
 
 ```text
 运行信号存在（停止按钮 / loading 指示 / 活跃工具调用）  → 仍在运行，一律不结束
@@ -390,46 +407,51 @@ DOM 完成标志出现（"由AI生成" 等）                      → 判定完
 
 `endReason`：
 
-| Codex | TraeWork | ZCode |
-|---|---|---|
-| `reply_stable`（成功） | `completion_mark`（成功） | `reply_stable`（成功） |
-| `aborted` | `ask_user`（成功但被阻塞） | `aborted` |
-| `task_timeout` | `aborted` | `task_timeout` |
-| `idle_timeout` | `timeout` | `idle_timeout` |
-| `needs_user` | `idle_no_completion` | `needs_user` |
-| `setup_failed` | `setup_failed` | `setup_failed` |
-| `instance_busy` | `cdp_lost` | `cdp_disconnected` |
-| `project_ambiguous` | — | `project_ambiguous` |
-| `project_create_failed` | — | `project_mismatch` |
-| `project_mismatch` | — | `project_not_registered` |
-| `model_unavailable` | — | `model_unavailable` |
-| `model_mismatch` | — | `model_mismatch` |
-| `permission_unknown` | — | `permission_unknown` |
-| `input_mismatch` | — | `input_mismatch` |
-| `send_unknown` | — | `send_unknown` |
-| `cdp_disconnected` | — | `session_lost` |
-| `internal` | — | `internal` |
+| Codex | TraeWork | ZCode | Kimi Code |
+|---|---|---|---|
+| `reply_stable`（成功） | `completion_mark`（成功） | `reply_stable`（成功） | `reply_stable`（成功） |
+| `aborted` | `ask_user`（成功但被阻塞） | `aborted` | `aborted` |
+| `task_timeout` | `aborted` | `task_timeout` | `task_timeout` |
+| `idle_timeout` | `timeout` | `idle_timeout` | `idle_timeout` |
+| `needs_user` | `idle_no_completion` | `needs_user` | `needs_user` |
+| `setup_failed` | `setup_failed` | `setup_failed` | `setup_failed` |
+| `instance_busy` | `cdp_lost` | `cdp_disconnected` | `instance_busy` |
+| `project_ambiguous` | — | `project_ambiguous` | — |
+| `project_create_failed` | — | `project_mismatch` | — |
+| `project_mismatch` | — | `project_not_registered` | — |
+| `model_unavailable` | — | `model_unavailable` | `model_unavailable` |
+| `model_mismatch` | — | `model_mismatch` | `model_mismatch` |
+| `permission_unknown` | — | `permission_unknown` | `permission_unknown` |
+| `input_mismatch` | — | `input_mismatch` | `input_mismatch` |
+| `send_unknown` | — | `send_unknown` | `send_unknown` |
+| `cdp_disconnected` | — | `session_lost` | `cdp_disconnected` |
+| `internal` | — | `internal` | `internal` |
+| — | — | — | `agent_error`（界面出现「继续」按钮或失败文案） |
+
+> Kimi Code 以**工作区**（而非项目）组织任务，因此不产出 `project_*` 系列；绑定失败统一走
+> `setup_failed` 或 `needs_user(setup_recovery / system_permission)`。
 
 `needsUserKind`（联合类型共 6 种，各 driver 实际产出的子集不同）：
 
 | 取值 | 含义 | 产出方 |
 |---|---|---|
-| `agent_question` | agent 在 UI 里向用户提问 | ZCode |
-| `user_confirmation` | 停在等待用户确认的界面 | Codex |
-| `login_required` | 需要登录 | Codex、ZCode |
-| `close_existing_instance` | 已有实例未开 CDP 端口，需用户关闭 | ZCode |
-| `system_permission` | 系统权限不足（如 macOS 辅助功能） | ZCode |
-| `setup_recovery` | 自动恢复预算耗尽，需人工介入 | ZCode |
+| `agent_question` | agent 在 UI 里向用户提问 | ZCode、Kimi Code（需配置 `gui.selectors.userGate` 才启用启发式提问检测） |
+| `user_confirmation` | 停在等待用户确认的界面 | Codex、Kimi Code |
+| `login_required` | 需要登录 | Codex、ZCode、Kimi Code |
+| `close_existing_instance` | 已有实例未开 CDP 端口，需用户关闭 | ZCode、Kimi Code |
+| `system_permission` | 系统权限不足（如 macOS 辅助功能） | ZCode、Kimi Code |
+| `setup_recovery` | 自动恢复预算耗尽，需人工介入 | ZCode、Kimi Code |
 
 > TraeWork 不产出 `needsUserKind`：它的「向用户提问」被当作正常结束（`ask_user`）并释放实例。
 
 ### 8.5 注册表与可执行探测（`src/agents/registry.ts`）
 
-- 构造时预注册四个 `CliAdapter` 基座（codex / zcode / traework / stub），随后按 `profile.adapter` 换装 GUI 实现（`codex-gui` / `zcode-gui` / `traework-gui`）；仅当实现类变化时才重建。
+- 构造时预注册五个 `CliAdapter` 基座（codex / zcode / traework / kimicode / stub），随后按 `profile.adapter` 换装 GUI 实现（`codex-gui` / `zcode-gui` / `traework-gui` / `kimicode-gui`）；仅当实现类变化时才重建。
 - `resolve(agentId)` 按 profile 的 `status` 分支：
   - `unsupported` → 直接失败；
   - `research` → ZCode 走专用 `discoverZcode`，其他走通用探测；
   - `ready` → 顺序为「显式绝对路径 → 发现目录扫描 → PATH（`where` / `which`）」；占位符命令（`<...>`）被拒绝。
+- `codex-gui` 与 `kimicode-gui` 不走通用探测：分别经 `discoverCodex`（Appx 查询 + 扫盘）与 `discoverKimicode`（盘根相对路径 + 标准目录 + macOS bundle）解析可执行。
 - 目录扫描按深度 6 内查找候选，跳过 `node_modules` 与点目录，**取 mtime 最新者**。
 - profile 热加载靠 sha256 内容指纹（不是 mtime），因此同一时间戳内的修改也能被感知。
 - `get_profiles` 列出所有已注册 adapter 键与 profile 键的并集（未解析成功的自定义 profile 也会出现），并逐条给出 `[PASS]/[FAIL]` 与探测来源。
@@ -438,13 +460,13 @@ DOM 完成标志出现（"由AI生成" 等）                      → 判定完
 
 | 环节 | 机制 |
 |---|---|
-| 启动 | 三处统一走 `guiInstanceSpawnOptions()`：**无条件** `detached: true` + `unref()` |
-| 复用 | 优先复用受管实例（Codex 以专属 `--user-data-dir` 判等；ZCode 扫端口范围；TraeWork 直接探测端口） |
+| 启动 | 四处统一走 `guiInstanceSpawnOptions()`：**无条件** `detached: true` + `unref()` |
+| 复用 | 优先复用受管实例（Codex 以专属 `--user-data-dir` 判等；ZCode / Kimi Code 扫端口范围；TraeWork 直接探测端口） |
 | 附着 | CDP 连接必须完成一次真实 DOM 往返（`exists("chatInput")`）才被接受 |
 | 存活探测 | 每 tick 一次 DOM 求值，交给各自的 `judge*Poll` 判定 |
-| 保留 | Codex / ZCode 几乎在所有返回路径都置 `keptInstance: true` 且从不杀进程；TraeWork 仅在干净完成时释放自己启动的实例 |
+| 保留 | Codex / ZCode / Kimi Code 几乎在所有返回路径都置 `keptInstance: true` 且从不杀进程；TraeWork 仅在干净完成时释放自己启动的实例 |
 | 归属核对 | TraeWork 释放前核对命令行含调试端口 + exe 名，且 `taskkill` **不带 `/T`**；Codex 只停受管实例 |
-| 孤儿处理 | ZCode 遇到「活着但没开 CDP 端口」的实例 → `needs_user(close_existing_instance)`，交由用户处理，绝不盲杀 |
+| 孤儿处理 | ZCode / Kimi Code 遇到「活着但没开 CDP 端口」的实例 → `needs_user(close_existing_instance)`，交由用户处理，绝不盲杀 |
 
 > **`detached: true` 是不变量而非平台偏好**：桌面实例必须跨 MCP server 退出继续存活，才能兑现 `keptInstance` 的语义。v0.5.3 之前按平台分支（Windows 上不 detached）导致 server 一退出 GUI 就被连坐杀掉，已修复。
 >
@@ -531,10 +553,10 @@ CLI 子命令族（`node dist/index.js visual ...`）：`init`（写入禁用的
 
 | 组 | 字段 |
 |---|---|
-| 身份与形态 | `id`、`displayName`、`type`、`driver`(spawn\|gui)、`adapter`(traework-gui\|zcode-gui\|codex-gui)、`status`(ready\|research\|unsupported) |
+| 身份与形态 | `id`、`displayName`、`type`、`driver`(spawn\|gui)、`adapter`(traework-gui\|zcode-gui\|codex-gui\|kimicode-gui)、`status`(ready\|research\|unsupported) |
 | CLI 执行 | `command`、`argsTemplate`、`promptMode`(arg\|stdin\|file)、`cwd`(task\|home)、`env`、`timeoutMs`、`killTree` |
 | 可执行探测 | `executableDiscovery`：`dirs`、`fileNames`、`fallbackCommand`、`preferredDrives`、`appxPackageName`、`scanRoots`… |
-| GUI 编排 | `gui`：`cdpPort`(9222)、`cdpPortRange`、`exePath`、`windowMode`、`launchTimeoutMs`(60s)、`pollIntervalMs`(3s)、`stableRounds`(12)、`idleTimeoutMs`(10min)、`stallTimeoutMs`(300s)、`cancelWaitMs`(15s)、`cdpSendTimeoutMs`(15s)、`progressIntervalMs`(30s)、`selectors`、`defaultPermissionMode`、`defaultAutoFixRounds`、`activation`(spawn\|msix-com)、`userDataDir`、`fixPlanDir`… |
+| GUI 编排 | `gui`：`cdpPort`(9222)、`cdpPortRange`、`exePath`、`windowMode`、`launchTimeoutMs`(60s)、`pollIntervalMs`(3s)、`stableRounds`(12)、`idleTimeoutMs`(10min)、`stallTimeoutMs`(300s)、`cancelWaitMs`(15s)、`cdpSendTimeoutMs`(15s)、`progressIntervalMs`(30s)、`projectTriggerTimeoutMs`(15s)、`workspaceTriggerTimeoutMs`(15s，Kimi Code 草稿页判据)、`selectors`、`defaultPermissionMode`、`defaultAutoFixRounds`、`activation`(spawn\|msix-com)、`userDataDir`、`fixPlanDir`… |
 
 `gui.selectors` 是**不改代码适配 UI 升级**的主要手段：客户端改版导致选择器失效时，先用 `scripts/probe-*.mjs` 诊断，再经 profile 覆盖。
 
@@ -615,8 +637,8 @@ CLI 子命令族（`node dist/index.js visual ...`）：`init`（写入禁用的
 
 | 层级 | 位置 | 覆盖 |
 |---|---|---|
-| 单元 | `test/unit/` | 纯函数与组件逻辑：三个 driver 的 reply / selectors / launcher / liveness / recovery、验收引擎（含并行）、基线归因、原子写、热加载、路径闸门、视觉模块 |
-| 集成 | `test/integration/` | stub-agent 三剧本、取消 / 超时 / 基线、假 CDP 的 TraeWork / Codex / ZCode 全流程与返修循环、竞态回归、视觉 services / capture / flow |
+| 单元 | `test/unit/` | 纯函数与组件逻辑：四个 driver 的 reply / selectors / launcher / liveness / recovery、验收引擎（含并行）、基线归因、原子写、热加载、路径闸门、视觉模块 |
+| 集成 | `test/integration/` | stub-agent 三剧本、取消 / 超时 / 基线、假 CDP 的 TraeWork / Codex / ZCode / Kimi Code 全流程与返修循环、竞态回归、视觉 services / capture / flow |
 | 协议 | `test/protocol/` | 官方 SDK 客户端断言 11 工具面与返回格式 |
 | 真机（手动） | `scripts/probe-*.mjs`、`scripts/smoke-zcode.mjs`、`scripts/evidence-visual-windows.mjs` | 需真实客户端 / 已安装浏览器 |
 | 消费者 | `scripts/check-visual-consumer.mjs` | 从生产 tarball 装到无开发依赖目录，跑真实浏览器视觉验收与离线报告 |
@@ -642,14 +664,15 @@ CLI 子命令族（`node dist/index.js visual ...`）：`init`（写入禁用的
 
 按对接手人的影响排序：
 
-1. **UI 信号是唯一可靠完成判据**——三个 GUI driver 都依赖 DOM 结构与可见信号。客户端升级可能使选择器漂移；先在 `selectors.ts` 或 profile 覆盖处修复，真机复验不可省。
+1. **UI 信号是唯一可靠完成判据**——四个 GUI driver 都依赖 DOM 结构与可见信号。客户端升级可能使选择器漂移；先在 `selectors.ts` 或 profile 覆盖处修复，真机复验不可省。
 2. **`needs_user` 状态下无法停止 GUI 内会话**——MCP 侧无 CDP 连接。终态文案会诚实提示。临时 CDP 连接停车已在 `CHANGELOG.md` 的「计划中」。
 3. **单会话串行**——GUI 是单会话资源，同项目任务被 `projectBusy()` 串行化，全局并发受 `maxRunning` 限制。这是设计约束，不是缺陷。
-4. **macOS 验证矩阵不完整**——Codex 与 ZCode 的 macOS 基本闭环已真机验证，但取消/返修/`continue_task`/新建项目矩阵未覆盖，故二者 darwin 仍标 `research`；TraeWork 的 macOS 分支 fail-closed。
-5. **无项目派发仅 ZCode 且仅 Windows 实测**；ZCode 未登记项目的自动导入在 Windows 上不可用（需先手动登记，或传 `allowCreateProject=false` 显式失败）。
-6. **视觉模块的平台证据边界**——macOS 证据来自 CI 托管 runner，未在维护者个人 macOS 设备复验。
-7. **验收 fail-closed 对纯分析任务的影响**——git 项目默认要求产生变更，纯问答/分析任务必须显式设 `requireChanges: false`。
-8. **文档注释中的工具计数已过时**——`src/mcp/tools.ts`、`src/mcp/handlers.ts`、`src/server.ts` 的头部注释仍写「9 个工具」，实际 `TOOL_DEFS` 为 11 项。属注释层面的陈旧，不影响运行时行为，建议后续顺手校正。
+4. **macOS 验证矩阵不完整**——Codex 与 ZCode 的 macOS 基本闭环已真机验证，但取消/返修/`continue_task`/新建项目矩阵未覆盖，故二者 darwin 仍标 `research`；TraeWork 与 Kimi Code 的 macOS 分支 fail-closed，Kimi Code 的 darwin 同为 `research`。
+5. **无项目派发仅 ZCode 且仅 Windows 实测**；ZCode 未登记项目的自动导入在 Windows 上不可用（需先手动登记，或传 `allowCreateProject=false` 显式失败）。**Kimi Code 完全不支持无项目派发**（必须绑定工作区）。
+6. **Kimi Code 的取消/提问续答/同名工作区歧义仅由 hermetic 集成测试覆盖**（未在真机点停、未触发真实提问卡片）。
+7. **视觉模块的平台证据边界**——macOS 证据来自 CI 托管 runner，未在维护者个人 macOS 设备复验。
+8. **验收 fail-closed 对纯分析任务的影响**——git 项目默认要求产生变更，纯问答/分析任务必须显式设 `requireChanges: false`。
+9. **文档注释中的工具计数已过时**——`src/mcp/tools.ts`、`src/mcp/handlers.ts`、`src/server.ts` 的头部注释仍写「9 个工具」，实际 `TOOL_DEFS` 为 11 项。属注释层面的陈旧，不影响运行时行为，建议后续顺手校正。
 
 ---
 
@@ -662,6 +685,7 @@ CLI 子命令族（`node dist/index.js visual ...`）：`init`（写入禁用的
 | TraeWork GUI 驱动细节 | [docs/traework-cdp.md](docs/traework-cdp.md) |
 | Codex 桌面端 GUI 驱动细节 | [docs/codex-gui-cdp.md](docs/codex-gui-cdp.md) |
 | ZCode GUI 驱动细节 | [docs/zcode-cdp.md](docs/zcode-cdp.md) |
+| Kimi Code GUI 驱动细节 | [docs/kimi-cdp.md](docs/kimi-cdp.md) |
 | agent profile 字段全解 | [docs/agent-profiles.md](docs/agent-profiles.md) |
 | 各 agent 能力调研矩阵 | [docs/adapter-matrix.md](docs/adapter-matrix.md) |
 | 项目级验收配置规范 | [docs/acceptance-config.md](docs/acceptance-config.md) |

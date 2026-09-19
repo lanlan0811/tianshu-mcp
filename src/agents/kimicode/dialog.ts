@@ -214,6 +214,61 @@ export async function listOwnedDialogs(
 }
 
 /**
+ * 关闭属于指定进程的残留原生对话框。
+ *
+ * 为什么要这一步（Codex 同款教训，真机踩到过）：上一轮失败或取消可能在 Kimi Code 上留下
+ * 一个「添加工作区」模态窗口。模态框会**吞掉主窗口的合成点击**，让下一轮把「点新建会话毫无
+ * 反应」误判成选择器失效。启动时先清掉自己 pid 的 `#32770`，把这类残留从变量里消掉。
+ * 只操作我们自己的 pid，绝不碰其他程序的窗口。
+ */
+export async function closeStrayDialogs(pids: number[]): Promise<number> {
+  if (process.platform !== "win32" || pids.length === 0) return 0;
+  const script = String.raw`
+$ErrorActionPreference='SilentlyContinue'
+Add-Type @'
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+public static class TianshuKimicodeDlgClose {
+  public delegate bool EnumProc(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc p, IntPtr l);
+  [DllImport("user32.dll")] public static extern int GetClassName(IntPtr h, StringBuilder s, int n);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint p);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll", CharSet = CharSet.Auto)] public static extern IntPtr SendMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
+}
+'@
+$owners=($env:TIANSHU_KIMICODE_PIDS -split ',')
+$script:closed=0
+[TianshuKimicodeDlgClose]::EnumWindows({param($h,$l)
+  if([TianshuKimicodeDlgClose]::IsWindowVisible($h)){
+    $c=New-Object Text.StringBuilder 256; [void][TianshuKimicodeDlgClose]::GetClassName($h,$c,256)
+    if($c.ToString() -eq '#32770'){
+      [uint32]$p=0; [void][TianshuKimicodeDlgClose]::GetWindowThreadProcessId($h,[ref]$p)
+      if($owners -contains ([string]$p)){ [void][TianshuKimicodeDlgClose]::SendMessage($h,0x0010,[IntPtr]::Zero,[IntPtr]::Zero); $script:closed++ }
+    }
+  }
+  return $true
+},[IntPtr]::Zero)|Out-Null
+Write-Output $script:closed`;
+  try {
+    const { stdout } = await execFileAsync(
+      "powershell.exe",
+      ["-NoProfile", "-Command", script],
+      {
+        env: { ...process.env, TIANSHU_KIMICODE_PIDS: pids.join(",") },
+        windowsHide: true,
+        timeout: 30_000,
+      },
+    );
+    return Number(stdout.trim()) || 0;
+  } catch {
+    // 清理失败不致命：选择流程自身仍会做「新出现 + 标题 + 属主」三重校验。
+    return 0;
+  }
+}
+
+/**
  * 操作**新出现**的「添加工作区」对话框选定文件夹。
  * 基线由 listOwnedDialogs 在点击前采样：只有不在基线里的窗口才可能是本次弹出的。
  */

@@ -41,6 +41,7 @@ import {
   sendButtonPointExpression,
   sessionsExpression,
   singlePointExpression,
+  firstPointExpression,
   textExpression,
   workspaceChipTextExpression,
   workspaceItemsExpression,
@@ -348,6 +349,27 @@ export class KimicodeCdpClient {
     );
   }
 
+  /**
+   * 点击**第一个**可见匹配（不要求唯一）。
+   *
+   * 用于「任取一个都成立」的语义键——例如「在此工作区新建会话」在每个工作区分组各有一个，
+   * 天然多命中；先建出草稿、随后按完整路径显式绑定目标工作区，顺序上已经保证了正确性。
+   * 与 click() 的区别仅在于不因多命中而放弃。
+   */
+  async clickFirst(key: string): Promise<boolean> {
+    const target = this.resolveKey(key);
+    if (target.role === "overlay" && !(await this.ensureOverlay())) return false;
+    const found = await this.evaluateOn<{ count: number; point?: KimicodePoint }>(
+      target.role,
+      firstPointExpression(target.spec),
+    );
+    if (found?.point) {
+      await this.clickAt(target.role, found.point.x, found.point.y);
+      return true;
+    }
+    return (await this.evaluateOn<boolean>(target.role, domClickExpression(target.spec))) === true;
+  }
+
   /** 按可见文本/aria 精确点击；多命中/未命中都不点击，并回报可见候选用于诊断 */
   async clickExact(key: string, value: string): Promise<KimicodeClickExactResult> {
     const target = this.resolveKey(key);
@@ -371,9 +393,9 @@ export class KimicodeCdpClient {
     return this.click("newSession");
   }
 
-  /** 在指定工作区分组下新建会话（回退入口，比全局新建会话更精确） */
+  /** 在某个工作区分组下新建会话（回退入口；多分组天然多命中，故用 clickFirst） */
   newSessionInWorkspace(): Promise<boolean> {
-    return this.click("workspaceAddSession");
+    return this.clickFirst("workspaceAddSession");
   }
 
   /** 触发器上的工作区名；发送消息后 ws-chip 消失 → 空串表示已不在草稿页 */

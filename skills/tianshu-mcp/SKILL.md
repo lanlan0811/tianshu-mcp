@@ -1,12 +1,12 @@
 ---
 name: tianshu-mcp
-description: 让外部 AI-Agent（codex/zcode/traework）做项目开发并自动验收、失败返修的编排方法。当任务需要"叫一个 AI-Agent 去开发/改代码/补测试并验收，不行就返修"时先加载本技能：按它用 mcp__tianshu-mcp__ 的 11 个工具（run_task/continue_task/query_task/list_tasks/get_task_report/verify_task/rework_task/cancel_task/get_profiles/prepare_visual_baseline/approve_visual_baseline）派活、暂停继续、轮询、查历史、读验收报告、驱动返修、管理视觉基准，并按硬失败错误码快速定位卡点。小改动或纯问答不需要。
-triggers: '开发|编码|写代码|改代码|实现功能|加功能|修复|重构|补测试|写测试|验收|返修|返工|重做|自动验收|自动返修|任务书|ai.?agent|子代理|外部.?agent|agent|codex|zcode|traework|claude|编排|项目开发|派活|派单'
+description: 让外部 AI-Agent（codex/zcode/traework/kimicode）做项目开发并自动验收、失败返修的编排方法。当任务需要"叫一个 AI-Agent 去开发/改代码/补测试并验收，不行就返修"时先加载本技能：按它用 mcp__tianshu-mcp__ 的 11 个工具（run_task/continue_task/query_task/list_tasks/get_task_report/verify_task/rework_task/cancel_task/get_profiles/prepare_visual_baseline/approve_visual_baseline）派活、暂停继续、轮询、查历史、读验收报告、驱动返修、管理视觉基准，并按硬失败错误码快速定位卡点。小改动或纯问答不需要。
+triggers: '开发|编码|写代码|改代码|实现功能|加功能|修复|重构|补测试|写测试|验收|返修|返工|重做|自动验收|自动返修|任务书|ai.?agent|子代理|外部.?agent|agent|codex|zcode|traework|kimicode|kimi.?code|claude|编排|项目开发|派活|派单'
 ---
 
 # tianshu-mcp 编排技能：叫外部 AI-Agent 开发并验收
 
-**首行强指令**：你正处理"派外部 AI-Agent 开发并验收、失败返修"类任务。动手前先通读本技能全文；任务书模板、四种 agent 派活示例、meta 块字段全表、错误码速查、返修提示语模板在同目录 `usage-examples.md`，需要时用读取文件工具查看，长方法论不必背。
+**首行强指令**：你正处理"派外部 AI-Agent 开发并验收、失败返修"类任务。动手前先通读本技能全文；任务书模板、五种 agent 派活示例、meta 块字段全表、错误码速查、返修提示语模板在同目录 `usage-examples.md`，需要时用读取文件工具查看，长方法论不必背。
 
 ## 工具面（11 个）
 
@@ -19,7 +19,7 @@ triggers: '开发|编码|写代码|改代码|实现功能|加功能|修复|重�
 | `verify_task` | read | 对任务或任意项目独立验收（不改源码） |
 | `rework_task` | write + 审批 | 手动返修；对视觉阻塞任务先重新验收 |
 | `cancel_task` | write + 审批 | 取消运行中的任务 |
-| `continue_task` | write + 审批 | 恢复 `needs_user`（仅 codex/zcode） |
+| `continue_task` | write + 审批 | 恢复 `needs_user`（仅 codex/zcode/kimicode） |
 | `get_profiles` | read | 查看 agent 适配与可执行探测结果 |
 | `prepare_visual_baseline` | write + 审批 | 视觉基准**候选**准备（截图或导入参考图） |
 | `approve_visual_baseline` | write + 审批 | 用户审阅后批准候选，写入正式基准 |
@@ -34,15 +34,16 @@ triggers: '开发|编码|写代码|改代码|实现功能|加功能|修复|重�
 - `codex`（默认，推荐先试）：ChatGPT/Codex 桌面端。**model 必填**（面板可选模型名，如 `GPT-5.6 Sol`）；可选 `reasoningLevel`（低/中/高 或 low/medium/high）、`planDoc`（计划文档路径）、`designSystem`（设计系统目录路径）；**不支持 `mode`**（传了直接报错）。Windows 经 MSIX COM 激活 + CDP（冷启动实测 60–90 秒，首轮偏慢属正常）；macOS 直接 spawn `ChatGPT.app` + CDP。
 - `zcode`：ZCode 桌面端（Electron CDP）。要求已安装、已登录；**model 必填**且格式为 `供应商/模型`（如 `DeepSeek/deepseek-flash`）；**不支持 `mode`**；发送前确认「完全访问」权限模式。
 - `traework`：TraeWork（TRAE SOLO CN）桌面端。要求已登录、窗口保持可见。**`model` 可选**；**`mode` 可选**（`Work`/`Code`/`Design`；不传时从任务书文本识别「切换 X 模式」，识别不到保持 `Work`；实现顺序为「新建会话 → 切模式 → 在目标模式内绑定项目」）。`continue_task` **不支持 traework**。
+- `kimicode`：Kimi Code 桌面端（Moonshot AI，普通 Electron 安装，实测 1.0.2；CDP 基准端口 9666）。要求已安装、已登录。**`model` 必填**，直接填**界面模型名**（如 `K3`、`K2.8 Preview`、`K2.7 Code Highspeed`；非官方模型如 `stepfun/step-3.7-flash:free`）；**`reasoningLevel` 可选**——官方模型 `Low`/`High`/`Max`，非官方模型只有 `on`/`off`（传了界面不存在的档位会在发送前报错）；**不支持 `mode`**；**`allowCreateProject` 不适用**（那是 ZCode 专用）；**任务必须绑定工作区文件夹**（`projectPath` 必填，不支持无项目派发）。未登记的工作区会自动经原生「添加工作区」对话框导入。注意模型/档位/执行模式菜单渲染在独立的 `Kimi Browser Overlay` 浮层窗口（排查时别在主窗口找）。
 - `codex-cli`（可选，用户自建 profile，非内置）：不想依赖 GUI 自动化时的**无头**路径，走 `codex exec`。需用户先在数据目录 `agent-profiles.json` 加一个 `driver=spawn` 的 profile（示例见 README「macOS 无头路径：codex-cli」）。`model` 参数对它**不生效**，模型取 CLI 的 `~/.codex/config.toml`。注意 CLI 版本：≤0.130.0 签名证书已被吊销，macOS Gatekeeper 会直接 SIGKILL，需 ≥0.154.0。
-- 状态语义：`ready` 表示当前平台闭环已验证；`research` 表示已实现但矩阵未覆盖（**仍可执行**）。内置取值：`traework` 为 `ready`，`zcode` 为 `research`，`codex` 在 Windows 为 `ready`、在 darwin 为 `research`（macOS 上 `codex`/`zcode` 基本闭环已真机验证，但取消/返修/新建项目矩阵未覆盖）。注意 `ready` 不等于全平台无限制：TraeWork 在 macOS 下的可执行探测与原生对话框驱动仍 fail-closed（见 README 计划中条款）。
+- 状态语义：`ready` 表示当前平台闭环已验证；`research` 表示已实现但矩阵未覆盖（**仍可执行**）。内置取值：`traework` 为 `ready`，`zcode` 为 `research`，`codex` 在 Windows 为 `ready`、在 darwin 为 `research`，`kimicode` 在 Windows 为 `ready`、在 darwin 为 `research`（macOS 上 `codex`/`zcode` 基本闭环已真机验证，但取消/返修/新建项目矩阵未覆盖；`kimicode` 未在 macOS 实测）。注意 `ready` 不等于全平台无限制：TraeWork 与 Kimi Code 在 macOS 下的可执行探测与原生对话框驱动仍 fail-closed（见 README 计划中条款）。
 - 不确定时问用户，或读项目 `projects.json` 的 `defaultAgentId`；用 `get_profiles` 看当前机器实际探测结果（含可执行探测、未安装提示与用户自定义 profile）。
 
 ## 2. 派活：run_task
 
 参数要点：
 
-- `projectPath`：项目绝对路径（如 `D:\repo\my-app`），提交即过安全闸门（见 §2.1）。**ZCode 可省略**（issue #12）：省略时进入无项目模式——在 ZCode 的 `default` 工作区执行，不登记/导入项目、不采集 Git 基线、不执行项目验收（`autoVerify` 固定 `false`、`autoFixRounds` 固定 `0`，显式开启会报错）。其他 agent 省略该参数会在排队前报错；空串 / `null` / 相对路径 / 不存在的目录**不视为**无项目模式。详见 [ZCode CDP 适配器](../../docs/zcode-cdp.md)。
+- `projectPath`：项目绝对路径（如 `D:\repo\my-app`），提交即过安全闸门（见 §2.1）。**ZCode 可省略**（issue #12）：省略时进入无项目模式——在 ZCode 的 `default` 工作区执行，不登记/导入项目、不采集 Git 基线、不执行项目验收（`autoVerify` 固定 `false`、`autoFixRounds` 固定 `0`，显式开启会报错）。其他 agent 省略该参数会在排队前报错（**Kimi Code 亦必填**——它以工作区组织任务，不支持无项目派发）；空串 / `null` / 相对路径 / 不存在的目录**不视为**无项目模式。详见 [ZCode CDP 适配器](../../docs/zcode-cdp.md)。
 - `task`：自然语言任务书。要写清 **目标 / 验收要点 / 约束 / 相关文件 / 上下文**，模板见 usage-examples.md。
 - `agentId`：默认取项目 default 或 codex；`model`/`mode`/`reasoningLevel` 等约束见 §1（按 agent 生效，传错会被明确拒绝）。
 - `context`：补充上下文/约束文本，会以【上下文与约束】拼进 agent 初始指令。task/context 中反引号包裹或路径形态的引用会在发送前校验（必须存在且在项目内），写错立即报错。
@@ -72,18 +73,18 @@ triggers: '开发|编码|写代码|改代码|实现功能|加功能|修复|重�
 
 ## 4. needs_user：continue_task
 
-meta 块中 `needsUserKind` 给出等待类型、`pendingQuestion` 给出问题原文。**仅 codex/zcode 可恢复**，traework 会被拒绝。
+meta 块中 `needsUserKind` 给出等待类型、`pendingQuestion` 给出问题原文。**仅 codex/zcode/kimicode 可恢复**，traework 会被拒绝。
 
-- `agent_question`（zcode）：agent 提了问题 → 用 `continue_task(taskId, message=<答案>)`，message 会发到原会话。
-- `close_existing_instance` / `system_permission` / `setup_recovery`（zcode）：需用户先处理（关闭旧实例 / 授系统权限 / 在 ZCode 里确认目标项目或手工完成绑定）→ 用户处理完后调 `continue_task(taskId, message=<已处理说明>)`，message 仅作为已处理的确认（**不会**当问题发送）。
-- `user_confirmation`（codex）：Codex 停在等待用户确认界面（方案确认卡/订阅确认等），turn 暂停而非结束 → 用户在 **Codex 窗口**完成处理后调 `continue_task(taskId, message=<已处理说明>)`；恢复后仅重新接入观察 GUI 内运行（**不发送消息**），turn 完成/失败由观察得出。
-- `login_required`（codex/zcode）：需要登录 → 在窗口完成登录后 `continue_task(taskId, message=<已处理说明>)`；codex 会复检环境后重新派发任务书（新会话 + 项目绑定 + 完整初始指令）。
+- `agent_question`（zcode/kimicode）：agent 提了问题 → 用 `continue_task(taskId, message=<答案>)`，message 会发到原会话（不重发任务书）。Kimi Code 的启发式提问检测需 profile 配置 `gui.selectors.userGate` 才启用。
+- `close_existing_instance` / `system_permission` / `setup_recovery`（zcode/kimicode）：需用户先处理（关闭旧实例 / 授系统权限 / 在客户端里确认目标项目或工作区、手工完成绑定）→ 用户处理完后调 `continue_task(taskId, message=<已处理说明>)`，message 仅作为已处理的确认（**不会**当问题发送）；无锚点的环境恢复会补发完整原任务、上下文与已验证引用。
+- `user_confirmation`（codex/kimicode）：停在等待用户确认界面（Codex 方案确认卡/订阅确认等；Kimi Code 为停止按钮持续可见且对话停滞），turn 暂停而非结束 → 用户在**客户端窗口**完成处理后调 `continue_task(taskId, message=<已处理说明>)`；恢复后仅重新接入观察 GUI 内运行（**不发送消息**），turn 完成/失败由观察得出。
+- `login_required`（codex/zcode/kimicode）：需要登录 → 在窗口完成登录后 `continue_task(taskId, message=<已处理说明>)`；codex 会复检环境后重新派发任务书（新会话 + 项目绑定 + 完整初始指令）。
 
 限制与纪律：
 
 - `continue_task` 只接受 `needs_user` 状态；其他状态会被明确拒绝。
 - codex 只支持 `login_required` / `user_confirmation` 两种等待类型，其余会拒绝。
-- zcode `agent_question` 恢复依赖原会话定位信息（`zcodeSessionId`）；定位信息丢失时明确拒绝恢复，**不会**擅自打开"最近会话"。
+- zcode / kimicode 的 `agent_question` 恢复依赖服务端保存的原会话锚点（`zcodeSessionId` / `kimicodeSessionId` + `kimicodeSessionTitle`）；锚点丢失时明确拒绝恢复，**不会**擅自打开"最近会话"。zcode / codex 的锚点会回显在 meta 块，kimicode 的锚点仅在服务端保留。
 - 禁止新开会话冒充恢复。
 
 ## 5. 终态解读
@@ -91,7 +92,7 @@ meta 块中 `needsUserKind` 给出等待类型、`pendingQuestion` 给出问题�
 - `succeeded`：用 `get_task_report(taskId, round?)`（round 为 0-based 报告轮次，缺省最新）取 changedFiles / diffstat / checks，向用户汇报变更与结论。
 - `failed`：**未开自动返修或硬失败**。读 meta 的 `errorType` 与 `get_task_report` 定位失败 checks；如可修 → `rework_task(taskId, feedback=失败摘要)` 手动续修（feedback 会作为追加指示给下一轮 agent）；再轮询或 `verify_task`。
 - `needs_attention`：两类含义——①自动返修轮次已用尽仍失败；②**验收阻塞**（配置/完整性错误，或视觉阻塞如缺基准、页面不可达、资源被拦）。同样先读报告，给**针对性** feedback 调 `rework_task`。视觉阻塞时 `rework_task` 会**先重新验收、不先启动 agent**：通过即结束，仍阻塞则回到 `needs_attention`，只有出现真实缺陷才启动返修。多次仍不过或不可修：如实向用户汇报并给建议（人工看报告 / 换 agent / 缩小任务），**不要反复空转重试**。
-- `cancelled` / `interrupted`：用户取消或超时/中断（meta 的 `abortSource` 区分 user/shutdown/timeout/internal）。`running` 卡死可用 `cancel_task(taskId, reason)` 终止：CLI agent 终止进程树；GUI agent（codex/zcode/traework）尽力点击界面停止按钮并等待 GUI 空闲（有界超时），取消文案会如实标注 GUI 侧是否已停止——若标注"未确认停止"，窗口内的运行可能仍在继续，需人工检查，**不要在确认停止前重派同项目任务**（会新旧交叠；重派护栏也会以 `instance_busy` 直接拒绝派发）。
+- `cancelled` / `interrupted`：用户取消或超时/中断（meta 的 `abortSource` 区分 user/shutdown/timeout/internal）。`running` 卡死可用 `cancel_task(taskId, reason)` 终止：CLI agent 终止进程树；GUI agent（codex/zcode/traework/kimicode）尽力点击界面停止按钮并等待 GUI 空闲（有界超时），取消文案会如实标注 GUI 侧是否已停止——若标注"未确认停止"，窗口内的运行可能仍在继续，需人工检查，**不要在确认停止前重派同项目任务**（会新旧交叠；重派护栏也会以 `instance_busy` 直接拒绝派发）。
 - `needs_user` 状态下取消：run 协程已退出、CDP 已断开，MCP 侧无法再点 GUI 停止按钮，取消文案会提示"GUI 内可能仍有等待中的会话，请人工检查"。
 
 ## 6. 验收报告解读要点
@@ -145,10 +146,11 @@ Visual acceptance reuses the existing task tools with independent evidence. Neve
 | `permission_unknown` | 权限模式未确认（如 ZCode 未开「完全访问」） | 让用户在 agent 内切好权限模式 |
 | `cdp_disconnected` | CDP 连接断开且未能恢复 | 让用户关掉冲突实例；重试 |
 | `instance_busy` | 同项目已有未停止的运行（重派护栏） | 先 `cancel_task` 并**确认 GUI 已停**，或等其自行结束 |
-| `session_lost` | zcode 找不到原会话锚点 | 用新任务重派（不要指望恢复原会话） |
+| `session_lost` | zcode/kimicode 找不到原会话锚点 | 用新任务重派（不要指望恢复原会话） |
 | `input_mismatch` / `send_unknown` | 发送前回读不一致 / 发送结果无法确认（**不重复发送**，避免重发） | 人工看窗口状态，必要时 `continue_task` 或重派 |
 | `idle_timeout` | GUI 长时间静止且无完成标志（现场已保留） | 看窗口里 agent 是否真的卡住；必要时 `continue_task` 或取消 |
-| `setup_recovery` | zcode 初始化/原生面板操作超时或恢复预算用尽 | 进 `needs_user`：请用户在 ZCode 确认项目/绑定后 `continue_task` |
+| `agent_error` | Kimi Code 界面出现「继续」按钮或失败文案（如官方额度用尽 `provider.auth_error`） | 读窗口内错误原文；额度/模型类可换模型（非官方免费模型）后重派 |
+| `setup_recovery` | zcode/kimicode 初始化/原生面板操作超时或恢复预算用尽 | 进 `needs_user`：请用户在客户端确认项目/工作区后 `continue_task` |
 | `task_timeout`（`errorType=timeout`） | 任务级超时 | 大任务调大 `taskTimeoutMs`；或拆小任务 |
 | `aborted`（`errorType=cancelled`/`interrupted`） | 被取消/中断 | 按 §5 处理 |
 

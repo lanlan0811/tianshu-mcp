@@ -75,6 +75,7 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build   # 期
 | `codex` | `gui` / `codex-gui` | **ready**（darwin 为 `research`） | Codex 桌面端 GUI（Windows：MSIX COM 激活 + CDP；macOS：spawn .app + CDP），支持 `model`/`reasoningLevel`/`planDoc`/`designSystem`；等待用户检测、取消真停、重派护栏均已真机验证（v0.3.2）；macOS 基本闭环已真机验证（2026-09-13，见 `docs/codex-gui-cdp.md`），取消/返修矩阵未齐故 darwin 保持 `research` |
 | `zcode` | `gui` / `zcode-gui` | **research**（常量，非平台分支） | CDP GUI adapter，Windows 真机闭环通过；已适配 ZCode 3.11.2 模型菜单与项目绑定（v0.3.3）、项目/模型回读加固与初始化恢复（v0.3.4）；**无项目派发（`default` 工作区，`projectPath` 可选）与 `allowCreateProject` 自 v0.5.2 起支持**（issue #12，Windows 真机验收）；v0.5.3 修复实例跨 server 驻留、新建任务切页与发送失败归因三个真机缺陷。macOS 基本闭环已真机验证（`docs/zcode-cdp.md`），但无项目派发仅在 Windows 实测、取消/返修/新建项目矩阵未齐，故 `status` 保持常量 `research` |
 | `traework` | `gui` / `traework-gui` | **ready** | CDP 驱动 TRAE SOLO CN 桌面 UI；三种面板模式真机验证通过。注意 `status` 为常量 `ready`，但 **macOS 分支仍 fail-closed**（可执行探测与原生对话框驱动未在 macOS 实测） |
+| `kimicode` | `gui` / `kimicode-gui` | **ready**（darwin 为 `research`） | Kimi Code 桌面端（Electron，实测 1.0.2）；**双渲染进程**（主窗口承载侧栏/会话/composer，`Kimi Browser Overlay` 浮层承载模型/思考档位/执行模式菜单）；工作区以**完整路径**绑定，未登记时经原生「添加工作区」对话框导入；真机验证：成功路径、未登记工作区导入 + 自动验收、失败 → 返修 → 再验收同会话闭环。取消/提问续答/同名歧义仅由 hermetic 集成测试覆盖，macOS 为 `research` 且 fail-closed |
 | `codex-cli` | `spawn`（用户自建 profile，非内置） | 用户配置 | 无头路径走 `codex exec`；`model` 参数对其不生效（用 `~/.codex/config.toml`）；CLI 需 ≥0.154.0（≤0.130.0 签名证书已吊销）。`get_profiles` 自 v0.4.0 起会列出用户自定义 profile |
 | `stub` | `spawn` | 仅测试 | `test/stub-agent/stub-agent.mjs` 三剧本（good/fix-on-first/never） |
 
@@ -110,6 +111,7 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build   # 期
 | M21 | **ZCode 无项目派发（issue #12）**：`run_task.projectPath` 变可选、`allowCreateProject` 关闸、项目触发器就绪判据统一（详见 §9.9） | `0.5.2` | **525** |
 | M22 | **ZCode 真机回访修复（issue #12 第二轮）**：GUI 实例跨 server 退出驻留、新建任务不切页导致静默空等、发送失败归因误导（详见 §9.9） | `0.5.3` | **532** |
 | M23 | **视觉验收第二阶段「AI 视觉内容校验」（issue #13）**：`contents[]`/`pages[].content` 内容维度、委托用户自备命令（凭证零管理）、多数票 + 任务级缓存防抖、`uncertain` 与默认仅告警、`pixel:false` 语义页豁免基准、返修计划隔离告警项（详见 §4.3 与 §9.10） | `0.5.4` | **644** |
+| M24 | **Kimi Code GUI 适配（第四个 GUI agent，`agentId=kimicode`）**：双渲染进程 CDP 驱动（主窗口 + `Kimi Browser Overlay` 浮层）、工作区完整路径绑定与原生「添加工作区」对话框导入、模型三级选择与思考档位按界面档位集合校验、执行模式强制「完全自动」、运行检测（`button.stop` / `send.is-starting`）、`needs_user` 六类与 `continue_task` 恢复（详见 §4.2 与 §9.11） | `0.5.5` | **764** |
 
 ### 3.2 实现期修复记录（都是真机/CI 逼出来的，改相关代码前先读）
 
@@ -142,7 +144,7 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build   # 期
 
 ## 4. 架构与模块导览
 
-> 本节是**面向交接的快速导览**（目录 + 两条执行面 + 三个 GUI driver 的执行顺序）。
+> 本节是**面向交接的快速导览**（目录 + 两条执行面 + 四个 GUI driver 的执行顺序）。
 > 系统分层、模块边界、状态机全貌、验收流水线、跨平台策略与扩展点的**完整架构说明见 [ARCHITECTURE.md](ARCHITECTURE.md)**（英文版 [ARCHITECTURE.en.md](ARCHITECTURE.en.md)）。
 
 ```text
@@ -177,11 +179,16 @@ src/
 │   │   ├── adapter.ts / run.ts / instance.ts / recovery.ts
 │   │   ├── cdp.ts / dom.ts / selectors.ts / discovery.ts / dialog.ts
 │   │   └── model.ts / project.ts / references.ts / liveness.ts
-│   └── codex/            Codex 桌面端 GUI 驱动（v0.3.0 起）
-│       ├── adapter.ts / run.ts / instance.ts / liveness.ts
-│       ├── discovery.ts（Appx 查询 + 扫盘回退）/ launcher.ts（COM 激活）
-│       ├── cdp.ts / selectors.ts / input.ts / model.ts / dialog.ts
-│       └── project.ts（自动登记）/ registry.ts / fixplan.ts / verify.ts
+│   ├── codex/            Codex 桌面端 GUI 驱动（v0.3.0 起）
+│   │   ├── adapter.ts / run.ts / instance.ts / liveness.ts
+│   │   ├── discovery.ts（Appx 查询 + 扫盘回退）/ launcher.ts（COM 激活）
+│   │   ├── cdp.ts / selectors.ts / input.ts / model.ts / dialog.ts
+│   │   └── project.ts（自动登记）/ registry.ts / fixplan.ts / verify.ts
+│   └── kimicode/         Kimi Code 桌面端 GUI 驱动（v0.5.5 起）
+│       ├── adapter.ts / run.ts / instance.ts / recovery.ts / discovery.ts
+│       ├── cdp.ts（主窗口 + Overlay 双页面客户端）/ dom.ts / selectors.ts
+│       ├── dialog.ts（原生「添加工作区」）/ model.ts / workspace.ts
+│       └── session.ts / liveness.ts
 ├── visual/               可选视觉验收模块（v0.5.0 起；未启用时不影响既有行为）
 │   ├── schema.ts / defaults.ts / config.ts / runtime.ts / errors.ts
 │   ├── engine.ts / capture.ts / compare.ts / images.ts
@@ -204,7 +211,7 @@ src/
 
 `TaskOrchestrator.runAgentOnce` 的分支逻辑：`adapter.run` 存在 → 调用它；否则走 `runChild`。**这是唯一需要理解的双路径接缝。**
 
-### 4.2 三个 GUI adapter 的执行顺序（实测结论，勿随意调整）
+### 4.2 四个 GUI adapter 的执行顺序（实测结论，勿随意调整）
 
 **TraeWork**（详见 §9.1 / §9.2）：
 
@@ -235,6 +242,22 @@ MSIX 发现（Appx 查询优先 + 扫盘回退） → COM 激活 + 专属 user-d
 
 > 停在「等待用户确认」界面（方案确认卡 / 订阅结账页）→ stall 判定转 `needs_user(user_confirmation)`；
 > 用户处理完后 `continue_task` 重新观察（不重发消息）；`login_required` 则复检环境后重派任务书。
+
+**Kimi Code**（详见 `docs/kimi-cdp.md` 与 §9.11）：
+
+```text
+发现安装 → 启动/复用 CDP 实例（已有非 CDP 实例转 needs_user） → 连接主窗口并置前
+  （bringToFront，等 visibilityState 收敛） → 新建草稿（以 ws-chip 挂载为准的有界重试）
+  → 绑定工作区（完整路径匹配 + 回读） → 选模型（pill 回读 → overlay 快捷菜单 → 「更多模型…」对话框）
+  → 思考档位（按界面实际档位集合校验） → 执行模式「完全自动」
+  → 发送（标记 + 60s 有界确认） → 运行检测（stop 按钮 / send.is-starting） → 轮询到完成
+```
+
+> 模型菜单/思考档位/执行模式菜单**不在主窗口**，而渲染在独立的 `Kimi Browser Overlay` 渲染进程；
+> 工作区菜单与「切换模型」对话框仍在主窗口 → 客户端需同时持有两个页面。
+> 未登记的工作区经原生「添加工作区」对话框导入（与 ZCode/TraeWork 同构，Win32 坐标点击）；
+> 环境类等待项分别转 `close_existing_instance` / `login_required` / `system_permission` / `setup_recovery`，
+> 提问转 `agent_question`，等待用户确认转 `user_confirmation`，均由 `continue_task` 恢复。
 
 ### 4.3 视觉验收的一条独立链路（v0.5.0 起，内容校验自 v0.5.4）
 
@@ -383,6 +406,7 @@ npm publish --registry=https://registry.npmjs.org --access public
 4. **已知偶发**：`test/integration/zcode-flow.test.ts` 的「任务总时限到达时停止 MCP 等待并保留实例」在满负载并行下有时序竞态（`taskTimeoutMs: 2` 与调度竞争），单文件运行与 CI 重试通过。改相关逻辑时注意别把它当成回归。
 5. **已知偶发**：`test/integration/visual-capture.test.ts` 的「loads isolated Cookie/localStorage state and diagnoses expiration」偶发 `PAGE_UNREACHABLE`（导航到 `127.0.0.1` fixture 服务超时），实测**仅个别 job 失败、同 job 内其余视觉用例全过**（v0.5.3 后的文档提交 `8bd0598` 在 `macos-15 / Node 24` 上出现过一次，重跑即绿）。判据：若失败信息是 `PAGE_UNREACHABLE` 且 `blocked.size===0`，先重跑该 job 再怀疑回归。
 6. **已知偶发**：`test/unit/acceptance-parallel.test.ts` 的「慢 check 并行：墙钟 < 串行之和」断言在**全量套件满载并行**时可能偶发失败（本机 2026-09-15 一次全量运行命中：`wallMs` 未小于 `sum`），**单文件运行稳定通过**（7/7）。原因是该用例以墙钟比较证明真并行，属负载敏感的时序断言。判据：若失败的是这条断言且单独重跑该文件即绿，按偶发处理，不要当成并行调度回归。
+7. **已知偶发**：`test/integration/cancel-noreason.test.ts` 的「重复取消不重复写 cancel_requested/cancelled」在**全量套件满载并行**时可能偶发失败（本机 2026-09-20 一次全量运行命中：`cancelled` 事件计数 2 > 1），**单文件运行稳定通过**（5/5）。同属负载敏感的时序断言。
 
 ---
 
@@ -394,18 +418,20 @@ npm publish --registry=https://registry.npmjs.org --access public
   `stableRounds` 只启动 `idleTimeoutMs`（默认 10 分钟）空闲计时，不再把约 36 秒静态直接当完成。
 - **异常结束保留实例**：`idle_no_completion` / `timeout` / `aborted` / `cdp_lost` 均不关闭现场；
   `query_task` meta 查看 `agentEndReason` / `keptInstance`。
-- **UI 升级会漂移**：三个 adapter 的选择器分别集中在
-  `src/agents/traework/cdp/selectors.ts`、`src/agents/zcode/selectors.ts`、`src/agents/codex/selectors.ts`，
+- **UI 升级会漂移**：四个 adapter 的选择器分别集中在
+  `src/agents/traework/cdp/selectors.ts`、`src/agents/zcode/selectors.ts`、`src/agents/codex/selectors.ts`、`src/agents/kimicode/selectors.ts`，
   均可经 profile `gui.selectors` 覆盖；先用探针诊断。
 - **macOS 部分验证**：Codex 与 ZCode 的 macOS 基本闭环（发现/启动/绑定/发送/观察/验收）均已真机通过
   （2026-09-13，分别见 `docs/codex-gui-cdp.md` 与 `docs/zcode-cdp.md`），
   但取消/返修/continue_task/新建项目矩阵未覆盖，二者 darwin 仍标 `research`；
-  TraeWork 的原生对话框驱动与真机闭环仍未在 macOS 实测，macOS 分支保持 fail-closed。
-- **`mode` 仅 TraeWork 生效**：ZCode / Codex 会拒绝该参数（返回明确错误）。
+  TraeWork 的原生对话框驱动与真机闭环仍未在 macOS 实测，macOS 分支保持 fail-closed；
+  Kimi Code 的 darwin 同为 `research`（fail-closed，未在 macOS 实测）。
+- **`mode` 仅 TraeWork 生效**：ZCode / Codex / Kimi Code 会拒绝该参数（返回明确错误）。
 - **无项目派发仅 ZCode 且仅 Windows 实测**：`projectPath` 可选只对 ZCode 生效；macOS 上的无项目派发尚未真机验证（v0.5.3 已修掉 Windows 侧实例驻留、切页与归因三个缺陷，但 macOS 未覆盖）。
 - **ZCode 未登记项目的自动导入在 Windows 上不可用**：需先在 ZCode 中手动登记目录，或传 `allowCreateProject=false` 让它显式失败。原因与修复方向见 §9.9。
-- **Windows 上 GUI 实例跨 server 驻留已修复**（v0.5.3）：三处 GUI 实例统一走 `guiInstanceSpawnOptions()`（无条件 `detached` + `unref`）；执行型子进程（`verify/runner`、`visual/services`、`agents/spawn`）语义相反，仍按平台分支。
-- **`continue_task` 仅 codex/zcode**：traework 与 spawn 类 agent 会被拒绝。
+- **Windows 上 GUI 实例跨 server 驻留已修复**（v0.5.3）：四处 GUI 实例统一走 `guiInstanceSpawnOptions()`（无条件 `detached` + `unref`）；执行型子进程（`verify/runner`、`visual/services`、`agents/spawn`）语义相反，仍按平台分支。
+- **`continue_task` 仅 codex/zcode/kimicode**：traework 与 spawn 类 agent 会被拒绝。
+- **Kimi Code 不支持无项目派发**：任务必须绑定工作区文件夹，`workspaceMode=default` 或缺少 `projectPath` 时以 `setup_failed` 显式拒绝。
 - **`needs_user` 状态下取消是已知边界**：MCP 侧无 CDP 连接，GUI 内等待中的会话停不掉；终态文案会提示。
   经临时 CDP 连接尽力停止 GUI 内会话列在 `CHANGELOG.md` 的「未发布 / 计划中」。
 - **视觉模块的平台证据边界**：macOS 证据来自 CI 托管真机 runner（macOS 15 / Darwin 24.6.0，Intel x64 与 Apple Silicon arm64，Node 20/22/24），
@@ -432,6 +458,7 @@ npm publish --registry=https://registry.npmjs.org --access public
 | 升级 v0.4.0 后行为变了 / 验收检查互相干扰 / 符号链接路径下历史任务「消失」 | §9.7 |
 | 视觉验收不通过 / 基准待批准 / 规则被冻结判 `VISUAL_INTEGRITY` / 离线报告看不开 | §9.8 |
 | AI 内容校验整轮阻塞 / 占位符被拒 / 判定总是 uncertain / 缓存不失效 | §9.10 |
+| Kimi Code 菜单找不到 / 点击被吞 / 思考档位不匹配 / 原生「添加工作区」对话框 | §9.11 |
 
 ### 9.1 TraeWork 项目文件夹绑定排障（M6 / M7 实战教训）
 
@@ -714,6 +741,74 @@ Windows + Codex 真机模拟实测：模型菜单的 `menuitemradio` 对 trusted
   也列进「必须修复」。现在补 `!c.optional`，并新增 §3.2 仅告警项小节。这是 issue #13 验收标准要求的修复，
   不是可选项。
 
+### 9.11 Kimi Code 排障（M24 / v0.5.5）
+
+> 改 `src/agents/kimicode/**` 前先读本节与 `docs/kimi-cdp.md`。环境事实来自 Windows 10 + Kimi Code 1.0.2 实测。
+
+**① 菜单不在主窗口，而在 `Kimi Browser Overlay` 渲染进程**
+
+`/json` 与 `Target.getTargets` 暴露的 page 有：主窗口（`app://renderer/` 或 `app://renderer/sessions/<id>`）、
+`Kimi Browser Overlay`（`app://renderer/browser-overlay.html`）、`Screenshot`（必须排除）。
+
+- **模型菜单 / 思考档位 / 执行模式菜单**经应用内的 `browserOverlayOpenMenu()` 渲染在 **overlay 窗口**：
+  实测点击 `button.model-pill` 后**主窗口 DOM 节点数恒为 391、不产生任何菜单节点**，而 overlay 的
+  `document.visibilityState` 由 `hidden` 变 `visible`、节点数 20 → 63。
+- **工作区菜单**（`div.ws-panel[role="menu"]`）与「切换模型」对话框（`div.ui-dialog`）仍渲染在**主窗口**。
+- 判定「菜单是否打开」必须以 **overlay 的 `visibilityState`（或菜单容器可见性）** 为准：菜单关闭后内容可能短暂残留。
+- 排查时**别在主窗口找模型菜单**——那会得到「点击无效」的假结论。
+
+**② 点击被吞：Chromium 节流，`bringToFront` 有效但异步**
+
+- 窗口不在前台时 Chromium 节流页面，合成点击可能被吞。Kimi Code 与 ZCode 的 Electron 不同：
+  `Page.bringToFront` + `Emulation.setFocusEmulationEnabled` **确实有效**（启动时 `visibilityState=hidden` → 调用后 `visible`），
+  但**异步生效**——调用后必须**等 `visibilityState` 收敛到 `visible`** 再点击，立刻点击仍可能被吞。
+- 点击手段实测：CDP `Input.dispatchMouseEvent`（moved + pressed + released）有效；
+  页面内 `element.click()` 对 `model-pill` 有效、对 `ws-chip` **无效**（不打开菜单）。选择器交互改动后必须真机复验。
+
+**③ 新建会话点击被吞 → 以 ws-chip 挂载为准的有界周期重试**
+
+- 点击 `button.btn-new-chat` 返回成功**不等于**草稿页已建立。权威判据是**工作区触发器 `button.ws-chip` 真的挂载**
+  （ZCode M22「点击 ≠ 切页」教训同源）。
+- 因此 `ensureFreshDraft` 采用**有界周期重试**，预算取自 `gui.workspaceTriggerBudgetMs`（即
+  `gui.workspaceTriggerTimeoutMs`，默认 15000ms），失败即 `setup_failed`（`reason=draft`），不空转。
+- 新建草稿会**继承上次工作区**，所以绑定流程仍须显式回读 `ws-chip` 文本 + 面板选中项。
+
+**④ 思考档位按「界面实际档位集合」校验，非官方模型只有 `On/Off`**
+
+- 档位集合的**唯一来源是界面实际渲染的档位标签**（不内置模型名单）：官方模型（`Kimi` 订阅，如 `K3` / `K2.8 Preview`）
+  为 `Low` / `High` / `Max`；**非官方模型**（如 `stepfun/step-3.7-flash:free`，provider 分组 `kiro`）只有 **`On` / `Off`**。
+- 请求了界面不存在的档位 → 发送前**响亮报错**（`model_mismatch`），绝不静默沿用。
+- 主窗口 pill 文本会随形态变化：官方为 `K3 · High`，非官方为 `stepfun/step-3.7-flash:free · 思考`（**不是** ` · High` 形式）。
+- 官方额度用尽时（实测会返回 `403 ... reached your monthly usage limit` + `provider.auth_error`），
+  可在「切换模型」对话框改用**免费模型**（如 `stepfun/step-3.7-flash:free`）继续真机验证。
+
+**⑤ 原生「添加工作区」对话框（与 ZCode/TraeWork 同构）**
+
+| 项 | 实测值 |
+|---|---|
+| 类名 / 标题 | `#32770` / `添加工作区` |
+| 「文件夹」编辑框 | AutomationId `1152`、ClassName `Edit`（**ControlType 是 Pane**，无 ValuePattern） |
+| 确认按钮 | AutomationId `1`，ControlType 为 **Pane** |
+| 取消按钮 | AutomationId `2`，ControlType 为 Pane |
+| 关键约束 | 确认/取消按钮**都不支持 UIA `InvokePattern`** → 必须走 Win32 坐标点击（UIA 取 `BoundingRectangle` + `SetCursorPos` + `mouse_event`），路径写入走 `WM_SETTEXT` 并 `WM_GETTEXT` 回读 |
+
+`src/agents/kimicode/dialog.ts` 复用 ZCode 已验证的范式，仅把标题判据换成「添加工作区」；
+且只操作**新出现**的对话框（先采样基线，绝不盲点用户既有窗口）。未登记工作区的导入已真机验证。
+
+**⑥ 探针用法**
+
+```bash
+node scripts/probe-kimicode.mjs all     # 只读诊断：安装 / 进程 / CDP / 选择器 / 界面 / 会话 / 运行信号
+```
+
+**未真机验证（如实标注，勿在文档或汇报中夸大）**
+
+- **取消（`cancel_task` 真停 GUI）**：实现完整（尽力点 `button.stop` + `cancelWaitMs` 内有界等待空闲，未确认时如实落文案），
+  但**仅由 hermetic 集成测试覆盖**，未在真机点停。
+- **提问续答（`agent_question`）**：实现完整（把回答写回原会话、不重发任务书），但触发真实提问卡片的真机路径未覆盖。
+- **同名/同路径工作区歧义**：fail-closed 分支仅由集成测试覆盖。
+- **macOS**：`status` 为 `research` 且 **fail-closed**（可执行探测与原生对话框驱动未在 macOS 实测）。
+
 ---
 
 ## 10. 凭证与安全红线
@@ -740,6 +835,7 @@ Windows + Codex 真机模拟实测：模型菜单的 `menuitemradio` 对 trusted
 | `docs/traework-cdp.md` / `.en.md` | TraeWork GUI 驱动原理、选择器、安全红线、踩坑记录 |
 | `docs/zcode-cdp.md` / `.en.md` | ZCode GUI adapter、暂停继续、返修闭环与双平台真机证据状态 |
 | `docs/codex-gui-cdp.md` / `.en.md` | Codex 桌面端 GUI 驱动：MSIX COM 激活、CDP 接管、选择器、运行检测、验收返修 |
+| `docs/kimi-cdp.md` / `.en.md` | Kimi Code GUI 驱动：双渲染进程（主窗口 + `Kimi Browser Overlay`）、工作区完整路径绑定与原生对话框导入、模型三级选择与思考档位、执行模式、运行检测与排障 |
 | `docs/codex-windows-smoke.md` / `.en.md` | Codex Windows 真机验收记录（含失败→计划→返修闭环） |
 | `docs/zcode-windows-smoke.md` / `.en.md` | ZCode Windows 真机开发、同会话返修与提问续跑验收记录 |
 | `docs/zcode-issue-8-10-validation.md` / `.en.md` | ZCode #8/#9/#10 Windows 真机验收记录 |
@@ -771,19 +867,21 @@ Windows + Codex 真机模拟实测：模型菜单的 `menuitemradio` 对 trusted
 1. 先跑 `npm ci && npm run typecheck && npm run lint && npm test && npm run build`，确认基线绿（647 passed / 12 skipped）。
 2. 动代码前先读 [ARCHITECTURE.md](ARCHITECTURE.md) 建立整体心智模型（分层、依赖方向、唯一双路径接缝 `adapter.run`、状态机与验收流水线）；再按专题读本文章节：
    动 GUI adapter 相关代码前，先读对应文档与本文章节：
-   TraeWork → `docs/traework-cdp.md` + §9.1 / §9.2；ZCode → `docs/zcode-cdp.md` + §9.5 / §9.6 / §9.9；Codex → `docs/codex-gui-cdp.md` + §9.4。
+   TraeWork → `docs/traework-cdp.md` + §9.1 / §9.2；ZCode → `docs/zcode-cdp.md` + §9.5 / §9.6 / §9.9；Codex → `docs/codex-gui-cdp.md` + §9.4；Kimi Code → `docs/kimi-cdp.md` + §9.11。
    项目文件夹绑定出问题时，先看 §9.1 的排障顺序（下拉项 ≠ 项目 map、三处已修缺陷、两个定位陷阱）。
 3. **改任何选择器交互必须真机复验**：trusted 点击与 DOM click 的取舍因控件而异（§9.4 的模型菜单 vs 项目触发器就是反例）。
 4. 若客户端 UI 升级导致选择器失效：用 `scripts/probe-*.mjs` 诊断，优先用 profile `gui.selectors` 覆盖，不改代码。
 5. 动视觉模块前先读 `docs/visual-acceptance.md` 与 §9.8：基准必须走「候选 → 用户批准」，规则冻结会拦截绕过；`TIANSHU_VISUAL_BROWSER_TEST=1` 才跑真实浏览器用例。
 6. Codex 与 ZCode 的 macOS 基本闭环均已真机验证；取消/返修/continue_task/新建项目矩阵未补齐前
-   不得把 darwin 从 `research` 改为 `ready`；TraeWork 的 macOS 分支仍是 fail-closed。
+   不得把 darwin 从 `research` 改为 `ready`；TraeWork 的 macOS 分支仍是 fail-closed，
+   Kimi Code 的 darwin 同为 `research`（fail-closed，未在 macOS 实测）。
 7. 新增 agent：优先只加 profile（见 `docs/agent-profiles.md`）；需要特殊输出解析再写 adapter。
 8. 发版前务必确认 `src/version.generated.ts`、`package.json` **与 `package-lock.json`** 三者版本一致并同步提交
    （CI 有「构建后无 tracked diff」门禁；v0.5.0 曾漏掉锁文件）。推 `v*` tag 即触发 Release
    （双语正文取 `docs/release-v<ver>.md` + `.en.md`，**缺文档会直接失败**；且要求同 SHA 的成功 CI）。完整步骤见 §6.4。
-9. 未发布计划（见 `CHANGELOG.md` 的「未发布」节）：更多 agent 适配、TraeWork / ZCode / Codex 的 macOS 验证矩阵、
+9. 未发布计划（见 `CHANGELOG.md` 的「未发布」节）：更多 agent 适配、TraeWork / ZCode / Codex / Kimi Code 的 macOS 验证矩阵、
    项目级技能播种、`needs_user` 状态取消时经临时 CDP 连接尽力停止 GUI 内等待中的会话、
+   Kimi Code 的取消/提问续答真机验证（当前仅 hermetic 集成测试覆盖，见 §9.11）、
    ZCode 无项目派发的 macOS 真机验证、ZCode 未登记项目自动导入在 Windows 上的修复（§9.9），
    以及 AI 内容校验的后续扩展（跨轮判定翻转熔断、跨任务缓存共享、参考图/设计稿差异比对）。
    注：issue #3 第一阶段（像素级对比 + 图片规格 + 报告 + 返修闭环 + 基准批准/冻结）已随 v0.5.0 完成，issue #3 已关闭；

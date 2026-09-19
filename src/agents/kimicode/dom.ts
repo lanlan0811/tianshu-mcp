@@ -73,6 +73,19 @@ export function domClickExpression(spec: string): string {
   })()`;
 }
 
+/**
+ * 取第一个可见匹配的坐标（不要求唯一）。
+ * 用于「任取一个都成立」的语义键：多命中时 singlePointExpression 不给坐标，
+ * domClickExpression 也会因不唯一而拒绝，两条路都走不通——本表达式专门补这个缺口。
+ */
+export function firstPointExpression(spec: string): string {
+  return `(function(){${KIMICODE_DOM}/*kc:first-point*/
+    const nodes = kcResolve(${spec}, true);
+    if (!nodes.length) return { count: 0 };
+    return { count: nodes.length, point: kcPoint(nodes[0]) };
+  })()`;
+}
+
 /** 按可见文本/aria 精确点击（NFKC 归一后全等）；多命中即拒绝 */
 export function exactMatchExpression(spec: string, value: string): string {
   return `(function(){${KIMICODE_DOM}/*kc:exact*/

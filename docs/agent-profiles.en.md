@@ -15,7 +15,7 @@ built-in (`src/agents/builtin.ts`) → user `agent-profiles.json` overrides by `
       "displayName": "…",
       "type": "cli",                 // only cli today
       "driver": "spawn",             // spawn = external child process (default); gui = desktop UI automation
-      "adapter": "zcode-gui",        // GUI discriminator: traework-gui | zcode-gui; missing keeps legacy TraeWork behavior
+      "adapter": "zcode-gui",        // GUI discriminator: traework-gui | zcode-gui | codex-gui | kimicode-gui; missing keeps legacy TraeWork behavior
       "status": "ready",             // ready | research | unsupported
       "command": null,               // absolute path; null + discovery = auto-probe
       "argsTemplate": ["exec", "<prompt:arg>"],
@@ -49,9 +49,9 @@ built-in (`src/agents/builtin.ts`) → user `agent-profiles.json` overrides by `
 | value | meaning |
 |---|---|
 | `spawn` (default) | launches an external CLI child process (`argsTemplate` + `promptMode`); success is decided by exit code |
-| `gui` | drives a desktop UI over CDP (currently only `traework`); no child process, and `run_task` may pass `model` to pick its model |
+| `gui` | drives a desktop UI over CDP (currently `traework` / `zcode` / `codex` / `kimicode`); no child process, and `run_task` may pass `model` to pick its model |
 
-> With `driver=gui`, `argsTemplate`/`promptMode` are unused. An explicit `adapter` isolates TraeWork and ZCode; a legacy profile without it keeps TraeWork behavior. See [traework-cdp.en.md](traework-cdp.en.md) and [zcode-cdp.en.md](zcode-cdp.en.md).
+> With `driver=gui`, `argsTemplate`/`promptMode` are unused. An explicit `adapter` isolates each GUI implementation; a legacy profile without it keeps TraeWork behavior. See [traework-cdp.en.md](traework-cdp.en.md), [zcode-cdp.en.md](zcode-cdp.en.md), [codex-gui-cdp.en.md](codex-gui-cdp.en.md) and [kimi-cdp.en.md](kimi-cdp.en.md).
 
 TraeWork liveness fields: `stableRounds` only confirms that the DOM is stable; `idle` is returned only after another
 `idleTimeoutMs` without changes or authoritative running signals. `cdpSendTimeoutMs` bounds one CDP command, while
@@ -85,6 +85,25 @@ retain the instance and expose `agentEndReason` / `keptInstance` in metadata.
 > `zcode` uses `driver=gui` + `adapter=zcode-gui`. It requires `provider/model`, confirms Full Access, and defaults to two automatic repair rounds. The Windows hardware loop is complete; the built-in profile remains `research` until the macOS hardware loop is recorded.
 
 > `codex` uses `driver=gui` + `adapter=codex-gui` + `activation=msix-com`. Task parameters include `model` (e.g. `GPT-5.6 Sol`), `reasoningLevel` (低/中/高 or low/medium/high), `planDoc` and `designSystem`; it confirms Full Access and defaults to five automatic repair rounds. Machine-verified on Windows; the built-in macOS status is `research`. See [codex-gui-cdp.en.md](codex-gui-cdp.en.md).
+
+> `kimicode` uses `driver=gui` + `adapter=kimicode-gui` + `activation=spawn` (a plain Electron install, measured 1.0.2). `model` is required and takes the UI model name directly (e.g. `K3`, `K2.8 Preview`, `stepfun/step-3.7-flash:free`), and `mode` is **not supported**; the CDP base port is `9666` (advancing through `cdpPortRange` when `cdpPortAuto`), `launchTimeoutMs` is 90000, and the defaults are the "fully automatic" permission mode and two automatic repair rounds. Machine-verified on Windows (success path / unregistered-workspace import + auto-acceptance / failure → rework → re-acceptance same-session loop); macOS is `research` and fail-closed. See [kimi-cdp.en.md](kimi-cdp.en.md).
+
+### `reasoningLevel` domain and applicable tiers
+
+Since v0.5.5 the `run_task.reasoningLevel` domain has grown to two groups:
+
+| Values | Meaning |
+|---|---|
+| `low` / `medium` / `high` (aliases: `低` / `中` / `高`) | The generic three tiers, used by Codex |
+| `max` / `on` / `off` | Kimi Code's UI tiers: official models use `Low` / `High` / `Max`, unofficial models only `On` / `Off` |
+
+Per-agent applicability and semantics:
+
+| agent | Applicable tiers | Behaviour |
+|---|---|---|
+| `codex` | `low` / `medium` / `high` | When omitted, the Codex panel's current level is kept |
+| `kimicode` | official models `low` / `high` / `max`; unofficial models `on` / `off` | The tier set comes from **the tier labels the UI actually renders** (no built-in model list). When omitted, official tiers keep the UI's current value and unofficial tiers force `on`. Requesting a tier the UI does not render fails loudly with `model_mismatch` **before sending** and is never silently kept |
+| `traework` / `zcode` / spawn agents | not applicable | Ignored, or rejected per that adapter's semantics |
 
 ## Real-machine sample
 
@@ -128,6 +147,75 @@ retain the instance and expose `agentEndReason` / `keptInstance` in metadata.
 
 > **Essential**: `activation: "msix-com"` and `userDataDir` are both mandatory — the GUI host `ChatGPT.exe` cannot be launched directly (policy denies), and reusing the default profile means the debug port never opens. Details: [codex-gui-cdp.en.md](codex-gui-cdp.en.md).
 
+### Kimi Code (GUI driver, Windows-verified 2026-09-20)
+
+```jsonc
+// ~/.tianshu-mcp/agent-profiles.json (Windows sample; these are the built-in defaults)
+{
+  "profiles": {
+    "kimicode": {
+      "displayName": "Kimi Code (Kimi Code desktop)",
+      "type": "cli",
+      "driver": "gui",
+      "adapter": "kimicode-gui",
+      "status": "ready",                 // "research" on darwin (fail-closed)
+      "command": null,
+      "argsTemplate": [], "promptMode": "arg", "cwd": "task",
+      "timeoutMs": 1800000, "killTree": "taskkill",
+      "authNote": "reuses the local Kimi Code login; an existing instance without CDP must be closed by the user first",
+      "executableDiscovery": {
+        "dirs": [
+          "{PROGRAMFILES}/Kimi Code",
+          "{PROGRAMFILES(X86)}/Kimi Code",
+          "{LOCALAPPDATA}/Programs/Kimi Code",
+          "{LOCALAPPDATA}/Kimi Code",
+          "/Applications/Kimi Code.app/Contents/MacOS",
+          "{HOME}/Applications/Kimi Code.app/Contents/MacOS"
+        ],
+        "fileNames": ["Kimi Code.exe", "Kimi Code"],
+        "preferredDrives": ["D:"],
+        "relativePaths": [
+          "Kimi-Code/Kimi Code/Kimi Code.exe",
+          "Kimi Code/Kimi Code.exe",
+          "Kimi/Kimi Code/Kimi Code.exe",
+          "kimi-code/kimi code/kimi code.exe"
+        ]
+      },
+      "gui": {
+        "cdpPort": 9666,                 // CDP base port; falls through cdpPortRange when taken
+        "cdpPortAuto": true,
+        "cdpPortRange": 20,
+        "exeArgs": ["--remote-debugging-port=<port>"],
+        "windowMode": "reuse",
+        "launchTimeoutMs": 90000,        // cold-start first frame + render is measurably slow; widened to 90 s
+        "pollIntervalMs": 3000,
+        "stableRounds": 4,
+        "idleTimeoutMs": 600000,
+        "stallTimeoutMs": 300000,
+        "cancelWaitMs": 15000,
+        "cdpSendTimeoutMs": 15000,
+        "progressIntervalMs": 30000,
+        "modelSwitch": true,
+        "modeSwitch": false,             // the mode parameter is not supported
+        "freshSession": true,
+        "modelRequired": true,
+        "activation": "spawn",           // plain Electron install: launch directly (no MSIX COM)
+        "permissionMode": "完全自动",
+        "defaultPermissionMode": "完全自动",
+        "defaultAutoFixRounds": 2,
+        "workspaceTriggerTimeoutMs": 15000, // optional: cap for waiting on ws-chip mounting (draft-page criterion)
+        "selectors": {}
+      }
+    }
+  }
+}
+```
+
+> **Essential**: Kimi Code is a **plain Electron install** (measured 1.0.2); injecting `--remote-debugging-port` is enough and **no** MSIX COM activation is needed.
+> **Two renderer processes**: the model / thinking-tier / execution-mode menus render in the `Kimi Browser Overlay` window, while the workspace menu and the "switch model" dialog stay in the main window.
+> Tasks are organised by **workspace** (task folder) and **project-less dispatch is not supported**: `projectPath` is mandatory, and an unregistered workspace is imported through the native "add workspace" dialog.
+> The default permission is "fully automatic" and the default is two automatic repair rounds. Details: [kimi-cdp.en.md](kimi-cdp.en.md).
+
 ### Historical: Codex kernel CLI (`codex exec`, superseded by the GUI driver)
 
 ```jsonc
@@ -150,13 +238,15 @@ retain the instance and expose `agentEndReason` / `keptInstance` in metadata.
 
 > Kept as a historical record; this path is no longer the built-in default.
 
-## ZCode automatic initialization recovery
+## ZCode / Kimi Code automatic initialization recovery
 
 Override these `gui` fields in the data-home `agent-profiles.json`. Older profiles inherit the defaults; other drivers do not use these recovery settings.
 
 | Field | Default | Meaning |
 |---|---:|---|
 | `setupRecoveryTimeoutMs` | 120000 | Total initialization-through-binding budget in milliseconds |
+| `projectTriggerTimeoutMs` | 15000 | Cap for waiting on the ZCode project trigger to become ready (also the budget for confirming the menu opens after a click) |
+| `workspaceTriggerTimeoutMs` | 15000 | **Optional** (Kimi Code only): cap for waiting on the workspace trigger (`button.ws-chip`) to mount, i.e. the criterion for "the draft page really exists". ZCode does not use this field. It is deliberately optional rather than defaulted so that existing profile literals need not change |
 | `dialogProbeTimeoutMs` | 30000 | One native dialog observation, milliseconds |
 | `dialogOperationTimeoutMs` | 60000 | One folder operation, milliseconds |
 | `setupRecoveryMaxRetries` | 2 | Additional attempts for safely retryable stages (0–10) |

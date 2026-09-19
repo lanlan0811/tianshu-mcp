@@ -76,7 +76,7 @@ In Tianshu go to **Settings → MCP Servers → Add** and fill in (transport: `s
 | Tool | capability/approval | Purpose |
 |---|---|---|
 | `run_task` | write + approval | dispatch (optional auto-verify / auto-fix), async → taskId |
-| `continue_task` | write + approval | resume a `needs_user` session (codex/zcode only) |
+| `continue_task` | write + approval | resume a `needs_user` session (codex/zcode/kimicode only) |
 | `query_task` | read | poll status / log tail |
 | `list_tasks` | read | filter history |
 | `get_task_report` | read | full acceptance report |

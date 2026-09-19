@@ -9,9 +9,22 @@
 
 ## [未发布]
 
+### 新增
+
+- **新增 Kimi Code GUI 适配（`agentId=kimicode`，第四个 GUI agent）**：Kimi Code 桌面端（Moonshot AI，实测 1.0.2）是**普通 Electron 安装**，以 `--remote-debugging-port` 注入后经 CDP 驱动，**不需要** MSIX COM 激活。
+  - **双渲染进程 CDP 驱动**：模型菜单 / 思考档位 / 执行模式菜单经应用内 `browserOverlayOpenMenu()` 渲染在独立的 `Kimi Browser Overlay` 渲染进程（实测点击 `model-pill` 后主窗口 DOM 节点数不变、不产生任何菜单节点），工作区菜单与「切换模型」对话框仍在主窗口 → 客户端同时持有两个页面，并排除 `Screenshot` target。
+  - **工作区绑定与导入**：以**归一化完整路径**为唯一判据（同名不同目录一律 fail-closed，绝不猜一个点），未登记的工作区经原生「添加工作区」对话框（`#32770`；Win32 坐标点击 + `WM_SETTEXT`/`WM_GETTEXT`）导入，绑定后回读面板选中项与 `ws-chip` 文本。
+  - **模型三级选择**：pill 回读 → overlay 快捷菜单直选 → 「更多模型…」→ 主窗口「切换模型」对话框搜索精确选行（非官方模型的唯一入口）；思考档位按**界面实际渲染的档位集合**校验（官方 `Low/High/Max`，非官方 `On/Off`），请求界面不存在的档位在发送前以 `model_mismatch` 响亮失败，绝不静默沿用。
+  - **执行模式强制「完全自动」**并在切换后回读确认；`run_task.reasoningLevel` 取值域扩展为 `low/medium/high` + `max/on/off`。
+  - **运行检测**：`button.stop`（`aria-label="中断"`）与 `button.send.is-starting` 为权威运行信号；发送以标记 + 60s 有界确认（会话 id 与用户消息落地为必需锚点），**绝不重发**。
+  - **`needs_user` 六类与 `continue_task` 恢复**：`close_existing_instance` / `login_required` / `user_confirmation` / `agent_question` / `system_permission` / `setup_recovery`；提问续答写回原会话（不重发任务书）、用户确认仅重连观察、环境类补发完整任务书；定位不到原会话一律 `session_lost` fail-closed。
+  - **取消与重派护栏**：照 Codex M14 语义，`cancel_task` 尽力点 `button.stop` 并在 `gui.cancelWaitMs` 内有界等待界面空闲，未确认停止时终态如实明示；派发前发现未停止的运行先尽力停止，仍不空闲以 `instance_busy` 拒绝。
+  - **真机验证（Windows 10 x64 + Kimi Code 1.0.2）**：成功路径、未登记工作区导入 + 自动验收、失败 → 返修 → 再验收**同会话闭环**均已通过。**取消、提问续答、同名工作区歧义仅由 hermetic 集成测试覆盖**（未在真机点停、未触发真实提问卡片）；macOS 为 `research` 且 fail-closed（可执行探测与原生对话框驱动未在 macOS 实测）。
+
 ### 计划中
 
 - 更多外部 AI-Agent 适配（新 agent = 一个 profile +（如需）一个 adapter 文件）。
+- Kimi Code 的 macOS 真机验证矩阵，以及取消 / 提问续答 / 同名歧义的真机验证（当前仅 hermetic 集成测试覆盖）。
 - TraeWork 在 macOS 下的可执行探测与原生对话框驱动（当前 macOS 分支 fail-closed）。
 - 可选的项目级技能播种（默认不写入目标项目仓库）。
 - Codex 与 ZCode GUI 的 macOS 取消/返修/新建项目矩阵（当前两者 darwin 均保持 `research`）。

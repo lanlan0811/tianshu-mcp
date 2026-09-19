@@ -12,7 +12,7 @@ Visual acceptance (since v0.5.0, with optional AI content validation since v0.5.
 
 **Tianshu × AI-Agent orchestration MCP server**
 
-Registered by Tianshu as a standard MCP server, it dispatches external AI-Agents (Codex desktop, TraeWork/TRAE SOLO CN and ZCode, all driven through their desktop UIs over CDP) to drive the closed loop of **project development → acceptance → failure rework → re-acceptance** (horizontally extensible).
+Registered by Tianshu as a standard MCP server, it dispatches external AI-Agents (Codex desktop, TraeWork/TRAE SOLO CN, ZCode and Kimi Code, all driven through their desktop UIs over CDP) to drive the closed loop of **project development → acceptance → failure rework → re-acceptance** (horizontally extensible).
 
 > Official Tianshu repository: [github.com/huiliyi37/Tianshu-harness](https://github.com/huiliyi37/Tianshu-harness) — a harness-engineering terminal coding-agent runtime (TUI × GUI); this MCP plugs into it as an MCP server.
 
@@ -34,14 +34,14 @@ Registered by Tianshu as a standard MCP server, it dispatches external AI-Agents
 
 ## What this is
 
-Tianshu plays the role of the overall commander; this MCP server is the **scheduler + execution surface + objective acceptance gate**; the external AI-Agent (Codex / TraeWork / ZCode GUI) is the "worker" that does the development.
+Tianshu plays the role of the overall commander; this MCP server is the **scheduler + execution surface + objective acceptance gate**; the external AI-Agent (Codex / TraeWork / ZCode / Kimi Code GUI) is the "worker" that does the development.
 
 - **11 MCP tools**: `run_task / continue_task / query_task / list_tasks / get_task_report / cancel_task / verify_task / rework_task / get_profiles`, plus `prepare_visual_baseline / approve_visual_baseline` for visual acceptance
 - **Async contract**: `run_task` returns a `taskId` immediately; long-running work is polled via `query_task` (never blocks `tools/call`).
 - **Objective acceptance**: automated command checks (typecheck/lint/test/build — skipped when absent, plus tech-stack derivation) + programmatic code analysis (changed-file list / diffstat / suspicious signals such as TODO, debugger, secret-like patterns), all relative to a **git baseline**; never auto-commits or stashes. The acceptance engine is **fail-closed**: a test check fails when its output reports zero executed tests even if the exit code is 0; git projects must produce changes relative to the pre-work baseline by default (pure analysis tasks can opt out with `"requireChanges": false` in `.tianshu-mcp/acceptance.json`).
 - **Acceptance parallelism**: command checks run **bounded-parallel** by default (`verifyConcurrency`, default 2, range 1–4). When checks depend on an order (a later check reading build output, `--fix`, shared cache dirs), set it to `1` for fully serial behaviour; a project can override it in `.tianshu-mcp/acceptance.json`, and the server level lives in `config.json`. Report and log formats are unchanged (results are returned in declaration order).
 - **Rework loop**: automatic rework (`autoFixRounds`) + manual `rework_task`; on verification failure a repair-plan file is generated and fed back to the agent; when rounds run out → `needs_attention` awaiting Tianshu's verdict.
-- **Execution surfaces**: `driver: "gui"` selects an explicit, isolated Codex/TraeWork/ZCode CDP adapter; `driver: "spawn"` runs an external CLI child process.
+- **Execution surfaces**: `driver: "gui"` selects an explicit, isolated Codex/TraeWork/ZCode/Kimi Code CDP adapter; `driver: "spawn"` runs an external CLI child process.
 - **Project-less dispatch (ZCode, issue #12)**: `run_task`'s `projectPath` may be omitted — ZCode runs the task in its `default` workspace without registering/importing a project, collecting a Git baseline, or running project acceptance (the result is marked structurally as `verificationNotApplicable: "no_project"` and `verify_task`/`get_task_report` return a not-applicable explanation). The companion `allowCreateProject: false` stops dispatch before any import side effect when the target directory is unregistered. See the [ZCode CDP adapter](docs/zcode-cdp.en.md).
 - **Scheduling discipline**: per-project serial queue + global concurrency cap (default 2, configurable).
 - **Optional AI content validation (v0.5.4, off by default)**: validates whether the **content** of an image or page screenshot matches an expectation you declare explicitly. Judgement is fully **delegated to a local command you supply** (the MCP reads, stores, and forwards no keys and ships no model client), it **warns only** by default and can be upgraded to failing per rule, and it debounces with majority sampling plus a task-level cache; split votes or confidence below the threshold yield `uncertain`, which never gates and never triggers rework. Configuration and the command contract are in [visual acceptance](docs/visual-acceptance.en.md).
@@ -69,7 +69,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 647 tests across 67 files, including Codex/ZCode/TraeWork unit/fake-CDP/restart/recovery/repair loops and visual acceptance
+npm test             # 776 tests across 73 files, including Codex/ZCode/TraeWork/Kimi Code unit/fake-CDP/restart/recovery/repair loops and visual acceptance
 ```
 
 ### Install the npm package
@@ -153,12 +153,25 @@ run_task(projectPath=D:/xxx/my-app, agentId=zcode, task="Implement `./plan.md`",
 
 Questions, login, an existing non-CDP instance, or system permission pause as `needs_user`; call `continue_task(taskId, message)` to resume the recorded session. Model selection is adapted to ZCode 3.11.2: flat models are selected directly first, with provider/family group expansion as a fallback — both new and legacy layouts are supported. See [docs/zcode-cdp.en.md](docs/zcode-cdp.en.md).
 
+For Kimi Code, `model` is required and takes the UI model name directly, while `reasoningLevel` is validated against the tier set the UI actually renders:
+
+```text
+run_task(projectPath=D:/xxx/my-app, agentId=kimicode, task="Implement `./plan.md`",
+         model=K3, reasoningLevel=High, autoVerify=true, autoFixRounds=2)
+```
+
+> Kimi Code is a plain Electron install (measured 1.0.2): injecting `--remote-debugging-port` and driving it over CDP is enough — no MSIX COM activation.
+> **The model menu, thinking tiers and execution-mode menu render in a separate `Kimi Browser Overlay` renderer window**, while the workspace menu and the "switch model" dialog stay in the main window.
+> A task must bind a workspace folder (**project-less dispatch is not supported**); an unregistered workspace is imported through the native "add workspace" dialog.
+> `reasoningLevel`: official models use `Low` / `High` / `Max`; **unofficial models (e.g. `stepfun/step-3.7-flash:free`) only have `on` / `off`**,
+> and a tier the UI does not render fails loudly before sending. The `mode` parameter is not supported. See the [Kimi Code CDP adapter](docs/kimi-cdp.en.md).
+
 ## Tool surface (11 tools)
 
 | Tool | Capability / approval | Purpose |
 |---|---|---|
 | `run_task` | write + approval | Dispatch work (optional auto-verify / auto-rework); returns `taskId` asynchronously |
-| `continue_task` | write + approval | Resume the session behind `needs_user` (ZCode resumes the recorded session; Codex re-observes for `user_confirmation` / re-dispatches for `login_required`) |
+| `continue_task` | write + approval | Resume the session behind `needs_user` (ZCode resumes the recorded session; Codex re-observes for `user_confirmation` / re-dispatches for `login_required`; Kimi Code resumes the recorded session and distinguishes question answering / re-observation / full re-dispatch) |
 | `query_task` | read | Poll status / progress / log tail |
 | `list_tasks` | read | Filtered history of tasks |
 | `get_task_report` | read | Full text of a verification round's report (`report.md`) |
@@ -192,11 +205,12 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 | [ARCHITECTURE.en.md](ARCHITECTURE.en.md) | **Architecture**: layering and module boundaries, startup assembly, data home, state machine, verify/rework pipeline, agent driver contract, GUI instance lifecycle, cross-platform strategy, safety invariants, extension points, known gaps |
 | [docs/tianshu-integration.en.md](docs/tianshu-integration.en.md) | Two config.json integration modes, UI/API steps, smoke test, FAQ |
 | [docs/agent-profiles.en.md](docs/agent-profiles.en.md) | Agent profile field reference + real-machine samples |
-| [docs/adapter-matrix.en.md](docs/adapter-matrix.en.md) | Agent capability research matrix (Codex/Zcode/TraeWork/extension slots) |
+| [docs/adapter-matrix.en.md](docs/adapter-matrix.en.md) | Agent capability research matrix (Codex/Zcode/TraeWork/Kimi Code/extension slots) |
 | [docs/traework-cdp.en.md](docs/traework-cdp.en.md) | TraeWork GUI driver (CDP): mechanism, config, mode switching, selectors, safety invariants, pitfalls, verification record |
 | [docs/zcode-cdp.en.md](docs/zcode-cdp.en.md) | ZCode GUI driver: discovery, exact project/model, Full Access, pause/continue, verification and platform evidence |
 | [docs/zcode-windows-smoke.en.md](docs/zcode-windows-smoke.en.md) | ZCode Windows hardware record for development, same-session repair, and question continuation |
 | [docs/codex-gui-cdp.en.md](docs/codex-gui-cdp.en.md) | Codex desktop GUI driver: MSIX COM activation, CDP attach, selectors, run detection, verify/repair |
+| [docs/kimi-cdp.en.md](docs/kimi-cdp.en.md) | Kimi Code GUI driver: two renderer processes (main window + `Kimi Browser Overlay`), full-path workspace binding with native-dialog import, three-stage model selection and thinking tiers, execution mode, run detection and troubleshooting |
 | [docs/codex-windows-smoke.en.md](docs/codex-windows-smoke.en.md) | Codex Windows hardware record (incl. verify-fail → auto plan → repair-pass loop) |
 | [docs/release-v0.3.4.en.md](<docs/release-v0.3.4.en.md>) | v0.3.4 release notes (ZCode project/model read-back, initialization recovery, session dispatch confirmation, issues #8/#9/#10) |
 | [docs/release-v0.5.4.en.md](<docs/release-v0.5.4.en.md>) | v0.5.4 release notes (optional AI visual content validation: user-supplied command delegation, majority-vote debouncing, warning-only by default) |
@@ -345,6 +359,7 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 | `codex` | `gui` / `codex-gui` | **ready** (`research` on macOS) | Desktop GUI over CDP (Windows: MSIX COM activation; macOS: spawn .app binary + CDP); supports `model`/`reasoningLevel`/`planDoc`/`designSystem`; wait-user, cancel and dispatch-guard semantics machine-verified (v0.3.2); Windows machine-verified; macOS basic closed loop machine-verified (v0.4.0) — stays `research` until the cancel/rework matrix is covered |
 | `zcode` | `gui` / `zcode-gui` | **research** | CDP GUI adapter with the Windows hardware loop passed; adapted to ZCode 3.11.2 model menu and project binding (v0.3.3), with hardened project/model read-back and initialization recovery (v0.3.4); supports project-less dispatch and `allowCreateProject` (v0.5.2, issue #12), and v0.5.3 fixed instance survival across server exit, new-task page switching and send-failure attribution; macOS basic closed loop machine-verified (2026-09-13, v0.4.0) — stays `research` until the cancel/rework/new-project matrix is covered |
 | `traework` | `gui` / `traework-gui` | **ready** | CDP-driven TRAE SOLO CN desktop UI; all three panel modes machine-verified |
+| `kimicode` | `gui` / `kimicode-gui` | **ready** (`research` on macOS) | Kimi Code desktop (Electron, measured 1.0.2); **two renderer processes** (main window + `Kimi Browser Overlay` carrying the model/tier/mode menus); workspaces bind by full path and unregistered ones are imported through the native "add workspace" dialog; supports `model`/`reasoningLevel` and rejects `mode`; Windows machine-verified for the success path, unregistered-workspace import + auto-acceptance, and the failure → rework → re-acceptance same-session loop; cancellation/question answering are covered by hermetic integration tests only, and macOS stays `research` and fail-closed |
 | `stub` | `spawn` | tests only | `test/stub-agent/stub-agent.mjs` with 3 playbooks (good/fix-on-first/never) |
 
 > Adding an agent usually needs only a profile — see [docs/agent-profiles.en.md](docs/agent-profiles.en.md) and [CONTRIBUTING.en.md](CONTRIBUTING.en.md).

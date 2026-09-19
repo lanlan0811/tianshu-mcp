@@ -90,7 +90,7 @@
 | 工具 | 能力/审批 | 作用 |
 |---|---|---|
 | `run_task` | write + 审批 | 派活（可带自动验收/自动返修），异步返回 taskId |
-| `continue_task` | write + 审批 | 恢复 `needs_user` 的原会话（仅 codex/zcode） |
+| `continue_task` | write + 审批 | 恢复 `needs_user` 的原会话（仅 codex/zcode/kimicode） |
 | `query_task` | read | 轮询状态 / 日志尾 |
 | `list_tasks` | read | 历史任务过滤列表 |
 | `get_task_report` | read | 某轮验收报告全文 |

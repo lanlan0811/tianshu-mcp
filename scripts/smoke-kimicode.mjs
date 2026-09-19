@@ -51,6 +51,7 @@ const reasoningLevel = readArg("--reasoning-level");
 const task = readArg("--task");
 const timeoutMs = Number(readArg("--timeout-ms") ?? 15 * 60_000);
 const answer = readArg("--answer");
+const cancelAfterMs = Number(readArg("--cancel-after-ms") ?? 0);
 const autoVerify = process.argv.includes("--auto-verify");
 const autoFixRounds = Number(readArg("--auto-fix-rounds") ?? (autoVerify ? 2 : 0));
 
@@ -63,7 +64,8 @@ if (
   autoFixRounds > 10
 ) {
   process.stderr.write(
-    "用法: node scripts/smoke-kimicode.mjs --confirm-send --model <模型名> --task <任务> [--project <绝对路径>] [--reasoning-level <Low|High|Max|on|off>] [--auto-verify] [--auto-fix-rounds <0-10>] [--answer <续答>] [--timeout-ms <毫秒>] [--home <数据目录>]\n",
+    "用法: node scripts/smoke-kimicode.mjs --confirm-send --model <模型名> --task <任务> [--project <绝对路径>] [--reasoning-level <Low|High|Max|on|off>] [--auto-verify] [--auto-fix-rounds <0-10>] [--answer <续答>] [--cancel-after-ms <毫秒>] [--timeout-ms <毫秒>] [--home <数据目录>]\n" +
+      "  --cancel-after-ms：任务进入 running 后等待该毫秒数再调用 cancel_task，用于验证取消真停路径。\n",
   );
   process.exit(2);
 }
@@ -98,6 +100,7 @@ try {
   const startedAt = Date.now();
   let previous = "";
   let continued = false;
+  let cancelled = false;
   for (;;) {
     const current = await call(client, "query_task", { taskId, tailLines: 20 });
     const meta = current.meta ?? {};
@@ -111,6 +114,24 @@ try {
     if (signature !== previous) {
       process.stdout.write(`${JSON.stringify({ event: "status", taskId, ...JSON.parse(signature) })}\n`);
       previous = signature;
+    }
+    /**
+     * 取消触发点：必须等到 agent 真的在生成（lastRunSignal=stop_button）之后再取消，
+     * 否则取消会落在 setup 阶段——那时 CDP 尚未连接，只能如实报「无法确认界面停止」，
+     * 验证不到「点停止按钮 + 有界等待」这条路径。
+     */
+    if (
+      cancelAfterMs > 0 &&
+      !cancelled &&
+      meta.status === "running" &&
+      meta.lastRunSignal === "stop_button"
+    ) {
+      cancelled = true;
+      const res = await call(client, "cancel_task", { taskId, reason: "smoke cancel validation" });
+      if (res.result.isError) throw new Error(`cancel_task 失败：${res.text}`);
+      process.stdout.write(`${JSON.stringify({ event: "cancel-requested", taskId, text: res.text })}\n`);
+      previous = "";
+      continue;
     }
     if (meta.status === "needs_user" && answer && !continued) {
       const resumed = await call(client, "continue_task", { taskId, message: answer });
@@ -140,4 +161,6 @@ try {
 }
 
 process.stdout.write(`${JSON.stringify({ event: "finished", home, meta: finalMeta })}\n`);
-if (finalMeta?.status !== "succeeded") process.exitCode = 1;
+// 取消验证场景下 cancelled 就是期望结果；其余场景要求 succeeded。
+const expected = cancelAfterMs > 0 ? "cancelled" : "succeeded";
+if (finalMeta?.status !== expected) process.exitCode = 1;

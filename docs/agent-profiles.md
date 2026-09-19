@@ -6,7 +6,7 @@
 
 | 级别 | 文件 | 说明 |
 |---|---|---|
-| 内置 | `src/agents/builtin.ts` | 代码内置默认 profiles（codex/zcode/traework）；随版本更新 |
+| 内置 | `src/agents/builtin.ts` | 代码内置默认 profiles（codex/zcode/traework/kimicode）；随版本更新 |
 | 用户级 | `~/.tianshu-mcp/agent-profiles.json`（`TIANSHU_MCP_HOME` 可覆盖） | 整键覆盖内置同名 profile |
 
 合并规则：先内置，再用户级覆盖（同 `id` 用户级胜出）。
@@ -20,7 +20,7 @@
       "displayName": "Codex (OpenAI 桌面端 CLI)",   // 展示名
       "type": "cli",                                  // 目前仅 cli
       "driver": "spawn",                              // spawn=外部子进程（默认）；gui=桌面 UI 自动化
-      "adapter": "zcode-gui",                         // GUI 可选：traework-gui | zcode-gui；旧缺省按 TraeWork 兼容
+      "adapter": "zcode-gui",                         // GUI 可选：traework-gui | zcode-gui | codex-gui | kimicode-gui；旧缺省按 TraeWork 兼容
       "status": "ready",                              // ready | research | unsupported
       "command": null,                                // 可执行；null + discovery 则自动探测
       "argsTemplate": ["exec", "<prompt:arg>", "--skip-git-repo-check"],
@@ -55,9 +55,9 @@
 | 值 | 说明 |
 |---|---|
 | `spawn`（默认） | 拉起外部 CLI 子进程（`argsTemplate` + `promptMode`），结果按退出码判定 |
-| `gui` | 通过 CDP 驱动桌面 UI（当前仅 `traework`）；不 spawn 子进程，`run_task` 可传 `model` 指定其模型 |
+| `gui` | 通过 CDP 驱动桌面 UI（当前为 `traework` / `zcode` / `codex` / `kimicode`）；不 spawn 子进程，`run_task` 可传 `model` 指定其模型 |
 
-> `driver=gui` 时 `argsTemplate`/`promptMode` 不生效。显式 `adapter` 用于隔离 TraeWork 与 ZCode；旧 profile 缺失该字段时仍按 TraeWork 行为兼容。分别见 [traework-cdp.md](traework-cdp.md) 与 [zcode-cdp.md](zcode-cdp.md)。
+> `driver=gui` 时 `argsTemplate`/`promptMode` 不生效。显式 `adapter` 用于隔离各 GUI 实现；旧 profile 缺失该字段时仍按 TraeWork 行为兼容。分别见 [traework-cdp.md](traework-cdp.md)、[zcode-cdp.md](zcode-cdp.md)、[codex-gui-cdp.md](codex-gui-cdp.md) 与 [kimi-cdp.md](kimi-cdp.md)。
 
 TraeWork 存活检测相关字段：`stableRounds` 仅确认 DOM 已稳定；随后还需持续 `idleTimeoutMs` 无变化且无运行信号才返回
 `idle`。`cdpSendTimeoutMs` 限制单次 CDP 命令等待，`progressIntervalMs` 控制 `query_task` 可见的进度事件频率。
@@ -132,6 +132,78 @@ TraeWork 存活检测相关字段：`stableRounds` 仅确认 DOM 已稳定；随
 
 > **要点**：`activation: "msix-com"` 与 `userDataDir` 缺一不可——GUI 宿主 `ChatGPT.exe` 无法直启（策略拒绝），且复用默认 profile 时调试端口不会开启。详见 [codex-gui-cdp.md](codex-gui-cdp.md)。
 
+### Kimi Code（GUI 驱动，2026-09-20 Windows 真机已验证）
+
+```jsonc
+// ~/.tianshu-mcp/agent-profiles.json （Windows 示例；下列即内置默认值）
+{
+  "profiles": {
+    "kimicode": {
+      "displayName": "Kimi Code (Kimi Code 桌面端)",
+      "type": "cli",
+      "driver": "gui",
+      "adapter": "kimicode-gui",
+      "status": "ready",                 // darwin 为 "research"（fail-closed）
+      "command": null,
+      "argsTemplate": [],
+      "promptMode": "arg",
+      "cwd": "task",
+      "timeoutMs": 1800000,
+      "killTree": "taskkill",
+      "authNote": "复用本机 Kimi Code 登录态；检测到未开启 CDP 的既有实例时需用户先关闭该实例",
+      "executableDiscovery": {
+        "dirs": [
+          "{PROGRAMFILES}/Kimi Code",
+          "{PROGRAMFILES(X86)}/Kimi Code",
+          "{LOCALAPPDATA}/Programs/Kimi Code",
+          "{LOCALAPPDATA}/Kimi Code",
+          "/Applications/Kimi Code.app/Contents/MacOS",
+          "{HOME}/Applications/Kimi Code.app/Contents/MacOS"
+        ],
+        "fileNames": ["Kimi Code.exe", "Kimi Code"],
+        "preferredDrives": ["D:"],
+        "relativePaths": [
+          "Kimi-Code/Kimi Code/Kimi Code.exe",
+          "Kimi Code/Kimi Code.exe",
+          "Kimi/Kimi Code/Kimi Code.exe",
+          "kimi-code/kimi code/kimi code.exe"
+        ]
+      },
+      "gui": {
+        "cdpPort": 9666,                 // CDP 基准端口；被占用时按 cdpPortRange 自动顺延
+        "cdpPortAuto": true,
+        "cdpPortRange": 20,
+        "exeArgs": ["--remote-debugging-port=<port>"],
+        "windowMode": "reuse",
+        "launchTimeoutMs": 90000,        // 冷启动首帧 + 渲染实测偏慢，放宽到 90s
+        "pollIntervalMs": 3000,
+        "stableRounds": 4,
+        "idleTimeoutMs": 600000,
+        "stallTimeoutMs": 300000,
+        "cancelWaitMs": 15000,
+        "cdpSendTimeoutMs": 15000,
+        "progressIntervalMs": 30000,
+        "modelSwitch": true,
+        "modeSwitch": false,             // 不支持 mode 参数
+        "freshSession": true,
+        "modelRequired": true,
+        "activation": "spawn",           // 普通 Electron 安装，直启即可（无 MSIX COM）
+        "permissionMode": "完全自动",
+        "defaultPermissionMode": "完全自动",
+        "defaultAutoFixRounds": 2,
+        "workspaceTriggerTimeoutMs": 15000, // 可选：等待 ws-chip 挂载（草稿页判据）的上限
+        "selectors": {}
+      }
+    }
+  }
+}
+```
+
+> **要点**：Kimi Code 是**普通 Electron 安装**（实测 1.0.2），`--remote-debugging-port` 注入即可，**不需要** MSIX COM 激活。
+> **双渲染进程**：模型 / 思考档位 / 执行模式菜单渲染在 `Kimi Browser Overlay` 浮层窗口，工作区菜单与「切换模型」对话框在主窗口。
+> 任务以**工作区**（任务文件夹）组织，**不支持无项目派发**：必须提供 `projectPath`，未登记的工作区经原生「添加工作区」对话框导入。
+> 默认权限为「完全自动」、默认自动返修 2 轮。详见 [kimi-cdp.md](kimi-cdp.md)。
+
 ### 历史：Codex 内核 CLI（`codex exec`，已被 GUI 驱动取代）
 
 ```jsonc
@@ -168,6 +240,25 @@ TraeWork 存活检测相关字段：`stableRounds` 仅确认 DOM 已稳定；随
 
 > `codex` 使用 `driver=gui` + `adapter=codex-gui` + `activation=msix-com`。任务参数含 `model`（如 `GPT-5.6 Sol`）、`reasoningLevel`（低/中/高 或 low/medium/high）、`planDoc`、`designSystem`；默认权限“完全访问”、默认自动返修 5 轮。Windows 真机已验证；macOS 内置状态为 `research`。详见 [codex-gui-cdp.md](codex-gui-cdp.md)。
 
+> `kimicode` 使用 `driver=gui` + `adapter=kimicode-gui` + `activation=spawn`（普通 Electron 安装，实测 1.0.2）。`model` 必填且直接填界面模型名（如 `K3`、`K2.8 Preview`、`stepfun/step-3.7-flash:free`），**不支持 `mode`**；CDP 基准端口 `9666`（`cdpPortAuto` 时按 `cdpPortRange` 顺延），`launchTimeoutMs` 90000，默认权限「完全自动」、默认自动返修 2 轮。Windows 真机已验证（成功路径 / 未登记工作区导入 + 自动验收 / 失败→返修→再验收同会话闭环）；macOS 为 `research` 且 fail-closed。详见 [kimi-cdp.md](kimi-cdp.md)。
+
+### reasoningLevel 取值域与适用档位
+
+`run_task.reasoningLevel` 的取值域自 v0.5.5 起扩展为两组：
+
+| 取值 | 说明 |
+|---|---|
+| `low` / `medium` / `high`（别名：`低` / `中` / `高`） | 通用三档，供 Codex 使用 |
+| `max` / `on` / `off` | Kimi Code 的界面档位：官方模型为 `Low` / `High` / `Max`，非官方模型只有 `On` / `Off` |
+
+各 agent 的适用档位与语义：
+
+| agent | 适用档位 | 行为 |
+|---|---|---|
+| `codex` | `low` / `medium` / `high` | 不传沿用 Codex 面板当前等级 |
+| `kimicode` | 官方模型 `low` / `high` / `max`；非官方模型 `on` / `off` | 档位集合以**界面实际渲染的档位标签**为准（不内置模型名单）；不传时官方档位沿用界面当前值、非官方档位强制 `on`；请求界面不存在的档位在**发送前**以 `model_mismatch` 响亮报错，绝不静默沿用 |
+| `traework` / `zcode` / spawn 类 | 不适用 | 传入会被忽略或按各 adapter 语义拒绝 |
+
 ## 常见问题
 
 - **探测到错误文件**：检查 `fileNames` 只写合法可执行名。ZCode 只探测桌面程序 `ZCode.exe`/macOS bundle，不把 `db.sqlite`、运行时数据或未公开的 app-server 当作入口。
@@ -175,13 +266,15 @@ TraeWork 存活检测相关字段：`stableRounds` 仅确认 DOM 已稳定；随
 - **env 有敏感值**：仅本机可见，不会写入 task.jsonl/日志；属于自担风险字段。
 - **driver=gui 的 agent 找不到可执行**：`get_profiles` 会显示探测结果；可在 profile 里直接配 `gui.exePath` 指定绝对路径。
 
-## ZCode 初始化自动恢复
+## ZCode / Kimi Code 初始化自动恢复
 
 以下 `gui` 字段可在数据目录的 `agent-profiles.json` 中覆盖；旧配置自动采用默认值，其他驱动不使用这些恢复字段。
 
 | 字段 | 默认值 | 含义 |
 |---|---:|---|
 | `setupRecoveryTimeoutMs` | 120000 | 从开始初始化到项目绑定完成的总预算（毫秒） |
+| `projectTriggerTimeoutMs` | 15000 | 等待并确认 ZCode 项目触发器就绪的上限（含点击后确认菜单打开的预算） |
+| `workspaceTriggerTimeoutMs` | 15000 | **可选**（Kimi Code 专用）：等待工作区触发器（`button.ws-chip`）挂载的上限，即「草稿页是否真的建立」的判据；ZCode 不使用该字段。刻意声明为可选而非带默认值，以免既有 profile 字面量被迫改动 |
 | `dialogProbeTimeoutMs` | 30000 | 单次原生对话框探测上限（毫秒） |
 | `dialogOperationTimeoutMs` | 60000 | 单次文件夹操作上限（毫秒） |
 | `setupRecoveryMaxRetries` | 2 | 可安全重试阶段的额外重试次数（0–10） |

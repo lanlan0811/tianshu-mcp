@@ -84,11 +84,14 @@ export type KimicodeOverlaySelectorKey =
 
 export const KIMICODE_SELECTORS: Record<KimicodeSelectorKey, KimicodeSelectorSpec> = {
   newSession: {
+    // 真机教训（2026-09-20）：**不要**给这里配宽泛回退（曾写 `aside.side button`，命中 26 个）。
+    // click() 的坐标点击要求「唯一可见匹配」，多命中会让它退化成 DOM click，而该按钮只认
+    // trusted 点击——表现为「点新建会话毫无反应」，且只在侧栏按钮变多（停在会话页）时复现。
     primary: "button.btn-new-chat",
-    fallbacks: ["aside.side button.search + button", "aside.side button"],
+    fallbacks: ["aside.side > button.btn-new-chat", "button[class*='btn-new-chat']"],
     texts: ["新建会话", "New session", "New chat"],
     verifiedVersion: "1.0.2",
-    note: "侧栏顶部新建会话按钮；点击后进入草稿页（URL 由 /sessions/<id> 变为 app://renderer/）",
+    note: "侧栏顶部新建会话按钮（唯一）。点击后进入草稿页（URL 由 /sessions/<id> 变为 app://renderer/）；回退选择器必须保持窄，否则多命中会让坐标点击失效",
   },
   search: {
     primary: "button.search",
@@ -112,11 +115,13 @@ export const KIMICODE_SELECTORS: Record<KimicodeSelectorKey, KimicodeSelectorSpe
     note: "工作区分组「…」菜单（重命名/移除等；本适配器不使用，保留用于诊断）",
   },
   workspaceAddSession: {
+    // 每个工作区分组各有一个，因此**天然多命中**：本键必须走 clickFirst（任取一个可见的即可），
+    // 不能走要求唯一匹配的 click()。语义上也成立——先建出草稿，随后按完整路径显式绑定目标工作区。
     primary: "button.gh-add[aria-label='在此工作区新建会话']",
     fallbacks: ["button.gh-add"],
     ariaLabels: ["在此工作区新建会话", "New session in this workspace"],
     verifiedVersion: "1.0.2",
-    note: "在指定工作区分组下直接新建会话（比全局「新建会话」更精确，绑定失败时的可靠入口）",
+    note: "在某个工作区分组下新建会话（回退入口）。多分组时天然多命中 → 用 clickFirst，不用 click",
   },
   workspaceChip: {
     primary: "button.ws-chip",

@@ -1,6 +1,6 @@
 # tianshu-mcp 使用示例（子文件）
 
-正文过长方法论不背：任务书模板、四种 agent 派活示例、meta 块字段全表、错误码速查、验收与返修模板、视觉验收与基准保护、needs_user/取消示例都在这里，按需用读取文件工具查看。
+正文过长方法论不背：任务书模板、五种 agent 派活示例、meta 块字段全表、错误码速查、验收与返修模板、视觉验收与基准保护、needs_user/取消示例都在这里，按需用读取文件工具查看。
 
 ## 1. 任务书模板
 
@@ -40,7 +40,7 @@
 - 现有 run 命令会写 out/ 目录；dry-run 应跳过全部写操作
 ```
 
-## 2. 四种 agent 派活示例
+## 2. 五种 agent 派活示例
 
 ### 2.1 codex（默认；model 必填，支持 reasoningLevel / planDoc / designSystem）
 
@@ -122,6 +122,23 @@ run_task(projectPath=D:/repo/app, agentId=traework,
 - `mode` 缺省时从任务书文本识别「切换 Work/Code/Design 模式」，识别不到保持 `Work`。
 - TraeWork 窗口需保持可见；实现顺序为「新建会话 → 切模式 → 在目标模式内绑定项目」。
 
+### 2.3.1 kimicode（model 必填且直接填界面模型名；reasoningLevel 按界面档位集合校验）
+
+```text
+run_task(projectPath=D:/repo/app, agentId=kimicode,
+  model=K3,
+  reasoningLevel=High,
+  task=按 `./docs/plan.md` 实现功能,
+  autoVerify=true, autoFixRounds=2)
+```
+
+- `model` **必填**，直接填**界面上的模型名**（如 `K3`、`K2.8 Preview`、`K2.7 Code Highspeed`）；非官方模型直接填全名（如 `stepfun/step-3.7-flash:free`）。名字必须与界面完全一致，否则发送前以 `model_unavailable` / `model_mismatch` 失败（错误文本会附上可见候选）。
+- `reasoningLevel` 可选：**官方模型**用 `Low` / `High` / `Max`（也接受 `low`/`high`/`max`）；**非官方模型**只有 `on` / `off`。档位集合以**界面实际渲染的档位标签**为准——传了界面不存在的档位会在发送前报错（不会静默沿用）。不传时：官方档位沿用界面当前值，非官方档位强制 `on`。
+- **不支持 `mode`**；**`allowCreateProject` 不适用**（那是 ZCode 专用）；**`projectPath` 必填**（Kimi Code 以工作区组织任务，**不支持无项目派发**）。
+- 未登记的工作区会自动经原生「添加工作区」对话框导入；若目标目录与已登记工作区同名或路径重复，会 fail-closed 报歧义，**不会猜一个点**。
+- 首次启动偏慢（`launchTimeoutMs` 90s）；若已有未开 CDP 的 Kimi Code 实例，任务转 `needs_user(close_existing_instance)`，需用户手动关闭后 `continue_task`。
+- 官方额度用尽时界面会返回 `provider.auth_error` / `HTTP 403` 并判 `agent_error`——可改用非官方免费模型（如 `stepfun/step-3.7-flash:free`）后重派。
+
 ### 2.4 codex-cli（用户自建 profile；无头路径，无 GUI）
 
 内置 `codex` 走桌面 GUI 驱动。不想依赖 GUI 自动化（或需要可复现的 CI 式无头执行）时，在数据目录 `~/.tianshu-mcp/agent-profiles.json` 加一个 `driver=spawn` 的 profile，示例见 README「macOS 无头路径：codex-cli」。之后按普通 agent 派活：
@@ -140,7 +157,7 @@ run_task(projectPath=/path/to/项目, agentId=codex-cli,
 
 - `run_task` 是**异步契约**：立即返回 `taskId`，不要当同步调用等结果。
 - 轮询间隔约 5–10 秒（`query_task` 缺省返回 agent 日志末 40 行）；同项目串行 + 全局并发默认 2，重复派单只会排队。
-- 只有 `needs_user` 可用 `continue_task` 恢复，且**仅 codex/zcode**；其余状态/agent 会被明确拒绝。
+- 只有 `needs_user` 可用 `continue_task` 恢复，且**仅 codex/zcode/kimicode**；其余状态/agent 会被明确拒绝。
 
 ## 3. meta 块解读（字段全表）
 
@@ -217,9 +234,10 @@ run_task(projectPath=/path/to/项目, agentId=codex-cli,
 | `permission_unknown` | 权限模式未确认（如 ZCode 未开「完全访问」） | 让用户在 agent 内切好权限模式 |
 | `cdp_disconnected` | CDP 连接断开且未能恢复 | 让用户关掉冲突实例；重试 |
 | `instance_busy` | 同项目已有未停止的运行（重派护栏） | 先 `cancel_task` 并**确认 GUI 已停**，或等其自行结束 |
-| `session_lost` | zcode 找不到原会话锚点 | 用新任务重派，不要指望恢复原会话 |
+| `session_lost` | zcode/kimicode 找不到原会话锚点 | 用新任务重派，不要指望恢复原会话 |
 | `input_mismatch` / `send_unknown` | 发送前回读不一致 / 发送结果无法确认（**不重复发送**） | 人工看窗口状态，必要时 `continue_task` 或重派 |
 | `idle_timeout` | GUI 长时间静止且无完成标志（现场已保留） | 看窗口里 agent 是否真卡住；必要时 `continue_task` 或取消 |
+| `agent_error` | Kimi Code 界面出现「继续」按钮或失败文案（如官方额度用尽 `provider.auth_error`） | 读窗口内错误原文；额度/模型类可换非官方免费模型后重派 |
 | `task_timeout`（`errorType=timeout`） | 任务级超时 | 大任务调大 `taskTimeoutMs`；或拆小任务 |
 | `aborted` | 被取消/中断（`abortSource` 区分来源） | 按 SKILL §5 处理 |
 

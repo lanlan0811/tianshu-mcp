@@ -354,7 +354,7 @@ interface AgentAdapter {
 | `session / keptInstance` | Session anchor and whether the instance was kept, for `continue_task` |
 | `progressSummary` | Progress persisted for `query_task` to observe |
 
-### 8.2 Execution order for the three GUI drivers (measured; do not reorder casually)
+### 8.2 Execution order for the four GUI drivers (measured; do not reorder casually)
 
 **TraeWork** (CDP-driven TRAE SOLO CN):
 
@@ -384,9 +384,29 @@ MSIX discovery (Appx query first + disk scan fallback) → COM activation with a
   → run detection (stop button + conversation-hash stall) → poll to completion
 ```
 
+**Kimi Code** (CDP-driven, **two renderer processes**):
+
+```text
+Discover install → launch/reuse CDP instance (an existing non-CDP instance → needs_user(close_existing_instance))
+  → connect the main window and bring it to front (bringToFront, wait for visibilityState to settle)
+  → new draft (bounded retry keyed on ws-chip mounting)
+  → bind workspace (full-path match + read-back; unregistered goes through the native "add workspace" dialog)
+  → pick model (pill read-back → overlay shortcut menu → "more models…" dialog)
+  → thinking tier (validated against the tier set the UI actually renders) → execution mode "fully automatic"
+  → send (marker + bounded 60s confirmation) → run detection (stop button / send.is-starting) → poll to completion
+```
+
+> **The model menu, thinking tiers and execution-mode menu are not in the main window** — the app's
+> `browserOverlayOpenMenu()` renders them into a separate `Kimi Browser Overlay` renderer process, while the
+> workspace menu and the "switch model" dialog stay in the main window.
+> `src/agents/kimicode/cdp.ts` is therefore a **two-page client** (main + overlay) and excludes the `Screenshot` target.
+> "Is the menu open?" must be judged from the overlay's `visibilityState` — content may linger briefly after closing.
+> Kimi Code **does not support project-less dispatch**: the task must bind a workspace folder, and `workspaceMode=default`
+> or a missing `projectPath` is rejected with `setup_failed`.
+
 ### 8.3 Completion detection: run signal first, completion marker second
 
-All three drivers share one judgment principle (implemented in each `liveness.ts`):
+All four drivers share one judgment principle (implemented in each `liveness.ts`):
 
 ```text
 A run signal exists (stop button / loading indicator / active tool call) → still running, never end
@@ -405,46 +425,51 @@ Idle for idleTimeoutMs (default 10 min)                               → idle_t
 
 `endReason`:
 
-| Codex | TraeWork | ZCode |
-|---|---|---|
-| `reply_stable` (success) | `completion_mark` (success) | `reply_stable` (success) |
-| `aborted` | `ask_user` (success, but blocked) | `aborted` |
-| `task_timeout` | `aborted` | `task_timeout` |
-| `idle_timeout` | `timeout` | `idle_timeout` |
-| `needs_user` | `idle_no_completion` | `needs_user` |
-| `setup_failed` | `setup_failed` | `setup_failed` |
-| `instance_busy` | `cdp_lost` | `cdp_disconnected` |
-| `project_ambiguous` | — | `project_ambiguous` |
-| `project_create_failed` | — | `project_mismatch` |
-| `project_mismatch` | — | `project_not_registered` |
-| `model_unavailable` | — | `model_unavailable` |
-| `model_mismatch` | — | `model_mismatch` |
-| `permission_unknown` | — | `permission_unknown` |
-| `input_mismatch` | — | `input_mismatch` |
-| `send_unknown` | — | `send_unknown` |
-| `cdp_disconnected` | — | `session_lost` |
-| `internal` | — | `internal` |
+| Codex | TraeWork | ZCode | Kimi Code |
+|---|---|---|---|
+| `reply_stable` (success) | `completion_mark` (success) | `reply_stable` (success) | `reply_stable` (success) |
+| `aborted` | `ask_user` (success, but blocked) | `aborted` | `aborted` |
+| `task_timeout` | `aborted` | `task_timeout` | `task_timeout` |
+| `idle_timeout` | `timeout` | `idle_timeout` | `idle_timeout` |
+| `needs_user` | `idle_no_completion` | `needs_user` | `needs_user` |
+| `setup_failed` | `setup_failed` | `setup_failed` | `setup_failed` |
+| `instance_busy` | `cdp_lost` | `cdp_disconnected` | `instance_busy` |
+| `project_ambiguous` | — | `project_ambiguous` | — |
+| `project_create_failed` | — | `project_mismatch` | — |
+| `project_mismatch` | — | `project_not_registered` | — |
+| `model_unavailable` | — | `model_unavailable` | `model_unavailable` |
+| `model_mismatch` | — | `model_mismatch` | `model_mismatch` |
+| `permission_unknown` | — | `permission_unknown` | `permission_unknown` |
+| `input_mismatch` | — | `input_mismatch` | `input_mismatch` |
+| `send_unknown` | — | `send_unknown` | `send_unknown` |
+| `cdp_disconnected` | — | `session_lost` | `cdp_disconnected` |
+| `internal` | — | `internal` | `internal` |
+| — | — | — | `agent_error` (the UI shows a "continue" button or a failure message) |
+
+> Kimi Code organises tasks by **workspace** rather than project, so it never produces the `project_*` family;
+> binding failures surface as `setup_failed` or `needs_user(setup_recovery / system_permission)`.
 
 `needsUserKind` (six values in the union; each driver produces a different subset):
 
 | Value | Meaning | Producer |
 |---|---|---|
-| `agent_question` | The agent is asking the user something in the UI | ZCode |
-| `user_confirmation` | Parked on a confirmation screen | Codex |
-| `login_required` | Login needed | Codex, ZCode |
-| `close_existing_instance` | An existing instance holds no CDP port; the user must close it | ZCode |
-| `system_permission` | Missing system permission (e.g. macOS Accessibility) | ZCode |
-| `setup_recovery` | Automatic recovery budget exhausted; a human must step in | ZCode |
+| `agent_question` | The agent is asking the user something in the UI | ZCode, Kimi Code (heuristic question detection only when `gui.selectors.userGate` is configured) |
+| `user_confirmation` | Parked on a confirmation screen | Codex, Kimi Code |
+| `login_required` | Login needed | Codex, ZCode, Kimi Code |
+| `close_existing_instance` | An existing instance holds no CDP port; the user must close it | ZCode, Kimi Code |
+| `system_permission` | Missing system permission (e.g. macOS Accessibility) | ZCode, Kimi Code |
+| `setup_recovery` | Automatic recovery budget exhausted; a human must step in | ZCode, Kimi Code |
 
 > TraeWork produces no `needsUserKind`: its "asking the user" case ends the turn normally (`ask_user`) and releases the instance.
 
 ### 8.5 Registry and executable discovery (`src/agents/registry.ts`)
 
-- The constructor pre-registers four `CliAdapter` bases (codex / zcode / traework / stub), then swaps in the GUI implementation based on `profile.adapter` (`codex-gui` / `zcode-gui` / `traework-gui`); it only rebuilds when the implementation class changes.
+- The constructor pre-registers five `CliAdapter` bases (codex / zcode / traework / kimicode / stub), then swaps in the GUI implementation based on `profile.adapter` (`codex-gui` / `zcode-gui` / `traework-gui` / `kimicode-gui`); it only rebuilds when the implementation class changes.
 - `resolve(agentId)` branches on the profile's `status`:
   - `unsupported` → immediate failure;
   - `research` → ZCode goes through the dedicated `discoverZcode`, others through generic probing;
   - `ready` → in order: explicit absolute path → discovery-directory scan → PATH (`where` / `which`). Placeholder commands (`<...>`) are rejected.
+- `codex-gui` and `kimicode-gui` skip generic probing: they resolve their executable through `discoverCodex` (Appx query + disk scan) and `discoverKimicode` (drive-root relative paths + standard directories + macOS bundle) respectively.
 - Directory scans look up to depth 6, skipping `node_modules` and dot-directories, and **pick the newest by mtime**.
 - Profile hot reload keys off a sha256 content stamp (not mtime), so edits within the same timestamp tick are still detected.
 - `get_profiles` lists the union of registered adapter keys and profile keys (custom profiles that failed to resolve still appear) and reports `[PASS]/[FAIL]` with the discovery source for each.
@@ -453,13 +478,13 @@ Idle for idleTimeoutMs (default 10 min)                               → idle_t
 
 | Stage | Mechanism |
 |---|---|
-| Launch | All three go through `guiInstanceSpawnOptions()`: **unconditional** `detached: true` + `unref()` |
-| Reuse | Prefer a managed instance (Codex matches the dedicated `--user-data-dir`; ZCode scans a port range; TraeWork probes the port directly) |
+| Launch | All four go through `guiInstanceSpawnOptions()`: **unconditional** `detached: true` + `unref()` |
+| Reuse | Prefer a managed instance (Codex matches the dedicated `--user-data-dir`; ZCode / Kimi Code scan a port range; TraeWork probes the port directly) |
 | Attach | A CDP connection is only accepted after one real DOM round trip (`exists("chatInput")`) |
 | Liveness | One DOM evaluation per tick, handed to the respective `judge*Poll` |
-| Keeping | Codex and ZCode set `keptInstance: true` on nearly every return path and never kill the process; TraeWork releases its own instance only on a clean completion |
+| Keeping | Codex / ZCode / Kimi Code set `keptInstance: true` on nearly every return path and never kill the process; TraeWork releases its own instance only on a clean completion |
 | Ownership checks | TraeWork verifies the command line contains the debug port and exe name before releasing, and its `taskkill` **omits `/T`**; Codex stops only managed instances |
-| Orphans | ZCode meeting a live instance *without* a CDP port yields `needs_user(close_existing_instance)` for the user to handle; it never kills blindly |
+| Orphans | ZCode / Kimi Code meeting a live instance *without* a CDP port yield `needs_user(close_existing_instance)` for the user to handle; they never kill blindly |
 
 > **`detached: true` is an invariant, not a platform preference**: the desktop instance must outlive the MCP server to honor the `keptInstance` contract. Before v0.5.3 the spawn was platform-branched (not detached on Windows), so the GUI was killed along with the server on exit; that is fixed.
 >
@@ -553,10 +578,10 @@ Task timeout resolution: call argument `taskTimeoutMs` > profile `timeoutMs` > `
 
 | Group | Fields |
 |---|---|
-| Identity and shape | `id`, `displayName`, `type`, `driver` (spawn\|gui), `adapter` (traework-gui\|zcode-gui\|codex-gui), `status` (ready\|research\|unsupported) |
+| Identity and shape | `id`, `displayName`, `type`, `driver` (spawn\|gui), `adapter` (traework-gui\|zcode-gui\|codex-gui\|kimicode-gui), `status` (ready\|research\|unsupported) |
 | CLI execution | `command`, `argsTemplate`, `promptMode` (arg\|stdin\|file), `cwd` (task\|home), `env`, `timeoutMs`, `killTree` |
 | Executable discovery | `executableDiscovery`: `dirs`, `fileNames`, `fallbackCommand`, `preferredDrives`, `appxPackageName`, `scanRoots`, and more |
-| GUI orchestration | `gui`: `cdpPort` (9222), `cdpPortRange`, `exePath`, `windowMode`, `launchTimeoutMs` (60 s), `pollIntervalMs` (3 s), `stableRounds` (12), `idleTimeoutMs` (10 min), `stallTimeoutMs` (300 s), `cancelWaitMs` (15 s), `cdpSendTimeoutMs` (15 s), `progressIntervalMs` (30 s), `selectors`, `defaultPermissionMode`, `defaultAutoFixRounds`, `activation` (spawn\|msix-com), `userDataDir`, `fixPlanDir`, and more |
+| GUI orchestration | `gui`: `cdpPort` (9222), `cdpPortRange`, `exePath`, `windowMode`, `launchTimeoutMs` (60 s), `pollIntervalMs` (3 s), `stableRounds` (12), `idleTimeoutMs` (10 min), `stallTimeoutMs` (300 s), `cancelWaitMs` (15 s), `cdpSendTimeoutMs` (15 s), `progressIntervalMs` (30 s), `projectTriggerTimeoutMs` (15 s), `workspaceTriggerTimeoutMs` (15 s, Kimi Code draft-page criterion), `selectors`, `defaultPermissionMode`, `defaultAutoFixRounds`, `activation` (spawn\|msix-com), `userDataDir`, `fixPlanDir`, and more |
 
 `gui.selectors` is the primary way to **adapt to client UI upgrades without touching code**: when a client release breaks selectors, diagnose with `scripts/probe-*.mjs` first, then override through the profile.
 
@@ -637,8 +662,8 @@ This requires a new adapter directory implementing `AgentAdapter` with `run()` a
 
 | Layer | Location | Coverage |
 |---|---|---|
-| Unit | `test/unit/` | Pure functions and component logic: reply / selectors / launcher / liveness / recovery for all three drivers, the acceptance engine (including parallelism), baseline attribution, atomic writes, hot reload, the path gate, the visual module |
-| Integration | `test/integration/` | The three stub-agent scripts, cancel / timeout / baseline, fake-CDP TraeWork / Codex / ZCode end-to-end and rework loops, race regressions, visual services / capture / flow |
+| Unit | `test/unit/` | Pure functions and component logic: reply / selectors / launcher / liveness / recovery for all four drivers, the acceptance engine (including parallelism), baseline attribution, atomic writes, hot reload, the path gate, the visual module |
+| Integration | `test/integration/` | The three stub-agent scripts, cancel / timeout / baseline, fake-CDP TraeWork / Codex / ZCode / Kimi Code end-to-end and rework loops, race regressions, visual services / capture / flow |
 | Protocol | `test/protocol/` | An official SDK client asserting the 11-tool surface and return format |
 | Real-hardware (manual) | `scripts/probe-*.mjs`, `scripts/smoke-zcode.mjs`, `scripts/evidence-visual-windows.mjs` | Require a real client or an installed browser |
 | Consumer | `scripts/check-visual-consumer.mjs` | Installs the production tarball into a directory with no dev dependencies and runs real-browser visual acceptance plus the offline report |
@@ -664,14 +689,15 @@ Three places must agree on the version: `package.json`, `package-lock.json`, and
 
 Ordered by impact on a successor:
 
-1. **UI signals are the only reliable completion criterion** — all three GUI drivers depend on DOM structure and visible signals. Client upgrades can drift selectors; fix in `selectors.ts` or via a profile override, and real-hardware re-verification is not optional.
+1. **UI signals are the only reliable completion criterion** — all four GUI drivers depend on DOM structure and visible signals. Client upgrades can drift selectors; fix in `selectors.ts` or via a profile override, and real-hardware re-verification is not optional.
 2. **A session waiting in the GUI cannot be stopped while the task is `needs_user`** — the MCP side holds no CDP connection. Terminal messages state this honestly. Stopping via a temporary CDP connection is listed under "planned" in `CHANGELOG.md`.
 3. **Single-session serialization** — a GUI is a single-session resource, same-project tasks serialize behind `projectBusy()`, and global concurrency is capped by `maxRunning`. This is a design constraint, not a defect.
-4. **macOS verification matrix is incomplete** — Codex and ZCode have real-hardware macOS happy paths, but cancel / rework / `continue_task` / new-project matrices are uncovered, so both stay `research` on darwin; TraeWork's macOS branch fails closed.
-5. **No-project dispatch is ZCode-only and Windows-verified only**; ZCode's auto-import of unregistered projects is unavailable on Windows (register the directory manually first, or pass `allowCreateProject=false` to fail explicitly).
-6. **Visual module platform-evidence boundary** — macOS evidence comes from CI-hosted runners and has not been re-confirmed on the maintainer's own macOS device.
-7. **Acceptance fail-closed affects pure analysis tasks** — a git project requires changes by default, so pure Q&A/analysis tasks must explicitly set `requireChanges: false`.
-8. **Tool counts in doc comments are stale** — the header comments in `src/mcp/tools.ts`, `src/mcp/handlers.ts`, and `src/server.ts` still say "9 tools" while `TOOL_DEFS` actually has 11 entries. A comment-level staleness with no runtime effect; worth correcting in passing later.
+4. **macOS verification matrix is incomplete** — Codex and ZCode have real-hardware macOS happy paths, but cancel / rework / `continue_task` / new-project matrices are uncovered, so both stay `research` on darwin; TraeWork's and Kimi Code's macOS branches fail closed, and Kimi Code stays `research` on darwin too.
+5. **No-project dispatch is ZCode-only and Windows-verified only**; ZCode's auto-import of unregistered projects is unavailable on Windows (register the directory manually first, or pass `allowCreateProject=false` to fail explicitly). **Kimi Code does not support project-less dispatch at all** (it must bind a workspace).
+6. **Kimi Code cancellation / question answering / same-name workspace ambiguity are covered by hermetic integration tests only** (no hardware stop click, no real question card triggered).
+7. **Visual module platform-evidence boundary** — macOS evidence comes from CI-hosted runners and has not been re-confirmed on the maintainer's own macOS device.
+8. **Acceptance fail-closed affects pure analysis tasks** — a git project requires changes by default, so pure Q&A/analysis tasks must explicitly set `requireChanges: false`.
+9. **Tool counts in doc comments are stale** — the header comments in `src/mcp/tools.ts`, `src/mcp/handlers.ts`, and `src/server.ts` still say "9 tools" while `TOOL_DEFS` actually has 11 entries. A comment-level staleness with no runtime effect; worth correcting in passing later.
 
 ---
 
@@ -684,6 +710,7 @@ Ordered by impact on a successor:
 | TraeWork GUI driver details | [docs/traework-cdp.md](docs/traework-cdp.md) |
 | Codex desktop GUI driver details | [docs/codex-gui-cdp.md](docs/codex-gui-cdp.md) |
 | ZCode GUI driver details | [docs/zcode-cdp.md](docs/zcode-cdp.md) |
+| Kimi Code GUI driver details | [docs/kimi-cdp.md](docs/kimi-cdp.md) |
 | Full agent profile field reference | [docs/agent-profiles.md](docs/agent-profiles.md) |
 | Per-agent capability research matrix | [docs/adapter-matrix.md](docs/adapter-matrix.md) |
 | Project-level acceptance config spec | [docs/acceptance-config.md](docs/acceptance-config.md) |

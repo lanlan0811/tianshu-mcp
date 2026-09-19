@@ -10,9 +10,22 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ## [Unreleased]
 
+### Added
+
+- **Added the Kimi Code GUI adapter (`agentId=kimicode`, the fourth GUI agent)**: the Kimi Code desktop app (Moonshot AI, measured 1.0.2) is a **plain Electron install** — injecting `--remote-debugging-port` and driving it over CDP is enough, with **no** MSIX COM activation.
+  - **Two-renderer CDP driving**: the model menu, thinking tiers and execution-mode menu are rendered by the app's `browserOverlayOpenMenu()` into a separate `Kimi Browser Overlay` renderer process (measured: after clicking `model-pill` the main window's DOM node count is unchanged and no menu node appears), while the workspace menu and the "switch model" dialog stay in the main window → the client holds both pages and excludes the `Screenshot` target.
+  - **Workspace binding and import**: the **normalized full path** is the sole criterion (same-name different-directory always fails closed, never guesses an entry); an unregistered workspace is imported through the native "add workspace" dialog (`#32770`; Win32 coordinate clicks plus `WM_SETTEXT`/`WM_GETTEXT`), and after binding the panel selection and the `ws-chip` text are read back.
+  - **Three-stage model selection**: pill read-back → direct pick in the overlay shortcut menu → "more models…" → search and exact row pick in the main window's "switch model" dialog (the only entry for unofficial models). Thinking tiers are validated against **the tier set the UI actually renders** (official `Low/High/Max`, unofficial `On/Off`); requesting a tier the UI does not render fails loudly with `model_mismatch` before sending and is never silently kept.
+  - **Execution mode is forced to "fully automatic"** and read back after switching; the `run_task.reasoningLevel` domain grows to `low/medium/high` plus `max/on/off`.
+  - **Run detection**: `button.stop` (`aria-label="中断"`) and `button.send.is-starting` are the authoritative run signals; sending uses a marker plus a bounded 60s confirmation (the session id and the landed user message are required anchors) and is **never re-sent**.
+  - **Six `needs_user` kinds with `continue_task` recovery**: `close_existing_instance` / `login_required` / `user_confirmation` / `agent_question` / `system_permission` / `setup_recovery`. Answering a question writes back to the recorded session (without re-sending the brief), a user confirmation only re-attaches for observation, and environment kinds re-send the full brief; when the recorded session cannot be located the run fails closed with `session_lost`.
+  - **Cancellation and dispatch guard**: following the Codex M14 semantics, `cancel_task` clicks `button.stop` best-effort and bounded-waits (`gui.cancelWaitMs`) for the UI to go idle, stating plainly when the stop is unconfirmed; before dispatching, a still-running managed instance is stopped best-effort, and if it never goes idle the dispatch is rejected with `instance_busy`.
+  - **Machine verification (Windows 10 x64 + Kimi Code 1.0.2)**: the success path, unregistered-workspace import with auto-acceptance, and the failure → rework → re-acceptance **same-session loop** all pass. **Cancellation, question answering and same-name workspace ambiguity are covered by hermetic integration tests only** (no hardware stop click, no real question card triggered); macOS is `research` and fail-closed (executable discovery and native-dialog driving are unmeasured on macOS).
+
 ### Planned
 
 - More external AI-Agent adapters (a new agent = one profile + an optional adapter file).
+- The Kimi Code macOS hardware matrix, plus hardware verification of cancellation / question answering / same-name ambiguity (currently covered by hermetic integration tests only).
 - TraeWork executable discovery and native-dialog driving on macOS (currently fail-closed).
 - Optional project-level skill seeding (by default nothing is written into target repos).
 - Cancel/rework/new-project matrices for the Codex and ZCode GUI drivers on macOS (both remain `research` on darwin).

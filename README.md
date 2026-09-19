@@ -12,7 +12,7 @@
 
 **天枢 × AI-Agent 编排 MCP server**
 
-由天枢（Tianshu）当作标准 MCP server 接入，调度外部 AI-Agent（Codex 桌面端、TraeWork/TRAE SOLO CN、ZCode 均经 CDP 驱动桌面 UI）完成 **项目开发 → 验收 → 失败返修 → 再验收** 的闭环（架构可横向扩展）。
+由天枢（Tianshu）当作标准 MCP server 接入，调度外部 AI-Agent（Codex 桌面端、TraeWork/TRAE SOLO CN、ZCode、Kimi Code 均经 CDP 驱动桌面 UI）完成 **项目开发 → 验收 → 失败返修 → 再验收** 的闭环（架构可横向扩展）。
 
 > 天枢官方仓库：[github.com/huiliyi37/Tianshu-harness](https://github.com/huiliyi37/Tianshu-harness) —— 基于 harness 工程的终端编程智能体运行时（TUI × GUI），本 MCP 作为其 MCP server 接入。
 
@@ -34,14 +34,14 @@
 
 ## 这是什么
 
-天枢的角色是总指挥；本 MCP server 是**调度层 + 执行面 + 客观验收仪**；外部 AI-Agent（Codex / TraeWork / ZCode GUI）是执行开发的「工人」。
+天枢的角色是总指挥；本 MCP server 是**调度层 + 执行面 + 客观验收仪**；外部 AI-Agent（Codex / TraeWork / ZCode / Kimi Code GUI）是执行开发的「工人」。
 
 - **11 个 MCP 工具**：`run_task / continue_task / query_task / list_tasks / get_task_report / cancel_task / verify_task / rework_task / get_profiles`，外加视觉验收的 `prepare_visual_baseline / approve_visual_baseline`
 - **异步契约**：`run_task` 秒回 `taskId`，长任务用 `query_task` 轮询（长任务不卡 `tools/call`）。
 - **客观验收**：自动命令检查（typecheck/lint/test/build，缺则跳过 + 技术栈推导）+ 程序化代码分析（变更清单/diffstat/TODO·debugger·密钥形态等可疑标记），全部相对 **git 基线**，不自动 commit/stash。验收引擎 **fail-closed**：测试命令退出码为 0 但输出显示零用例时判失败；git 项目默认要求相对动工前基线产生变更（纯分析任务可在 `.tianshu-mcp/acceptance.json` 设 `"requireChanges": false` 显式关闭）。
 - **验收并行度**：命令检查默认**有界并行**（`verifyConcurrency`，默认 2、范围 1–4）。检查项之间有顺序依赖时（后续检查读取 build 产物、带 `--fix`、共享缓存目录）请设 `1` 完全退化为串行；项目级 `.tianshu-mcp/acceptance.json` 可覆盖，server 级在 `config.json`。报告与日志格式不变（结果按声明顺序返回）。
 - **失败返修闭环**：自动返修（`autoFixRounds`）+ 手动 `rework_task`；验收失败时自动生成修复计划文件并回填给 agent；轮次用尽 → `needs_attention` 等天枢裁决。
-- **执行面**：`driver: "gui"` 由显式 adapter 驱动桌面 UI（Codex / TraeWork / ZCode 各自使用隔离的 CDP 流程）；`driver: "spawn"` 走外部 CLI 子进程。
+- **执行面**：`driver: "gui"` 由显式 adapter 驱动桌面 UI（Codex / TraeWork / ZCode / Kimi Code 各自使用隔离的 CDP 流程）；`driver: "spawn"` 走外部 CLI 子进程。
 - **无项目派发（ZCode，issue #12）**：`run_task` 的 `projectPath` 可省略——ZCode 在 `default` 工作区承接任务，不登记/导入项目、不采集 Git 基线、不执行项目验收（结果以 `verificationNotApplicable: "no_project"` 结构化标注，`verify_task`/`get_task_report` 返回不适用说明）。配套 `allowCreateProject: false` 可在目标目录未登记时于任何导入副作用之前停止派发。详见 [ZCode CDP 适配器](docs/zcode-cdp.md)。
 - **调度纪律**：每项目串行队列 + 全局并发上限（默认 2，可配）。
 - **可选 AI 内容校验（v0.5.4，默认关闭）**：校验图片或页面截图**内容**是否符合你显式声明的期望描述。判定完全**委托给你自备的本地命令**（MCP 不读取、不存储、不转发任何密钥，也不内置模型客户端），默认**仅告警**、逐规则可升级为致败；采样多数票 + 任务级缓存防抖，票不集中或低于置信度阈值判 `uncertain`（永不阻塞、不触发返修）。配置与命令契约见 [视觉验收](docs/visual-acceptance.md)。
@@ -69,7 +69,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 647 项测试：67 个文件，含 Codex/ZCode/TraeWork 单元/假 CDP/重启/恢复/返修闭环与视觉验收
+npm test             # 776 项测试：73 个文件，含 Codex/ZCode/TraeWork/Kimi Code 单元/假 CDP/重启/恢复/返修闭环与视觉验收
 ```
 
 ### 安装 npm 包
@@ -149,12 +149,25 @@ run_task(projectPath=D:/xxx/my-app, agentId=zcode, task=「按 `./plan.md` 完�
 
 ZCode 提问、需要登录、旧实例无 CDP、系统权限不足，或自动恢复未完成（`needs_user/setup_recovery`）时进入 `needs_user`；处理后调用 `continue_task(taskId, message)` 恢复——确认文本不发给模型，无锚点的环境恢复会补发完整原任务、上下文与已验证引用，且不消耗返修轮数。模型选择已适配 ZCode 3.11.2：直选平铺模型优先，展开 provider/family 分组兜底，新旧布局均兼容。完整约束见 docs/zcode-cdp.md。
 
+驱动 Kimi Code 时，`model` 必填且直接填界面模型名，`reasoningLevel` 按界面档位集合校验：
+
+```text
+run_task(projectPath=D:/xxx/my-app, agentId=kimicode, task=「按 `./plan.md` 完成开发」,
+         model=K3, reasoningLevel=High, autoVerify=true, autoFixRounds=2)
+```
+
+> Kimi Code 为普通 Electron 安装（实测 1.0.2），以 `--remote-debugging-port` 注入后经 CDP 驱动，无需 MSIX COM 激活。
+> **模型菜单 / 思考档位 / 执行模式菜单渲染在独立的 `Kimi Browser Overlay` 浮层窗口**，工作区菜单与「切换模型」对话框仍在主窗口。
+> 任务必须绑定工作区文件夹（**不支持无项目派发**）；未登记的工作区会经原生「添加工作区」对话框导入。
+> `reasoningLevel`：官方模型为 `Low` / `High` / `Max`；**非官方模型（如 `stepfun/step-3.7-flash:free`）只有 `on` / `off`**，
+> 传了界面不存在的档位会在发送前响亮报错。`mode` 参数不支持。详见 [Kimi Code CDP 适配器](docs/kimi-cdp.md)。
+
 ## 工具面（11 个）
 
 | 工具 | 能力 / 审批 | 作用 |
 |---|---|---|
 | `run_task` | write + 审批 | 派活（可带自动验收/自动返修），异步返回 `taskId` |
-| `continue_task` | write + 审批 | 恢复 `needs_user` 的原会话（ZCode 恢复原会话；Codex 按 `user_confirmation` 重新观察 / `login_required` 重派） |
+| `continue_task` | write + 审批 | 恢复 `needs_user` 的原会话（ZCode 恢复原会话；Codex 按 `user_confirmation` 重新观察 / `login_required` 重派；Kimi Code 恢复原会话并区分提问续答 / 重新观察 / 补发任务书） |
 | `query_task` | read | 轮询状态 / 进度 / 日志尾 |
 | `list_tasks` | read | 历史任务过滤列表 |
 | `get_task_report` | read | 某轮验收报告全文（`report.md`） |
@@ -190,11 +203,12 @@ ZCode 提问、需要登录、旧实例无 CDP、系统权限不足，或自动�
 | [ARCHITECTURE.md](ARCHITECTURE.md) | **架构说明**：分层模型与模块边界、启动装配、数据目录、状态机、验收与返修流水线、Agent 驱动层契约、GUI 实例生命周期、跨平台策略、安全红线、扩展点、已知缺口 |
 | [docs/tianshu-integration.md](docs/tianshu-integration.md) | 天枢 config.json 两种接入模式、UI/API 操作、冒烟步骤、FAQ |
 | [docs/agent-profiles.md](docs/agent-profiles.md) | agent profiles 字段说明 + 真实机器样例（codex M2 定稿） |
-| [docs/adapter-matrix.md](docs/adapter-matrix.md) | 各 Agent 能力调研矩阵（Codex/Zcode/TraeWork/扩展位） |
+| [docs/adapter-matrix.md](docs/adapter-matrix.md) | 各 Agent 能力调研矩阵（Codex/Zcode/TraeWork/Kimi Code/扩展位） |
 | [docs/traework-cdp.md](docs/traework-cdp.md) | TraeWork GUI 驱动（CDP）：原理、配置、模式切换、选择器、安全红线、踩坑记录、验证记录 |
 | [docs/zcode-cdp.md](docs/zcode-cdp.md) | ZCode GUI 驱动：安装探测、精确项目/模型、完全访问、暂停继续、验收返修与双平台状态 |
 | [docs/zcode-windows-smoke.md](docs/zcode-windows-smoke.md) | ZCode Windows 真机开发、同会话返修与提问续跑验收记录 |
 | [docs/codex-gui-cdp.md](docs/codex-gui-cdp.md) | Codex 桌面端 GUI 驱动：MSIX COM 激活、CDP 接管、选择器、运行检测、验收返修 |
+| [docs/kimi-cdp.md](docs/kimi-cdp.md) | Kimi Code GUI 驱动：双渲染进程（主窗口 + `Kimi Browser Overlay`）、工作区完整路径绑定与原生对话框导入、模型三级选择与思考档位、执行模式、运行检测与排障 |
 | [docs/codex-windows-smoke.md](docs/codex-windows-smoke.md) | Codex Windows 真机验收记录（含验收失败→自动生成计划→返修通过闭环） |
 | [docs/release-v0.5.4.md](<docs/release-v0.5.4.md>) | v0.5.4 发布说明（可选 AI 视觉内容校验：自备命令委托、多数票防抖、默认仅告警） |
 | [docs/release-v0.5.3.md](<docs/release-v0.5.3.md>) | v0.5.3 发布说明（ZCode 真机回访修复：实例跨 server 驻留、新建任务切页、发送失败归因） |
@@ -346,6 +360,7 @@ ZCode 提问、需要登录、旧实例无 CDP、系统权限不足，或自动�
 | `codex` | `gui` / `codex-gui` | **ready**（macOS 为 `research`） | Codex 桌面端 GUI（Windows：MSIX COM 激活 + CDP；macOS：spawn .app + CDP）；支持 `model`/`reasoningLevel`/`planDoc`/`designSystem`；等待用户确认、取消与重派护栏均已真机验证（v0.3.2）；Windows 真机已验证；macOS 基本闭环已真机验证（v0.4.0），取消/返修矩阵补齐前保持 `research` |
 | `zcode` | `gui` / `zcode-gui` | **research** | CDP GUI adapter 已实现且 Windows 真机闭环通过；已适配 ZCode 3.11.2 模型菜单与项目绑定（v0.3.3），并加固项目/模型回读与初始化恢复（v0.3.4）；支持无项目派发与 `allowCreateProject`（v0.5.2，issue #12），v0.5.3 修复实例跨 server 驻留、新建任务切页与发送失败归因；macOS 基本闭环已真机验证（2026-09-13，v0.4.0），取消/返修/新建项目矩阵补齐前保持 `research` |
 | `traework` | `gui` / `traework-gui` | **ready** | CDP 驱动 TRAE SOLO CN 桌面 UI；三种面板模式真机验证通过 |
+| `kimicode` | `gui` / `kimicode-gui` | **ready**（macOS 为 `research`） | Kimi Code 桌面端（Electron，实测 1.0.2）；**双渲染进程**（主窗口 + `Kimi Browser Overlay` 浮层承载模型/档位/模式菜单）；工作区以完整路径绑定，未登记时经原生「添加工作区」对话框导入；支持 `model`/`reasoningLevel`，不支持 `mode`；Windows 真机已验证成功路径、未登记工作区导入 + 自动验收、失败 → 返修 → 再验收同会话闭环；取消/提问续答仅由 hermetic 集成测试覆盖，macOS 为 `research` 且 fail-closed |
 | `stub` | `spawn` | 仅测试 | `test/stub-agent/stub-agent.mjs` 三剧本（good/fix-on-first/never） |
 
 > 新增 agent 通常只需加一个 profile，详见 [docs/agent-profiles.md](docs/agent-profiles.md) 与 [CONTRIBUTING.md](CONTRIBUTING.md)。

@@ -631,6 +631,11 @@ export class FakeKimicodePage {
       s.clicks.push("dom-click");
       return false;
     }
+    // 注意顺序：kc:first-point 不包含子串 "kc:point"，但显式先判更清晰（多命中取首个坐标）。
+    if (expression.includes("kc:first-point")) {
+      const point = this.pointOf(expression);
+      return point ? { count: 1, point } : { count: 0 };
+    }
     if (expression.includes("kc:point")) {
       const point = this.pointOf(expression);
       return point ? { count: 1, point } : { count: 0 };
