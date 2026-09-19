@@ -24,7 +24,13 @@ function validExecutable(p: string, platform: NodeJS.Platform = process.platform
   }
 }
 
-/** 读文件版本；非 Windows 或路径不存在时安全返回 undefined（探测顺序不应因版本查询失败而中断）。 */
+/**
+ * 读文件版本；非 Windows 或路径不存在时安全返回 undefined（探测顺序不应因版本查询失败而中断）。
+ *
+ * 超时取 30s：本机实测 PowerShell 冷启动（首次 `Add-Type`/模块加载）需 6–10s，
+ * 原先的 5s 会让版本恒为空——`get_profiles` 于是显示不出已安装客户端的版本。
+ * 只影响诊断信息的完整性，不影响可用性判定。
+ */
 async function fileVersion(p: string): Promise<string | undefined> {
   if (process.platform !== "win32") return undefined;
   if (!fs.existsSync(p)) return undefined;
@@ -32,7 +38,7 @@ async function fileVersion(p: string): Promise<string | undefined> {
   const res = await execFileAsync(
     "powershell.exe",
     ["-NoProfile", "-Command", `(Get-Item -LiteralPath '${escaped}').VersionInfo.FileVersion`],
-    { timeoutMs: 5_000 },
+    { timeoutMs: 30_000 },
   );
   return res.status === 0 ? res.stdout.trim() || undefined : undefined;
 }

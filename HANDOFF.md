@@ -1,6 +1,6 @@
 # HANDOFF.md — 项目交接说明
 
-> **交接快照：2026-09-16 · 版本 `0.5.4`（tag `v0.5.4`，npm / GitHub / Gitee 均已发布）**
+> **交接快照：2026-09-20 · 版本 `0.5.5`（tag `v0.5.5`，npm / GitHub / Gitee 均已发布）**
 > 本文写给**接手本仓库的人**：先说清「这是什么、现在到哪一步」，再给出「怎么跑、怎么改、哪里会踩坑」。
 > 工作区规则见 `AGENTS.md`（gitignore，仅本地）；安装与用法见 `README.md`，本文不重复，只做导览与状态记录。
 
@@ -38,7 +38,7 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build   # 期
 
 - **天枢官方仓库**：<https://github.com/huiliyi37/Tianshu-harness>（基于 harness 工程的终端编程智能体运行时，TUI × GUI；Apache-2.0）
 - **本仓库**：`github.com/lanlan0811/tianshu-mcp`（主）｜`gitee.com/lan0811/tianshu-mcp`（镜像）
-- **npm**：`tianshu-mcp`（当前发布版本 `0.5.4`）
+- **npm**：`tianshu-mcp`（当前发布版本 `0.5.5`）
 - **工具面**：11 个 MCP 工具（`run_task / continue_task / query_task / list_tasks / get_task_report / cancel_task / verify_task / rework_task / get_profiles / prepare_visual_baseline / approve_visual_baseline`）
 
 ### 为什么是这样设计的（四个硬约束，改架构前必读）
@@ -57,13 +57,13 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build   # 期
 | 项 | 状态 |
 |---|---|
 | 分支 | `master`（**只在此分支提交**，不建其他分支） |
-| 版本 / 许可证 | `0.5.4` / Apache-2.0 |
-| 标签 | `v0.1.0` … `v0.5.4`（均已推双仓） |
-| 工作树 | 干净；`github/master` 与 `gitee/master` 均同步（发布提交见 `git log` 的 `chore(release): v0.5.4`） |
-| 测试 | **647 passed / 12 skipped**（67 个测试文件：单元 43 + 集成 23 + 协议 1；v0.5.4 tag `ea797d1` 的用例数为 644，发布后补齐了 §5 G 的两项契约断言） |
+| 版本 / 许可证 | `0.5.5` / Apache-2.0 |
+| 标签 | `v0.1.0` … `v0.5.5`（均已推双仓） |
+| 工作树 | 干净；`github/master` 与 `gitee/master` 均同步（发布提交见 `git log` 的 `chore(release): v0.5.5`） |
+| 测试 | **768 passed / 12 skipped**（74 个测试文件；v0.5.5 新增 Kimi Code 适配约 120 项用例） |
 | 门禁 | lint 0 warning、typecheck clean、build 成功且构建后无跟踪差异、`check:stdio` 6/6 场景通过、`npm pack` 内容校验与干净消费者安装通过；12 项真实浏览器门禁用例在 Windows 10 本机以 `TIANSHU_VISUAL_BROWSER_TEST=1` 跑通 12/12 |
 | CI | `build-test`（ubuntu/windows/macos × Node 20/22/24）+ `pack-check`，另加 `visual-browser` 真实浏览器矩阵（ubuntu/windows + macos-15-intel/macos-15 × Node 20/22/24）；提交 `d762581` 的 22 个作业全绿（[run 35093217490](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35093217490)），随 v0.5.4 tag 全绿 |
-| npm | `tianshu-mcp@0.5.4` 已发布（`latest`）；`npx -y tianshu-mcp` 即为该版本。发布步骤见 `docs/npm-publish-guide.md` |
+| npm | `tianshu-mcp@0.5.5` 已发布（`latest`）；`npx -y tianshu-mcp` 即为该版本。发布步骤见 `docs/npm-publish-guide.md` |
 | GitHub Release | 推送 `v*` tag 触发 `.github/workflows/release.yml`：先跑完整门禁并校验「tag 版本 === package.json 版本」，正文由 `docs/release-v<ver>.md` + `.en.md` 双语合成（缺文档即报错，不产出空壳正文），**要求同 SHA 的成功 CI**，并附 `tianshu-mcp-<ver>.tgz` |
 | Gitee 发行版 | 由 `scripts/gitee-release.mjs` 用仓库 Secret `GITEE_TOKEN` 幂等补齐；**缺少凭据时工作流阻塞**（不再静默跳过、不冒充发布成功） |
 | 本次发布实测 | CI `ea797d1` 22 作业全绿（[run 35094765071](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35094765071)）；`Release` 全绿并产出 [v0.5.4 发行](https://github.com/lanlan0811/tianshu-mcp/releases/tag/v0.5.4)（[run 35095384929](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35095384929)）；Gitee 镜像发行成功；双仓 `v0.5.4` 与 `master` 均指向 `ea797d1`；npm `dist.shasum` = `eb405680…` |
@@ -827,7 +827,7 @@ node scripts/probe-kimicode.mjs all     # 只读诊断：安装 / 进程 / CDP /
 |---|---|
 | `README.md` / `README.en.md` | 项目总览、快速开始（含天枢界面配置）、文档索引、里程碑 |
 | `ARCHITECTURE.md` / `.en.md` | **架构说明**：分层模型（L1 协议边 → L5 基础）、模块边界与依赖方向、启动装配与数据目录布局、MCP 返回契约、任务状态机与持久化、编排与验收流水线、Agent 驱动层契约与 `endReason`/`needsUserKind` 取值表、GUI 实例生命周期、视觉链路、配置热加载、跨平台策略、安全红线、扩展点、测试与发布流水线、已知缺口 |
-| `CHANGELOG.md` / `.en.md` | 版本历史 v0.1.0 → v0.5.4（含比较链接） |
+| `CHANGELOG.md` / `.en.md` | 版本历史 v0.1.0 → v0.5.5（含比较链接） |
 | `CONTRIBUTING.md` / `.en.md` | 开发环境、门禁、规范、提交 / 发布流程、如何新增 agent |
 | `SECURITY.md` / `.en.md` | 安全模型与漏洞报告 |
 | `CODE_OF_CONDUCT.md` / `.en.md` | 行为准则 |
@@ -846,6 +846,7 @@ node scripts/probe-kimicode.mjs all     # 只读诊断：安装 / 进程 / CDP /
 | `docs/visual-validation.md` / `.en.md` | 视觉验收验证进度：完整平台证据表（系统 / Node / 浏览器 / 命令 / 结果）+ v0.5.4 判定桩端到端记录与未覆盖项 |
 | `docs/visual-validation-evidence/` | 上述验证的原始机器可读记录（Windows 矩阵 JSON、macOS `environment.json`、CI 摘要） |
 | `docs/zcode-issue-12-windows-evidence.md` / `.en.md` | ZCode 无项目派发与 `allowCreateProject` 的 Windows 10 真机验收记录（含 v0.5.2 首轮与「第二轮回访」） |
+| `docs/release-v0.5.5.md` / `.en.md` | v0.5.5 发布说明（新增 Kimi Code GUI 适配：双渲染进程 CDP、工作区完整路径绑定与原生对话框导入、模型三级选择与档位按界面集合校验、运行检测、needs_user/continue_task、真机验证与三个真机缺陷修复） |
 | `docs/release-v0.5.4.md` / `.en.md` | v0.5.4 发布说明（可选 AI 视觉内容校验：自备命令委托、多数票防抖、默认仅告警、返修隔离缺陷修复） |
 | `docs/release-v0.5.3.md` / `.en.md` | v0.5.3 发布说明（ZCode 真机回访修复：实例跨 server 驻留、新建任务切页、发送失败归因） |
 | `docs/release-v0.5.2.md` / `.en.md` | v0.5.2 发布说明（ZCode 无项目派发与 `allowCreateProject`，issue #12） |
@@ -864,7 +865,7 @@ node scripts/probe-kimicode.mjs all     # 只读诊断：安装 / 进程 / CDP /
 
 ## 12. 接手人下一步建议
 
-1. 先跑 `npm ci && npm run typecheck && npm run lint && npm test && npm run build`，确认基线绿（647 passed / 12 skipped）。
+1. 先跑 `npm ci && npm run typecheck && npm run lint && npm test && npm run build`，确认基线绿（768 passed / 12 skipped）。
 2. 动代码前先读 [ARCHITECTURE.md](ARCHITECTURE.md) 建立整体心智模型（分层、依赖方向、唯一双路径接缝 `adapter.run`、状态机与验收流水线）；再按专题读本文章节：
    动 GUI adapter 相关代码前，先读对应文档与本文章节：
    TraeWork → `docs/traework-cdp.md` + §9.1 / §9.2；ZCode → `docs/zcode-cdp.md` + §9.5 / §9.6 / §9.9；Codex → `docs/codex-gui-cdp.md` + §9.4；Kimi Code → `docs/kimi-cdp.md` + §9.11。

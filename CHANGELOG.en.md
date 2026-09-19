@@ -8,7 +8,7 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
-## [Unreleased]
+## [0.5.5] - 2026-09-20
 
 ### Added
 
@@ -793,7 +793,7 @@ project → pick model and reasoning level → send instructions → run detecti
 
 ---
 
-[Unreleased]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.5.4...HEAD
+[0.5.5]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.5.1...v0.5.2
