@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -9,7 +9,17 @@ import {
 import { ensureFreshDraft, locateSession } from "../../src/agents/kimicode/session.js";
 import { matchKimicodeWorkspace, normalizeWorkspacePath } from "../../src/agents/kimicode/workspace.js";
 import { listOwnedDialogs, selectKimicodeFolder, toNativeDialogPath } from "../../src/agents/kimicode/dialog.js";
-import { makeKimicodeTargets, type FakeKimicodeTargets } from "../fake-cdp.js";
+import { runKimicodeTask, type KimicodeRunDeps } from "../../src/agents/kimicode/run.js";
+import type {
+  AgentRunOptions,
+  AgentRunResult,
+  ResolvedAgent,
+  TaskContext,
+} from "../../src/agents/adapter.js";
+import { AgentProfileSchema } from "../../src/config/schema.js";
+import { Logger } from "../../src/util/log.js";
+import { makeTmpRoot, rmrf } from "../test-utils.js";
+import { makeKimicodeTargets, type FakeKimicodeState, type FakeKimicodeTargets } from "../fake-cdp.js";
 
 /**
  * M2 集成测试：实例接管之后的三件事——**新建草稿 → 工作区绑定（回读）→ 会话定位**。
@@ -327,5 +337,485 @@ describe("Kimi Code 原生对话框脚本", () => {
     expect(toNativeDialogPath("D:\\work\\demo")).toBe("D:\\work\\demo");
     // 仅盘符在对话框里等价于盘根（win32.normalize 会补成 `d:.`，不能原样送进对话框）。
     expect(toNativeDialogPath("d:")).toBe("D:\\");
+  });
+});
+
+/* ============================ M3：主链路（模型/档位/模式/发送/运行判定） ============================ */
+
+const m3Logger = new Logger(null, "error");
+const m3Cleanup: string[] = [];
+afterAll(async () => {
+  for (const dir of m3Cleanup) await rmrf(dir);
+});
+
+/** M3 的每轮 ctx：任务总时限刻意短（10s），配合空 sleep 让轮询环瞬时收敛 */
+function m3Ctx(
+  projectPath: string,
+  over: Partial<TaskContext> = {},
+): TaskContext {
+  return {
+    taskId: "tsk_kimicode",
+    projectPath,
+    displayPath: projectPath,
+    agentId: "kimicode",
+    task: "完成开发",
+    model: "K3",
+    round: 0,
+    taskDir: path.join(projectPath, "task-data"),
+    workDir: projectPath,
+    taskTimeoutMs: 10_000,
+    ...over,
+  };
+}
+
+function m3Resolved(guiOverrides: Record<string, unknown> = {}): ResolvedAgent {
+  const profile = AgentProfileSchema.parse({
+    displayName: "Kimi Code test",
+    driver: "gui",
+    adapter: "kimicode-gui",
+    status: "ready",
+    command: process.execPath,
+    gui: {
+      pollIntervalMs: 1,
+      stableRounds: 1,
+      idleTimeoutMs: 60_000,
+      stallTimeoutMs: 60_000,
+      progressIntervalMs: 1,
+      launchTimeoutMs: 1_000,
+      setupRecoveryTimeoutMs: 5_000,
+      projectTriggerTimeoutMs: 2_000,
+      workspaceTriggerTimeoutMs: 2_000,
+      defaultPermissionMode: "完全自动",
+      ...guiOverrides,
+    },
+  });
+  return {
+    id: "kimicode",
+    displayName: "Kimi Code test",
+    profile,
+    command: process.execPath,
+    argsTemplate: [],
+    ok: true,
+    message: "test",
+  };
+}
+
+interface M3Harness {
+  ctx: TaskContext;
+  resolved: ResolvedAgent;
+  opts: AgentRunOptions;
+  logFile: string;
+  deps: Partial<KimicodeRunDeps>;
+  events: string[];
+}
+
+/** 一站式装配：假 CDP + hermetic 原生对话框桩 + 空 sleep（不触达真实系统与真实时钟） */
+async function m3Harness(
+  targets: FakeKimicodeTargets,
+  over: { ctx?: Partial<TaskContext>; gui?: Record<string, unknown> } = {},
+): Promise<M3Harness> {
+  const root = await makeTmpRoot("kimicode-m3");
+  m3Cleanup.push(root);
+  const events: string[] = [];
+  const clientForFake = new KimicodeCdpClient(9666, 1_000, {}, {
+    createClient: targets.createClient,
+  });
+  return {
+    // 工作区绑定用固定 fixture 路径（与 M2 用例一致）：绑定判据是归一化后的完整路径，
+    // 因此假面板里的 ws-path 必须与 ctx.projectPath 对齐。
+    ctx: m3Ctx(PROJECT, over.ctx),
+    resolved: m3Resolved(over.gui),
+    opts: {
+      logger: m3Logger,
+      onProgress: (note) => {
+        events.push(note);
+      },
+    },
+    logFile: path.join(root, "agent.log"),
+    deps: {
+      ensureInstance: async () => ({ ready: { port: 9666, pid: 4242, title: "Kimi Code" } }),
+      listProcesses: async () => [{ pid: 4242, commandLine: "Kimi Code.exe" }],
+      createClient: () => clientForFake,
+      listDialogs: async () => [],
+      selectFolder: async () => ({ ok: true, message: "hermetic" }),
+      sleep: async () => {},
+    },
+    events,
+  };
+}
+
+async function runM3(h: M3Harness): Promise<AgentRunResult> {
+  return runKimicodeTask({
+    ctx: h.ctx,
+    resolved: h.resolved,
+    opts: h.opts,
+    logFile: h.logFile,
+    deps: h.deps,
+  });
+}
+
+/** 已登记的「最近文件夹」：绑定走完整路径命中，不触发原生对话框 */
+const M3_PROJECT_WORKSPACES = [{ name: "tianshu-mcp", path: PROJECT, active: true }];
+
+/** 发送后收敛到完成的三帧运行状态：运行中 → 文本推进 → 静止 */
+function finishingScript(): Array<Partial<FakeKimicodeState>> {
+  return [
+    { stopVisible: true, sendStarting: true },
+    { stopVisible: false, sendStarting: false, conversation: "用户任务书Kimi 回复完成" },
+    { stopVisible: false, sendStarting: false },
+  ];
+}
+
+describe("Kimi Code M3 模型与档位", () => {
+  it("模型不匹配：开浮层菜单精确选中 K3（不误命中 K3-256k）→ 回读通过 → 发送", async () => {
+    const targets = makeKimicodeTargets({
+      modelPill: "K3-256k · High",
+      currentModel: "K3-256k",
+      modelOptions: ["K3-256k", "K3"],
+      workspaces: M3_PROJECT_WORKSPACES,
+      pollScript: finishingScript(),
+    });
+    const result = await runM3(await m3Harness(targets));
+    expect(result.ok).toBe(true);
+    expect(result.endReason).toBe("reply_stable");
+    expect(result.session?.id).toBe("s-new");
+    expect(result.keptInstance).toBe(true);
+    // 精确选择：模型名按全等匹配，K3-256k 不会被当成 K3 而跳过切换。
+    expect(targets.states.overlay.clicks).toEqual(["overlay-model:K3"]);
+    expect(targets.states.main.modelPill).toBe("K3 · High");
+    expect(targets.states.main.sendClicks).toBe(1);
+    // 档位与模型都回读一致，不需要点档位与执行模式。
+    expect(targets.states.main.clicks).toContain("model-pill");
+    expect(targets.states.main.clicks).not.toContain("permission-pill");
+  });
+
+  it("档位集合不支持（官方模型收「中」）→ 不发送", async () => {
+    const targets = makeKimicodeTargets({
+      tiers: ["Low", "High", "Max"],
+      workspaces: M3_PROJECT_WORKSPACES,
+    });
+    const result = await runM3(
+      await m3Harness(targets, { ctx: { reasoningLevel: "中" } }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.hardFailure).toBe(true);
+    expect(result.endReason).toBe("model_mismatch");
+    expect(result.error).toContain("模型 K3 的思考等级仅支持 Low/High/Max，收到「中」（medium）");
+    expect(targets.states.main.sendClicks).toBe(0);
+    expect(targets.states.main.clicks).not.toContain("send");
+  });
+
+  it("非官方模型（On/Off）收到「高」→ 不发送", async () => {
+    const targets = makeKimicodeTargets({
+      modelPill: "stepfun/step-3.7-flash:free · 思考",
+      currentModel: "stepfun/step-3.7-flash:free",
+      tiers: ["On", "Off"],
+      currentTier: "On",
+      workspaces: M3_PROJECT_WORKSPACES,
+    });
+    const result = await runM3(
+      await m3Harness(targets, {
+        ctx: { model: "stepfun/step-3.7-flash:free", reasoningLevel: "高" },
+      }),
+    );
+    expect(result.endReason).toBe("model_mismatch");
+    expect(result.error).toContain("仅支持 On/Off，收到「高」（high）");
+    expect(targets.states.main.sendClicks).toBe(0);
+  });
+
+  it("档位集合读不到（浮层档位标签缺失）→ fail-closed 且不发送", async () => {
+    const targets = makeKimicodeTargets({
+      tiers: ["思考"],
+      workspaces: M3_PROJECT_WORKSPACES,
+    });
+    const result = await runM3(await m3Harness(targets, { ctx: { reasoningLevel: "high" } }));
+    expect(result.endReason).toBe("model_mismatch");
+    expect(result.error).toContain("无法从界面读到模型 K3 的思考档位标签");
+    expect(targets.states.main.sendClicks).toBe(0);
+  });
+
+  it("档位不匹配：点击目标档位并回读通过后发送", async () => {
+    const targets = makeKimicodeTargets({
+      modelPill: "K3 · Low",
+      currentTier: "Low",
+      pollScript: finishingScript(),
+      workspaces: M3_PROJECT_WORKSPACES,
+    });
+    const result = await runM3(await m3Harness(targets, { ctx: { reasoningLevel: "max" } }));
+    expect(result.ok).toBe(true);
+    expect(targets.states.overlay.clicks).toEqual(["overlay-tier:Max"]);
+    expect(targets.states.main.modelPill).toBe("K3 · Max");
+  });
+
+  it("省略档位时非官方模型强制切到 On", async () => {
+    const targets = makeKimicodeTargets({
+      modelPill: "stepfun/step-3.7-flash:free · 思考",
+      currentModel: "stepfun/step-3.7-flash:free",
+      tiers: ["On", "Off"],
+      currentTier: "Off",
+      pollScript: finishingScript(),
+      workspaces: M3_PROJECT_WORKSPACES,
+    });
+    const result = await runM3(
+      await m3Harness(targets, { ctx: { model: "stepfun/step-3.7-flash:free" } }),
+    );
+    expect(result.ok).toBe(true);
+    expect(targets.states.overlay.clicks).toEqual(["overlay-tier:On"]);
+  });
+});
+
+describe("Kimi Code M3「更多模型…」对话框（非官方模型的唯一入口）", () => {
+  it("快捷菜单没有目标模型 → 走「更多模型…」→ 搜索 → 精确选中 → 回读通过 → 发送", async () => {
+    const targets = makeKimicodeTargets({
+      modelPill: "K2.8 Preview · High",
+      currentModel: "K2.8 Preview",
+      // 快捷菜单里**没有** K3-256k（复刻非官方模型不在快捷菜单的真实场景）
+      modelOptions: ["K2.8 Preview"],
+      modelDialogModels: ["K2.8 Preview", "K3", "K3-256k"],
+      pollScript: finishingScript(),
+      workspaces: M3_PROJECT_WORKSPACES,
+    });
+    const result = await runM3(await m3Harness(targets, { ctx: { model: "K3-256k" } }));
+    expect(result.ok).toBe(true);
+    expect(result.endReason).toBe("reply_stable");
+    // 走的是「更多模型…」这条二级入口，且对话框里按完整名精确命中
+    expect(targets.states.overlay.clicks).toEqual(["overlay-more-models"]);
+    expect(targets.states.main.clicks).toContain("dialog-model:K3-256k");
+    expect(targets.states.main.modelPill).toBe("K3-256k · High");
+    expect(targets.states.main.sendClicks).toBe(1);
+  });
+
+  it("对话框里 K3 与 K3-256k 并存时按全等只点中 K3", async () => {
+    const targets = makeKimicodeTargets({
+      modelPill: "K2.8 Preview · High",
+      currentModel: "K2.8 Preview",
+      modelOptions: ["K2.8 Preview"],
+      modelDialogModels: ["K3-256k", "K3"],
+      pollScript: finishingScript(),
+      workspaces: M3_PROJECT_WORKSPACES,
+    });
+    const result = await runM3(await m3Harness(targets, { ctx: { model: "K3" } }));
+    expect(result.ok).toBe(true);
+    expect(targets.states.main.clicks).toContain("dialog-model:K3");
+    expect(targets.states.main.clicks).not.toContain("dialog-model:K3-256k");
+    expect(targets.states.main.currentModel).toBe("K3");
+  });
+
+  it("切到非官方模型后档位集合随之为 On/Off，且省略档位时强制 On", async () => {
+    const targets = makeKimicodeTargets({
+      modelPill: "K2.8 Preview · High",
+      currentModel: "K2.8 Preview",
+      modelOptions: ["K2.8 Preview"],
+      modelDialogModels: ["K2.8 Preview", "stepfun/step-3.7-flash:free"],
+      modelDialogTiers: { "stepfun/step-3.7-flash:free": ["On", "Off"] },
+      pollScript: finishingScript(),
+      workspaces: M3_PROJECT_WORKSPACES,
+    });
+    const result = await runM3(
+      await m3Harness(targets, { ctx: { model: "stepfun/step-3.7-flash:free" } }),
+    );
+    expect(result.ok).toBe(true);
+    // 含 `/` 的模型名先用完整名搜索（0 命中后才会退化为 provider 搜索）
+    expect(targets.states.main.clicks).toContain("dialog-model:stepfun/step-3.7-flash:free");
+    expect(targets.states.main.tiers).toEqual(["On", "Off"]);
+    expect(targets.states.main.modelPill).toBe("stepfun/step-3.7-flash:free · 思考");
+  });
+
+  it("对话框点中但界面没生效 → model_mismatch 硬失败且未发送", async () => {
+    const targets = makeKimicodeTargets({
+      modelPill: "K2.8 Preview · High",
+      currentModel: "K2.8 Preview",
+      modelOptions: ["K2.8 Preview"],
+      modelDialogModels: ["K2.8 Preview", "K3-256k"],
+      dialogClickNoop: true,
+      workspaces: M3_PROJECT_WORKSPACES,
+    });
+    const result = await runM3(await m3Harness(targets, { ctx: { model: "K3-256k" } }));
+    expect(result.ok).toBe(false);
+    expect(result.hardFailure).toBe(true);
+    expect(result.endReason).toBe("model_mismatch");
+    expect(result.error).toContain("模型切换回读不一致");
+    expect(targets.states.main.clicks).toContain("dialog-model:K3-256k");
+    expect(targets.states.main.sendClicks).toBe(0);
+  });
+
+  it("对话框里也不存在目标模型 → model_unavailable，错误文案带两侧候选", async () => {
+    const targets = makeKimicodeTargets({
+      modelPill: "K2.8 Preview · High",
+      currentModel: "K2.8 Preview",
+      modelOptions: ["K2.8 Preview"],
+      modelDialogModels: ["K2.8 Preview", "K3-256k"],
+      workspaces: M3_PROJECT_WORKSPACES,
+    });
+    const result = await runM3(
+      await m3Harness(targets, { ctx: { model: "stepfun/step-3.7-flash:free" } }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.endReason).toBe("model_unavailable");
+    expect(result.error).toContain("模型不存在或同名歧义：stepfun/step-3.7-flash:free");
+    expect(result.error).toContain("快捷菜单候选=K2.8 Preview");
+    expect(targets.states.main.sendClicks).toBe(0);
+  });
+
+  it("完整名搜索 0 命中 → 退化为按 provider 搜一次（先清空搜索框），再按完整名精确选中", async () => {
+    const targets = makeKimicodeTargets({
+      modelPill: "K2.8 Preview · High",
+      currentModel: "K2.8 Preview",
+      modelOptions: ["K2.8 Preview"],
+      modelDialogModels: ["K2.8 Preview", "stepfun/step-3.7-flash:free"],
+      modelDialogTiers: { "stepfun/step-3.7-flash:free": ["On", "Off"] },
+      // 只索引 provider 的过滤面：完整模型名搜不到任何行，必须退化为 provider 搜索
+      modelDialogFilterBy: "provider",
+      pollScript: finishingScript(),
+      workspaces: M3_PROJECT_WORKSPACES,
+    });
+    const result = await runM3(
+      await m3Harness(targets, { ctx: { model: "stepfun/step-3.7-flash:free" } }),
+    );
+    expect(result.ok).toBe(true);
+    expect(targets.states.main.clicks).toContain("dialog-model:stepfun/step-3.7-flash:free");
+    // 第二次搜索前搜索框被清空（否则会变成「完整名+provider」的复合串，永远搜不到）
+    expect(targets.states.main.modelDialogQuery).toBe("stepfun");
+    expect(targets.states.main.modelPill).toBe("stepfun/step-3.7-flash:free · 思考");
+  });
+});
+
+describe("Kimi Code M3 执行模式与发送", () => {
+  it("执行模式不是「完全自动」→ 切换并回读 → 发送", async () => {
+    const targets = makeKimicodeTargets({
+      permissionPill: "始终询问",
+      currentPermission: "始终询问",
+      pollScript: finishingScript(),
+      workspaces: M3_PROJECT_WORKSPACES,
+    });
+    const result = await runM3(await m3Harness(targets));
+    expect(result.ok).toBe(true);
+    expect(targets.states.overlay.clicks).toEqual(["overlay-permission:完全自动"]);
+    expect(targets.states.main.permissionPill).toBe("完全自动");
+    expect(targets.states.main.sendClicks).toBe(1);
+  });
+
+  it("执行模式回读不一致（点击被吞）→ fail-closed 且不发送", async () => {
+    const targets = makeKimicodeTargets({
+      permissionPill: "始终询问",
+      currentPermission: "始终询问",
+      permissionOptions: ["始终询问"],
+      workspaces: M3_PROJECT_WORKSPACES,
+    });
+    const result = await runM3(await m3Harness(targets));
+    expect(result.hardFailure).toBe(true);
+    expect(result.endReason).toBe("permission_unknown");
+    expect(targets.states.main.sendClicks).toBe(0);
+  });
+
+  it("发送后 60s 内没有任何确认证据 → send_unknown，且只点击一次发送", async () => {
+    const targets = makeKimicodeTargets({
+      sendSwallowed: true,
+      workspaces: M3_PROJECT_WORKSPACES,
+    });
+    const result = await runM3(await m3Harness(targets));
+    expect(result.ok).toBe(false);
+    expect(result.hardFailure).toBe(true);
+    expect(result.endReason).toBe("send_unknown");
+    expect(result.error).toMatch(/发送结果无法确认/);
+    expect(result.error).toContain("不重复发送");
+    expect(targets.states.main.sendClicks).toBe(1);
+  });
+
+  it("输入框回读不一致（标记未写入）→ 不点发送", async () => {
+    const targets = makeKimicodeTargets({ workspaces: M3_PROJECT_WORKSPACES });
+    // 写入后立刻清空输入框：回读不到标记即必须停在发送之前。
+    const original = targets.main.send.bind(targets.main);
+    targets.main.send = async (method: string, params: Record<string, unknown> = {}) => {
+      const out = await original(method, params);
+      if (method === "Input.insertText") targets.states.main.inputText = "";
+      return out;
+    };
+    const result = await runM3(await m3Harness(targets));
+    expect(result.endReason).toBe("input_mismatch");
+    expect(targets.states.main.sendClicks).toBe(0);
+  });
+
+  it("composer 未挂载（停在登录/引导页）→ needs_user/login_required，不发送", async () => {
+    const targets = makeKimicodeTargets({ composerMissing: true });
+    const result = await runM3(await m3Harness(targets));
+    expect(result.endReason).toBe("needs_user");
+    expect(result.needsUserKind).toBe("login_required");
+    expect(result.keptInstance).toBe(true);
+    expect(targets.states.main.sendClicks).toBe(0);
+  });
+});
+
+describe("Kimi Code M3 运行检测", () => {
+  it("长生成期间文本多次静止仍 running，最终稳定才判完成", async () => {
+    const script: Array<Partial<FakeKimicodeState>> = [
+      { stopVisible: true, sendStarting: true },
+      { stopVisible: true, conversation: "用户任务书思考中…第一段" },
+      { stopVisible: true },
+      { stopVisible: true },
+      { stopVisible: false, sendStarting: false, conversation: "用户任务书思考中…第一段+最终回复" },
+      { stopVisible: false, sendStarting: false },
+    ];
+    const targets = makeKimicodeTargets({
+      pollScript: script,
+      workspaces: M3_PROJECT_WORKSPACES,
+    });
+    const harness = await m3Harness(targets);
+    const result = await runM3(harness);
+    expect(result.ok).toBe(true);
+    expect(result.endReason).toBe("reply_stable");
+    expect(result.progressSummary).toBe("Kimi Code 已完成回复");
+    // 六帧全部被消费：停止按钮可见期间（含三次文本静止）从未提前判完成。
+    expect(script.length).toBe(0);
+    expect(harness.events.some((note) => note.includes("Kimi Code 进度"))).toBe(true);
+  });
+
+  it("失败态（出现「继续」按钮）→ agent_error，不判完成也不保留假成功", async () => {
+    const targets = makeKimicodeTargets({
+      pollScript: [
+        { stopVisible: true, sendStarting: true },
+        {
+          stopVisible: false,
+          sendStarting: false,
+          retryVisible: true,
+          errorText: "模型请求失败，本轮对话已中断 · provider.auth_error · HTTP 403",
+        },
+      ],
+      workspaces: M3_PROJECT_WORKSPACES,
+    });
+    const result = await runM3(await m3Harness(targets));
+    expect(result.ok).toBe(false);
+    expect(result.hardFailure).toBe(true);
+    expect(result.endReason).toBe("agent_error");
+    expect(result.error).toContain("模型请求失败");
+    expect(result.keptInstance).toBe(true);
+  });
+
+  it("空闲超时（stableRounds 达标后无变化）→ idle_timeout 并保留现场", async () => {
+    const targets = makeKimicodeTargets({
+      pollScript: [
+        { stopVisible: true, sendStarting: true },
+        { stopVisible: false, sendStarting: false, conversation: "用户任务书静止回复" },
+      ],
+      workspaces: M3_PROJECT_WORKSPACES,
+    });
+    const result = await runM3(await m3Harness(targets, { gui: { idleTimeoutMs: 0 } }));
+    expect(result.ok).toBe(false);
+    expect(result.endReason).toBe("idle_timeout");
+    expect(result.keptInstance).toBe(true);
+  });
+
+  it("停止按钮恒可见且文本停滞超 stallTimeoutMs → needs_user/user_confirmation（不判完成）", async () => {
+    const targets = makeKimicodeTargets({
+      pollScript: [{ stopVisible: true, sendStarting: true }],
+      workspaces: M3_PROJECT_WORKSPACES,
+    });
+    // stallTimeoutMs 取最小值：把「恒可见 → 恒 running」的死锁路径压到几轮内可观测。
+    const result = await runM3(await m3Harness(targets, { gui: { stallTimeoutMs: 1 } }));
+    expect(result.ok).toBe(false);
+    expect(result.endReason).toBe("needs_user");
+    expect(result.needsUserKind).toBe("user_confirmation");
+    expect(result.pendingQuestion).toMatch(/停止按钮持续可见/);
+    expect(result.keptInstance).toBe(true);
   });
 });

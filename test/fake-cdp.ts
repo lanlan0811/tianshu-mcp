@@ -296,6 +296,71 @@ export interface FakeKimicodeState {
   clicks: string[];
   /** 原生「选择文件夹…」调用次数 */
   chooseFolderClicks: number;
+
+  /* ---- M3：composer / 模型档位 / 执行模式 / 运行信号 ---- */
+  /** composer 未挂载（复刻停在登录/引导页） */
+  composerMissing: boolean;
+  /** 模型+档位触发器全文（如 `K3 · High`） */
+  modelPill: string;
+  /** 执行模式触发器文本 */
+  permissionPill: string;
+  /** 浮层模型候选（模型/档位/执行模式的当前值都落在主窗口状态里，浮层经 link 读取） */
+  modelOptions: string[];
+  /** 当前模型（`.is-active` 项） */
+  currentModel: string;
+  /** 浮层思考档位标签集合（**界面实际渲染**：官方 Low/High/Max、非官方 On/Off） */
+  tiers: string[];
+  /** 当前档位（`.is-on` 项） */
+  currentTier: string;
+  /** 执行模式候选 */
+  permissionOptions: string[];
+  /** 当前执行模式 */
+  currentPermission: string;
+  /** 权威运行信号：`button.stop` 是否可见 */
+  stopVisible: boolean;
+  /** 次权威运行信号：`button.send` class 含 `is-starting` */
+  sendStarting: boolean;
+  /** 失败态：`button.ui-button--secondary`（「继续」）是否可见 */
+  retryVisible: boolean;
+  /** panes 内的失败文案 */
+  errorText: string;
+  /** 用户消息复制按钮（`button.u-copy`）是否可见 */
+  userCopyVisible: boolean;
+  /** 发送按钮被点击的次数（断言「绝不重发」） */
+  sendClicks: number;
+  /** 点击发送被吞：不产生任何确认证据（会话 id / 消息落地 / 输入框清空 / 运行信号全无） */
+  sendSwallowed: boolean;
+  /** 发送后新会话 id（写入 URL，复刻「会话 id 从 URL 取得」） */
+  newSessionId: string;
+  /**
+   * 发送后的运行状态脚本：每次 kc:poll 消费一条（仅在发送点击生效后才开始消费）。
+   * 用脚本而不是定时器：轮询间隔可能小到 1ms，异步定时器会与判定抢跑（CI 上会 flake）。
+   */
+  pollScript?: Array<Partial<FakeKimicodeState>>;
+
+  /* ---- 模型「更多模型…」二级入口（overlay 隐藏 + 主窗口「切换模型」对话框） ---- */
+  /** overlay 模型菜单里是否渲染出「更多模型…」入口 */
+  moreModelsAvailable: boolean;
+  /** 「切换模型」对话框是否可见 */
+  modelDialogVisible: boolean;
+  /** 对话框搜索框当前输入（搜索只做过滤，不参与身份判定） */
+  modelDialogQuery: string;
+  /** 对话框全量候选目录 */
+  modelDialogModels: string[];
+  /**
+   * 搜索框的过滤面：`name` = 对完整模型名做包含匹配（默认，按实测行为）；
+   * `provider` = 只索引 `/` 前半段（模拟「更严格的过滤」），用于验证「完整名 0 命中 → 退化为
+   * provider 搜索一次」这条兜底分支确实被执行。
+   */
+  modelDialogFilterBy: "name" | "provider";
+  /** 对话框里的当前模型（`.is-current`；空则回落到 currentModel） */
+  modelDialogCurrent: string;
+  /** 模型 → 选中后界面的档位集合（复刻「切到非官方模型后档位变成 On/Off」） */
+  modelDialogTiers?: Record<string, string[]>;
+  /** 点击候选行后界面不更新（复刻「点了但没生效」→ 回读不一致） */
+  dialogClickNoop: boolean;
+  /** 对话框搜索框是否已聚焦（Input.insertText 的落点） */
+  searchFocused: boolean;
 }
 
 export function makeKimicodeFakeState(over: Partial<FakeKimicodeState> = {}): FakeKimicodeState {
@@ -315,18 +380,75 @@ export function makeKimicodeFakeState(over: Partial<FakeKimicodeState> = {}): Fa
     menuDomPresent: false,
     clicks: [],
     chooseFolderClicks: 0,
+    composerMissing: false,
+    modelPill: "K3 · High",
+    permissionPill: "完全自动",
+    modelOptions: ["K3", "K3-256k"],
+    currentModel: "K3",
+    tiers: ["Low", "High", "Max"],
+    currentTier: "High",
+    permissionOptions: ["始终询问", "必要时询问", "完全自动"],
+    currentPermission: "完全自动",
+    stopVisible: false,
+    sendStarting: false,
+    retryVisible: false,
+    errorText: "",
+    userCopyVisible: false,
+    sendClicks: 0,
+    sendSwallowed: false,
+    newSessionId: "s-new",
+    moreModelsAvailable: true,
+    modelDialogVisible: false,
+    modelDialogQuery: "",
+    modelDialogModels: ["K3", "K2.8 Preview", "K3-256k"],
+    modelDialogFilterBy: "name",
+    modelDialogCurrent: "",
+    dialogClickNoop: false,
+    searchFocused: false,
     ...over,
   };
+}
+
+/** 归一化（与真机页面内 kcNorm 同义）：NFKC + 折叠空白 + 大小写不敏感 */
+function kcNorm(value: string): string {
+  return (value ?? "").normalize("NFKC").trim().replace(/\s+/g, " ").toLocaleLowerCase();
+}
+
+/**
+ * 模型触发器文本。真机实测：官方模型后缀是档位名（`K3 · High`），
+ * 非官方模型（档位只有 On/Off）后缀是「思考」（`stepfun/… · 思考`）。
+ */
+function pillText(model: string, state: FakeKimicodeState): string {
+  const onoff = state.tiers.includes("On") && state.tiers.includes("Off");
+  return onoff ? `${model} · 思考` : `${model} · ${state.currentTier}`;
+}
+
+/** 浮层里待应用的选中动作：`kc:exact` 解析出坐标，鼠标事件按下时才真正生效 */
+interface FakeOverlayPending {
+  kind: "model" | "tier" | "permission" | "more-models";
+  label: string;
 }
 
 /** 主窗口与浮层窗口两个 target 的桩 */
 export class FakeKimicodePage {
   readonly connected = true;
   readonly alive = true;
+  private pendingOverlay: FakeOverlayPending | null = null;
+  /** `kc:model-dialog-row-point` 解析出的待点击候选行（坐标点击落下时才应用） */
+  private pendingDialogRow: string | null = null;
   constructor(
     readonly url: string,
     private readonly state: FakeKimicodeState,
+    /**
+     * 对侧页面状态：主窗口页 → 浮层状态（点触发器开菜单 / 收菜单）；
+     * 浮层页 → 主窗口状态（模型、档位、执行模式的当前值都落在主窗口）。
+     */
+    private readonly link?: FakeKimicodeState,
   ) {}
+
+  private get isOverlay(): boolean {
+    return /browser-overlay/.test(this.url);
+  }
 
   async connect(): Promise<void> {
     /* no-op */
@@ -339,13 +461,26 @@ export class FakeKimicodePage {
   }
   async send(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
     if (method === "Input.insertText") {
-      this.state.inputText += String(params.text ?? "");
+      // 对话框搜索框聚焦时，真实输入落在搜索框；否则落在 composer。
+      if (this.state.searchFocused && this.state.modelDialogVisible)
+        this.state.modelDialogQuery += String(params.text ?? "");
+      else this.state.inputText += String(params.text ?? "");
       return undefined;
     }
     if (method === "Input.dispatchKeyEvent") {
       if (params.type === "keyDown" && params.key === "Escape") {
         this.state.panelOpen = false;
         this.state.overlayVisible = false;
+        // Esc 同样关闭「切换模型」对话框（closeModelDialog 的收尾路径）。
+        this.state.modelDialogVisible = false;
+        this.state.searchFocused = false;
+      }
+      // 搜索框里 Ctrl+A 清空 / Backspace 退格（clearModelDialogSearch 走的就是这两条）
+      if (params.type === "keyDown" && this.state.searchFocused && this.state.modelDialogVisible) {
+        if (params.key === "a" && (Number(params.modifiers) & 2) === 2)
+          this.state.modelDialogQuery = "";
+        else if (params.key === "Backspace")
+          this.state.modelDialogQuery = this.state.modelDialogQuery.slice(0, -1);
       }
       return undefined;
     }
@@ -394,10 +529,88 @@ export class FakeKimicodePage {
       return index >= 0 ? { count: 1, point: { x: 200, y: 200 + index * 20 } } : { count: 0 };
     }
     if (expression.includes("kc:input-text")) return s.inputText;
-    if (expression.includes("kc:focus-input")) return true;
+    if (expression.includes("kc:focus-input")) return !s.composerMissing;
     if (expression.includes("kc:send-point")) return s.sendEnabled ? { x: 400, y: 400 } : null;
     if (expression.includes("kc:conversation")) return s.conversation;
-    if (expression.includes("kc:exact")) return { count: 0, available: [] };
+    if (expression.includes("kc:poll")) {
+      // 发送生效后才消费脚本：发送前的基线 poll 不能吃掉第一帧运行状态。
+      if (s.pollScript?.length && s.sendClicks > 0 && !s.sendSwallowed)
+        Object.assign(s, s.pollScript.shift());
+      return {
+        stopVisible: s.stopVisible,
+        sendStarting: s.sendStarting,
+        assistantText: s.conversation,
+        errorText: s.errorText,
+        retryVisible: s.retryVisible,
+        inputText: s.inputText,
+        sendEnabled: s.sendEnabled,
+        pageHidden: s.pageHidden,
+      };
+    }
+    if (expression.includes("kc:overlay-items")) {
+      const m = this.link ?? s;
+      if (expression.includes("ui-seg__item"))
+        return m.tiers.map((label) => ({ label, current: kcNorm(label) === kcNorm(m.currentTier) }));
+      if (expression.includes("完全自动"))
+        return m.permissionOptions.map((label) => ({
+          label,
+          current: kcNorm(label) === kcNorm(m.currentPermission),
+        }));
+      return m.modelOptions.map((label) => ({
+        label,
+        current: kcNorm(label) === kcNorm(m.currentModel),
+      }));
+    }
+    if (expression.includes("kc:model-dialog-open"))
+      // 只有「对话框可见 + 有候选行」才算就绪（与真机判据一致）。
+      return s.modelDialogVisible && this.dialogRows().length > 0;
+    if (expression.includes("kc:model-dialog-focus")) {
+      if (!s.modelDialogVisible) return false;
+      s.searchFocused = true;
+      return true;
+    }
+    if (expression.includes("kc:model-dialog-search-text")) return s.modelDialogQuery;
+    if (expression.includes("kc:model-dialog-items")) {
+      const current = s.modelDialogCurrent || s.currentModel;
+      return this.dialogRows().map((name) => ({
+        name,
+        current: kcNorm(name) === kcNorm(current),
+      }));
+    }
+    if (expression.includes("kc:model-dialog-row-point")) {
+      const raw = /const target = kcNorm\((.*?)\);/.exec(expression)?.[1] ?? '""';
+      const wanted = JSON.parse(raw) as string;
+      const rows = this.dialogRows();
+      const matches = rows.filter((row) => kcNorm(row) === kcNorm(wanted));
+      if (matches.length !== 1) return { count: matches.length, available: rows };
+      this.pendingDialogRow = matches[0]!;
+      return { count: 1, available: rows, point: { x: 740, y: 740 } };
+    }
+    if (expression.includes("kc:exact")) {
+      if (!this.isOverlay) return { count: 0, available: [] };
+      const raw = /const target = kcNorm\((.*?)\);/.exec(expression)?.[1] ?? '""';
+      const value = JSON.parse(raw) as string;
+      const m = this.link ?? s;
+      // 「更多模型…」入口的 spec 里带 texts（中英变体）→ 按这就可与模型项区分开。
+      if (expression.includes("更多模型")) {
+        const available = m.moreModelsAvailable ? ["更多模型…"] : [];
+        if (!m.moreModelsAvailable) return { count: 0, available };
+        this.pendingOverlay = { kind: "more-models", label: "更多模型…" };
+        return { count: 1, available, point: { x: 700, y: 700 } };
+      }
+      const kind: FakeOverlayPending["kind"] = expression.includes("ui-seg__item")
+        ? "tier"
+        : expression.includes("完全自动")
+          ? "permission"
+          : "model";
+      const labels =
+        kind === "tier" ? m.tiers : kind === "permission" ? m.permissionOptions : m.modelOptions;
+      const available = [...labels];
+      const index = labels.findIndex((label) => kcNorm(label) === kcNorm(value));
+      if (index < 0) return { count: 0, available };
+      this.pendingOverlay = { kind, label: labels[index]! };
+      return { count: 1, available, point: { x: 700, y: 700 } };
+    }
     if (expression.includes("kc:dom-click")) {
       s.clicks.push("dom-click");
       return false;
@@ -411,6 +624,8 @@ export class FakeKimicodePage {
       const key = this.keyOf(expression);
       if (key === "chatInput") return s.inputText;
       if (key === "messageArea") return s.conversation;
+      if (key === "modelPill") return s.modelPill;
+      if (key === "permissionPill") return s.permissionPill;
       if (key === "workspaceChip" || key === "workspaceChipName")
         return this.activeWorkspace()?.name ?? "";
       return "";
@@ -428,7 +643,14 @@ export class FakeKimicodePage {
     if (expression.includes("btn-new-chat")) return "newSession";
     if (expression.includes("gh-add")) return "workspaceAddSession";
     if (expression.includes("ProseMirror")) return "chatInput";
+    if (expression.includes("model-pill")) return "modelPill";
+    if (expression.includes("perm-pill")) return "permissionPill";
+    if (expression.includes("button.stop")) return "stopButton";
     if (expression.includes("button.send")) return "sendButton";
+    if (expression.includes("ui-button--secondary")) return "errorRetryButton";
+    if (expression.includes("u-copy")) return "userCopyButton";
+    if (expression.includes("a-cpbtn")) return "assistantCopyButton";
+    if (expression.includes("ui-seg__item")) return "overlayTier";
     if (expression.includes("div.panes")) return "messageArea";
     if (expression.includes("data-session-id")) return "sessionItem";
     if (expression.includes("overlay-menu-row")) return "overlayMenuRow";
@@ -456,13 +678,25 @@ export class FakeKimicodePage {
       case "sendButton":
         return s.sendEnabled ? { x: 400, y: 400 } : null;
       case "chatInput":
-        return { x: 300, y: 300 };
+        return s.composerMissing ? null : { x: 300, y: 300 };
       case "messageArea":
         return { x: 350, y: 350 };
       case "sessionItem":
         return s.sessions.length ? { x: 200, y: 200 } : null;
       case "overlayMenuRow":
         return s.menuDomPresent ? { x: 500, y: 500 } : null;
+      case "modelPill":
+        return { x: 520, y: 520 };
+      case "permissionPill":
+        return { x: 540, y: 540 };
+      case "stopButton":
+        return s.stopVisible ? { x: 560, y: 560 } : null;
+      case "errorRetryButton":
+        return s.retryVisible ? { x: 580, y: 580 } : null;
+      case "userCopyButton":
+        return s.userCopyVisible ? { x: 600, y: 600 } : null;
+      case "assistantCopyButton":
+        return { x: 620, y: 620 };
       default:
         return null;
     }
@@ -470,6 +704,53 @@ export class FakeKimicodePage {
 
   private applyClick(x: number, y: number): void {
     const s = this.state;
+    if (x === 700 && this.isOverlay) {
+      const pending = this.pendingOverlay;
+      this.pendingOverlay = null;
+      const main = this.link;
+      if (!pending || !main) return;
+      // 「更多模型…」：实测 overlay 立刻 hidden 并清空，同时主窗口弹出「切换模型」对话框。
+      if (pending.kind === "more-models") {
+        main.modelDialogVisible = true;
+        main.modelDialogQuery = "";
+        main.searchFocused = false;
+        s.overlayVisible = false;
+        s.clicks.push("overlay-more-models");
+        return;
+      }
+      // 模型/档位/执行模式的当前值都落在主窗口：真机里触发器文本就是这样更新的。
+      if (pending.kind === "model") {
+        main.currentModel = pending.label;
+        main.modelPill = pillText(pending.label, main);
+      } else if (pending.kind === "tier") {
+        main.currentTier = pending.label;
+        main.modelPill = pillText(main.currentModel, main);
+      } else {
+        main.currentPermission = pending.label;
+        main.permissionPill = pending.label;
+      }
+      s.clicks.push(`overlay-${pending.kind}:${pending.label}`);
+      return;
+    }
+    if (x === 740) {
+      // 对话框候选行：实测点击后对话框自动关闭，button.model-pill 文本随之更新。
+      const row = this.pendingDialogRow;
+      this.pendingDialogRow = null;
+      if (!row) return;
+      s.clicks.push(`dialog-model:${row}`);
+      s.modelDialogVisible = false;
+      s.searchFocused = false;
+      // 「点了但界面没生效」：不更新触发器，用于验证回读拦截。
+      if (s.dialogClickNoop) return;
+      s.currentModel = row;
+      const tiers = s.modelDialogTiers?.[row];
+      if (tiers) {
+        s.tiers = [...tiers];
+        s.currentTier = tiers[0]!;
+      }
+      s.modelPill = pillText(row, s);
+      return;
+    }
     if (x === 10) {
       s.clicks.push("new-session");
       // 复刻 M22 教训：点击返回 true 并不等于已切页——被阻塞时不建立草稿。
@@ -514,7 +795,46 @@ export class FakeKimicodePage {
       if (!item) return;
       s.currentSessionId = item.id;
       s.url = `app://renderer/sessions/${item.id}`;
+      return;
     }
+    if (x === 400) {
+      // 发送：真机上「用户消息落地 + 输入框清空 + 会话 URL 变化 + 停止按钮出现」同现。
+      s.clicks.push("send");
+      s.sendClicks++;
+      if (s.sendSwallowed) return;
+      s.conversation = `${s.conversation}${s.inputText}`;
+      s.inputText = "";
+      s.userCopyVisible = true;
+      s.stopVisible = true;
+      s.sendStarting = true;
+      s.url = `app://renderer/sessions/${s.newSessionId}`;
+      return;
+    }
+    if (x === 520) {
+      s.clicks.push("model-pill");
+      // 触发器是 toggle，但菜单渲染在浮层窗口：这里只把浮层置为可见。
+      if (this.link) this.link.overlayVisible = true;
+      return;
+    }
+    if (x === 540) {
+      s.clicks.push("permission-pill");
+      if (this.link) this.link.overlayVisible = true;
+      return;
+    }
+  }
+
+  /** 对话框当前可见的候选行：搜索框只做「包含」过滤，身份判定由点击方按全等做 */
+  private dialogRows(): string[] {
+    const s = this.state;
+    const query = kcNorm(s.modelDialogQuery);
+    if (!query) return [...s.modelDialogModels];
+    const BY_PROVIDER = s.modelDialogFilterBy === "provider";
+    return s.modelDialogModels.filter((name) => {
+      const haystack = BY_PROVIDER
+        ? kcNorm(name.includes("/") ? name.slice(0, name.indexOf("/")) : name)
+        : kcNorm(name);
+      return haystack.includes(query);
+    });
   }
 
   private activeWorkspace(): { name: string; path: string; active: boolean } | undefined {
@@ -543,8 +863,9 @@ export function makeKimicodeTargets(
       ...overlayOverrides,
     }),
   };
-  const main = new FakeKimicodePage(states.main.url, states.main);
-  const overlay = new FakeKimicodePage(states.overlay.url, states.overlay);
+  // 交叉持有对侧状态：主窗口的触发器点击要打开浮层，浮层的选中结果要写回主窗口的触发器文本。
+  const main = new FakeKimicodePage(states.main.url, states.main, states.overlay);
+  const overlay = new FakeKimicodePage(states.overlay.url, states.overlay, states.main);
   return {
     main,
     overlay,

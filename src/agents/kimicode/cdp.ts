@@ -26,10 +26,17 @@ import {
   exactMatchExpression,
   existsExpression,
   focusInputExpression,
+  focusModelDialogSearchExpression,
   inputTextExpression,
   menuOpenCountExpression,
+  modelDialogItemsExpression,
+  modelDialogOpenExpression,
+  modelDialogRowPointExpression,
+  modelDialogSearchTextExpression,
+  overlayItemsExpression,
   overlayVisibleExpression,
   pageHiddenExpression,
+  pollExpression,
   selectSessionExpression,
   sendButtonPointExpression,
   sessionsExpression,
@@ -41,6 +48,7 @@ import {
   workspaceRowPointExpression,
   type SelectorOverrides,
 } from "./dom.js";
+import type { KimicodePoll } from "./liveness.js";
 import { normalizeWorkspacePath, type KimicodeWorkspaceItem } from "./workspace.js";
 
 export { CdpDisconnectedError, CdpUnavailableError };
@@ -59,6 +67,25 @@ export interface KimicodeClickExactResult {
 export interface KimicodePoint {
   x: number;
   y: number;
+}
+
+/** 浮层菜单项（模型候选 / 思考档位 / 执行模式候选共用）：可见标签 + 是否当前项 */
+export interface KimicodeOverlayItem {
+  label: string;
+  current: boolean;
+}
+
+/** 浮层里可精确点击的菜单键 */
+export type KimicodeOverlayMenuKey =
+  | "modelOption"
+  | "thinkingSegment"
+  | "permissionOption"
+  | "moreModelsItem";
+
+/** 「切换模型」对话框的候选行（`current` 只认 `.is-current`） */
+export interface KimicodeModelDialogItem {
+  name: string;
+  current: boolean;
 }
 
 /** CDP page target 的最小可判定字段（TraeworkCdpClient 的 CdpPageTarget 结构兼容） */
@@ -133,6 +160,19 @@ const PANEL_POLL_MS = 100;
  * 合成鼠标事件常被吞掉（第一次点击无效、第二次才生效），所以「点一次然后干等」必然失败。
  */
 const TRIGGER_RECLICK_MS = 1_500;
+/** 对话框搜索过滤的观察间隔（过滤是异步的，读一次会读到旧列表） */
+const FILTER_POLL_MS = 150;
+
+/** 键盘事件参数（沿用 pressEscape 的字段组合，保证 Electron 真的收得到） */
+interface KeyStroke {
+  key: string;
+  code: string;
+  windowsVirtualKeyCode: number;
+  modifiers?: number;
+}
+const ESCAPE_KEY: KeyStroke = { key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 };
+const SELECT_ALL_KEY: KeyStroke = { key: "a", code: "KeyA", windowsVirtualKeyCode: 65, modifiers: 2 };
+const BACKSPACE_KEY: KeyStroke = { key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 };
 
 export class KimicodeCdpClient {
   readonly port: number;
@@ -377,6 +417,142 @@ export class KimicodeCdpClient {
     return true;
   }
 
+  /* ---------------- 模型 / 思考档位 / 执行模式（浮层菜单） ---------------- */
+
+  /** 模型+档位触发器全文（实测形如 `K3 · High`；非官方模型为 `stepfun/… · 思考`） */
+  modelTriggerText(): Promise<string> {
+    return this.text("modelPill");
+  }
+
+  /** 执行模式触发器文本（实测「完全自动」，class 含 perm-auto） */
+  permissionText(): Promise<string> {
+    return this.text("permissionPill");
+  }
+
+  /** 打开模型/档位菜单（浮层） */
+  openModelMenu(deadlineMs = 5_000): Promise<boolean> {
+    return this.openOverlayMenu("modelPill", deadlineMs);
+  }
+
+  /** 打开执行模式菜单（浮层） */
+  openPermissionMenu(deadlineMs = 5_000): Promise<boolean> {
+    return this.openOverlayMenu("permissionPill", deadlineMs);
+  }
+
+  /** 浮层里的模型候选（当前项 `.is-active`） */
+  overlayModels(): Promise<KimicodeOverlayItem[]> {
+    return this.overlayItems(overlaySpec("modelOption", this.selectors));
+  }
+
+  /** 浮层里的思考档位标签（当前档 `.is-on`）：档位集合的唯一来源就是它 */
+  reasoningTiers(): Promise<KimicodeOverlayItem[]> {
+    return this.overlayItems(overlaySpec("thinkingSegment", this.selectors));
+  }
+
+  /** 浮层里的执行模式候选（当前项 `.is-active`） */
+  overlayPermissions(): Promise<KimicodeOverlayItem[]> {
+    return this.overlayItems(overlaySpec("permissionOption", this.selectors));
+  }
+
+  /** 按可见文本精确点击浮层菜单项；多命中/未命中一律不点击，并回报可见候选 */
+  clickOverlayExact(key: KimicodeOverlayMenuKey, value: string): Promise<KimicodeClickExactResult> {
+    return this.clickExact(`${OVERLAY_PREFIX}${key}`, value);
+  }
+
+  /* ---------------- 「切换模型」对话框（「更多模型…」的二级入口） ---------------- */
+
+  /**
+   * 点开 overlay 模型菜单里的「更多模型…」。
+   * 真机实测：点击后 overlay 立刻变 hidden 并清空，主窗口弹出「切换模型」对话框——
+   * 因此这里**不**校验 overlay 后续状态，只确认那次点击真的命中并发出。
+   */
+  async openModelPicker(deadlineMs = 5_000): Promise<boolean> {
+    const until = Date.now() + deadlineMs;
+    const texts = KIMICODE_OVERLAY_SELECTORS.moreModelsItem.texts ?? ["更多模型…"];
+    for (let attempt = 0; attempt < 50 && Date.now() < until; attempt++) {
+      // 菜单没开就先开（可能被上一次失败的直选留在关闭态）；再点会把刚开的面板关掉，故先查后点。
+      // eslint-disable-next-line no-await-in-loop
+      if (!(await this.overlayVisible()) && !(await this.openModelMenu(Math.max(1, until - Date.now()))))
+        return false;
+      for (const text of texts) {
+        // eslint-disable-next-line no-await-in-loop
+        const clicked = await this.clickOverlayExact("moreModelsItem", text);
+        if (clicked.clicked) return true;
+      }
+      // eslint-disable-next-line no-await-in-loop
+      await this.pause(PANEL_POLL_MS);
+    }
+    return false;
+  }
+
+  /** 「切换模型」对话框是否可见且已渲染出候选行 */
+  modelDialogOpen(): Promise<boolean> {
+    return this.evaluate<boolean>(modelDialogOpenExpression(this.selectors)).then(
+      (open) => open === true,
+    );
+  }
+
+  /** 对话框候选行（模型名 + 是否当前模型） */
+  modelDialogItems(): Promise<KimicodeModelDialogItem[]> {
+    return this.evaluate<KimicodeModelDialogItem[]>(modelDialogItemsExpression(this.selectors));
+  }
+
+  /**
+   * 在对话框里搜索模型：先清空已有输入（Ctrl+A + Backspace），再用真实输入管线写入，
+   * 并等候选收敛（连续两次读数一致）——过滤是异步的，只读一次会读到旧列表。
+   */
+  async searchModelDialog(
+    query: string,
+    deadlineMs = 5_000,
+  ): Promise<{ typed: string; rowNames: string[] }> {
+    const until = Date.now() + deadlineMs;
+    const focused = await this.evaluate<boolean>(focusModelDialogSearchExpression(this.selectors));
+    if (!focused) return { typed: "", rowNames: [] };
+    await this.clearModelDialogSearch();
+    await this.send("Input.insertText", { text: query });
+    let previous = "";
+    let last: { typed: string; rowNames: string[] } = { typed: "", rowNames: [] };
+    for (let attempt = 0; attempt < 50 && Date.now() < until; attempt++) {
+      // eslint-disable-next-line no-await-in-loop
+      const typed = await this.evaluate<string>(modelDialogSearchTextExpression(this.selectors));
+      // eslint-disable-next-line no-await-in-loop
+      const rowNames = (await this.modelDialogItems()).map((item) => item.name);
+      last = { typed, rowNames };
+      const key = JSON.stringify(rowNames);
+      if (typed === query && key === previous) return last;
+      previous = key;
+      // eslint-disable-next-line no-await-in-loop
+      await this.pause(FILTER_POLL_MS);
+    }
+    return last;
+  }
+
+  /** 按 `span.model-name` 文本 NFKC 精确点击候选行；无命中/多命中都不点击并回报可见候选 */
+  async clickModelDialogRowByName(
+    name: string,
+  ): Promise<{ clicked: boolean; available: string[] }> {
+    const found = await this.evaluate<{
+      count: number;
+      available: string[];
+      point?: KimicodePoint;
+    }>(modelDialogRowPointExpression(this.selectors, name));
+    if (!found?.point) return { clicked: false, available: found?.available ?? [] };
+    await this.clickAt("main", found.point.x, found.point.y);
+    return { clicked: true, available: found.available };
+  }
+
+  /** Esc 关闭对话框（失败收尾用：残留对话框会吞掉后续的键盘注入） */
+  async closeModelDialog(): Promise<void> {
+    for (let i = 0; i < 4; i++) {
+      // eslint-disable-next-line no-await-in-loop
+      if (!(await this.modelDialogOpen())) return;
+      // eslint-disable-next-line no-await-in-loop
+      await this.pressKey("main", ESCAPE_KEY);
+      // eslint-disable-next-line no-await-in-loop
+      await this.pause(PANEL_POLL_MS);
+    }
+  }
+
   /* ---------------- 输入与对话 ---------------- */
 
   inputText(): Promise<string> {
@@ -420,6 +596,14 @@ export class KimicodeCdpClient {
 
   conversationText(): Promise<string> {
     return this.evaluate<string>(conversationTextExpression(this.selectors));
+  }
+
+  /**
+   * 单次运行信号快照（一次 evaluate，见 dom.pollExpression 的说明）。
+   * `question` 刻意留空：提问卡片的采集属于 M4（本轮只把字段与 needs_user 分支接上）。
+   */
+  poll(): Promise<KimicodePoll> {
+    return this.evaluate<KimicodePoll>(pollExpression(this.selectors));
   }
 
   /* ---------------- 内部 ---------------- */
@@ -469,6 +653,35 @@ export class KimicodeCdpClient {
     return true;
   }
 
+  /** 浮层菜单项读取：入参是 spec，浮层连不上时返回空集（调用方据此 fail-closed，不猜档位） */
+  private async overlayItems(spec: string): Promise<KimicodeOverlayItem[]> {
+    if (!(await this.ensureOverlay())) return [];
+    return this.evaluateOn<KimicodeOverlayItem[]>("overlay", overlayItemsExpression(spec));
+  }
+
+  /**
+   * 打开浮层菜单并确认它真的可见。
+   * 触发器是 toggle 语义：菜单已经开着时再点一次会把它关掉，所以每轮都先查后点；
+   * 窗口被遮挡时节流会吞掉合成点击，故有界重试，不重置调用方给的截止时间。
+   */
+  private async openOverlayMenu(pillKey: "modelPill" | "permissionPill", deadlineMs: number): Promise<boolean> {
+    if (await this.overlayVisible()) return true;
+    const deadline = Date.now() + deadlineMs;
+    let lastClick = 0;
+    while (Date.now() < deadline) {
+      if (Date.now() - lastClick >= TRIGGER_RECLICK_MS) {
+        // eslint-disable-next-line no-await-in-loop
+        await this.click(pillKey);
+        lastClick = Date.now();
+      }
+      // eslint-disable-next-line no-await-in-loop
+      if (await this.overlayVisible()) return true;
+      // eslint-disable-next-line no-await-in-loop
+      await this.pause(PANEL_POLL_MS);
+    }
+    return false;
+  }
+
   /** trusted 鼠标点击（moved + pressed + released）：ws-chip 只认这条路径 */
   private async clickAt(role: KimicodePageRole, x: number, y: number): Promise<void> {
     const page = role === "overlay" ? this.pages.overlay : this.pages.main;
@@ -489,20 +702,21 @@ export class KimicodeCdpClient {
     });
   }
 
-  private async pressEscape(role: KimicodePageRole): Promise<void> {
+  private pressEscape(role: KimicodePageRole): Promise<void> {
+    return this.pressKey(role, ESCAPE_KEY);
+  }
+
+  /** 清空对话框搜索框：Ctrl+A + Backspace（受控输入框不设 value，走真实键盘事件） */
+  private async clearModelDialogSearch(): Promise<void> {
+    await this.pressKey("main", SELECT_ALL_KEY);
+    await this.pressKey("main", BACKSPACE_KEY);
+  }
+
+  /** 键盘注入（keyDown + keyUp）：Electron 侧只认真实事件，不认 DOM 属性赋值 */
+  private async pressKey(role: KimicodePageRole, stroke: KeyStroke): Promise<void> {
     const page = role === "overlay" ? this.pages.overlay : this.pages.main;
-    await page.send("Input.dispatchKeyEvent", {
-      type: "keyDown",
-      key: "Escape",
-      code: "Escape",
-      windowsVirtualKeyCode: 27,
-    });
-    await page.send("Input.dispatchKeyEvent", {
-      type: "keyUp",
-      key: "Escape",
-      code: "Escape",
-      windowsVirtualKeyCode: 27,
-    });
+    await page.send("Input.dispatchKeyEvent", { type: "keyDown", ...stroke });
+    await page.send("Input.dispatchKeyEvent", { type: "keyUp", ...stroke });
   }
 
   private pause(ms: number): Promise<void> {

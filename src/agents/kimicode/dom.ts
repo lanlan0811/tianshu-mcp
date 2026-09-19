@@ -230,6 +230,122 @@ export function conversationTextExpression(overrides: SelectorOverrides = {}): s
   })()`;
 }
 
+/**
+ * 「切换模型」对话框是否真的开着（overlay 里点「更多模型…」后出现在**主窗口**）。
+ * 只看到 `div.ui-dialog` 不足以判就绪：还要确认候选行已经渲染出来，否则搜索/点行会空等。
+ */
+export function modelDialogOpenExpression(overrides: SelectorOverrides = {}): string {
+  return `(function(){${KIMICODE_DOM}/*kc:model-dialog-open*/
+    const dialog = kcResolve(${mainSpec("modelDialog", overrides)}, true);
+    if (!dialog.length) return false;
+    const rows = kcResolve(${mainSpec("modelDialogRow", overrides)}, true);
+    return rows.some(row => dialog.some(node => node.contains(row)));
+  })()`;
+}
+
+/** 聚焦对话框搜索框（真实输入管线 Input.insertText 的前置条件） */
+export function focusModelDialogSearchExpression(overrides: SelectorOverrides = {}): string {
+  return `(function(){${KIMICODE_DOM}/*kc:model-dialog-focus*/
+    const input = kcResolve(${mainSpec("modelDialogSearch", overrides)}, true);
+    if (!input.length) return false;
+    input[0].focus();
+    return true;
+  })()`;
+}
+
+/** 搜索框当前输入值（`<input>` 的文本在 value 上，innerText 读不到） */
+export function modelDialogSearchTextExpression(overrides: SelectorOverrides = {}): string {
+  return `(function(){${KIMICODE_DOM}/*kc:model-dialog-search-text*/
+    const input = kcResolve(${mainSpec("modelDialogSearch", overrides)}, true);
+    if (!input.length) return '';
+    return String(input[0].value || '');
+  })()`;
+}
+
+/**
+ * 对话框候选行：模型名（`span.model-name`）+ 是否当前模型。
+ * `current` **只认 `.is-current`**：`.is-selected` 是推荐项（实测曾指向 K2.8 Preview 而实际模型是 K3）。
+ */
+export function modelDialogItemsExpression(overrides: SelectorOverrides = {}): string {
+  return `(function(){${KIMICODE_DOM}/*kc:model-dialog-items*/
+    const rows = kcResolve(${mainSpec("modelDialogRow", overrides)}, true);
+    const names = kcResolve(${mainSpec("modelDialogRowName", overrides)}, false);
+    return rows.map(row => {
+      const hit = kcIn(names, row);
+      return {
+        name: (hit.length ? kcText(hit[0]) : kcText(row)).trim(),
+        current: kcHasClass(row, 'is-current'),
+      };
+    });
+  })()`;
+}
+
+/**
+ * 按模型名 **NFKC 精确**命中的候选行坐标；0 命中/多命中都不给坐标（并回报可见候选名）。
+ * 精确比较是硬要求：`K3` 与 `K3-256k` 并存，前缀命中会把任务派到不同模型上。
+ */
+export function modelDialogRowPointExpression(
+  overrides: SelectorOverrides = {},
+  name: string,
+): string {
+  return `(function(){${KIMICODE_DOM}/*kc:model-dialog-row-point*/
+    const target = kcNorm(${JSON.stringify(name)});
+    const rows = kcResolve(${mainSpec("modelDialogRow", overrides)}, true);
+    const names = kcResolve(${mainSpec("modelDialogRowName", overrides)}, false);
+    const nameOf = (row) => {
+      const hit = kcIn(names, row);
+      return kcNorm(hit.length ? kcText(hit[0]) : kcText(row));
+    };
+    const available = rows.map(nameOf).filter(Boolean);
+    const matches = rows.filter(row => nameOf(row) === target);
+    if (matches.length !== 1) return { count: matches.length, available };
+    return { count: 1, available, point: kcPoint(matches[0]) };
+  })()`;
+}
+
+/**
+ * 单次轮询的全部运行信号。**一次求值**是刻意的：真机实测停止按钮在 0.5–1.2s 内出现/消失，
+ * 分多次求值会把不同瞬间的状态拼成一个自相矛盾快照（例如「停止按钮可见」与「输入框已清空」
+ * 来自两个不同时刻），进而把长思考误判成完成。
+ */
+export function pollExpression(overrides: SelectorOverrides = {}): string {
+  return `(function(){${KIMICODE_DOM}/*kc:poll*/
+    const stop = kcResolve(${mainSpec("stopButton", overrides)}, true);
+    const sendNodes = kcResolve(${mainSpec("sendButton", overrides)}, false);
+    const retry = kcResolve(${mainSpec("errorRetryButton", overrides)}, true);
+    const panes = kcResolve(${mainSpec("messageArea", overrides)}, true);
+    const input = kcResolve(${mainSpec("chatInput", overrides)}, true);
+    const text = panes.length ? kcText(panes[0]) : '';
+    const failed = /(模型请求失败[^\\n]{0,80}|provider\\.[a-z_]{2,}[^\\n]{0,60}|HTTP\\s*\\d{3}[^\\n]{0,60})/i.exec(text);
+    const send = sendNodes.filter(kcVisible)[0];
+    return {
+      stopVisible: stop.length > 0,
+      sendStarting: sendNodes.some(e => kcHasClass(e, 'is-starting')),
+      assistantText: text,
+      errorText: failed ? failed[0].trim() : '',
+      retryVisible: retry.length > 0,
+      inputText: input.length ? kcText(input[0]) : '',
+      sendEnabled: !!send && !send.disabled && send.getAttribute('aria-disabled') !== 'true',
+      pageHidden: document.visibilityState === 'hidden',
+    };
+  })()`;
+}
+
+/**
+ * 浮层菜单项：可见标签 + 是否当前项。
+ * 模型与执行模式的当前项用 `.is-active`，思考档位用 `.is-on` —— 两者都接受，
+ * 调用方按菜单时机解读（真机实测：`modelOption` 与 `permissionOption` 的 CSS 同形，
+ * 语义完全由「当前打开的是哪个菜单」决定）。
+ */
+export function overlayItemsExpression(spec: string): string {
+  return `(function(){${KIMICODE_DOM}/*kc:overlay-items*/
+    return __kimicodeResolve(${spec}).map(e => ({
+      label: kcLabel(e),
+      current: kcHasClass(e, 'is-active') || kcHasClass(e, 'is-on'),
+    }));
+  })()`;
+}
+
 /** 主窗口内当前可见的菜单/对话框数量（dismissMenus 用） */
 export function menuOpenCountExpression(): string {
   return `(function(){${KIMICODE_DOM}/*kc:menu-count*/

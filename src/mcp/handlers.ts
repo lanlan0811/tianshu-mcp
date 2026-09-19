@@ -45,6 +45,7 @@ import { readTextSafe, readJsonSafe } from "../util/fs.js";
 import { readLatestReportSummary } from "../loop/fix-loop.js";
 import { readDirSafe } from "../util/fs.js";
 import { parseZcodeModel } from "../agents/zcode/model.js";
+import { describeLevelValueError, parseKimicodeModel } from "../agents/kimicode/model.js";
 import { validateTaskReferences } from "../agents/zcode/references.js";
 
 /** 任务目录里下一可用 report round（避免手动验收覆盖已有 report-0/1…） */
@@ -180,6 +181,21 @@ function runTaskHandler(ctx: AppContext, defaults: Defaults): Handler {
         const refs = [args.planDoc, args.designSystem].filter((v): v is string => Boolean(v));
         if (refs.length)
           validateTaskReferences(refs.map((r) => `\`${r}\``).join(" "), undefined, norm);
+      } catch (e) {
+        return errorResult(e instanceof Error ? e.message : String(e));
+      }
+    }
+
+    if (finalAgentId === "kimicode") {
+      if (args.mode !== undefined)
+        return errorResult("Kimi Code 不支持 mode 参数；请移除 mode 后重试");
+      try {
+        // 参数级只做「格式 + 取值合法性」：`中/medium` 之类不在档位取值域内的值在这里就报错；
+        // 「官方 Low/High/Max vs 非官方 On/Off」的档位集合校验必须在运行期读界面档位标签，
+        // 故留给 run.ts（此处拿不到界面状态，硬校验等于写死模型名单）。
+        const spec = parseKimicodeModel(args.model, args.reasoningLevel);
+        const levelError = describeLevelValueError(spec);
+        if (levelError) throw new Error(levelError);
       } catch (e) {
         return errorResult(e instanceof Error ? e.message : String(e));
       }
