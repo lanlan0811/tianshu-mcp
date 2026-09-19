@@ -218,6 +218,12 @@ export const ZCODE_SETUP_DEFAULTS = {
   setupRecoveryMaxRetries: 2,
   /** 等待并确认 ZCode 项目触发器就绪的上限（含点击后确认项目菜单打开的预算）。 */
   projectTriggerTimeoutMs: 15_000,
+  /**
+   * 等待并确认「工作区触发器（Kimi Code 的 button.ws-chip）挂载」的上限。
+   * 与 projectTriggerTimeoutMs 同构但预算独立：Kimi Code 的草稿页建立判据就是 ws-chip 挂载，
+   * 点击返回 true 并不等于已切页（ZCode M22 教训），所以必须按「触发器出现」判定。
+   */
+  workspaceTriggerTimeoutMs: 15_000,
 } as const;
 
 export const GuiProfileSchema = z.object({
@@ -235,6 +241,15 @@ export const GuiProfileSchema = z.object({
     .int()
     .positive()
     .default(ZCODE_SETUP_DEFAULTS.projectTriggerTimeoutMs),
+  /**
+   * 等待「工作区触发器」挂载并就绪的上限（ms）。Kimi Code 用它判定草稿页是否真的建立
+   * （button.ws-chip 是否挂载），ZCode 不使用该字段。
+   *
+   * 刻意用 `.optional()` 而不是 `.default()`：`.default()` 会让该键在 GuiProfile 的输出类型里
+   * 变成必填，迫使既有 ZCode/TraeWork profile 的对象字面量一起改（它们用显式字面量而非展开）。
+   * 默认值由 ZCODE_SETUP_DEFAULTS.workspaceTriggerTimeoutMs 在读取点提供，语义等价且不改既有键。
+   */
+  workspaceTriggerTimeoutMs: z.number().int().positive().optional(),
   dialogProbeTimeoutMs: z
     .number()
     .int()

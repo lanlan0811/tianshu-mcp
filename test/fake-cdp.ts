@@ -246,3 +246,309 @@ export function extractMarker(text: string): string {
   const m = text.match(/【ts[a-z0-9]+】/);
   return m ? m[0] : "";
 }
+
+/* ============================ Kimi Code 场景 ============================ */
+
+/**
+ * Kimi Code 页面桩：内存状态 + 按表达式标记分发。
+ *
+ * 与真机的对齐点：
+ * - **双渲染进程**：主窗口 `app://renderer/`（草稿页 / `app://renderer/sessions/<id>`）承载侧栏、
+ *   会话、composer；`app://renderer/browser-overlay.html` 是浮层（模型/档位/执行模式菜单）。
+ *   两个 page 桩按 url 区分，工作区面板只在**主窗口**，菜单开/关只看**浮层可见性**。
+ * - 工作区面板 `div.ws-panel` 只在草稿页且面板打开时可见；`button.ws-chip` 只在草稿页挂载
+ *   （发送后消失），所以「新建会话点击成功」必须靠 ws-chip 出现来确认。
+ * - `div.se[data-session-id]` 提供会话 id，主窗口 URL 也带会话 id。
+ *
+ * 分发依据是 dom.ts 表达式里的 `kc:*` 标记 + spec 里的 CSS 片段（选择器变了这里会一起暴露），
+ * 不做任何真实网络/系统调用。
+ */
+export interface FakeKimicodeState {
+  /** 页面 URL：草稿页、会话页或浮层页 */
+  url: string;
+  /** 草稿页是否建立：ws-chip / 工作区面板只在草稿页存在 */
+  draft: boolean;
+  /** 点「新建会话」也建立不了草稿（复刻「点击返回 true 却不切页」） */
+  draftBlocked: boolean;
+  /** 回退入口「在此工作区新建会话」也建立不了草稿 */
+  addSessionBlocked: boolean;
+  /** 工作区面板是否打开 */
+  panelOpen: boolean;
+  /** 工作区条目（面板内顺序即 DOM 顺序） */
+  workspaces: Array<{ name: string; path: string; active: boolean }>;
+  /** 侧栏会话项 */
+  sessions: Array<{ id: string; title?: string }>;
+  /** 当前会话 id（URL 与侧栏选中项的独立来源） */
+  currentSessionId?: string;
+  /** 输入框文本 */
+  inputText: string;
+  /** 对话正文 */
+  conversation: string;
+  /** 发送按钮是否可用 */
+  sendEnabled: boolean;
+  /** 主窗口是否被隐藏（页面节流） */
+  pageHidden: boolean;
+  /** 浮层是否可见（菜单开关的权威判据） */
+  overlayVisible: boolean;
+  /** 浮层 DOM 是否残留（关闭后可能短暂存在，不能当判据） */
+  menuDomPresent: boolean;
+  /** 点击记录（语义标签，供断言「走了哪条路径」） */
+  clicks: string[];
+  /** 原生「选择文件夹…」调用次数 */
+  chooseFolderClicks: number;
+}
+
+export function makeKimicodeFakeState(over: Partial<FakeKimicodeState> = {}): FakeKimicodeState {
+  return {
+    url: "app://renderer/",
+    draft: true,
+    draftBlocked: false,
+    addSessionBlocked: false,
+    panelOpen: false,
+    workspaces: [],
+    sessions: [],
+    inputText: "",
+    conversation: "",
+    sendEnabled: true,
+    pageHidden: false,
+    overlayVisible: false,
+    menuDomPresent: false,
+    clicks: [],
+    chooseFolderClicks: 0,
+    ...over,
+  };
+}
+
+/** 主窗口与浮层窗口两个 target 的桩 */
+export class FakeKimicodePage {
+  readonly connected = true;
+  readonly alive = true;
+  constructor(
+    readonly url: string,
+    private readonly state: FakeKimicodeState,
+  ) {}
+
+  async connect(): Promise<void> {
+    /* no-op */
+  }
+  disconnect(): void {
+    /* no-op */
+  }
+  async evaluate<T = unknown>(expression: string): Promise<T> {
+    return (await this.resolve(expression)) as T;
+  }
+  async send(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
+    if (method === "Input.insertText") {
+      this.state.inputText += String(params.text ?? "");
+      return undefined;
+    }
+    if (method === "Input.dispatchKeyEvent") {
+      if (params.type === "keyDown" && params.key === "Escape") {
+        this.state.panelOpen = false;
+        this.state.overlayVisible = false;
+      }
+      return undefined;
+    }
+    // 只认 mousePressed，避免 moved/pressed/released 三次重复应用同一效果
+    if (method === "Input.dispatchMouseEvent" && params.type === "mousePressed") {
+      this.applyClick(Number(params.x), Number(params.y));
+    }
+    return undefined;
+  }
+
+  /** 表达式分发：标记优先，其次是 spec 里的 CSS 片段 */
+  private async resolve(expression: string): Promise<unknown> {
+    const s = this.state;
+    if (expression === "location.href") return s.url;
+    if (expression.includes("new Promise")) {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      return undefined;
+    }
+    if (expression.includes("kc:overlay-visible")) return s.overlayVisible;
+    if (expression.includes("kc:page-hidden")) return s.pageHidden;
+    if (expression.includes("kc:menu-count")) return s.panelOpen ? 1 : 0;
+    if (expression.includes("kc:workspace-panel-open")) return s.draft && s.panelOpen;
+    if (expression.includes("kc:workspace-chip-text")) return this.activeWorkspace()?.name ?? "";
+    if (expression.includes("kc:workspace-items")) {
+      return s.draft && s.panelOpen
+        ? s.workspaces.map((item) => ({ name: item.name, path: item.path, active: item.active }))
+        : [];
+    }
+    if (expression.includes("kc:workspace-row-point")) {
+      const index = Number(/const index = (\d+);/.exec(expression)?.[1] ?? -1);
+      if (!s.draft || !s.panelOpen || index < 0 || index >= s.workspaces.length) return null;
+      return { x: 100, y: 100 + index * 20 };
+    }
+    if (expression.includes("kc:sessions")) {
+      return s.sessions.map((item) => ({ id: item.id, title: item.title }));
+    }
+    if (expression.includes("kc:current-session")) {
+      const matched = /\/sessions\/([^/?#]+)/.exec(s.url);
+      if (matched) return { id: matched[1], source: "url" };
+      if (s.currentSessionId) return { id: s.currentSessionId, source: "dom" };
+      return { id: "", source: "none" };
+    }
+    if (expression.includes("kc:select-session")) {
+      const id = JSON.parse(/const byId = (".*?");/.exec(expression)?.[1] ?? '""') as string;
+      const index = id ? s.sessions.findIndex((item) => item.id === id) : -1;
+      return index >= 0 ? { count: 1, point: { x: 200, y: 200 + index * 20 } } : { count: 0 };
+    }
+    if (expression.includes("kc:input-text")) return s.inputText;
+    if (expression.includes("kc:focus-input")) return true;
+    if (expression.includes("kc:send-point")) return s.sendEnabled ? { x: 400, y: 400 } : null;
+    if (expression.includes("kc:conversation")) return s.conversation;
+    if (expression.includes("kc:exact")) return { count: 0, available: [] };
+    if (expression.includes("kc:dom-click")) {
+      s.clicks.push("dom-click");
+      return false;
+    }
+    if (expression.includes("kc:point")) {
+      const point = this.pointOf(expression);
+      return point ? { count: 1, point } : { count: 0 };
+    }
+    if (expression.includes("kc:exists")) return this.pointOf(expression) !== null;
+    if (expression.includes("kc:text")) {
+      const key = this.keyOf(expression);
+      if (key === "chatInput") return s.inputText;
+      if (key === "messageArea") return s.conversation;
+      if (key === "workspaceChip" || key === "workspaceChipName")
+        return this.activeWorkspace()?.name ?? "";
+      return "";
+    }
+    return "";
+  }
+
+  /** spec 里的 CSS 片段 → 语义键（选择器漂移时这里会一起失败，避免桩「假装还能用」） */
+  private keyOf(expression: string): string {
+    if (expression.includes("ws-chip-name")) return "workspaceChipName";
+    if (expression.includes("ws-chip")) return "workspaceChip";
+    if (expression.includes("ws-action")) return "chooseFolder";
+    if (expression.includes("ws-row")) return "workspaceRow";
+    if (expression.includes("ws-panel")) return "workspacePanel";
+    if (expression.includes("btn-new-chat")) return "newSession";
+    if (expression.includes("gh-add")) return "workspaceAddSession";
+    if (expression.includes("ProseMirror")) return "chatInput";
+    if (expression.includes("button.send")) return "sendButton";
+    if (expression.includes("div.panes")) return "messageArea";
+    if (expression.includes("data-session-id")) return "sessionItem";
+    if (expression.includes("overlay-menu-row")) return "overlayMenuRow";
+    return "";
+  }
+
+  private pointOf(expression: string): { x: number; y: number } | null {
+    const s = this.state;
+    switch (this.keyOf(expression)) {
+      case "newSession":
+        return { x: 10, y: 10 };
+      case "workspaceChip":
+      case "workspaceChipName":
+        return s.draft ? { x: 20, y: 20 } : null;
+      case "workspaceAddSession":
+        return { x: 15, y: 15 };
+      case "workspacePanel":
+        return s.draft && s.panelOpen ? { x: 110, y: 110 } : null;
+      case "chooseFolder":
+        return s.draft && s.panelOpen ? { x: 30, y: 30 } : null;
+      case "workspaceRow":
+        return s.draft && s.panelOpen && s.workspaces.length
+          ? { x: 100, y: 100 }
+          : null;
+      case "sendButton":
+        return s.sendEnabled ? { x: 400, y: 400 } : null;
+      case "chatInput":
+        return { x: 300, y: 300 };
+      case "messageArea":
+        return { x: 350, y: 350 };
+      case "sessionItem":
+        return s.sessions.length ? { x: 200, y: 200 } : null;
+      case "overlayMenuRow":
+        return s.menuDomPresent ? { x: 500, y: 500 } : null;
+      default:
+        return null;
+    }
+  }
+
+  private applyClick(x: number, y: number): void {
+    const s = this.state;
+    if (x === 10) {
+      s.clicks.push("new-session");
+      // 复刻 M22 教训：点击返回 true 并不等于已切页——被阻塞时不建立草稿。
+      if (s.draftBlocked) return;
+      s.draft = true;
+      s.panelOpen = false;
+      s.url = "app://renderer/";
+      return;
+    }
+    if (x === 15) {
+      s.clicks.push("workspace-add-session");
+      if (s.addSessionBlocked) return;
+      s.draft = true;
+      s.panelOpen = false;
+      s.url = "app://renderer/";
+      return;
+    }
+    if (x === 20) {
+      s.clicks.push("workspace-chip");
+      // 面板是 toggle：已开着再点会收起
+      if (s.draft) s.panelOpen = !s.panelOpen;
+      return;
+    }
+    if (x === 30) {
+      s.clicks.push("choose-folder");
+      s.chooseFolderClicks++;
+      return;
+    }
+    if (x === 100) {
+      const index = Math.round((y - 100) / 20);
+      s.clicks.push(`workspace-row:${index}`);
+      if (!s.draft || !s.panelOpen || index < 0 || index >= s.workspaces.length) return;
+      s.workspaces.forEach((item, i) => (item.active = i === index));
+      s.panelOpen = false;
+      s.url = "app://renderer/";
+      return;
+    }
+    if (x === 200) {
+      const index = Math.round((y - 200) / 20);
+      s.clicks.push(`session:${index}`);
+      const item = s.sessions[index];
+      if (!item) return;
+      s.currentSessionId = item.id;
+      s.url = `app://renderer/sessions/${item.id}`;
+    }
+  }
+
+  private activeWorkspace(): { name: string; path: string; active: boolean } | undefined {
+    return this.state.workspaces.find((item) => item.active);
+  }
+}
+
+export interface FakeKimicodeTargets {
+  main: FakeKimicodePage;
+  overlay: FakeKimicodePage;
+  states: { main: FakeKimicodeState; overlay: FakeKimicodeState };
+  /** 传给 KimicodeCdpClient 的 createClient（按角色返回对应 target 的桩） */
+  createClient: (role: "main" | "overlay") => FakeKimicodePage;
+}
+
+/** 两个 target（主窗口 + 浮层）的桩集合：按 URL 区分，正如真机上的两个渲染进程 */
+export function makeKimicodeTargets(
+  mainOverrides: Partial<FakeKimicodeState> = {},
+  overlayOverrides: Partial<FakeKimicodeState> = {},
+): FakeKimicodeTargets {
+  const states = {
+    main: makeKimicodeFakeState({ url: "app://renderer/", ...mainOverrides }),
+    overlay: makeKimicodeFakeState({
+      url: "app://renderer/browser-overlay.html",
+      overlayVisible: false,
+      ...overlayOverrides,
+    }),
+  };
+  const main = new FakeKimicodePage(states.main.url, states.main);
+  const overlay = new FakeKimicodePage(states.overlay.url, states.overlay);
+  return {
+    main,
+    overlay,
+    states,
+    createClient: (role) => (role === "overlay" ? overlay : main),
+  };
+}
