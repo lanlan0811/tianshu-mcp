@@ -65,8 +65,12 @@ async function bindWorkspace(
   projectPath: string,
   deps: DialogDeps,
   pids: number[],
+  draftBudgetMs = 200,
 ): Promise<BindResult> {
-  if (!(await ensureFreshDraft(cdp, Date.now() + 200, { sleep: deps.sleep })))
+  // reclickMs 压到 60ms：测试截止时间只有数百毫秒，默认 1500ms 会让「周期重试」在断言里不可见。
+  if (
+    !(await ensureFreshDraft(cdp, Date.now() + draftBudgetMs, { sleep: deps.sleep, reclickMs: 60 }))
+  )
     return { ok: false, reason: "draft" };
   if (!(await cdp.openWorkspacePanel(300))) return { ok: false, reason: "panel" };
   const items = await cdp.workspaceItems();
@@ -221,7 +225,7 @@ describe("Kimi Code 工作区绑定流程", () => {
     expect(targets.states.main.clicks).not.toContain("choose-folder");
   });
 
-  it("草稿建立失败：回退「在此工作区新建会话」一次后仍失败 → fail-closed，不做绑定", async () => {
+  it("草稿建立失败：两个入口都建立不了草稿 → fail-closed，不做绑定", async () => {
     const targets = makeKimicodeTargets({
       draft: false,
       draftBlocked: true,
@@ -232,14 +236,16 @@ describe("Kimi Code 工作区绑定流程", () => {
     });
     const cdp = clientFor(targets);
     await cdp.connect();
-    const result = await bindWorkspace(cdp, PROJECT, hermeticDeps(), [4242]);
+    const result = await bindWorkspace(cdp, PROJECT, hermeticDeps(), [4242], 400);
     expect(result).toMatchObject({ ok: false, reason: "draft" });
-    // 两个入口各点一次，且没有任何工作区点击/原生对话框副作用。
-    expect(targets.states.main.clicks).toEqual(["new-session", "workspace-add-session"]);
+    // 两个入口都被尝试过（有界重试里交替），且没有任何工作区点击/原生对话框副作用。
+    expect(targets.states.main.clicks).toContain("new-session");
+    expect(targets.states.main.clicks).toContain("workspace-add-session");
+    expect(targets.states.main.clicks.some((c) => c.startsWith("workspace-row"))).toBe(false);
     expect(targets.states.main.chooseFolderClicks).toBe(0);
   });
 
-  it("主入口点不动时回退分组入口并真正建立草稿", async () => {
+  it("主入口点不动时由分组入口建立草稿（有界重试）", async () => {
     const targets = makeKimicodeTargets({
       draft: false,
       draftBlocked: true,
@@ -249,15 +255,37 @@ describe("Kimi Code 工作区绑定流程", () => {
     });
     const cdp = clientFor(targets);
     await cdp.connect();
-    const result = await bindWorkspace(cdp, PROJECT, hermeticDeps(), [4242]);
+    const result = await bindWorkspace(cdp, PROJECT, hermeticDeps(), [4242], 400);
     expect(result).toMatchObject({ ok: true, boundPath: PROJECT });
-    expect(targets.states.main.clicks).toEqual([
-      "new-session",
-      "workspace-add-session",
-      "workspace-chip",
-      "workspace-row:0",
-      "workspace-chip",
-    ]);
+    const clicks = targets.states.main.clicks;
+    // 先试全局入口（被阻塞），重试时切到分组入口并真正建立草稿；随后才是绑定动作。
+    expect(clicks.indexOf("new-session")).toBe(0);
+    expect(clicks).toContain("workspace-add-session");
+    expect(clicks.indexOf("workspace-add-session")).toBeLessThan(clicks.indexOf("workspace-row:0"));
+  });
+
+  /**
+   * 真机回归（2026-09-20）：Chromium 节流会吞掉单次合成点击，表现为「点新建会话毫无反应」。
+   * 修复要点是「以 ws-chip 挂载为准做有界重试」，而不是只点一次就 fail-closed。
+   */
+  it("单次新建会话点击被吞 → 周期重试后仍能建立草稿（真机节流回归）", async () => {
+    const targets = makeKimicodeTargets({
+      draft: false,
+      // 前两次「新建会话」点击被吞；同时堵住分组入口，确保救场只能来自重试本身。
+      draftSwallowCount: 2,
+      addSessionBlocked: true,
+      url: "app://renderer/sessions/s-old",
+      sessions: [{ id: "s-old", title: "上一任务" }],
+      workspaces: [{ name: "tianshu-mcp", path: PROJECT, active: true }],
+    });
+    const cdp = clientFor(targets);
+    await cdp.connect();
+    const result = await bindWorkspace(cdp, PROJECT, hermeticDeps(), [4242], 800);
+    expect(result).toMatchObject({ ok: true, boundPath: PROJECT });
+    // 被吞两次 + 成功一次 = 至少 3 次「新建会话」点击，证明重试真的发生了。
+    expect(targets.states.main.clicks.filter((c) => c === "new-session").length).toBeGreaterThanOrEqual(
+      3,
+    );
   });
 });
 

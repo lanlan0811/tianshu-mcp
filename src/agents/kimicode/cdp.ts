@@ -156,6 +156,11 @@ export async function retryKimicodeEvaluation<T>(
 /** 点击后确认工作区面板打开的轮询间隔（不是独立超时） */
 const PANEL_POLL_MS = 100;
 /**
+ * 置前后等待前台真正生效的上限。实测 `Page.bringToFront` 异步生效（数百毫秒），
+ * 期间派发的合成事件仍会被节流吞掉。
+ */
+const FOCUS_SETTLE_MS = 1_500;
+/**
  * 触发器点击被吞后的重试间隔。窗口被其他窗口完全遮挡时 Chromium 会节流页面，
  * 合成鼠标事件常被吞掉（第一次点击无效、第二次才生效），所以「点一次然后干等」必然失败。
  */
@@ -198,8 +203,50 @@ export class KimicodeCdpClient {
   }
 
   /** 连接主窗口（浮层按需惰性连接，见 ensureOverlay） */
-  connect(): Promise<void> {
-    return this.pages.main.connect();
+  async connect(): Promise<void> {
+    await this.pages.main.connect();
+    // 启动后窗口常在后台：Chromium 会节流被遮挡/不可见的页面，合成鼠标事件被吞，
+    // 于是「点触发器无反应」被误报成选择器失效。真机实测 Kimi Code（Electron 43）
+    // 的 Page.bringToFront 有效（与 ZCode 不同），所以连接后立刻置前并开启焦点模拟。
+    await this.focusMainWindow();
+  }
+
+  /**
+   * 把主窗口置于前台并开启焦点模拟，然后**等前台真正生效**再返回。
+   *
+   * 真机教训（2026-09-20）：只调一次 `Page.bringToFront` 就立刻派发点击，合成事件仍会被
+   * Chromium 节流吞掉——置前是异步生效的（实测需数百毫秒），表现为「点新建会话毫无反应」。
+   * 所以这里以 `visibilityState` 收敛为准，而不是盲等一个固定时长。
+   * 失败不抛错：置前只是让点击更容易生效，正确性判据始终是点击后的回读。
+   */
+  async focusMainWindow(): Promise<void> {
+    try {
+      await this.pages.main.send("Page.enable");
+    } catch {
+      /* Page 域不可用不影响后续命令 */
+    }
+    try {
+      await this.pages.main.send("Page.bringToFront");
+    } catch {
+      /* 置前失败：交由调用方的回读判定 */
+    }
+    try {
+      await this.pages.main.send("Emulation.setFocusEmulationEnabled", { enabled: true });
+    } catch {
+      /* 焦点模拟失败：同上 */
+    }
+    const until = Date.now() + FOCUS_SETTLE_MS;
+    for (;;) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        if (!(await this.pageHidden())) return;
+      } catch {
+        return;
+      }
+      if (Date.now() >= until) return;
+      // eslint-disable-next-line no-await-in-loop
+      await this.pause(100);
+    }
   }
 
   disconnect(): void {
@@ -685,6 +732,15 @@ export class KimicodeCdpClient {
   /** trusted 鼠标点击（moved + pressed + released）：ws-chip 只认这条路径 */
   private async clickAt(role: KimicodePageRole, x: number, y: number): Promise<void> {
     const page = role === "overlay" ? this.pages.overlay : this.pages.main;
+    // 窗口被遮挡/最小化时 Chromium 会节流页面，合成事件常被吞（真机实测：工作区触发器
+    // 点 5 秒无任何反应）。派发前先确认前台，隐藏就先置前，避免把节流误诊成选择器失效。
+    if (role === "main") {
+      try {
+        if (await this.pageHidden()) await this.focusMainWindow();
+      } catch {
+        /* 读不到可见性时按可见处理，继续点击（回读仍会如实判定） */
+      }
+    }
     await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
     await page.send("Input.dispatchMouseEvent", {
       type: "mousePressed",

@@ -270,6 +270,11 @@ export interface FakeKimicodeState {
   draft: boolean;
   /** 点「新建会话」也建立不了草稿（复刻「点击返回 true 却不切页」） */
   draftBlocked: boolean;
+  /**
+   * 前 N 次「新建会话」点击被吞（复刻真机：Chromium 节流吞掉合成事件，
+   * 单次点击毫无反应）。用于验证有界重试能自愈。
+   */
+  draftSwallowCount: number;
   /** 回退入口「在此工作区新建会话」也建立不了草稿 */
   addSessionBlocked: boolean;
   /** 工作区面板是否打开 */
@@ -375,6 +380,7 @@ export function makeKimicodeFakeState(over: Partial<FakeKimicodeState> = {}): Fa
     url: "app://renderer/",
     draft: true,
     draftBlocked: false,
+    draftSwallowCount: 0,
     addSessionBlocked: false,
     panelOpen: false,
     workspaces: [],
@@ -765,6 +771,11 @@ export class FakeKimicodePage {
       s.clicks.push("new-session");
       // 复刻 M22 教训：点击返回 true 并不等于已切页——被阻塞时不建立草稿。
       if (s.draftBlocked) return;
+      // 复刻真机：合成点击被 Chromium 节流吞掉时，前几次点击不产生任何效果。
+      if (s.draftSwallowCount > 0) {
+        s.draftSwallowCount -= 1;
+        return;
+      }
       s.draft = true;
       s.panelOpen = false;
       s.url = "app://renderer/";

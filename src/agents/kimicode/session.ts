@@ -22,13 +22,19 @@ export interface KimicodeDraftDeps {
   sleep?: (ms: number) => Promise<void>;
   /** 轮询间隔（ms）；默认 100 */
   pollIntervalMs?: number;
+  /** 点击被吞后的重试间隔（ms）；默认 1500 */
+  reclickMs?: number;
 }
 
 /**
  * 建立新的草稿会话，并以「ws-chip 已挂载」确认它真的建立了。
  *
- * 流程：点全局「新建会话」→ 等触发器挂载；未挂载则回退「在此工作区新建会话」一次（更精确的
- * 分组入口）→ 再等一次。两者都没能挂载触发器即 fail-closed 返回 false（调用方不得发送任务）。
+ * 流程：点「新建会话」→ 等触发器挂载；未挂载则**周期性重试**（全局入口与「在此工作区新建会话」
+ * 交替），直到截止时间；始终未挂载即 fail-closed 返回 false（调用方不得发送任务）。
+ *
+ * 为什么必须重试而不是点两次：真机实测（2026-09-20）单次合成点击会被 Chromium 节流吞掉，
+ * 表现为「点了新建会话却毫无反应」。置前（focusMainWindow）能显著降低概率，但不能消除，
+ * 所以以「触发器已挂载」为准做有界重试——这与 openWorkspacePanel 的 TRIGGER_RECLICK 同一思路。
  */
 export async function ensureFreshDraft(
   cdp: KimicodeDraftCdp,
@@ -37,19 +43,24 @@ export async function ensureFreshDraft(
 ): Promise<boolean> {
   const sleep = deps.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
   const interval = deps.pollIntervalMs ?? 100;
-  const waitForTrigger = async (deadline: number): Promise<boolean> => {
-    while (Date.now() < deadline) {
+  const reclick = deps.reclickMs ?? 1_500;
+  let lastClick = 0;
+  let useWorkspaceEntry = false;
+  while (Date.now() < deadlineMs) {
+    if (Date.now() - lastClick >= reclick) {
+      // 首次必然点击（lastClick=0）：初始任务一律新建对话，**不复用**可能残留的旧草稿。
+      // 之后交替使用两个入口：全局入口可靠，分组入口在「已停在某会话」时更精确。
       // eslint-disable-next-line no-await-in-loop
-      if (await cdp.exists("workspaceChip")) return true;
-      // eslint-disable-next-line no-await-in-loop
-      await sleep(interval);
+      await (useWorkspaceEntry ? cdp.newSessionInWorkspace() : cdp.newSession());
+      useWorkspaceEntry = !useWorkspaceEntry;
+      lastClick = Date.now();
     }
-    return cdp.exists("workspaceChip");
-  };
-  await cdp.newSession();
-  if (await waitForTrigger(deadlineMs)) return true;
-  await cdp.newSessionInWorkspace();
-  return waitForTrigger(deadlineMs);
+    // eslint-disable-next-line no-await-in-loop
+    if (await cdp.exists("workspaceChip")) return true;
+    // eslint-disable-next-line no-await-in-loop
+    await sleep(interval);
+  }
+  return cdp.exists("workspaceChip");
 }
 
 export interface KimicodeSessionCdp {
