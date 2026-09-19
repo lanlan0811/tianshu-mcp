@@ -336,6 +336,7 @@ Environment: Windows 10 x64, Kimi Code `1.0.2` (Chromium 150 / Electron 43.1.1),
 - Project-less mode is unsupported (`projectPath` is required); TraeWork's `mode` argument is unsupported; `allowCreateProject` is ZCode-specific and is rejected for Kimi Code.
 - The question (waiting-for-user) UI is unverified on a real machine, `userGate` is disabled by default, and only the stall fallback converges such turns.
 - When the official model quota is exhausted, a free non-official model (e.g. `stepfun/step-3.7-flash:free`) can be used: its reasoning tiers are only `On`/`Off`, the trigger suffix reads "思考", and `reasoningLevel` accepts only `on`/`off`.
+- **Session titles are polluted by the task marker (known cosmetic side effect)**: Kimi Code derives a session title from the first user message, and following the existing convention this adapter **prepends** the `【tianshu:<taskId>:r<round>:<attempt>】` marker to the task brief (the marker is a required anchor for session location and for the "never re-send" guarantee — the same mechanism ZCode/Codex use). The sidebar therefore shows titles like `【tianshu:tsk_…:r0:initial】<start of the task brief>`. This is the price paid for reliability and does not affect functionality; if you want a clean title, rename the session manually in Kimi Code (renaming changes the title, so on `session_lost` please start a new task instead).
 
 **Troubleshooting**
 

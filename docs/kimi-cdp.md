@@ -336,6 +336,7 @@ Chromium 会节流被遮挡/不可见页面，导致**合成鼠标事件被吞**
 - 不支持无项目模式（必须提供 `projectPath`）；不支持 TraeWork 的 `mode` 参数；`allowCreateProject` 是 ZCode 专用参数，Kimi Code 传入即报错。
 - 提问（等待用户）界面未真机验证，`userGate` 默认关闭，只能靠停滞兜底收敛。
 - 官方模型额度用尽时可改用非官方免费模型（如 `stepfun/step-3.7-flash:free`）：其思考档位只有 `On`/`Off`，触发器后缀显示「思考」，`reasoningLevel` 只接受 `on`/`off`。
+- **会话标题会被任务标记污染（已知外观副作用）**：Kimi Code 用首条用户消息生成会话标题，而本适配器按既有约定把 `【tianshu:<taskId>:r<round>:<attempt>】` 标记**前置**在任务书之前（标记是会话定位与「不重发」判据的必需锚点，与 ZCode/Codex 同一机制）。因此侧栏会显示形如 `【tianshu:tsk_…:r0:initial】<任务书开头>` 的标题。这是可靠性换来的代价，不影响功能；若需干净标题，请在 Kimi Code 中手动重命名会话（重命名会改变标题，`session_lost` 时请改用新建任务）。
 
 **排障**
 
