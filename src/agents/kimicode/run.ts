@@ -1,11 +1,20 @@
 /**
- * Kimi Code 单轮任务编排（M3：模型 / 思考档位 / 执行模式 / 发送 / 运行检测 + 主链路接线）。
+ * Kimi Code 单轮任务编排（M4：needs_user 五类 / continue_task 恢复 / 取消真停 / 超时保留实例）。
  *
  * 执行顺序（与 zcode/run.ts 同构，细节按 Kimi Code 实测语义重写）：
  *   预算与日志 → 实例接管 → 连接主窗口（要求 composer 就绪）→ 登录/引导页判定
- *   → 草稿与会话（初始派发新建草稿 / 返修唯一定位原会话）→ 工作区绑定（完整路径 + 回读）
- *   → 模型与思考档位（overlay 菜单直选 + 档位集合校验 + 回读）→ 执行模式（完全自动 + 回读）
- *   → 组装任务书 + 写标记 + 回读 + 点发送 → 60s 有界确认（绝不重发）→ 轮询判定 → 终态
+ *   → 重派护栏（实例上不得残留运行信号）→ 草稿与会话（初始派发新建草稿 / 恢复唯一定位原会话）
+ *   → 工作区绑定（完整路径 + 回读）→ 模型与思考档位（overlay 菜单直选 + 档位集合校验 + 回读）
+ *   → 执行模式（完全自动 + 回读）→ 组装任务书 + 写标记 + 回读 + 点发送
+ *   → 60s 有界确认（绝不重发）→ 轮询判定 → 终态
+ *
+ * 恢复语义（按 ctx.resume 分派，与 zcode/codex 同构）：
+ * - continue + sendMessage（agent_question）：定位原会话 → 把回答写进输入框发送（**不重发任务书**）；
+ * - continue + !sendMessage（user_confirmation / 环境类）：用户确认文本**不发给模型**；
+ *   user_confirmation 走「重连观察」（reobserve，不发送），环境类走「无锚点恢复」（补发完整任务书）；
+ * - rework：定位原会话 → 回读工作区/模型 → 发送返修消息；会话里残留上一轮回复，靠发送后文本变化
+ *   重置稳定轮（M5 接 repair-plan）；
+ * - 定位不到原会话 → session_lost 硬失败，**绝不退化打开最近会话**。
  *
  * 贯穿全流程的两条纪律：
  * 1. 任何「点击成功」都不等于「状态已改变」——模型、档位、执行模式、工作区、草稿、发送
@@ -13,9 +22,9 @@
  * 2. 所有等待都受「任务总时限 / setup 预算 / 阶段预算」的最小值夹住（KimicodeBudget），
  *    重试不重置预算。
  *
- * 本阶段刻意不实现（M4）：cancel_task 的 GUI 停止点击、needs_user 的完整恢复语义、
- * agent_question 的选项回答。相关接缝已留好（poll.question 字段 + needs_user 分支 +
- * 终态保留实例）。
+ * 取消（照 codex M14 语义）：abort 后经 CDP 尽力点 `button.stop` 并在 gui.cancelWaitMs 内有界等待
+ * 界面空闲；结果经 guiStop 上报，**未确认停止时终态文案必须明示窗口中的任务可能仍在继续**。
+ * 取消/超时一律保留实例（keptInstance:true），不关窗、不 kill 用户进程。
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -57,7 +66,11 @@ import {
   tierSetOf,
   type KimicodeLevel,
 } from "./model.js";
-import { judgeKimicodePoll, type KimicodePoll, type KimicodePollState } from "./liveness.js";
+import {
+  initialKimicodeState,
+  judgeKimicodePoll,
+  withDetectedQuestion,
+} from "./liveness.js";
 import {
   KimicodeBudget,
   KimicodeBudgetError,
@@ -325,6 +338,160 @@ async function bindWorkspace(args: BindWorkspaceArgs): Promise<KimicodeBindOutco
   return { ok: true, boundPath: bound.path };
 }
 
+/**
+ * 尽力停止 GUI 内正在运行的 turn（照 codex M14 语义搬到 kimicode）。
+ *
+ * 点击界面停止按钮（`cdp.click` 先 trusted 坐标点击、失败回退 DOM click），并在
+ * `gui.cancelWaitMs` 内有界等待「停止按钮消失且发送按钮恢复可用」（GUI 空闲）。
+ * 不抛异常：CDP 不可用等情况下返回 clicked=false/idle=false，由调用方如实落文案——
+ * **idle=false 时不得谎报已停止**。
+ *
+ * 这里的 sleep 用**未被预算包裹**的原始等待：取消发生在预算已耗尽/已 abort 之后，
+ * 预算内的 sleep 会立刻抛错，连一次点击都发不出去。
+ */
+async function stopGuiTurn(
+  cdp: KimicodeCdpClient,
+  gui: GuiProfile,
+  sleep: (ms: number) => Promise<void>,
+  logger: AgentRunLogger,
+  purpose: "取消" | "重派护栏",
+): Promise<{ clicked: boolean; idle: boolean }> {
+  try {
+    const first = await cdp.poll();
+    if (!first.stopVisible && !first.sendStarting) return { clicked: false, idle: true };
+    const clicked = await cdp.click("stopButton");
+    logger.info(
+      `[kimicode] ${purpose}：${clicked ? "已点击" : "未能点击"} GUI 停止按钮，等待界面空闲（≤${gui.cancelWaitMs}ms）`,
+    );
+    // 有界等待：每轮最多 500ms，轮数由 cancelWaitMs 决定（等待窗口不超过 cancelWaitMs + 500ms）。
+    const attempts = Math.max(1, Math.ceil(gui.cancelWaitMs / 500));
+    for (let i = 0; i < attempts; i++) {
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(Math.min(500, gui.cancelWaitMs));
+      // eslint-disable-next-line no-await-in-loop
+      const poll = await cdp.poll();
+      if (!poll.stopVisible && !poll.sendStarting) return { clicked, idle: true };
+    }
+    return { clicked, idle: false };
+  } catch (e) {
+    logger.warn(`[kimicode] ${purpose}时停止 GUI 运行失败：${e instanceof Error ? e.message : String(e)}`);
+    return { clicked: false, idle: false };
+  }
+}
+
+interface KimicodeObserveArgs {
+  cdp: KimicodeCdpClient;
+  deps: KimicodeRunDeps;
+  gui: GuiProfile;
+  opts: AgentRunOptions;
+  logger: AgentRunLogger;
+  /** 本轮开始时刻（用于计算 durationMs） */
+  startedAt: number;
+  /** 任务总时限截止点（超时后停止 MCP 等待并保留现场） */
+  deadline: number;
+  /** 本轮日志文件路径 */
+  logFile: string;
+  result: (extra: Partial<AgentRunResult>) => AgentRunResult;
+  /** 当前会话定位信息：供 task-manager/fix-loop 落盘，也是恢复时唯一定位的锚点 */
+  session: () => NonNullable<AgentRunResult["session"]>;
+  /** 发送前基线：失败文案的「本轮新增」判据（返修轮必须带，否则会读到上一轮的陈旧失败文案） */
+  baselineError: string;
+  /** 取消：尽力点停止按钮并如实回报 guiStop */
+  onAbort: () => Promise<AgentRunResult>;
+}
+
+/**
+ * 轮询运行判定至终态。
+ *
+ * 判定纪律（M3 起不变）：运行信号优先、失败态不得判完成、文本静止不能单独作为完成判据。
+ * M4 增加：提问检测（withDetectedQuestion）、userGate/提问的 needs_user 分型、
+ * 取消走真停路径（onAbort）。
+ */
+async function observeKimicode(args: KimicodeObserveArgs): Promise<AgentRunResult> {
+  const { cdp, deps, gui, opts, logger, deadline, result, session } = args;
+  let state = initialKimicodeState();
+  const stallSince = { since: 0 };
+  let lastProgress = 0;
+  for (;;) {
+    if (opts.signal?.aborted) return args.onAbort();
+    if (Date.now() >= deadline)
+      return result({
+        timeout: true,
+        endReason: "task_timeout",
+        error: "Kimi Code 任务总时限已到；已停止 MCP 等待并保留 Kimi Code 现场",
+        session: session(),
+      });
+    // eslint-disable-next-line no-await-in-loop
+    await deps.sleep(gui.pollIntervalMs);
+    // eslint-disable-next-line no-await-in-loop
+    const raw = await cdp.poll();
+    // 提问检测在判定之前接入：只有「无运行信号 + 输入框空 + 文本已变化 + 问句结尾」才会命中，
+    // 且未配置 gui.selectors.userGate 时默认关闭（见 liveness.detectQuestion 的说明）。
+    const poll = withDetectedQuestion(
+      raw.errorText && raw.errorText === args.baselineError ? { ...raw, errorText: undefined } : raw,
+      state,
+      gui.selectors,
+    );
+    const verdict = judgeKimicodePoll(
+      poll,
+      state,
+      gui.stableRounds,
+      gui.idleTimeoutMs,
+      gui.stallTimeoutMs,
+      stallSince,
+    );
+    state = verdict.state;
+    if (Date.now() - lastProgress >= gui.progressIntervalMs) {
+      const note = `Kimi Code 进度：${verdict.kind}；运行证据=${verdict.evidence}；回复哈希=${state.hash}；稳定轮=${state.stable}；窗口前台=${!poll.pageHidden}`;
+      await Promise.resolve(opts.onProgress?.(note)).catch(() => {});
+      logger.info(note);
+      lastProgress = Date.now();
+    }
+    if (verdict.kind === "needs_user") {
+      const question = verdict.question?.trim();
+      // 分型决定恢复语义（与 task-manager 的 continueTask 分支一一对应）：
+      // - userGate 命中 / stall 判定 = 「等用户确认」→ 重连观察，确认文本不发给模型；
+      // - 提问检测命中 = agent_question → 回答要精确提交回原会话（不重发任务书）。
+      const userConfirmation = Boolean(poll.userGateVisible) || verdict.evidence.includes("stall");
+      return result({
+        endReason: "needs_user",
+        needsUserKind: userConfirmation ? "user_confirmation" : "agent_question",
+        pendingQuestion: userConfirmation
+          ? `${question ? `${question}\n` : ""}请在 Kimi Code 窗口中处理该等待项后调用 continue_task(taskId, message=已处理说明) 恢复；恢复后仅重新接入观察，不会发送消息。`
+          : `${question ?? "Kimi Code 正在等待用户输入"}。请调用 continue_task(taskId, message=回答内容) 提交回答：MCP 会把回答写进原会话，不会重发任务书。`,
+        session: session(),
+        progressSummary: "Kimi Code 等待用户处理",
+      });
+    }
+    if (verdict.kind === "idle_timeout")
+      return result({
+        endReason: "idle_timeout",
+        error: `Kimi Code 空闲超时（连续 ${gui.stableRounds} 轮无变化）；已停止 MCP 等待并保留现场${poll.pageHidden ? "；Kimi Code 窗口不在前台，点击可能被吞" : ""}`,
+        session: session(),
+      });
+    if (verdict.kind === "failed")
+      return result({
+        hardFailure: true,
+        endReason: "agent_error",
+        error: `Kimi Code 本轮对话判定失败：${poll.errorText || "界面出现「继续」按钮（模型请求失败，本轮对话已中断）"}${poll.pageHidden ? "；Kimi Code 窗口不在前台，点击可能被吞" : ""}`,
+        session: session(),
+      });
+    if (verdict.kind === "finished")
+      return {
+        ok: true,
+        exitCode: 0,
+        timeout: false,
+        killed: false,
+        durationMs: Date.now() - args.startedAt,
+        logFile: args.logFile,
+        endReason: "reply_stable",
+        keptInstance: true,
+        session: session(),
+        progressSummary: "Kimi Code 已完成回复",
+      };
+  }
+}
+
 export async function runKimicodeTask(args: RunKimicodeArgs): Promise<AgentRunResult> {
   const started = Date.now();
   const { ctx, resolved, opts, logFile } = args;
@@ -342,6 +509,9 @@ export async function runKimicodeTask(args: RunKimicodeArgs): Promise<AgentRunRe
     sleep: (ms) => budget.run(() => baseDeps.sleep(Math.min(ms, budget.remaining()))),
     createClient: (port, timeout, selectors) => {
       const client = baseDeps.createClient(port, timeout, selectors);
+      // 原始客户端引用：取消/重派护栏发生在 abort 触发之后，预算内的代理会立刻抛「aborted」，
+      // 连一次停止点击都发不出去——必须用**未被预算包裹**的原始客户端。
+      rawCdp = client;
       return new Proxy(client, {
         get(target, key) {
           const value = Reflect.get(target, key);
@@ -362,6 +532,8 @@ export async function runKimicodeTask(args: RunKimicodeArgs): Promise<AgentRunRe
       });
     },
   };
+  /** 与受管实例直连的原始 CDP 客户端（取消/护栏必需，绕过预算 abort） */
+  let rawCdp: KimicodeCdpClient | undefined;
   let connectedCdp: KimicodeCdpClient | undefined;
   const result = (extra: Partial<AgentRunResult>): AgentRunResult => ({
     ok: false,
@@ -373,6 +545,32 @@ export async function runKimicodeTask(args: RunKimicodeArgs): Promise<AgentRunRe
     keptInstance: true,
     ...extra,
   });
+  /**
+   * 取消统一出口（照 codex M14）：不止退出 MCP 等待循环，还要经 CDP 尽力点 `button.stop`
+   * 并在 gui.cancelWaitMs 内有界等待界面空闲；结果经 guiStop 上报，编排方据此落终态文案
+   * （idle=false 时必须明示「Kimi Code 窗口中的任务可能仍在继续」）。
+   */
+  const abortResult = async (
+    session?: NonNullable<AgentRunResult["session"]>,
+  ): Promise<AgentRunResult> => {
+    const stopClient = rawCdp ?? connectedCdp;
+    const guiStop = stopClient
+      ? await stopGuiTurn(stopClient, gui, baseDeps.sleep, logger, "取消")
+      : undefined;
+    // 取消文案必须如实：未确认停止时不得谎报已停止（编排方还会再追加一次窗口级说明）。
+    const progressSummary = guiStop
+      ? guiStop.idle
+        ? "Kimi Code 取消：GUI 内运行已停止"
+        : "Kimi Code 取消：GUI 内运行未确认停止，Kimi Code 窗口中的任务可能仍在继续"
+      : "Kimi Code 取消：未连接 CDP，无法确认界面停止";
+    return result({
+      killed: true,
+      endReason: "aborted",
+      guiStop,
+      progressSummary,
+      ...(session ? { session } : {}),
+    });
+  };
   let permission = ctx.resume?.permissionMode ?? gui.defaultPermissionMode ?? "完全自动";
   const sessionMeta = (
     extra: Partial<NonNullable<AgentRunResult["session"]>> = {},
@@ -432,6 +630,7 @@ export async function runKimicodeTask(args: RunKimicodeArgs): Promise<AgentRunRe
         needsUserKind: "close_existing_instance",
         pendingQuestion:
           "检测到未开启 CDP 的 Kimi Code 实例。请保存工作并手动关闭所有 Kimi Code 窗口，然后调用 continue_task 确认（不会自动结束你的进程）。",
+        session: sessionMeta(),
         progressSummary: "等待用户关闭既有 Kimi Code 实例",
       });
     if (!inst.ready)
@@ -450,6 +649,28 @@ export async function runKimicodeTask(args: RunKimicodeArgs): Promise<AgentRunRe
         progressSummary: "等待 Kimi Code 登录/引导完成",
       });
     logger.info("[kimicode] Kimi Code CDP 主窗口与 composer 已就绪");
+
+    // 恢复语义分派（与 zcode/codex 同构）：
+    // - user_confirmation 恢复 = 用户在 GUI 处理完等待项后 turn 自行继续 → reobserve（本轮不发送）；
+    // - 其余 continue / rework 走正常派发（agent_question 回发回答；环境类补发任务书；rework 发返修）。
+    const resumeKind = ctx.resume?.kind;
+    const isReobserve = resumeKind === "continue" && ctx.resume?.reobserve === true;
+
+    // 重派护栏（防 turn 交叠，照 codex M14）：派发前若受管实例上仍有运行信号，先尽力停止；
+    // 仍不空闲则硬失败拒绝派发。重观察轮例外——停止按钮可见正是被观察 turn 暂停的表现。
+    if (!isReobserve) {
+      const probe = await cdp.poll();
+      if (probe.stopVisible || probe.sendStarting) {
+        const stopped = await stopGuiTurn(rawCdp ?? cdp, gui, baseDeps.sleep, logger, "重派护栏");
+        if (!stopped.idle)
+          return result({
+            hardFailure: true,
+            endReason: "instance_busy",
+            error:
+              "受管 Kimi Code 实例上存在未停止的运行（已尝试点击停止未果）；请在 Kimi Code 窗口人工处理后重试，避免新旧任务交叠",
+          });
+      }
+    }
     await cdp.dismissMenus();
 
     budget.setStage("准备会话");
@@ -467,8 +688,8 @@ export async function runKimicodeTask(args: RunKimicodeArgs): Promise<AgentRunRe
       );
     const menuBudget = (): number => Math.max(1, stageDeadline(gui.projectTriggerTimeoutMs) - Date.now());
     /**
-     * 初始派发 = 不带原会话锚点的新任务。返修/continue 走「唯一定位原会话」，
-     * 定位不到一律 session_lost，绝不打开「最近会话」。
+     * 初始派发 = 不带原会话锚点的新任务（含环境类 needs_user 的「无锚点恢复」）。
+     * 返修/continue 走「唯一定位原会话」，定位不到一律 session_lost，绝不打开「最近会话」。
      */
     const initialDispatch =
       !ctx.resume ||
@@ -476,6 +697,12 @@ export async function runKimicodeTask(args: RunKimicodeArgs): Promise<AgentRunRe
         !ctx.resume.sendMessage &&
         !ctx.resume.sessionId &&
         !ctx.resume.sessionTitle);
+    /**
+     * 本轮会话锚点：初始派发从空开始（新建草稿后由 URL 取得），恢复轮取自原会话定位信息。
+     * 提前声明是因为「重观察恢复」与发送确认段都要用它。
+     */
+    let sessionId = initialDispatch ? "" : (ctx.resume?.sessionId ?? "");
+    let sessionTitle = initialDispatch ? undefined : ctx.resume?.sessionTitle;
     if (!initialDispatch && ctx.resume) {
       budget.setStage("定位原 Kimi Code 会话");
       if (!ctx.resume.sessionId && !ctx.resume.sessionTitle)
@@ -536,6 +763,31 @@ export async function runKimicodeTask(args: RunKimicodeArgs): Promise<AgentRunRe
       }
       logger.info(`[kimicode] 工作区绑定回读通过：${bound.boundPath}`);
       await cdp.dismissMenus();
+    }
+
+    if (isReobserve) {
+      // 重观察恢复（user_confirmation）：用户在 Kimi Code 里处理完等待项后 turn 自行继续，
+      // 本轮**不发送任何消息**（用户确认文本绝不发给模型），也不改模型/执行模式
+      // （正在进行的 turn 不允许被打断），只重连观察至终态。
+      // 环境复检到此已完成：实例已接管、主窗口已连接（composer 就绪）、原会话已唯一定位；
+      // 工作区无法在发送后回读（ws-chip 已从 composer 消失），故以会话锚点为复检判据。
+      budget.finishSetup();
+      budget.setStage("重连观察 Kimi Code 会话");
+      logger.info(`[kimicode] 重观察恢复：会话=${sessionId}；不发送任何消息，仅观察至终态`);
+      return await observeKimicode({
+        cdp,
+        deps,
+        gui,
+        opts,
+        logger,
+        startedAt: started,
+        deadline: started + ctx.taskTimeoutMs,
+        logFile,
+        result,
+        session: () => sessionMeta({ id: sessionId, title: sessionTitle }),
+        baselineError: "",
+        onAbort: () => abortResult(sessionMeta({ id: sessionId, title: sessionTitle })),
+      });
     }
 
     // ---------------- 模型与思考档位 ----------------
@@ -770,7 +1022,7 @@ export async function runKimicodeTask(args: RunKimicodeArgs): Promise<AgentRunRe
      * 陈旧文案当成新一轮失败（或反之）。「继续」按钮属于当前失败态的强信号，不做基线过滤。
      */
     const baselineError = (await cdp.poll()).errorText ?? "";
-    if (opts.signal?.aborted) return result({ killed: true, endReason: "aborted" });
+    if (opts.signal?.aborted) return await abortResult(sessionMeta({ id: sessionId, title: sessionTitle }));
     if (Date.now() >= started + ctx.taskTimeoutMs)
       return result({
         timeout: true,
@@ -785,7 +1037,7 @@ export async function runKimicodeTask(args: RunKimicodeArgs): Promise<AgentRunRe
         error: "Kimi Code 输入框回读不一致，未发送",
         endReason: "input_mismatch",
       });
-    if (opts.signal?.aborted) return result({ killed: true, endReason: "aborted" });
+    if (opts.signal?.aborted) return await abortResult(sessionMeta({ id: sessionId, title: sessionTitle }));
     try {
       await cdp.sendMessage();
     } catch (e) {
@@ -803,8 +1055,6 @@ export async function runKimicodeTask(args: RunKimicodeArgs): Promise<AgentRunRe
     let seenStateChange = false;
     let seenRunning = false;
     let seenUserCopy = false;
-    let sessionId = initialDispatch ? "" : (ctx.resume?.sessionId ?? "");
-    let sessionTitle = initialDispatch ? undefined : ctx.resume?.sessionTitle;
     const confirmationDeadline = Math.min(started + ctx.taskTimeoutMs, Date.now() + 60_000);
     const confirmationAttempts = Math.ceil(Math.max(0, confirmationDeadline - Date.now()) / 250);
     for (
@@ -815,7 +1065,7 @@ export async function runKimicodeTask(args: RunKimicodeArgs): Promise<AgentRunRe
       i++
     ) {
       // eslint-disable-next-line no-await-in-loop
-      if (opts.signal?.aborted) return result({ killed: true, endReason: "aborted" });
+      if (opts.signal?.aborted) return await abortResult(sessionMeta({ id: sessionId, title: sessionTitle }));
       // eslint-disable-next-line no-await-in-loop
       await deps.sleep(Math.min(250, Math.max(0, confirmationDeadline - Date.now())));
       // eslint-disable-next-line no-await-in-loop
@@ -858,82 +1108,24 @@ export async function runKimicodeTask(args: RunKimicodeArgs): Promise<AgentRunRe
 
     budget.finishSetup();
     budget.setStage("等待 Kimi Code 回复");
-    const deadline = started + ctx.taskTimeoutMs;
-    let state: KimicodePollState = { hash: "", stable: 0, idleSince: 0 };
-    const stallSince = { since: 0 };
-    let lastProgress = 0;
-    for (;;) {
-      if (opts.signal?.aborted) return result({ killed: true, endReason: "aborted" });
-      if (Date.now() >= deadline)
-        return result({
-          timeout: true,
-          endReason: "task_timeout",
-          error: "Kimi Code 任务总时限已到；已停止 MCP 等待并保留 Kimi Code 现场",
-          session: sessionMeta({ id: sessionId, title: sessionTitle }),
-        });
-      await deps.sleep(gui.pollIntervalMs);
-      const raw = await cdp.poll();
-      const poll: KimicodePoll =
-        raw.errorText && raw.errorText === baselineError ? { ...raw, errorText: undefined } : raw;
-      const verdict = judgeKimicodePoll(
-        poll,
-        state,
-        gui.stableRounds,
-        gui.idleTimeoutMs,
-        gui.stallTimeoutMs,
-        stallSince,
-      );
-      state = verdict.state;
-      if (Date.now() - lastProgress >= gui.progressIntervalMs) {
-        const note = `Kimi Code 进度：${verdict.kind}；运行证据=${verdict.evidence}；回复哈希=${state.hash}；稳定轮=${state.stable}；窗口前台=${!poll.pageHidden}`;
-        await Promise.resolve(opts.onProgress?.(note)).catch(() => {});
-        logger.info(note);
-        lastProgress = Date.now();
-      }
-      if (verdict.kind === "needs_user")
-        return result({
-          endReason: "needs_user",
-          // stall 判定（停止按钮恒可见 + 文本停滞）是「等用户确认」，与模型提问的恢复语义不同
-          // （前者重连观察、后者要精确提交回答），所以在这里就分开标注。
-          needsUserKind: verdict.evidence.includes("stall")
-            ? "user_confirmation"
-            : "agent_question",
-          pendingQuestion:
-            verdict.question ?? "Kimi Code 正在等待用户输入，请处理后调用 continue_task。",
-          session: sessionMeta({ id: sessionId, title: sessionTitle }),
-          progressSummary: "Kimi Code 等待用户处理",
-        });
-      if (verdict.kind === "idle_timeout")
-        return result({
-          endReason: "idle_timeout",
-          error: `Kimi Code 空闲超时（连续 ${gui.stableRounds} 轮无变化）；已停止 MCP 等待并保留现场${poll.pageHidden ? "；Kimi Code 窗口不在前台，点击可能被吞" : ""}`,
-          session: sessionMeta({ id: sessionId, title: sessionTitle }),
-        });
-      if (verdict.kind === "failed")
-        return result({
-          hardFailure: true,
-          endReason: "agent_error",
-          error: `Kimi Code 本轮对话判定失败：${poll.errorText || "界面出现「继续」按钮（模型请求失败，本轮对话已中断）"}${poll.pageHidden ? "；Kimi Code 窗口不在前台，点击可能被吞" : ""}`,
-          session: sessionMeta({ id: sessionId, title: sessionTitle }),
-        });
-      if (verdict.kind === "finished")
-        return {
-          ok: true,
-          exitCode: 0,
-          timeout: false,
-          killed: false,
-          durationMs: Date.now() - started,
-          logFile,
-          endReason: "reply_stable",
-          keptInstance: true,
-          session: sessionMeta({ id: sessionId, title: sessionTitle }),
-          progressSummary: "Kimi Code 已完成回复",
-        };
-    }
+    return await observeKimicode({
+      cdp,
+      deps,
+      gui,
+      opts,
+      logger,
+      startedAt: started,
+      deadline: started + ctx.taskTimeoutMs,
+      logFile,
+      result,
+      session: () => sessionMeta({ id: sessionId, title: sessionTitle }),
+      baselineError,
+      onAbort: () => abortResult(sessionMeta({ id: sessionId, title: sessionTitle })),
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     if (e instanceof KimicodeBudgetError) {
-      if (e.reason === "aborted") return result({ killed: true, endReason: "aborted" });
+      if (e.reason === "aborted") return await abortResult();
       if (e.reason === "task_timeout")
         return result({ timeout: true, endReason: "task_timeout", error: msg });
     }

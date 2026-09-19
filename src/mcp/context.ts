@@ -40,6 +40,8 @@ export function makeBuildCtx(services: AppServices) {
  * GUI agent 的会话恢复块。
  * - zcode：需要显式回选原会话（sessionId/sessionTitle），轮次 > 0 或 continue_task 时启用。
  * - codex：实例与当前对话常驻，只需「复用同一会话」意图，无需回选 id。
+ * - kimicode：与 zcode 同构（主窗口 URL + 侧栏都能定位会话），锚点用 kimicodeSession*；
+ *   user_confirmation 恢复透传 reobserve（重连观察，不发送任何消息）。
  */
 function buildResume(meta: TaskMeta, round: number): TaskContext["resume"] {
   const continuing = meta.continueMessage !== undefined;
@@ -65,6 +67,21 @@ function buildResume(meta: TaskMeta, round: number): TaskContext["resume"] {
       sendMessage: meta.continueSendMessage ?? round > 0,
       // user_confirmation 恢复：重连 CDP 观察至终态，不发送任何消息
       ...(meta.continueReobserve ? { reobserve: true } : {}),
+      boundProjectPath: meta.boundProjectPath,
+      model: meta.model,
+      permissionMode: meta.permissionMode,
+    };
+  }
+  if (meta.agentId === "kimicode") {
+    if (!continuing && round <= 0) return undefined;
+    return {
+      kind: continuing ? "continue" : "rework",
+      message: meta.continueMessage,
+      sendMessage: meta.continueSendMessage ?? round > 0,
+      // user_confirmation 恢复：重连观察至终态，不发送任何消息（用户确认文本绝不发给模型）
+      ...(meta.continueReobserve ? { reobserve: true } : {}),
+      sessionId: meta.kimicodeSessionId,
+      sessionTitle: meta.kimicodeSessionTitle,
       boundProjectPath: meta.boundProjectPath,
       model: meta.model,
       permissionMode: meta.permissionMode,

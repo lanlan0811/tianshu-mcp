@@ -313,6 +313,7 @@ export function pollExpression(overrides: SelectorOverrides = {}): string {
     const stop = kcResolve(${mainSpec("stopButton", overrides)}, true);
     const sendNodes = kcResolve(${mainSpec("sendButton", overrides)}, false);
     const retry = kcResolve(${mainSpec("errorRetryButton", overrides)}, true);
+    const gate = kcResolve(${mainSpec("userGate", overrides)}, true);
     const panes = kcResolve(${mainSpec("messageArea", overrides)}, true);
     const input = kcResolve(${mainSpec("chatInput", overrides)}, true);
     const text = panes.length ? kcText(panes[0]) : '';
@@ -324,6 +325,7 @@ export function pollExpression(overrides: SelectorOverrides = {}): string {
       assistantText: text,
       errorText: failed ? failed[0].trim() : '',
       retryVisible: retry.length > 0,
+      userGateVisible: gate.length > 0,
       inputText: input.length ? kcText(input[0]) : '',
       sendEnabled: !!send && !send.disabled && send.getAttribute('aria-disabled') !== 'true',
       pageHidden: document.visibilityState === 'hidden',

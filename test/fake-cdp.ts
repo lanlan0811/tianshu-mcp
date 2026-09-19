@@ -326,6 +326,13 @@ export interface FakeKimicodeState {
   errorText: string;
   /** 用户消息复制按钮（`button.u-copy`）是否可见 */
   userCopyVisible: boolean;
+  /** M4：`gui.selectors.userGate` 命中的「等待用户」界面是否可见 */
+  userGateVisible: boolean;
+  /**
+   * M4：点 `button.stop` 后运行信号是否真的消失。
+   * false（默认）复刻「点击被吞/停止未生效」——停止按钮仍可见，用于验证取消文案如实说明。
+   */
+  stopStopsOnClick: boolean;
   /** 发送按钮被点击的次数（断言「绝不重发」） */
   sendClicks: number;
   /** 点击发送被吞：不产生任何确认证据（会话 id / 消息落地 / 输入框清空 / 运行信号全无） */
@@ -394,6 +401,8 @@ export function makeKimicodeFakeState(over: Partial<FakeKimicodeState> = {}): Fa
     retryVisible: false,
     errorText: "",
     userCopyVisible: false,
+    userGateVisible: false,
+    stopStopsOnClick: false,
     sendClicks: 0,
     sendSwallowed: false,
     newSessionId: "s-new",
@@ -542,6 +551,7 @@ export class FakeKimicodePage {
         assistantText: s.conversation,
         errorText: s.errorText,
         retryVisible: s.retryVisible,
+        userGateVisible: s.userGateVisible,
         inputText: s.inputText,
         sendEnabled: s.sendEnabled,
         pageHidden: s.pageHidden,
@@ -819,6 +829,16 @@ export class FakeKimicodePage {
     if (x === 540) {
       s.clicks.push("permission-pill");
       if (this.link) this.link.overlayVisible = true;
+      return;
+    }
+    if (x === 560) {
+      // M4：停止按钮（trusted 坐标点击）。stopStopsOnClick=false 复刻「点击未生效」——
+      // 运行信号仍在，取消/重派护栏必须据此如实落文案（不得谎报已停止）。
+      s.clicks.push("stop-button");
+      if (s.stopStopsOnClick) {
+        s.stopVisible = false;
+        s.sendStarting = false;
+      }
       return;
     }
   }

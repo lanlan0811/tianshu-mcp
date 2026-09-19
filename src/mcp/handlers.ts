@@ -369,7 +369,7 @@ function describeStatus(meta: TaskMeta): string {
     succeeded: "[PASS] 任务成功",
     failed: "[FAIL] 任务失败",
     needs_attention: "[WARN] 需要人工介入（自动返修轮次已用尽或可修性存疑）",
-    needs_user: "等待用户处理（可用 continue_task 恢复原 ZCode 会话）",
+    needs_user: "等待用户处理（可用 continue_task 恢复）",
     cancelled: "已取消",
     interrupted: "已中断（server 重启/退出）",
   };
@@ -630,8 +630,14 @@ function continueTaskHandler(ctx: AppContext): Handler {
     const args = rawArgs as ContinueTaskParams;
     const res = await ctx.manager.continueTask(args.taskId, args.message);
     if (!res.found || !res.meta) return errorResult(res.reason ?? `无法继续任务 ${args.taskId}`);
+    // 恢复语义按 agent 而异：zcode/kimicode 复用原会话（kimicode 还要定位到原会话），
+    // codex 的实例与当前对话常驻——文案不得出现与实际 agent 不符的名字。
+    const resumeHint =
+      res.meta.agentId === "codex"
+        ? "将严格复用原会话与项目。"
+        : "将严格复用原会话与项目（定位不到原会话时 fail-closed，不会退化为打开最近会话）。";
     return formatToolResult(
-      `任务 ${args.taskId} 已恢复并重新入队；将严格复用原 ZCode 会话与项目。`,
+      `任务 ${args.taskId} 已恢复并重新入队；${resumeHint}`,
       metaFromTask(res.meta),
     );
   };

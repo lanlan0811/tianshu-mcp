@@ -161,8 +161,15 @@ export class TaskOrchestrator {
         meta.keptInstance = runRes.keptInstance;
         meta.progressSummary = runRes.progressSummary;
         if (runRes.session) {
-          meta.zcodeSessionId = runRes.session.id ?? meta.zcodeSessionId;
-          meta.zcodeSessionTitle = runRes.session.title ?? meta.zcodeSessionTitle;
+          // 会话锚点按 agent 分槽存放：zcodeSession* 与 kimicodeSession* 语义不同
+          // （旧快照里的 zcodeSession* 是 ZCode 会话，拿去 Kimi Code 里定位必然失败）。
+          if (meta.agentId === "kimicode") {
+            meta.kimicodeSessionId = runRes.session.id ?? meta.kimicodeSessionId;
+            meta.kimicodeSessionTitle = runRes.session.title ?? meta.kimicodeSessionTitle;
+          } else {
+            meta.zcodeSessionId = runRes.session.id ?? meta.zcodeSessionId;
+            meta.zcodeSessionTitle = runRes.session.title ?? meta.zcodeSessionTitle;
+          }
           meta.boundProjectPath = runRes.session.boundProjectPath ?? meta.boundProjectPath;
           meta.modelProvider = runRes.session.provider ?? meta.modelProvider;
           meta.permissionMode = runRes.session.permissionMode ?? meta.permissionMode;
@@ -402,9 +409,11 @@ export class TaskOrchestrator {
       meta.abortSource = "user";
       meta.lastMessage = meta.cancelReason ? `已取消：${meta.cancelReason}` : "已取消";
       if (guiStop) {
+        // 窗口名按 agent 取，文案不得与实际 agent 不符（未确认停止必须明示「可能仍在继续」）。
+        const guiName = meta.agentId === "kimicode" ? "Kimi Code" : "Codex";
         meta.lastMessage += guiStop.idle
           ? "；GUI 内运行已停止。"
-          : "；GUI 内运行未确认停止，Codex 窗口中的任务可能仍在继续。";
+          : `；GUI 内运行未确认停止，${guiName} 窗口中的任务可能仍在继续。`;
       }
       await this.deps.store.updateStatus(meta, "cancelled", meta.lastMessage);
     } else {

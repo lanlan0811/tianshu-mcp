@@ -67,7 +67,8 @@ export type KimicodeSelectorKey =
   | "modelDialogRowName"
   | "assistantCopyButton"
   | "userCopyButton"
-  | "errorRetryButton";
+  | "errorRetryButton"
+  | "userGate";
 
 /** 浮层（Kimi Browser Overlay）语义键：模型菜单 / 思考档位 / 执行模式菜单 */
 export type KimicodeOverlaySelectorKey =
@@ -309,6 +310,16 @@ export const KIMICODE_SELECTORS: Record<KimicodeSelectorKey, KimicodeSelectorSpe
     texts: ["继续", "Continue", "Retry"],
     verifiedVersion: "1.0.2",
     note: "模型请求失败后的「继续」按钮（实测伴随 provider.auth_error / HTTP 403 文案）；用于把本轮判为失败而非完成",
+  },
+  userGate: {
+    // M4：等待用户界面检测。默认候选为空 = 禁用（与 codex 的既有做法一致）：
+    // 仅当 agent-profiles.json 配置 gui.selectors.userGate 后才可能命中。
+    // Kimi Code 的提问卡片选择器**未真机验证**（账号额度受限，无法造出提问场景），
+    // 因此这里绝不内置猜测型选择器——误配会把正常运行误判为 needs_user。
+    primary: "",
+    fallbacks: [],
+    verifiedVersion: "未内置（按配置启用）",
+    note: "「等待用户」界面检测；默认禁用，配置 gui.selectors.userGate 后 poll().userGateVisible 才可能为真",
   },
 };
 

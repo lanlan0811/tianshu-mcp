@@ -212,6 +212,9 @@ export class TaskManager {
    * - zcode：原行为保留（agent_question 回发答案；其余类型 message 仅作已处理确认）。
    * - codex：user_confirmation → 重观察恢复（不发送消息）；login_required → 复检环境后
    *   全新派发并重发任务书。其余等待类型不支持。
+   * - kimicode：agent_question → 回发回答到原会话（缺会话锚点即拒绝，绝不打开最近会话）；
+   *   user_confirmation → 重观察恢复（不发送消息）；环境类（close_existing_instance /
+   *   login_required / setup_recovery / system_permission）→ 复检环境后补发完整任务书。
    */
   async continueTask(
     taskId: string,
@@ -247,10 +250,31 @@ export class TaskManager {
           reason: `codex 任务等待类型为 ${meta.needsUserKind ?? "unknown"}，仅支持 login_required / user_confirmation`,
         };
       }
+    } else if (meta.agentId === "kimicode") {
+      if (meta.needsUserKind === "agent_question") {
+        // 提问必须回答到**原会话**里：缺会话锚点就无法唯一定位，直接拒绝（绝不退化打开最近会话）
+        if (!meta.kimicodeSessionId && !meta.kimicodeSessionTitle)
+          return { found: false, reason: "原 Kimi Code 会话定位信息丢失，拒绝打开最近会话" };
+        meta.continueMessage = message.trim();
+        meta.continueSendMessage = true;
+        meta.continueReobserve = undefined;
+      } else if (meta.needsUserKind === "user_confirmation") {
+        // GUI 内 turn 暂停等待用户；恢复后不发送消息（用户确认文本绝不发给模型），仅重连观察至终态
+        meta.continueMessage = message.trim();
+        meta.continueSendMessage = false;
+        meta.continueReobserve = true;
+      } else {
+        // 环境类（close_existing_instance / login_required / setup_recovery / system_permission）：
+        // 任务尚未真正派发或绑定未完成 → 复检环境后走全新派发并**补发完整任务书**，
+        // 用户确认文本只作为「已处理」说明，绝不发给模型。
+        meta.continueMessage = message.trim();
+        meta.continueSendMessage = false;
+        meta.continueReobserve = undefined;
+      }
     } else {
       return {
         found: false,
-        reason: `continue_task 当前仅支持 zcode/codex 任务（agentId=${meta.agentId}）`,
+        reason: `continue_task 当前仅支持 zcode/codex/kimicode 任务（agentId=${meta.agentId}）`,
       };
     }
     meta.status = "queued";

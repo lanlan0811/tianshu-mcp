@@ -205,6 +205,13 @@ export interface TaskMeta {
   pendingQuestion?: string;
   zcodeSessionId?: string;
   zcodeSessionTitle?: string;
+  /**
+   * Kimi Code 专用会话锚点（**不复用 zcodeSession***：语义与迁移风险不同——
+   * 旧快照里的 zcodeSession* 是 ZCode 会话，拿它去 Kimi Code 里定位会话必然失败）。
+   * 由 fix-loop 从 AgentRunResult.session 落盘，continue_task/rework 恢复时用于唯一定位原会话。
+   */
+  kimicodeSessionId?: string;
+  kimicodeSessionTitle?: string;
   boundProjectPath?: string;
   modelProvider?: string;
   permissionMode?: string;

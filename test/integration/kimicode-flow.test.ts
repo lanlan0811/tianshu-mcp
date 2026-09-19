@@ -819,3 +819,405 @@ describe("Kimi Code M3 运行检测", () => {
     expect(result.keptInstance).toBe(true);
   });
 });
+
+/* ==================== M4：needs_user 五类 / continue_task 恢复 / 取消真停 ==================== */
+
+/** 与 M3 同构的装配，额外支持：deps 覆盖、取消信号、每次 poll 后回调（运行中触发取消） */
+interface M4Harness extends M3Harness {
+  client: KimicodeCdpClient;
+  controller: AbortController;
+  counters: { processList: number; instance: number };
+}
+
+async function m4Harness(
+  targets: FakeKimicodeTargets,
+  over: {
+    ctx?: Partial<TaskContext>;
+    gui?: Record<string, unknown>;
+    deps?: (client: KimicodeCdpClient) => Partial<KimicodeRunDeps>;
+    /** 每次 cdp.poll 之后回调（计数从 1 起）：用于在运行中触发取消 */
+    onPoll?: (count: number) => void;
+  } = {},
+): Promise<M4Harness> {
+  const base = await m3Harness(targets, { ctx: over.ctx, gui: over.gui });
+  const client = base.deps.createClient!(9666, 1_000, {});
+  const counters = { processList: 0, instance: 0 };
+  let polls = 0;
+  const originalPoll = client.poll.bind(client);
+  client.poll = async () => {
+    const result = await originalPoll();
+    polls += 1;
+    over.onPoll?.(polls);
+    return result;
+  };
+  const controller = new AbortController();
+  const deps: Partial<KimicodeRunDeps> = {
+    // 先继承 hermetic 桩（原生对话框 / 空 sleep 绝不能被真实实现顶替），再覆盖实例与客户端
+    ...base.deps,
+    ensureInstance: async () => {
+      counters.instance += 1;
+      return { ready: { port: 9666, pid: 4242, title: "Kimi Code" } };
+    },
+    listProcesses: async () => {
+      counters.processList += 1;
+      return [{ pid: 4242, commandLine: "Kimi Code.exe" }];
+    },
+    createClient: () => client,
+    ...over.deps?.(client),
+  };
+  return {
+    ...base,
+    deps,
+    client,
+    counters,
+    controller,
+    opts: { ...base.opts, signal: controller.signal },
+  };
+}
+
+/** 发送到输入框并落进对话正文的内容（去掉发送前的种子文本） */
+function sentText(targets: FakeKimicodeTargets, seed: string): string {
+  return targets.states.main.conversation.slice(seed.length);
+}
+
+describe("Kimi Code M4 needs_user 五类", () => {
+  it("既有实例无 CDP 端口 → close_existing_instance：不发送任何消息、不 kill 进程", async () => {
+    const targets = makeKimicodeTargets({});
+    const h = await m4Harness(targets, {
+      deps: () => ({ ensureInstance: async () => ({ needsClose: true }) }),
+    });
+    const result = await runM3(h);
+    expect(result.endReason).toBe("needs_user");
+    expect(result.needsUserKind).toBe("close_existing_instance");
+    expect(result.pendingQuestion).toContain("关闭所有 Kimi Code 窗口");
+    expect(result.pendingQuestion).toContain("不会自动结束你的进程");
+    expect(result.keptInstance).toBe(true);
+    // 未连接 CDP：既没有发送，也没有任何 UI 动作（更没有进程终止路径）
+    expect(targets.states.main.sendClicks).toBe(0);
+    expect(targets.states.main.clicks).toEqual([]);
+    expect(h.counters.processList).toBe(0);
+    // 实例信息（工作区/模型）仍然带回，供 continue_task 恢复使用
+    expect(result.session?.boundProjectPath).toBe(PROJECT);
+  });
+
+  it("登录/引导页（composer 未挂载）→ login_required：不发送", async () => {
+    const targets = makeKimicodeTargets({ composerMissing: true });
+    const result = await runM3(await m4Harness(targets));
+    expect(result.needsUserKind).toBe("login_required");
+    expect(result.pendingQuestion).toContain("continue_task");
+    expect(targets.states.main.sendClicks).toBe(0);
+  });
+
+  it("工作区绑定失败 → setup_recovery：不发送，且明示不会向其它工作区发送任务", async () => {
+    // 「最近的文件夹」为空且原生对话框不落地 → 回读不到目标工作区（fail-closed）。
+    const targets = makeKimicodeTargets({ workspaces: [] });
+    const result = await runM3(await m4Harness(targets));
+    // endReason 沿用 M3/zcode 既有约定（绑定失败 = setup_failed），恢复语义由 needsUserKind 决定：
+    // fix-loop 先看 needsUserKind 再判 hardFailure，所以状态仍落 needs_user、可 continue_task 恢复。
+    expect(result.endReason).toBe("setup_failed");
+    expect(result.needsUserKind).toBe("setup_recovery");
+    expect(result.pendingQuestion).toContain("工作区绑定回读不一致");
+    expect(result.pendingQuestion).toContain("请在 Kimi Code 中确认目标工作区后调用 continue_task");
+    expect(result.pendingQuestion).toContain("不会向其它工作区发送任务");
+    expect(targets.states.main.sendClicks).toBe(0);
+    expect(targets.states.main.clicks).not.toContain("send");
+  });
+
+  it("提问检测命中 → agent_question：带回完整问题原文且保留实例", async () => {
+    const targets = makeKimicodeTargets({
+      workspaces: M3_PROJECT_WORKSPACES,
+      pollScript: [
+        { stopVisible: true, sendStarting: true },
+        { stopVisible: false, sendStarting: false, conversation: "用户任务书Kimi 已完成依赖安装" },
+        {
+          stopVisible: false,
+          sendStarting: false,
+          conversation: "用户任务书Kimi 已完成依赖安装，是否继续执行数据库迁移？",
+        },
+      ],
+    });
+    // 提问检测默认关闭：只有配置了 gui.selectors.userGate 才启用（本用例只配置、不让它命中）
+    const result = await runM3(
+      await m4Harness(targets, { gui: { selectors: { userGate: "[class*='ask-card']" } } }),
+    );
+    expect(result.endReason).toBe("needs_user");
+    expect(result.needsUserKind).toBe("agent_question");
+    expect(result.pendingQuestion).toContain("是否继续执行数据库迁移？");
+    expect(result.pendingQuestion).toContain("continue_task");
+    expect(result.session?.id).toBe("s-new");
+    expect(result.keptInstance).toBe(true);
+  });
+});
+
+describe("Kimi Code M4 continue_task 恢复", () => {
+  const QUESTION_SEED = "用户任务书Kimi 已完成依赖安装，是否继续执行数据库迁移？";
+
+  it("agent_question 恢复：回答写进原会话（不重发任务书）并观察至完成", async () => {
+    const targets = makeKimicodeTargets({
+      url: "app://renderer/sessions/s-1",
+      draft: false,
+      sessions: [{ id: "s-1", title: "Kimi 提问会话" }],
+      conversation: QUESTION_SEED,
+      pollScript: [
+        { stopVisible: true, sendStarting: true },
+        {
+          stopVisible: false,
+          sendStarting: false,
+          conversation: `${QUESTION_SEED}是，请继续执行迁移Kimi 迁移已完成`,
+        },
+        { stopVisible: false, sendStarting: false },
+      ],
+    });
+    const result = await runM3(
+      await m4Harness(targets, {
+        gui: { selectors: { userGate: "[class*='ask-card']" } },
+        ctx: {
+          round: 1,
+          resume: {
+            kind: "continue",
+            sendMessage: true,
+            message: "是，请继续执行迁移",
+            sessionId: "s-1",
+            sessionTitle: "Kimi 提问会话",
+          },
+        },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    expect(result.endReason).toBe("reply_stable");
+    expect(result.session?.id).toBe("s-1");
+    // 发送内容 = 标记 + 回答：**不含任务书、上下文与引用**（不重发任务书）
+    const sent = sentText(targets, QUESTION_SEED);
+    expect(sent).toContain("是，请继续执行迁移");
+    expect(sent).not.toContain("完成开发");
+    expect(sent).not.toContain("【上下文与约束】");
+    expect(targets.states.main.sendClicks).toBe(1);
+    // 定位走 URL（当前会话就是它），没有点侧栏、也没有新建草稿
+    expect(targets.states.main.clicks).not.toContain("new-session");
+  });
+
+  it("user_confirmation 恢复：用户确认文本不发给模型（发送次数为 0），重连观察后完成", async () => {
+    // 被观察的 turn 复检前已暂停；用户在 Kimi Code 里处理后 turn 已自行继续并完成。
+    // 重观察轮不发送任何消息 → 假 CDP 的 pollScript 不会被消费（依赖 sendClicks>0），
+    // 所以这里直接让界面处于「已完成」状态，观察环靠 stableRounds 收敛到 finished。
+    const conversation = "用户任务书Kimi 用户确认后已继续执行并完成迁移";
+    const targets = makeKimicodeTargets({
+      url: "app://renderer/sessions/s-1",
+      draft: false,
+      sessions: [{ id: "s-1", title: "Kimi 等待确认" }],
+      conversation,
+      userGateVisible: false,
+    });
+    const result = await runM3(
+      await m4Harness(targets, {
+        gui: { selectors: { userGate: "[class*='ask-card']" } },
+        ctx: {
+          round: 1,
+          resume: {
+            kind: "continue",
+            sendMessage: false,
+            reobserve: true,
+            message: "已处理",
+            sessionId: "s-1",
+            sessionTitle: "Kimi 等待确认",
+          },
+        },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    expect(result.endReason).toBe("reply_stable");
+    // 关键断言：一次都没发送，输入框也没被写过（确认文本绝不发给模型）
+    expect(targets.states.main.sendClicks).toBe(0);
+    expect(targets.states.main.clicks).not.toContain("send");
+    expect(targets.states.main.inputText).toBe("");
+    expect(targets.states.main.conversation).not.toContain("已处理");
+    // 重观察不改模型/执行模式（正在进行的 turn 不允许被打断）
+    expect(targets.states.main.clicks).not.toContain("model-pill");
+    expect(targets.states.main.clicks).not.toContain("permission-pill");
+  });
+
+  it("close_existing_instance 恢复：环境复检通过后补发完整任务书（含上下文），确认文本不发送", async () => {
+    const targets = makeKimicodeTargets({
+      workspaces: M3_PROJECT_WORKSPACES,
+      // 无锚点恢复 = 全新派发并发任务书；pollScript 不覆盖 conversation（保留已发送的任务书）
+      pollScript: [{ stopVisible: true, sendStarting: true }, { stopVisible: false, sendStarting: false }],
+    });
+    const h = await m4Harness(targets, {
+      ctx: {
+        context: "上下文约束X：不要改动 tianshu-mcp-web 目录",
+        resume: { kind: "continue", sendMessage: false, message: "已关闭旧窗口" },
+      },
+    });
+    const result = await runM3(h);
+    expect(result.ok).toBe(true);
+    expect(result.endReason).toBe("reply_stable");
+    const sent = sentText(targets, "");
+    // 补发完整任务书 + 上下文（与初始派发一致）
+    expect(sent).toContain("完成开发");
+    expect(sent).toContain("【上下文与约束】");
+    expect(sent).toContain("上下文约束X：不要改动 tianshu-mcp-web 目录");
+    // 用户确认文本只作「已处理」说明，绝不发给模型
+    expect(sent).not.toContain("已关闭旧窗口");
+    expect(targets.states.main.sendClicks).toBe(1);
+    expect(targets.states.main.clicks).toContain("new-session");
+  });
+
+  it("返修轮（rework）：唯一定位原会话 → 回读模型/执行模式 → 发送返修消息", async () => {
+    const seed = "用户任务书Kimi 上一轮回复完成";
+    const targets = makeKimicodeTargets({
+      url: "app://renderer/sessions/s-1",
+      draft: false,
+      sessions: [{ id: "s-1", title: "Kimi 返修会话" }],
+      conversation: seed,
+      // 不覆盖 conversation：保留发送的返修消息（任务书 + 自动验收返修）
+      pollScript: [{ stopVisible: true, sendStarting: true }, { stopVisible: false, sendStarting: false }],
+    });
+    const result = await runM3(
+      await m4Harness(targets, {
+        ctx: {
+          round: 1,
+          feedback: "验收失败：tests/foo.test.ts 断言失败",
+          resume: {
+            kind: "rework",
+            sendMessage: true,
+            sessionId: "s-1",
+            sessionTitle: "Kimi 返修会话",
+          },
+        },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    const sent = sentText(targets, seed);
+    // 返修消息 = 任务书 + 【自动验收返修】反馈（追加到原会话）
+    expect(sent).toContain("完成开发");
+    expect(sent).toContain("【自动验收返修】");
+    expect(sent).toContain("验收失败：tests/foo.test.ts 断言失败");
+    expect(targets.states.main.clicks).not.toContain("new-session");
+    expect(targets.states.main.sendClicks).toBe(1);
+  });
+
+  it("原会话定位不到 → session_lost 硬失败，且未发送任何消息", async () => {
+    const targets = makeKimicodeTargets({
+      url: "app://renderer/sessions/s-other",
+      draft: false,
+      sessions: [{ id: "s-other", title: "别的会话" }],
+      conversation: "用户任务书Kimi 旧回复",
+    });
+    const result = await runM3(
+      await m4Harness(targets, {
+        ctx: {
+          round: 1,
+          resume: {
+            kind: "continue",
+            sendMessage: true,
+            message: "是",
+            sessionId: "s-1",
+            sessionTitle: "已不存在的会话",
+          },
+        },
+      }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.hardFailure).toBe(true);
+    expect(result.endReason).toBe("session_lost");
+    expect(result.error).toContain("无法唯一定位原 Kimi Code 会话");
+    // 绝不退化打开最近会话，也绝不发送
+    expect(targets.states.main.sendClicks).toBe(0);
+    expect(targets.states.main.clicks).not.toContain("session:0");
+    expect(targets.states.main.clicks).not.toContain("send");
+  });
+
+  it("恢复轮缺会话定位信息 → session_lost（拒绝打开最近会话）", async () => {
+    const targets = makeKimicodeTargets({ workspaces: M3_PROJECT_WORKSPACES });
+    const result = await runM3(
+      await m4Harness(targets, {
+        ctx: { round: 1, resume: { kind: "continue", sendMessage: true, message: "是" } },
+      }),
+    );
+    expect(result.endReason).toBe("session_lost");
+    expect(result.error).toContain("缺少原 Kimi Code 会话定位信息");
+    expect(targets.states.main.sendClicks).toBe(0);
+  });
+});
+
+describe("Kimi Code M4 取消真停与重派护栏", () => {
+  it("取消后点击停止按钮并确认消失 → aborted + guiStop.idle=true", async () => {
+    const targets = makeKimicodeTargets({
+      workspaces: M3_PROJECT_WORKSPACES,
+      pollScript: [{ stopVisible: true, sendStarting: true }],
+      stopStopsOnClick: true,
+    });
+    // 第 4 次 poll 已在观察环内（护栏 1 + 基线 1 + 发送确认 1 之后）：此时取消
+    const h = await m4Harness(targets, {
+      gui: { cancelWaitMs: 500 },
+      onPoll: (count) => {
+        if (count === 4) h.controller.abort();
+      },
+    });
+    const result = await runM3(h);
+    expect(result.killed).toBe(true);
+    expect(result.endReason).toBe("aborted");
+    expect(result.keptInstance).toBe(true);
+    expect(targets.states.main.clicks).toContain("stop-button");
+    expect(result.guiStop).toEqual({ clicked: true, idle: true });
+    expect(result.progressSummary).toContain("GUI 内运行已停止");
+  });
+
+  it("停止按钮点击未生效（未确认消失）→ guiStop.idle=false 且文案明示任务可能仍在继续", async () => {
+    const targets = makeKimicodeTargets({
+      workspaces: M3_PROJECT_WORKSPACES,
+      pollScript: [{ stopVisible: true, sendStarting: true }],
+      // 点击被吞：运行信号不消失
+      stopStopsOnClick: false,
+    });
+    const h = await m4Harness(targets, {
+      gui: { cancelWaitMs: 500 },
+      onPoll: (count) => {
+        if (count === 4) h.controller.abort();
+      },
+    });
+    const result = await runM3(h);
+    expect(result.killed).toBe(true);
+    expect(result.endReason).toBe("aborted");
+    expect(targets.states.main.clicks).toContain("stop-button");
+    expect(result.guiStop).toEqual({ clicked: true, idle: false });
+    // 未确认停止必须如实说明：不得谎报已停止
+    expect(result.progressSummary).toContain("Kimi Code 窗口中的任务可能仍在继续");
+    expect(result.keptInstance).toBe(true);
+  });
+
+  it("重派护栏：实例上仍有运行信号且停止未生效 → instance_busy 硬失败且不发送", async () => {
+    const targets = makeKimicodeTargets({
+      workspaces: M3_PROJECT_WORKSPACES,
+      stopVisible: true,
+      sendStarting: true,
+      stopStopsOnClick: false,
+    });
+    const result = await runM3(await m4Harness(targets, { gui: { cancelWaitMs: 500 } }));
+    expect(result.ok).toBe(false);
+    expect(result.hardFailure).toBe(true);
+    expect(result.endReason).toBe("instance_busy");
+    expect(result.error).toContain("避免新旧任务交叠");
+    expect(targets.states.main.sendClicks).toBe(0);
+    expect(targets.states.main.clicks).toContain("stop-button");
+  });
+
+  it("重派护栏：运行信号在点击停止后消失 → 继续正常派发", async () => {
+    const targets = makeKimicodeTargets({
+      workspaces: M3_PROJECT_WORKSPACES,
+      stopVisible: true,
+      sendStarting: true,
+      stopStopsOnClick: true,
+      pollScript: [
+        { stopVisible: true, sendStarting: true },
+        { stopVisible: false, sendStarting: false, conversation: "用户任务书Kimi 完成" },
+        { stopVisible: false, sendStarting: false },
+      ],
+    });
+    const result = await runM3(await m4Harness(targets, { gui: { cancelWaitMs: 500 } }));
+    expect(result.ok).toBe(true);
+    expect(result.endReason).toBe("reply_stable");
+    expect(targets.states.main.clicks).toContain("stop-button");
+    expect(targets.states.main.sendClicks).toBe(1);
+  });
+});
