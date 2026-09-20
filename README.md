@@ -21,6 +21,7 @@
 [![CI](https://github.com/lanlan0811/tianshu-mcp/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/lanlan0811/tianshu-mcp/actions/workflows/ci.yml)
 [![npm version](https://badgen.net/npm/v/tianshu-mcp?icon=npm&color=cb3837&label=npm)](https://www.npmjs.com/package/tianshu-mcp)
 [![npm downloads](https://badgen.net/npm/dm/tianshu-mcp?icon=npm&color=cb3837&label=downloads)](https://www.npmjs.com/package/tianshu-mcp)
+[![GitHub stars](https://badgen.net/github/stars/lanlan0811/tianshu-mcp?icon=github&color=24292e&label=stars)](https://github.com/lanlan0811/tianshu-mcp)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org/)
