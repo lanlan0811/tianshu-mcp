@@ -10,7 +10,7 @@
 - 新增可继续的 `needs_user/setup_recovery`。无会话的环境恢复发送完整原任务、上下文和已验证引用，环境确认文字不发给模型，也不消耗返修轮数。
 - 发送前收起残留菜单并等待唯一、启用、未遮挡的按钮；发送后在同一个有界窗口内确认消息和会话，优先任务标记、其次唯一会话差集，不猜选最近会话、不自动重发。
 
-配置与恢复方法见 [ZCode 使用说明](zcode-cdp.md) 和 [配置说明](agent-profiles.md)。实施范围与验收门禁见 [修复计划](plans/issue-8-9-10-zcode-fix-plan.md)。
+配置与恢复方法见 [ZCode 使用说明](zcode-cdp.md) 和 [配置说明](agent-profiles.md)。
 
 Windows 实际任务、会话和 2/2 验收报告见 [真机验收记录](zcode-issue-8-10-validation.md)。
 

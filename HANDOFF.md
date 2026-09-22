@@ -15,7 +15,7 @@
 - **窗口名不再硬编码**：改由 `profile.displayName` 派生（`guiAppNameOf()`，剥说明性括号段与通用后缀，剥空退回原名，无 `displayName` 回退 `agentId`）。旧实现把 `zcode`/`qoder` 一律写成 "Codex"，本身即失真。
 - **明确不做**：`initialize()` 不自动 CDP 重连去点停止——重启后无会话锚点、适配器对无归属证明的实例 fail-closed，自动动手风险高于收益（见 ARCHITECTURE §5.5 与 §15 已知限制 11）。
 - 测试：新增 9 单元（`test/unit/gui-stop-disclosure.test.ts`）+ 5 集成（`test/integration/gui-shutdown-interrupt.test.ts`）；集成用例必须以**真实 `CodexGuiAdapter` 子类**注入（`ensureAdapterFor()` 会重建非本类 adapter，普通实现会被静默替换）。全量 **841 passed / 12 skipped**（83 文件）在本机通过。
-- 详见 [v0.5.9 发布说明](docs/release-v0.5.9.md) 与 [实施计划](docs/plans/issue-14-gui-shutdown-interrupt-plan.md)。
+- 详见 [v0.5.9 发布说明](docs/release-v0.5.9.md)。
 
 ### 0.5.6 开发交接
 

@@ -55,4 +55,4 @@ So the snapshot claimed the process was terminated while a task in a ZCode/Codex
 - The integration cases inject a scripted adapter that **subclasses the real `CodexGuiAdapter`** (`AgentAdapterRegistry.ensureAdapterFor()` rebuilds any adapter that is not an instance of the real class, so a plain implementation would be silently replaced — documented in the test file).
 - Typecheck, lint (`--max-warnings 0`), the full test suite, the build and the strict stdio check all pass.
 
-Related: [project README](../README.en.md) | [CHANGELOG](../CHANGELOG.en.md) | [architecture](../ARCHITECTURE.en.md) | [handoff](../HANDOFF.md) | [implementation plan](plans/issue-14-gui-shutdown-interrupt-plan.en.md)
+Related: [project README](../README.en.md) | [CHANGELOG](../CHANGELOG.en.md) | [architecture](../ARCHITECTURE.en.md) | [handoff](../HANDOFF.md)

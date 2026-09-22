@@ -55,4 +55,4 @@
 - 集成用例以**真实 `CodexGuiAdapter` 子类**注入脚本 adapter（`AgentAdapterRegistry.ensureAdapterFor()` 会按实现类重建非本类 adapter，普通实现会被覆盖——这一点已写入用例注释）。
 - 类型检查、lint（`--max-warnings 0`）、全量测试、构建、严格 stdio 检查全部通过。
 
-相关文档：[项目 README](../README.md)｜[CHANGELOG](../CHANGELOG.md)｜[架构说明](../ARCHITECTURE.md)｜[交接文档](../HANDOFF.md)｜[实施计划](plans/issue-14-gui-shutdown-interrupt-plan.md)
+相关文档：[项目 README](../README.md)｜[CHANGELOG](../CHANGELOG.md)｜[架构说明](../ARCHITECTURE.md)｜[交接文档](../HANDOFF.md)

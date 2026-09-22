@@ -10,7 +10,7 @@ Fixes ZCode project binding, model readback, native-dialog timeouts and session 
 - New resumable `needs_user/setup_recovery` state. Environment recovery without a session sends the full original task, context and validated references, excludes the user's environment confirmation and consumes no repair rounds.
 - Dispatch dismisses residual menus and waits for a unique, enabled, unobstructed button. One bounded observation window verifies both message and session, using the task marker or unique session delta rather than guessing the latest session. No automatic resend.
 
-See the [ZCode guide](zcode-cdp.en.md), [configuration guide](agent-profiles.en.md) and [implementation plan](plans/issue-8-9-10-zcode-fix-plan.en.md).
+See the [ZCode guide](zcode-cdp.en.md) and [configuration guide](agent-profiles.en.md).
 
 Actual Windows tasks, sessions and 2/2 reports are linked in the [hardware validation record](zcode-issue-8-10-validation.en.md).
 
