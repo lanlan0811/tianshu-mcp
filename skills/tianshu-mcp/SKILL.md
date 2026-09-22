@@ -190,6 +190,7 @@ meta 的 `needsUserKind` 给出等待类型，`pendingQuestion` 给出问题原�
   **标注“未确认停止”时不要重派同项目任务**——窗口内可能仍在跑，重派护栏也会以 `instance_busy` 拒绝。
 - **`needs_user` 状态下取消**：run 协程已退出、CDP 已断开，MCP 无法再点 GUI 停止按钮，文案会提示人工检查。
 - **`interrupted` + `guiStopUnconfirmed=true`（server 退出 / 宿主 EOF / 重启归档）**：`tianshu-mcp` 对 GUI 进程没有所有权，**“编排器已停”不等于“窗口里的任务已停”**。先让用户人工打开对应窗口确认没有还在跑的 turn，再调 `cancel_task(taskId, reason="已人工核对窗口无残留运行")` 清除待确认标记（终态仍是 `interrupted`），**之后**才可安全重派同项目任务。详见 `usage-examples.md` §9.5.1。
+- **幂等重放不是新任务**：`run_task` 命中同一 `idempotencyKey` 时返回的是**原任务**（含终态），响应文本以「幂等重放：」开头、meta 带 `idempotencyReplay: "hit"`；不要把它当成本次新派单，也不要据此认为又要等一轮。终态任务要继续推进用 `rework_task`，或换一条新 key 重新派单。
 
 汇报纪律：**不要反复空转重试**。多次仍不过或不可修时，如实汇报 `errorType`/`agentEndReason`、失败 check 与输出尾部、变更清单，并给建议（人工看报告 / 换 agent / 缩小任务）。
 
@@ -200,6 +201,7 @@ meta 的 `needsUserKind` 给出等待类型，`pendingQuestion` 给出问题原�
 - `query_task(taskId, tailLines?)` 间隔 **5–10 秒**；返回状态行 + 最近消息 + agent 日志尾（缺省 40 行）。
 - 查历史用 `list_tasks(projectPath?, status?, limit?)`（缺省 50，上限 200）；`projectPath` 与 `run_task` 同样做 realpath 归一。
 - **同一项目勿重复派单**：每项目串行 + 全局并发（`concurrency.maxRunning`，默认 2）；重复派只会排队，反而更慢。
+- **重试必须带幂等键（issue #15）**：`tools/call` 超时、连接抖动、宿主重启后重发同一意图时，**复用同一条 `idempotencyKey`** 调 `run_task` / `verify_task`——`run_task` 会返回原 `taskId` 与原状态（不会排队第二轮 agent），`verify_task` 执行中返回「进行中」、已完成返回既有报告（不会重跑 `build`/`e2e`/部署类检查）。**换参数就得换 key**：同键异参会直接报冲突。未带 key 时若响应里出现 `projectActiveTask`，说明该工作区已有未结束任务——先 `query_task` 复核，不要盲目再派。
 - 状态语义：`queued` 排队中（每项目串行）/ `running` 开发中 / `verify_start` 验收中 / `fixing` 返修中 / `needs_user` 等用户 / 终态见 §6。
 
 ---
@@ -286,11 +288,14 @@ meta 的 `needsUserKind` 给出等待类型，`pendingQuestion` 给出问题原�
 
 工具层面的**参数拒绝**（不是任务终态）也会直接报错，常见的有：`allowCreateProject` 非 ZCode、`mode` 非 traework、`modelSource` 非 qoder、`极高/最大/关闭思考` 非 qoder、Qoder 缺 `planDoc` 或计划文件不可读、无项目模式传 `autoVerify=true`。
 
+**幂等键冲突（issue #15）**：`run_task` / `verify_task` 报「`idempotencyKey '<key>'` 已被任务/验收记录 `<id>` 占用，但本次参数与首次提交不同」时，说明你**复用了旧 key 却改了参数**（例如同一条 key 换了项目、任务书或 agent）。处置：改用一条**新的** key 重新调用，或直接对原记录 id 操作（`query_task` / `get_task_report` / `rework_task`）——**不要**通过改动参数绕过冲突后继续复用该 key。
+
 ---
 
 ## 10. 纪律
 
 - 写/执行类工具（`run_task` / `cancel_task` / `rework_task` / `continue_task` / `prepare_visual_baseline` / `approve_visual_baseline`）**需审批**：不绕过、不替用户代点同意、不因等待而伪造结果。只读工具（`query_task` / `list_tasks` / `get_task_report` / `verify_task` / `get_profiles`）无需审批。
+- **重试要带幂等键**：同一次逻辑派单/验收的每次重试都复用同一条 `idempotencyKey`；参数变了就换 key。不要把幂等重放的响应（`idempotencyReplay: "hit"` / `"in_progress"`）汇报成「已重新派单 / 已重新验收」。
 - **不代替外部 agent 手改项目代码**；不改用户 git 历史；不读取/转发任何 agent 凭证（登录态各 agent 自持）。
 - 验收命令来自白名单式配置、按 argv 分词执行（`shell: false`），不做 shell 注入。
 - 报错与不确定性**如实转达**：区分「实际通过」「未验证」「阻塞」，不把未验证说成已验证。
@@ -301,6 +306,6 @@ meta 的 `needsUserKind` 给出等待类型，`pendingQuestion` 给出问题原�
 ## 快速上手清单
 
 1. `get_profiles` → 确认目标 agent `[PASS] 可用`（看 profileStatus 与探测来源）；不可用就转达用户，别硬试。
-2. `run_task(projectPath=<绝对路径>, task=<任务书>, agentId=codex, model=<面板模型名>, autoVerify=true, autoFixRounds=5)` → 拿 `taskId`。**model 以界面实际为准**，示例名不可当真。
+2. `run_task(projectPath=<绝对路径>, task=<任务书>, agentId=codex, model=<面板模型名>, autoVerify=true, autoFixRounds=5, idempotencyKey=<本次逻辑派单的稳定标识>)` → 拿 `taskId`。**model 以界面实际为准**，示例名不可当真；`idempotencyKey` 建议由宿主按「本次意图」生成一次并在所有重试中复用（见 §7）。
 3. `query_task(taskId)` 每 ~8 秒轮询到终态；`needs_user` 按 §5 处理，硬失败按 §9 定位。
 4. 终态按 §6 处理；汇报带 `get_task_report` 的 changedFiles 与 diffstat；启用视觉时一并读 `visual` 段落与离线 HTML。

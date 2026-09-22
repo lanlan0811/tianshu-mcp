@@ -105,7 +105,7 @@ resolveDataHome → Logger → DataHome(BUILTIN_PROFILES) → init()
 
 `close()` = `manager.shutdownInterrupt()`（归档活动任务 + 终止子进程）→ `engine.close()` → `server.close()`。
 
-工具注册是**数据驱动**的：遍历 `TOOL_DEFS`，按名字在 `handlers` 里取实现，缺失即 log error 并跳过；`registerTool` 时顺带下发 `_meta.requireApproval`、`_meta.capability` 与 MCP `annotations`（readOnly / destructive / openWorld），供宿主策略层使用。
+工具注册是**数据驱动**的：遍历 `TOOL_DEFS`，按名字在 `handlers` 里取实现，缺失即 log error 并跳过；`registerTool` 时顺带下发 `_meta.requireApproval`、`_meta.capability` 与 MCP `annotations`（readOnly / destructive / openWorld / idempotent——`idempotentHint` 只对 `run_task` / `verify_task` 为 true，语义前提是调用方传入 `idempotencyKey`，见 §5.6），供宿主策略层使用。
 
 ### 3.3 数据目录布局
 
@@ -114,6 +114,7 @@ resolveDataHome → Logger → DataHome(BUILTIN_PROFILES) → init()
 ├── config.json                  server 配置（并发、超时、技能开关）
 ├── agent-profiles.json         用户自定义/覆盖的 agent profile
 ├── projects.json                项目登记表（含每项目验收配置）
+├── idempotency.json             幂等键映射（键→taskId/digest，TTL + 容量裁剪；issue #15）
 ├── logs/server.log             全级别诊断日志（与 stderr 同源）
 ├── browsers/                    视觉模块托管的 Chrome（managed 模式）
 ├── visual-candidates/<uuid>/    待批准基准候选（candidate.json + PNG + preview.html）
@@ -248,6 +249,27 @@ GUI agent 的取消是**尽力而为且诚实回报**，但各适配器能力不
 判定矩阵（红线 8 的单一实现，`guiStopDisclosure()`）：`idle===true` → 已确认停止；`idle===false` → 点击过但未确认；**字段缺失 → 无停止结果，同样不得声称已停止**。
 
 窗口名由 `profile.displayName` 派生（`guiAppNameOf()`，剥说明性括号与通用后缀，剥空退回原名），不再按 `agentId` 硬编码。**明确不做**：`initialize()` 不自动 CDP 重连去点停止——重启后无会话锚点、适配器对无归属证明的实例 fail-closed，自动动手风险高于收益。
+
+### 5.6 幂等键：派单与验收的重试安全（issue #15）
+
+`run_task`（有项目与无项目两条派发路径）与 `verify_task` 都接受可选 `idempotencyKey`，实现集中在 `src/tasks/idempotency.ts`（`IdempotencyIndex`），由 `makeHandlers()` 闭包持有——**不进 `AppContext`**，避免牵动全部构造点（含测试假上下文）。
+
+| 决策 | 实现 |
+|---|---|
+| 命名空间 | `run_task` / `verify_task` 各自独立（映射键为 `scope\u0000key`） |
+| 入参摘要 | `canonicalDigest()`：稳定序列化（对象键排序、`undefined` 省略）→ 同键异参 fail-closed；摘要只取「已解析入参 + 规范化路径」，不含运行期默认值与 profile 派生物 |
+| 命中判定 | `lookup()`：TTL 过期即 miss 并惰性清除；`hit` / `conflict` / `miss` 三态 |
+| `run_task` 命中 | 恒返回原 `taskId` 与当前 meta（含终态，只读不重派）；记录存在但任务快照不可读 → 视为未生效，重新派发 |
+| `verify_task` 命中 | 已完成 → 返回既有 `reportRound`/结论/报告路径（不重跑）；执行中 → 成功结果 + `idempotencyReplay: "in_progress"`（不是 `isError`） |
+| 并发 | `runExclusive()` 按 `(scope,key)` 串行化「二次判定 → 落映射 → 建任务」，并发同名请求不会各建一个任务 |
+| 崩溃窗口 | 同一临界区内**先落映射、后建任务**；`TaskManager.submit()` 因此接受可选 `taskId` |
+| 落盘 | `<数据目录>/idempotency.json`（原子写、TTL 与 `maxEntries` 裁剪）；损坏时告警并从任务快照重建一次（依据 `TaskMeta.idempotencyKey/Scope/Digest`） |
+| 写失败 | fail-open：仍返回已派发的任务，响应与 meta 明示「无法被同键重放」 |
+| 键隐私 | 键明文只落本地快照与映射文件；日志与事件流只用 `keyDigest()`（sha256 前 8 位） |
+
+**「执行中」标记是进程内的**（`reserveInFlight` / `releaseInFlight`）：重启后未完成的验收不会被缓存（没有报告可返回，重试即重新执行，如实），也避免映射挂着 `in_progress` 而引擎已死。
+
+**边界**：`verify_task(taskId=…)` 的键**不写入任务快照**（该字段承载任务的派单键，避免覆盖），这一种组合的重建覆盖依赖 `idempotency.json`；不给 `rework_task` / `continue_task` / `cancel_task` / 视觉基准工具加键；不做跨进程分布式幂等（与 visual lock 同一假定）。
 
 ---
 
@@ -590,7 +612,8 @@ CLI 子命令族（`node dist/index.js visual ...`）：`init`（写入禁用的
 
 | 配置 | 位置 | 说明 |
 |---|---|---|
-| server 配置 | `<数据目录>/config.json` | `concurrency.maxRunning`(2)、`defaultTaskTimeoutMs`(30min)、`verifyCommandTimeoutMs`(5min)、`verifyConcurrency`(2, 1..4)、`shutdown.guiStopWaitMs`(15s，关停时 GUI 停止等待的全局上限)、`skills.autoInstall`(true) |
+| server 配置 | `<数据目录>/config.json` | `concurrency.maxRunning`(2)、`defaultTaskTimeoutMs`(30min)、`verifyCommandTimeoutMs`(5min)、`verifyConcurrency`(2, 1..4)、`shutdown.guiStopWaitMs`(15s，关停时 GUI 停止等待的全局上限)、`idempotency.ttlMs`(24h)、`idempotency.maxEntries`(2000)、`skills.autoInstall`(true) |
+| 幂等映射 | `<数据目录>/idempotency.json` | 键→taskId/digest 映射（非手写配置；原子写、惰性加载、TTL 与容量裁剪，见 §4.5） |
 | agent profile | `<数据目录>/agent-profiles.json` | 按 key **整键覆盖**内置 profile |
 | 项目登记 | `<数据目录>/projects.json` | 含每项目 `verify[]` 验收记录 |
 | 项目验收 | `<项目>/.tianshu-mcp/acceptance.json` | `checks[]`、`visual`、`requireChanges`(true)、`verifyConcurrency` |

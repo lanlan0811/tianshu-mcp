@@ -8,6 +8,37 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.5.10] - 2026-09-23
+
+### Added
+
+- **Idempotency keys (`idempotencyKey`) for `run_task` / `verify_task`** ([issue #15](https://github.com/lanlan0811/tianshu-mcp/issues/15)): a host retry after a `tools/call` timeout no longer becomes a duplicate dispatch or a duplicate verification run.
+  - `run_task`: resubmitting the same key with the same arguments within the TTL (24 h default) **always returns the original `taskId` and its current meta** (terminal tasks included — read-only, never re-dispatched); the same key with different arguments fails closed, reporting the original `taskId`.
+  - `verify_task`: a same-key verification that is **still running** returns a success result with `idempotencyReplay: "in_progress"` (deliberately not `isError`, so a host does not retry harder); one that has **already finished** returns the existing report paths plus that round's `reportRound` / verdict and **re-runs nothing**.
+  - The two tools use independent namespaces; keys are 1..128 characters after trimming with no control characters (protocol-level validation, rejected as `参数不合法`).
+- New data file `<data-dir>/idempotency.json` (atomic writes, lazy loading, TTL + capacity pruning) so retries are still recognised after a restart; `TaskMeta` gains `idempotencyKey` / `idempotencyScope` / `idempotencyDigest` for auditing and for rebuilding the mapping when the file is corrupt.
+- New `config.json` keys: `idempotency.ttlMs` (default `86400000`) and `idempotency.maxEntries` (default `2000`, oldest first by `createdAt` when exceeded).
+- The meta block gains `idempotencyKey`, `idempotencyReplay` (`hit` / `in_progress`) and `projectActiveTask`; `tools/list` reports `annotations.idempotentHint: true` for the two tools (**only when the caller supplies `idempotencyKey`**, as stated in the tool descriptions and the skill document).
+- **Duplicate-dispatch fallback**: even without a key, `run_task` names the unfinished task in the same workspace (active statuses plus `needs_user`) and suggests using an idempotency key or checking `query_task` first.
+
+### Fixed
+
+- On an idempotency hit an audit `note` is appended to the original task's event stream (`幂等重放：keyDigest=…`); the key **plaintext never enters logs or the event stream** (only the first 8 hex characters of its sha256).
+- The standalone `verify_task` record id changes from `vfy_<Date.now()>` to the existing `genVerifyId()` (`vfy_<timestamp>_<6 random chars>`, previously without any caller), so same-millisecond collisions are no longer possible.
+- **Crash window**: the idempotency path writes the mapping **before** creating the task inside one critical section (`runExclusive` serialises same-key concurrency); if the process dies in between, a retry sees a mapping with no task snapshot, treats it as not yet effective and re-dispatches — two agent queues are never left behind.
+- **Fail-open on write failure**: a failed mapping write still returns the dispatched task and states in the response and meta that "the idempotency record could not be written, this task cannot be replayed by the same key" — a running agent is never reported as a failed dispatch.
+
+### Tests
+
+- New unit cases `test/unit/idempotency.test.ts` (16): key validation, `canonicalDigest` stable serialisation, TTL expiry, capacity eviction, cross-instance recovery, corrupt-file rebuild, `runExclusive` serialisation and failure isolation, in-flight markers, fail-open on write failure.
+- New integration cases `test/integration/idempotency.test.ts` (8): same-key replay creating a single `tsk_*` directory, same-key/different-arguments fail-closed, faithful replay of terminal tasks, zero regression without a key, the `projectActiveTask` hint, finished standalone replay adding no report, **in-progress replay returning a success result**, `taskId`-mode replay, and **cross-restart** dispatch and verification replay.
+- Protocol cases gained `idempotentHint` assertions (true for the two tools only); `config-hotreload` gained `idempotency.ttlMs` / `maxEntries` defaults and override coverage.
+- Type check, lint (`--max-warnings 0`), the full test suite, the build, the strict stdio check (6/6) and `pack:check` all pass.
+
+### Docs
+
+- New `docs/release-v0.5.10.md` / `.en.md`; the bilingual README gained an idempotent-retry entry, tool-table and milestone updates; ARCHITECTURE gained the data file, config keys and annotation notes; `skills/tianshu-mcp/` gained the parameter quick-reference, meta fields, error codes and discipline notes; HANDOFF carries the version snapshot.
+
 ## [0.5.9] - 2026-09-23
 
 ### Fixed

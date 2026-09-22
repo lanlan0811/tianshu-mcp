@@ -8,7 +8,7 @@
 
 # tianshu-mcp
 
-Visual acceptance (since v0.5.0, with optional AI content validation since v0.5.4): [English guide](docs/visual-acceptance.en.md) · [Validation record](docs/visual-validation.en.md) · [Latest release notes](<docs/release-v0.5.9.en.md>) · [All versions](CHANGELOG.en.md).
+Visual acceptance (since v0.5.0, with optional AI content validation since v0.5.4): [English guide](docs/visual-acceptance.en.md) · [Validation record](docs/visual-validation.en.md) · [Latest release notes](<docs/release-v0.5.10.en.md>) · [All versions](CHANGELOG.en.md).
 
 **Tianshu × AI-Agent orchestration MCP server**
 
@@ -44,7 +44,8 @@ Tianshu plays the role of the overall commander; this MCP server is the **schedu
 - **Rework loop**: automatic rework (`autoFixRounds`) + manual `rework_task`; on verification failure a repair-plan file is generated and fed back to the agent; when rounds run out → `needs_attention` awaiting Tianshu's verdict.
 - **Execution surfaces**: `driver: "gui"` selects an explicit, isolated Codex/TraeWork/ZCode/Kimi Code/Qoder CN CDP adapter; `driver: "spawn"` runs an external CLI child process.
 - **Project-less dispatch (ZCode, issue #12)**: `run_task`'s `projectPath` may be omitted — ZCode runs the task in its `default` workspace without registering/importing a project, collecting a Git baseline, or running project acceptance (the result is marked structurally as `verificationNotApplicable: "no_project"` and `verify_task`/`get_task_report` return a not-applicable explanation). The companion `allowCreateProject: false` stops dispatch before any import side effect when the target directory is unregistered. See the [ZCode CDP adapter](docs/zcode-cdp.en.md).
-- **Scheduling discipline**: per-project serial queue + global concurrency cap (default 2, configurable).
+- **Idempotent retries (issue #15)**: `run_task` / `verify_task` accept an optional `idempotencyKey` — a retry with the same key within the TTL (24 h default) never duplicates a dispatch (the original `taskId` and its current status are returned) or re-runs verification (a running pass answers "in progress", a finished one returns the existing report); the same key with different arguments fails closed. The mapping is persisted in `<data-dir>/idempotency.json` and survives a server restart. See the [v0.5.10 release notes](<docs/release-v0.5.10.en.md>).
+- **Scheduling discipline**: per-project serial queue + global concurrency cap (default 2, configurable); even without an idempotency key, `run_task` names the unfinished task in the same workspace so a retry is not mistaken for a fresh dispatch.
 - **Optional AI content validation (v0.5.4, off by default)**: validates whether the **content** of an image or page screenshot matches an expectation you declare explicitly. Judgement is fully **delegated to a local command you supply** (the MCP reads, stores, and forwards no keys and ships no model client), it **warns only** by default and can be upgraded to failing per rule, and it debounces with majority sampling plus a task-level cache; split votes or confidence below the threshold yield `uncertain`, which never gates and never triggers rework. Configuration and the command contract are in [visual acceptance](docs/visual-acceptance.en.md).
 - **No key handling**: each agent uses its own login state; this server never stores or forwards any API key. Optional AI content validation adds no credential management either — the judge command manages its own key (see [SECURITY.en.md](SECURITY.en.md)).
 - **Extensible**: a new agent = one profile (data) + (if needed) one adapter file — no changes to the orchestration core.
@@ -70,7 +71,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 826 passed / 12 skipped (838 tests, 81 files: unit/integration/protocol plus 3 real-browser files skipped by design)
+npm test             # 867 passed / 12 skipped (879 tests, 85 files: unit/integration/protocol plus 3 real-browser files skipped by design)
 ```
 
 ### Install the npm package
@@ -184,13 +185,13 @@ run_task(projectPath=D:/xxx/my-app, agentId=qoder, planDoc=./plans/development.m
 
 | Tool | Capability / approval | Purpose |
 |---|---|---|
-| `run_task` | write + approval | Dispatch work (optional auto-verify / auto-rework); returns `taskId` asynchronously |
+| `run_task` | write + approval | Dispatch work (optional auto-verify / auto-rework); returns `taskId` asynchronously. Optional `idempotencyKey`: a retry with the same key returns the original `taskId` instead of creating a task |
 | `continue_task` | write + approval | Resume the session behind `needs_user` (ZCode resumes the recorded session; Codex re-observes for `user_confirmation` / re-dispatches for `login_required`; Kimi Code resumes the recorded session and distinguishes question answering / re-observation / full re-dispatch) |
 | `query_task` | read | Poll status / progress / log tail |
 | `list_tasks` | read | Filtered history of tasks |
 | `get_task_report` | read | Full text of a verification round's report (`report.md`) |
 | `cancel_task` | write + approval | Cancel a running task: CLI agents kill the process tree; GUI agents click the in-app stop control over CDP and bounded-wait (`gui.cancelWaitMs`, default 15s) for the GUI to go idle, stating so explicitly in the final message when the stop is unconfirmed. For a terminal GUI task this call doubles as the manual acknowledgement entry point — after verifying the window holds no residual run, it clears the `guiStopUnconfirmed` marker |
-| `verify_task` | read | Run one verification pass on a task/project path (no source changes) |
+| `verify_task` | read | Run one verification pass on a task/project path (no source changes). Optional `idempotencyKey`: a retry with the same key never re-runs (a running pass answers "in progress", a finished one returns the existing report) |
 | `rework_task` | write + approval | Manual rework (feed the failure report back to the same agent) |
 | `get_profiles` | read | Inspect agent adapters and executable discovery results |
 | `prepare_visual_baseline` | write + approval | Capture or import reference images into a reviewable candidate with a digest |
@@ -199,6 +200,8 @@ run_task(projectPath=D:/xxx/my-app, agentId=qoder, planDoc=./plans/development.m
 > Every result is "human-readable text + a `---tianshu-mcp-meta---` JSON block" so the host can extract it with a regex.
 
 > **Path safety gate** (since v0.4.0): `projectPath` is validated at submission — must be absolute, the directory must exist, and symlinks are canonicalized via realpath (the receipt notes the resolution). The home directory itself and system/root directories are rejected outright so a worker's write access can never cover a whole system subtree; dirty git repos come with an uncommitted-changes coexistence warning.
+
+> **Idempotent retries** (since v0.5.10, issue #15): the `idempotencyKey` of `run_task` / `verify_task` makes a host timeout retry safe to repeat — the same key with the same arguments returns the original `taskId` (`run_task`, terminal tasks included) or the existing report (`verify_task`, including an "in progress" success result with `idempotencyReplay: "in_progress"`); the same key with different arguments fails with the original record id in the message. Key plaintext never enters logs or the event stream (only a digest). Boundaries: a `verify_task(taskId=…)` key is not written into the task snapshot, and "in progress" detection is process-local. See the [v0.5.10 release notes](<docs/release-v0.5.10.en.md>).
 
 ## Logging & stdio contract
 
@@ -228,6 +231,7 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 | [docs/codex-windows-smoke.en.md](docs/codex-windows-smoke.en.md) | Codex Windows hardware record (incl. verify-fail → auto plan → repair-pass loop) |
 | [docs/release-v0.3.4.en.md](<docs/release-v0.3.4.en.md>) | v0.3.4 release notes (ZCode project/model read-back, initialization recovery, session dispatch confirmation, issues #8/#9/#10) |
 | [docs/qoder-cdp.en.md](docs/qoder-cdp.en.md) | Qoder CN GUI driver: installation discovery and instance reuse, full-path workspaces with native import, `modelSource` and global Model Management reasoning tiers, send/answer checkpoints, liveness judging and same-session repair, hardware evidence and uncovered items |
+| [docs/release-v0.5.10.en.md](<docs/release-v0.5.10.en.md>) | v0.5.10 release notes (`run_task` / `verify_task` idempotency keys: TTL replay, in-progress answer, fail-closed on same key with different arguments, the persisted `idempotency.json`, and the `idempotentHint` annotation; issue #15) |
 | [docs/release-v0.5.9.en.md](<docs/release-v0.5.9.en.md>) | v0.5.9 release notes (truthful GUI terminal state on server exit / restart archiving: wording branches on `guiStop`, the bounded `shutdown.guiStopWaitMs` wait, structured pending fields and the manual acknowledgement entry point; issue #14) |
 | [docs/release-v0.5.8.en.md](<docs/release-v0.5.8.en.md>) | v0.5.8 release notes (the four primary documents rewritten against the code, plus the missing TraeWork probe and three probe scripts; no runtime change) |
 | [docs/release-v0.5.7.en.md](<docs/release-v0.5.7.en.md>) | v0.5.7 release notes (orchestration skill docs rewritten against the code: parameter matrix, default precedence, tier correction and the qoder section; no runtime change) |
@@ -401,6 +405,12 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
   - **Bounded wait**: the new `shutdown.guiStopWaitMs` (15 s default, one shared budget) lets the best-effort stop finish before the terminal state is written; both branches of `abortTerminal()` now persist `guiStop` plus the structured fields, and the window name is derived from `profile.displayName`
   - **Manual acknowledgement entry point**: new `TaskMeta.interruptedCleanStop` / `guiResidualUnconfirmed` and the meta-block `guiStopUnconfirmed`; calling `cancel_task` on a terminal GUI task clears the pending marker (no new tool, terminal status unchanged)
   - See the [v0.5.9 release notes](<docs/release-v0.5.9.en.md>)
+- **M29 — Idempotency keys for dispatch and verification + v0.5.10** (2026-09-23) — 16 new unit cases + 8 new integration cases (issue #15)
+  - **No duplicated side effects**: a same-key `run_task` retry always returns the original `taskId` and current meta (terminal tasks included — read-only, never re-dispatched); `verify_task` answers a running pass with a success result plus `idempotencyReplay: "in_progress"` and returns the existing report and round once finished, **re-running no** `build`/`e2e`/deploy check
+  - **Fail-closed and honest disclosure**: the same key with different arguments errors while reporting the original record id; a failed mapping write still returns the dispatched task but states that it cannot be replayed by key; a crash between "mapping written" and "task created" is treated as not-yet-effective and re-dispatched
+  - **Persistence and observability**: `<data-dir>/idempotency.json` (atomic writes + TTL/capacity pruning, effective across restarts), configurable `idempotency.ttlMs` / `maxEntries`, new meta fields `idempotencyKey`/`idempotencyReplay`/`projectActiveTask`, and an event-stream note keyed by digest only
+  - **Protocol-level completion**: `tools/list` reports `idempotentHint: true` for the two tools (only meaningful when the caller supplies a key); without a key `run_task` still names the unfinished task in the same workspace
+  - See the [v0.5.10 release notes](<docs/release-v0.5.10.en.md>)
 
 ## Agent support status
 
@@ -477,7 +487,7 @@ Behavior and limits:
 
 | Document | Content |
 |---|---|
-| [CHANGELOG.en.md](<CHANGELOG.en.md>) | Version history (v0.1.0 → v0.5.9) |
+| [CHANGELOG.en.md](<CHANGELOG.en.md>) | Version history (v0.1.0 → v0.5.10) |
 | [CONTRIBUTING.en.md](CONTRIBUTING.en.md) | Dev setup, conventions, commit/release flow, adding an agent |
 | [SECURITY.en.md](SECURITY.en.md) | Security model (zero credentials / command whitelist / process & desktop-automation boundaries) and private reporting |
 | [CODE_OF_CONDUCT.en.md](CODE_OF_CONDUCT.en.md) | Contributor Code of Conduct |

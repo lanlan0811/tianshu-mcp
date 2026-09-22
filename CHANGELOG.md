@@ -7,6 +7,37 @@
 
 ---
 
+## [0.5.10] - 2026-09-23
+
+### 新增
+
+- **`run_task` / `verify_task` 幂等键 `idempotencyKey`**（[issue #15](https://github.com/lanlan0811/tianshu-mcp/issues/15)）：宿主在 `tools/call` 超时后重试不再变成「重复派单 / 重复验收」。
+  - `run_task`：TTL（默认 24h）内同键同参重复提交**恒返回原 `taskId` 与当前 meta**（含终态任务，只读不重派）；同键异参 fail-closed 报错并回报原 `taskId`。
+  - `verify_task`：同键验收**执行中**返回成功结果 + `idempotencyReplay: "in_progress"`（刻意不是 `isError`，避免宿主再重试放大）；**已完成**直接返回既有报告路径与该轮 `reportRound` / 结论，**不重跑**检查。
+  - 两个工具各自独立命名空间；键为 trim 后 1..128 字符、不含控制字符（协议级校验，非法即 `参数不合法`）。
+- 新数据文件 `<数据目录>/idempotency.json`（原子写、惰性加载、TTL + 容量裁剪），进程重启后仍能识别重试；`TaskMeta` 新增 `idempotencyKey` / `idempotencyScope` / `idempotencyDigest` 供审计与映射文件损坏时重建。
+- 新配置 `config.json` → `idempotency.ttlMs`（默认 `86400000`）、`idempotency.maxEntries`（默认 `2000`，超限按 `createdAt` 逐出最旧）。
+- meta 块新增 `idempotencyKey`、`idempotencyReplay`（`hit` / `in_progress`）与 `projectActiveTask`；`tools/list` 的 `annotations.idempotentHint` 对两个工具置 `true`（**前提是调用方传入 `idempotencyKey`**，工具描述与技能文档已写明）。
+- **重复派单降级保险**：未传幂等键时，`run_task` 仍会点名同工作区未结束的任务（活动态 + `needs_user`），提示改用幂等键或先 `query_task` 复核。
+
+### 修复
+
+- 幂等命中时向原任务事件流追加审计 `note`（`幂等重放：keyDigest=…`）；键**明文不入日志与事件流**（只用 sha256 前 8 位摘要）。
+- `verify_task` 独立路径记录 id 由 `vfy_<Date.now()>` 改为既有的 `genVerifyId()`（`vfy_<时间戳>_<随机6位>`，此前该函数全仓无调用方），同毫秒并发不再可能撞 id。
+- **崩溃窗口**：幂等路径在同一临界区内**先落映射、再建任务**（`runExclusive` 串行化同键并发）；崩溃于两者之间时，重试看到「有映射无任务快照」即视为未生效并重新派发，不会留下两条 agent 队列。
+- **写失败 fail-open**：映射落盘失败仍返回已派发的任务，并在响应与 meta 明示「幂等记录写入失败，本任务无法被同键重放」，绝不把已经跑起来的 agent 报成派发失败。
+
+### 测试
+
+- 新增单元用例 `test/unit/idempotency.test.ts`（16 项）：键规范、`canonicalDigest` 稳定序列化、TTL 过期、容量逐出、跨实例恢复、损坏重建、`runExclusive` 串行化与失败不阻断、在途标记、写失败 fail-open。
+- 新增集成用例 `test/integration/idempotency.test.ts`（8 项）：同键重放只产生一个 `tsk_*` 目录、同键异参 fail-closed、终态照实重放、未传 key 零回归、`projectActiveTask` 提示、独立路径已完成重放不新增报告、**执行中重放为成功结果**、taskId 模式重放、**跨 server 重启**的派单与验收重放。
+- 协议用例补 `idempotentHint` 断言（仅两个工具为 true）；`config-hotreload` 补 `idempotency.ttlMs` / `maxEntries` 默认值与覆盖。
+- 类型检查、lint（`--max-warnings 0`）、全量测试、构建、严格 stdio 检查（6/6）、`pack:check` 全部通过。
+
+### 文档
+
+- 新增 `docs/release-v0.5.10.md` / `.en.md`；README 双语补幂等重试条目、工具表与里程碑；ARCHITECTURE 双语补数据文件、配置项与注解说明；`skills/tianshu-mcp/` 补参数速查、meta 字段、错误码与纪律；HANDOFF 同步版本快照。
+
 ## [0.5.9] - 2026-09-23
 
 ### 修复

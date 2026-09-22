@@ -114,7 +114,7 @@ resolveDataHome → Logger → DataHome(BUILTIN_PROFILES) → init()
 
 `close()` = `manager.shutdownInterrupt()` (archive active tasks, terminate child processes) → `engine.close()` → `server.close()`.
 
-Tool registration is **data-driven**: it walks `TOOL_DEFS`, looks up each name in `handlers`, logs an error and skips if missing, and passes along `_meta.requireApproval`, `_meta.capability`, and the MCP `annotations` (readOnly / destructive / openWorld) for the host's policy layer.
+Tool registration is **data-driven**: it walks `TOOL_DEFS`, looks up each name in `handlers`, logs an error and skips if missing, and passes along `_meta.requireApproval`, `_meta.capability`, and the MCP `annotations` (readOnly / destructive / openWorld / idempotent — `idempotentHint` is true only for `run_task` / `verify_task`, and only means anything when the caller supplies `idempotencyKey`; see §5.6) for the host's policy layer.
 
 ### 3.3 Data home layout
 
@@ -123,6 +123,7 @@ Tool registration is **data-driven**: it walks `TOOL_DEFS`, looks up each name i
 ├── config.json                   server config (concurrency, timeouts, skills)
 ├── agent-profiles.json           user-defined / overriding agent profiles
 ├── projects.json                 project registry (incl. per-project verify config)
+├── idempotency.json              idempotency mapping (key→taskId/digest, TTL + capacity pruning; issue #15)
 ├── logs/server.log               all-level diagnostic log (same source as stderr)
 ├── browsers/                     managed Chrome for the visual module
 ├── visual-candidates/<uuid>/     pending baseline candidates (candidate.json + PNGs + preview.html)
@@ -257,6 +258,27 @@ Shutdown (`shutdownInterrupt()`, issue #14): abort every controller → **spawn 
 Decision matrix (the single implementation of red line 8, `guiStopDisclosure()`): `idle===true` → confirmed stopped; `idle===false` → a stop was attempted but is unconfirmed; **field absent → no stop result, and a stop must not be claimed either**.
 
 The window name is derived from `profile.displayName` (`guiAppNameOf()`, stripping descriptive parentheticals and generic suffixes, falling back to the original string when stripping would empty it) instead of hard-coding `agentId`. **Explicitly not done**: `initialize()` never reconnects over CDP to click stop — there is no session anchor after a restart and the adapters are fail-closed for instances without proof of ownership, so unattended clicking carries more risk than value.
+
+### 5.6 Idempotency keys: retry-safe dispatch and verification (issue #15)
+
+`run_task` (both the project and project-less dispatch paths) and `verify_task` accept an optional `idempotencyKey`. The implementation lives in `src/tasks/idempotency.ts` (`IdempotencyIndex`) and is held by a closure inside `makeHandlers()` — it is **not** added to `AppContext`, so no construction site (including test fakes) has to change.
+
+| Decision | Implementation |
+|---|---|
+| Namespaces | `run_task` / `verify_task` are independent (map key is `scope\u0000key`) |
+| Argument digest | `canonicalDigest()`: stable serialisation (sorted object keys, `undefined` dropped) → same key with different arguments fails closed; the digest covers only the parsed arguments plus the normalised path, never runtime defaults or profile-derived values |
+| Hit decision | `lookup()` returns `hit` / `conflict` / `miss`; an entry past its TTL is a miss and is pruned lazily |
+| `run_task` hit | Always returns the original `taskId` and its current meta (terminal tasks included — read-only, never re-dispatched); a record whose task snapshot is unreadable counts as not-yet-effective and is re-dispatched |
+| `verify_task` hit | Finished → returns the recorded `reportRound` / verdict / report paths (nothing re-runs); running → a success result with `idempotencyReplay: "in_progress"` (never `isError`) |
+| Concurrency | `runExclusive()` serialises "re-check → write mapping → create task" per `(scope,key)`, so concurrent same-key calls never each create a task |
+| Crash window | The mapping is written **before** the task is created inside the same critical section, which is why `TaskManager.submit()` accepts an optional `taskId` |
+| Persistence | `<data home>/idempotency.json` (atomic writes, TTL and `maxEntries` pruning); a corrupt file is logged and rebuilt once from task snapshots via `TaskMeta.idempotencyKey/Scope/Digest` |
+| Write failure | Fail-open: the dispatched task is still returned, and the response and meta state that it cannot be replayed by key |
+| Key privacy | The raw key lives only in local snapshots and the mapping file; logs and event streams use `keyDigest()` (first 8 hex chars of sha256) |
+
+**The "in progress" marker is process-local** (`reserveInFlight` / `releaseInFlight`): an unfinished verification is not cached across a restart (there is no report to return, so a retry honestly re-runs), which also prevents a mapping stuck at `in_progress` while the engine is long dead.
+
+**Boundaries**: a `verify_task(taskId=…)` key is **not** written into the task snapshot (that field carries the task's dispatch key, so it is never overwritten), and rebuild coverage for that one combination relies on `idempotency.json`; no keys for `rework_task` / `continue_task` / `cancel_task` / the visual baseline tools; no cross-process distributed idempotency (the same assumption the visual lock makes).
 
 ---
 
@@ -617,7 +639,8 @@ CLI subcommands (`node dist/index.js visual ...`): `init` (writes a disabled tem
 
 | Config | Location | Notes |
 |---|---|---|
-| Server config | `<data home>/config.json` | `concurrency.maxRunning` (2), `defaultTaskTimeoutMs` (30 min), `verifyCommandTimeoutMs` (5 min), `verifyConcurrency` (2, 1..4), `shutdown.guiStopWaitMs` (15 s, global upper bound for the GUI stop wait on shutdown), `skills.autoInstall` (true) |
+| Server config | `<data home>/config.json` | `concurrency.maxRunning` (2), `defaultTaskTimeoutMs` (30 min), `verifyCommandTimeoutMs` (5 min), `verifyConcurrency` (2, 1..4), `shutdown.guiStopWaitMs` (15 s, global upper bound for the GUI stop wait on shutdown), `idempotency.ttlMs` (24 h), `idempotency.maxEntries` (2000), `skills.autoInstall` (true) |
+| Idempotency mapping | `<data home>/idempotency.json` | key→taskId/digest mapping (not a hand-written config file; atomic writes, lazy loading, TTL and capacity pruning — see §5.6) |
 | Agent profiles | `<data home>/agent-profiles.json` | **Whole-key override** of built-in profiles |
 | Project registry | `<data home>/projects.json` | Includes each project's `verify[]` records |
 | Project acceptance | `<project>/.tianshu-mcp/acceptance.json` | `checks[]`, `visual`, `requireChanges` (true), `verifyConcurrency` |

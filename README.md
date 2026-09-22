@@ -8,7 +8,7 @@
 
 # tianshu-mcp
 
-视觉验收（v0.5.0 起，含 v0.5.4 可选 AI 内容校验）：[中文指南](docs/visual-acceptance.md) · [验证记录](docs/visual-validation.md) · [最新发布说明](<docs/release-v0.5.9.md>) · [全部版本](CHANGELOG.md)。
+视觉验收（v0.5.0 起，含 v0.5.4 可选 AI 内容校验）：[中文指南](docs/visual-acceptance.md) · [验证记录](docs/visual-validation.md) · [最新发布说明](<docs/release-v0.5.10.md>) · [全部版本](CHANGELOG.md)。
 
 **天枢 × AI-Agent 编排 MCP server**
 
@@ -44,7 +44,8 @@
 - **失败返修闭环**：自动返修（`autoFixRounds`）+ 手动 `rework_task`；验收失败时自动生成修复计划文件并回填给 agent；轮次用尽 → `needs_attention` 等天枢裁决。
 - **执行面**：`driver: "gui"` 由显式 adapter 驱动桌面 UI（Codex / TraeWork / ZCode / Kimi Code 各自使用隔离的 CDP 流程）；`driver: "spawn"` 走外部 CLI 子进程。
 - **无项目派发（ZCode，issue #12）**：`run_task` 的 `projectPath` 可省略——ZCode 在 `default` 工作区承接任务，不登记/导入项目、不采集 Git 基线、不执行项目验收（结果以 `verificationNotApplicable: "no_project"` 结构化标注，`verify_task`/`get_task_report` 返回不适用说明）。配套 `allowCreateProject: false` 可在目标目录未登记时于任何导入副作用之前停止派发。详见 [ZCode CDP 适配器](docs/zcode-cdp.md)。
-- **调度纪律**：每项目串行队列 + 全局并发上限（默认 2，可配）。
+- **幂等重试（issue #15）**：`run_task` / `verify_task` 接受可选 `idempotencyKey`——同一 key 在 TTL（默认 24h）内的重试**不会**重复派单（恒返回原 `taskId` 与当前状态）或重复跑验收（执行中返回进行中提示，已完成直接返回既有报告）；同键异参 fail-closed 报错。映射落盘于 `<数据目录>/idempotency.json`，跨 server 重启仍生效。详见 [v0.5.10 发布说明](<docs/release-v0.5.10.md>)。
+- **调度纪律**：每项目串行队列 + 全局并发上限（默认 2，可配）；未传幂等键时，`run_task` 仍会点名同工作区未结束的任务，避免误判为重试。
 - **可选 AI 内容校验（v0.5.4，默认关闭）**：校验图片或页面截图**内容**是否符合你显式声明的期望描述。判定完全**委托给你自备的本地命令**（MCP 不读取、不存储、不转发任何密钥，也不内置模型客户端），默认**仅告警**、逐规则可升级为致败；采样多数票 + 任务级缓存防抖，票不集中或低于置信度阈值判 `uncertain`（永不阻塞、不触发返修）。配置与命令契约见 [视觉验收](docs/visual-acceptance.md)。
 - **不碰密钥**：各 agent 用自己的登录态；本 server 不保存/转发任何 API key。可选 AI 内容校验同样不引入凭证管理——判定命令自己管密钥（见 [SECURITY.md](SECURITY.md)）。
 - **可扩展**：新 agent = 一个 profile（数据）+（如需）一个 adapter 文件，零改编排核心。
@@ -70,7 +71,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 826 passed / 12 skipped（838 项，81 个测试文件：单元/集成/协议 + 3 个真实浏览器文件按设计 skip）
+npm test             # 867 passed / 12 skipped（879 项，85 个测试文件：单元/集成/协议 + 3 个真实浏览器文件按设计 skip）
 ```
 
 ### 安装 npm 包
@@ -180,13 +181,13 @@ run_task(projectPath=D:/xxx/my-app, agentId=qoder, planDoc=./plans/development.m
 
 | 工具 | 能力 / 审批 | 作用 |
 |---|---|---|
-| `run_task` | write + 审批 | 派活（可带自动验收/自动返修），异步返回 `taskId` |
+| `run_task` | write + 审批 | 派活（可带自动验收/自动返修），异步返回 `taskId`；可选 `idempotencyKey`：同键重试恒返回原 `taskId`，不新建任务 |
 | `continue_task` | write + 审批 | 恢复 `needs_user` 的原会话（ZCode 恢复原会话；Codex 按 `user_confirmation` 重新观察 / `login_required` 重派；Kimi Code 恢复原会话并区分提问续答 / 重新观察 / 补发任务书） |
 | `query_task` | read | 轮询状态 / 进度 / 日志尾 |
 | `list_tasks` | read | 历史任务过滤列表 |
 | `get_task_report` | read | 某轮验收报告全文（`report.md`） |
 | `cancel_task` | write + 审批 | 取消运行中任务：CLI agent kill 进程树；GUI agent 经 CDP 点击停止并在 `gui.cancelWaitMs`（默认 15s）内有界等待 GUI 空闲，未确认停止时终态明示。对已终态的 GUI 任务，本调用兼任人工确认入口——核实窗口无残留运行后调用可清除 `guiStopUnconfirmed` 待确认标记 |
-| `verify_task` | read | 对任务/项目路径做一次验收（不改源码） |
+| `verify_task` | read | 对任务/项目路径做一次验收（不改源码）；可选 `idempotencyKey`：同键重试不重跑（执行中返回进行中提示，已完成返回既有报告） |
 | `rework_task` | write + 审批 | 手动返修（把失败报告喂回同一 agent） |
 | `get_profiles` | read | 查看 agent 适配与可执行探测结果 |
 | `prepare_visual_baseline` | write + 审批 | 截图或导入参考图，生成待审阅候选和摘要 |
@@ -197,6 +198,8 @@ run_task(projectPath=D:/xxx/my-app, agentId=qoder, planDoc=./plans/development.m
 > **路径安全闸门**（v0.4.0 起）：`projectPath` 在提交时校验——必须绝对路径、目录必须存在、符号链接经 realpath 归一（回执明示解析来源）；主目录本身与系统/根级目录直接拒绝，防止 worker 写权限覆盖整棵系统子树；git 仓库有未提交变更时回执附带共处警示。
 
 > **无项目派发**（ZCode 专用，v0.5.2 起）：省略 `projectPath` 时任务在 ZCode 的 `default` 工作区运行，跳过项目登记、Git 基线、项目快照、项目锁与项目验收（终态标注 `not_applicable: no_project`）。`allowCreateProject=false` 可禁止自动导入未登记的项目。详见 [docs/zcode-cdp.md](docs/zcode-cdp.md#无项目default-工作区)。
+
+> **幂等重试**（v0.5.10 起，issue #15）：`run_task` / `verify_task` 的 `idempotencyKey` 让宿主的超时重试安全可重复——同键同参返回原 `taskId`（`run_task`，含终态）或既有报告（`verify_task`，含「仍在执行中」的成功结果 + `idempotencyReplay: "in_progress"`）；同键异参直接报错并回报原记录 id。键明文不入日志与事件流（只用摘要）。边界：`verify_task(taskId=…)` 的键不写入任务快照，且「执行中」判定是进程内的。详见 [v0.5.10 发布说明](<docs/release-v0.5.10.md>)。
 
 ## 日志与 stdio 契约
 
@@ -225,6 +228,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=qoder, planDoc=./plans/development.m
 | [docs/kimi-cdp.md](docs/kimi-cdp.md) | Kimi Code GUI 驱动：双渲染进程（主窗口 + `Kimi Browser Overlay`）、工作区完整路径绑定与原生对话框导入、模型三级选择与思考档位、执行模式、运行检测与排障 |
 | [docs/codex-windows-smoke.md](docs/codex-windows-smoke.md) | Codex Windows 真机验收记录（含验收失败→自动生成计划→返修通过闭环） |
 | [docs/qoder-cdp.md](docs/qoder-cdp.md) | Qoder CN GUI 驱动：安装发现与实例复用、完整路径工作区与原生导入、`modelSource` 与模型管理全局思考等级、发送/答题检查点、运行判定与原会话返修、真机证据与未覆盖项 |
+| [docs/release-v0.5.10.md](<docs/release-v0.5.10.md>) | v0.5.10 发布说明（`run_task` / `verify_task` 幂等键：TTL 重放、执行中提示、同键异参 fail-closed、`idempotency.json` 落盘与 `idempotentHint` 注解；issue #15） |
 | [docs/release-v0.5.9.md](<docs/release-v0.5.9.md>) | v0.5.9 发布说明（server 退出 / 重启归档的 GUI 终态如实化：按 `guiStop` 分流文案、`shutdown.guiStopWaitMs` 有界等待、结构化待确认字段与人工确认入口；issue #14） |
 | [docs/release-v0.5.8.md](<docs/release-v0.5.8.md>) | v0.5.8 发布说明（四份主文档按代码逐项核对重写 + 补发 TraeWork 探针与三个 probe script；无运行时变更） |
 | [docs/release-v0.5.7.md](<docs/release-v0.5.7.md>) | v0.5.7 发布说明（编排技能文档按代码实况重写：参数兼容矩阵、默认值优先级、档位修正与 qoder 章节；无运行时变更） |
@@ -402,6 +406,12 @@ run_task(projectPath=D:/xxx/my-app, agentId=qoder, planDoc=./plans/development.m
   - **有界等待**：新增 `shutdown.guiStopWaitMs`（默认 15s，全局共享预算）让「尽力停止 + 有界等待」跑完再落终态；`abortTerminal()` 两分支补齐 `guiStop` 与结构化字段，窗口名改由 `profile.displayName` 派生
   - **人工确认入口**：新增 `TaskMeta.interruptedCleanStop` / `guiResidualUnconfirmed` 与 meta 块 `guiStopUnconfirmed`；对已终态 GUI 任务调用 `cancel_task` 可清除待确认标记（不新增工具，不改终态）
   - 详见 [v0.5.9 发布说明](<docs/release-v0.5.9.md>)
+- **M29 — 派单/验收幂等键 + v0.5.10**（2026-09-23）— 新增 16 单元 + 8 集成用例（issue #15）
+  - **不再重复副作用**：`run_task` 同键重试恒返回原 `taskId` 与当前 meta（含终态，只读不重派）；`verify_task` 执行中返回成功结果 + `idempotencyReplay: "in_progress"`、已完成直接返回既有报告与轮次，**不重跑** `build`/`e2e`/部署类检查
+  - **fail-closed 与如实披露**：同键异参报错并回报原记录 id；映射写入失败仍返回已派发的任务但明示「无法被同键重放」；崩溃于「已落映射、未建任务」之间时按未生效重新派发
+  - **落盘与可观测**：`<数据目录>/idempotency.json`（原子写 + TTL/容量裁剪，跨重启生效）、`idempotency.ttlMs` / `maxEntries` 可配、meta 新增 `idempotencyKey`/`idempotencyReplay`/`projectActiveTask`、命中写事件流（只用键摘要）
+  - **协议层补齐**：`tools/list` 的 `idempotentHint` 对两个工具置 true（前提是调用方传键）；未传键时仍点名同工作区未结束任务
+  - 详见 [v0.5.10 发布说明](<docs/release-v0.5.10.md>)
 
 ## Agent 适配现状
 
@@ -479,7 +489,7 @@ run_task(projectPath=/path/to/项目, agentId=codex-cli, task="任务书", autoV
 | 文档 | 内容 |
 |---|---|
 | [HANDOFF.md](HANDOFF.md) | 项目交接文档：当前状态快照、架构导览、硬性红线、已知限制、接手建议 |
-| [CHANGELOG.md](<CHANGELOG.md>) | 版本变更日志（v0.1.0 → v0.5.9） |
+| [CHANGELOG.md](<CHANGELOG.md>) | 版本变更日志（v0.1.0 → v0.5.10） |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 开发环境、工程规范、提交与发布流程、如何新增 agent |
 | [SECURITY.md](SECURITY.md) | 安全模型（凭证零管理/命令白名单/进程与桌面自动化边界）与私密报告渠道 |
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | 贡献者行为准则 |

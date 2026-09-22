@@ -195,6 +195,7 @@ run_task(projectPath=/path/to/项目, agentId=codex-cli,
 
 - `run_task` 是**异步契约**：立即返回 `taskId` + 队列位置，不要当同步调用等结果。
 - 轮询间隔 5–10 秒（`query_task` 缺省返回 agent 日志末 40 行）；同项目串行 + 全局并发默认 2，重复派单只会排队。
+- **重试复用同一条 `idempotencyKey`（issue #15）**：`tools/call` 超时、断线、宿主重启后重发同一意图时，`run_task` 会返回**原 `taskId` 与当前状态**（不排队第二轮 agent），`verify_task` 会返回「进行中」或既有报告（不重跑检查）。**参数变了就换 key**——同键异参 fail-closed 报错并回报原记录 id。幂等重放的响应文本以「幂等重放：」开头、meta 带 `idempotencyReplay`，不要汇报成「已重新派单」。
 - 只有 `needs_user` 能用 `continue_task` 恢复，且仅 **codex / zcode / kimicode / qoder**；traework 与 spawn 类会被明确拒绝。
 - `autoVerify` 不传时**默认开**；`autoFixRounds` 不传时取 agent 缺省（codex 5 / zcode 2 / kimicode 2 / qoder 3 / traework 落 server 默认 0）。
 
@@ -212,6 +213,7 @@ run_task(projectPath=/path/to/项目, agentId=codex-cli,
 | `designSystem` | 仅 codex | 路径必须存在且在项目内 |
 | `projectPath` 省略 | 仅 zcode | 其余 agent 需要 `projectPath`；Kimi Code 尤其如此 |
 | `extraChecks` / `checksMode` / `baselineRef` | 仅 verify_task | 独立 projectPath 下 `baselineRef` 只能是 git ref，不能是任务 ID |
+| `idempotencyKey` | run_task / verify_task | trim 后 1..128 字符、不含控制字符；**两工具各自独立命名空间**；同键异参 fail-closed；不传即维持原行为 |
 | `tailLines` | query_task | 缺省 40 行 |
 | `round` | get_task_report | **0-based**；缺省最新；显式 `0` 合法 |
 
@@ -283,6 +285,9 @@ run_task(projectPath=/path/to/项目, agentId=codex-cli,
 | `progressSummary` / `lastRunSignal` | 轮询期进度摘要 / 最近运行信号 |
 | `finishedAt` | 终态落定时间 |
 | `model` / `mode` | 本次派单传入的模型 / 面板模式 |
+| `idempotencyKey` | 本次调用携带的幂等键（issue #15；调用方自己传入的原文） |
+| `idempotencyReplay` | `hit` = 返回既有任务/报告且未执行；`in_progress` = 同键验收正在执行、本次未重复执行；**缺省 = 本次为真实执行** |
+| `projectActiveTask` | 未传幂等键时，同工作区已存在的**未结束**任务 `{taskId, status}`（仅提示，不拦截派单） |
 
 规则：`ok=true` 且 `status=succeeded` → 交付达成；否则先读 `message`，再按 `errorType` / `agentEndReason` 查 §5，最后读 `reportFiles.md` 全文定位。
 
@@ -325,7 +330,11 @@ run_task(projectPath=/path/to/项目, agentId=codex-cli,
 
 上表未覆盖的：先读 `message` 全文（多数带可执行建议），再读 `reportFiles.md`。
 
-**另一类“报错”不是任务终态**，而是工具入参被拒（立即返回，不排队、不产生任务）：`allowCreateProject` 用于非 ZCode、`mode` 用于非 traework、`modelSource` 用于非 qoder、`极高/最大/关闭思考` 用于非 qoder、qoder 缺 `planDoc` 或计划文件不可读、无项目模式传 `autoVerify=true`/`autoFixRounds>0`、`verify_task` 既没给 `taskId` 也没给 `projectPath`。这类改参数重试即可。
+**另一类“报错”不是任务终态**，而是工具入参被拒（立即返回，不排队、不产生任务）：`allowCreateProject` 用于非 ZCode、`mode` 用于非 traework、`modelSource` 用于非 qoder、`极高/最大/关闭思考` 用于非 qoder、qoder 缺 `planDoc` 或计划文件不可读、无项目模式传 `autoVerify=true`/`autoFixRounds>0`、`verify_task` 既没给 `taskId` 也没给 `projectPath`、以及**幂等键冲突**（见下）。这类改参数重试即可。
+
+**幂等键冲突（issue #15）**：报「`idempotencyKey '<key>'` 已被任务/验收记录 `<id>` 占用，但本次参数与首次提交不同」= 你复用了旧 key 却改了参数（换了项目、任务书、agent、`extraChecks` 等）。处置：**改用一条新 key** 重发，或直接对原记录 id 操作（`query_task` / `get_task_report` / `rework_task`）；不要靠改参数绕过冲突。
+
+**幂等重放不是新执行**：`run_task` 命中同键 → 文本「幂等重放：该 idempotencyKey 已对应任务 `<taskId>`（未新建任务）」+ `idempotencyReplay: "hit"`；`verify_task` 命中执行中 → 「该 idempotencyKey 对应的验收仍在执行中（未重复执行）」+ `"in_progress"`（**成功结果**，不是错误）。汇报时必须如实说明「未新建 / 未重跑」。
 
 ---
 
@@ -344,7 +353,16 @@ verify_task(projectPath=D:/repo/app)
 verify_task(projectPath=D:/repo/app, baselineRef=HEAD~1,
   extraChecks=[{name=lint, cmd=[npm, run, lint], timeoutMs=120000}],
   checksMode=append)
+
+# 4) 幂等重试（issue #15）：宿主超时/断线后重发同一意图，复用同一条 key
+verify_task(projectPath=D:/repo/app, checksMode=replace,
+  extraChecks=[{name=smoke, cmd=[node, check.mjs]}],
+  idempotencyKey="verify-app-20260923-1")
+# → 执行中：成功结果 + idempotencyReplay="in_progress"（未重复执行）
+# → 已完成：返回既有 reportRound 与报告路径（未重跑）
 ```
+
+- **幂等键用法**：`idempotencyKey` 由宿主按「本次逻辑意图」生成**一次**，之后所有重试复用同一条；参数一旦变化必须换 key。`run_task` 的键与 `verify_task` 的键互不影响（各自命名空间）。TTL 默认 24h（见 §9.7），过期后同键会重新真实执行。
 
 - `checksMode=replace` 时**只用** `extraChecks`，不跑项目基础集。
 - `extraChecks` 单条支持 `name` / `cmd`（argv 数组或字符串）/ `timeoutMs` / `optional`（`optional:true` 失败只记 warning）。
@@ -561,10 +579,12 @@ cancel_task(taskId, reason="已人工核对窗口无残留运行")
 ### 9.7 server 级配置（config.json，可选）
 
 ```json
-{ "shutdown": { "guiStopWaitMs": 15000 } }
+{ "shutdown": { "guiStopWaitMs": 15000 }, "idempotency": { "ttlMs": 86400000, "maxEntries": 2000 } }
 ```
 
 - `shutdown.guiStopWaitMs`：server 退出时，GUI agent 任务「尽力点击界面停止 + 有界等待空闲」的**全局共享**上限（默认 15000 = 15 秒，全部 GUI 任务共用一份预算，退出耗时不随任务数增长）。spawn 类任务不受影响（固定 2 秒等 `killTree` 收尾）。到期仍未确认空闲时，终态如实写「未确认停止」并置 `guiStopUnconfirmed`；调大它可以让退出时更容易等到确认结果，代价是退出（以及宿主关闭）变慢。
+- `idempotency.ttlMs`：幂等键映射（`<数据目录>/idempotency.json`）的有效期，默认 `86400000`（24 小时）。TTL 内同键重试重放既有结果，过期后同键会**真实执行**——长周期重试场景可按需调大。
+- `idempotency.maxEntries`：映射条目上限，默认 `2000`（1..100000）。超限按 `createdAt` 逐出最旧，只影响「是否还能重放」，不影响任何已创建的任务与报告。
 
 ---
 
