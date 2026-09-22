@@ -1,6 +1,6 @@
 # HANDOFF.md — 项目交接说明
 
-> **交接快照：2026-09-23 · 开发版本 `0.5.8`；最近已发布版本为 `0.5.7`。四份主文档重写与打包修复待发布，不得宣称已发布。**
+> **交接快照：2026-09-23 · 开发版本 `0.5.8`；`v0.5.8` 已发布（GitHub Release / Gitee 发行版 / npm `latest` 三者一致，发布提交 `454b23c`）。**
 > 本文写给**接手本仓库的人**：先说清「这是什么、现在到哪一步」，再给出「怎么跑、怎么改、哪里会踩坑」。
 > 工作区规则见 `AGENTS.md`（gitignore，仅本地）；安装与用法见 `README.md`，本文不重复，只做导览与状态记录。
 
@@ -81,16 +81,16 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build
 | 项 | 状态 |
 |---|---|
 | 分支 | `master`（**只在此分支提交**，不建其他分支） |
-| 版本 / 许可证 | `0.5.8`（开发中；最近已发布 `0.5.7`）/ Apache-2.0 |
-| 标签 | `v0.1.0` … `v0.5.7`（均已推双仓）；`v0.5.8` 待发布提交的 CI 全绿后推送 |
-| 工作树 | 干净；`github/master` 与 `gitee/master` 均同步（本轮见 `git log` 的 `docs: 重写四份主文档` 与 `chore(release): v0.5.8`） |
+| 版本 / 许可证 | `0.5.8`（已发布；上一版本 `0.5.7`）/ Apache-2.0 |
+| 标签 | `v0.1.0` … `v0.5.8`（均已推双仓；`v0.5.8` 指向 `454b23c`，双仓 tag 对象同为 `9dbfd4a`） |
+| 工作树 | 干净；`github/master` 与 `gitee/master` 均同步（本轮见 `git log` 的 `docs: 按代码实况重写四份主文档` 与 `docs(handoff): 回写 v0.5.8`） |
 | 测试 | **826 passed / 12 skipped**（78 个测试文件通过 + 3 个真实浏览器文件按设计 skip；含 Qoder 新增约 60 项用例） |
 | 门禁 | lint 0 warning、typecheck clean、build 成功且构建后无跟踪差异、`check:stdio` 6/6 场景通过、`npm pack`（230 文件）内容校验与干净消费者安装 + 严格 stdio 检查通过；12 项真实浏览器门禁用例在 Windows 10 本机以 `TIANSHU_VISUAL_BROWSER_TEST=1` 跑通 12/12 |
 | CI | `build-test`（ubuntu/windows/macos × Node 20/22/24）+ `pack-check`，另加 `visual-browser` 真实浏览器矩阵（ubuntu/windows + macos-15-intel/macos-15 × Node 20/22/24）；发布提交 `9ee03da` 的 22 个作业全绿（[run 35741308742](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35741308742)），`e2d4689` 同样全绿（[run 35740269977](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35740269977)） |
-| npm | `tianshu-mcp@0.5.7` 已发布（`latest`）；`0.5.8` 发布步骤见 `docs/npm-publish-guide.md` |
+| npm | `tianshu-mcp@0.5.8` 已发布（`latest`）；`npx -y tianshu-mcp` 即为该版本。发布步骤见 `docs/npm-publish-guide.md` |
 | GitHub Release | 推送 `v*` tag 触发 `.github/workflows/release.yml`：先跑完整门禁并校验「tag 版本 === package.json 版本」，正文由 `docs/release-v<ver>.md` + `.en.md` 双语合成（缺文档即报错，不产出空壳正文），**要求同 SHA 的成功 CI**，并附 `tianshu-mcp-<ver>.tgz` |
 | Gitee 发行版 | 由 `scripts/gitee-release.mjs` 用仓库 Secret `GITEE_TOKEN` 幂等补齐；**缺少凭据时工作流阻塞**（不再静默跳过、不冒充发布成功） |
-| 本次发布实测 | v0.5.8：待 tag 推送后回填。v0.5.7：发布提交 `71af40c`（内容同 `f14924b`，空白提交仅为重跑 CI）与 `f14924b` 的 22 作业全绿（[run 35748888882](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35748888882) / [run 35747644604](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35747644604) 曾因 `windows-latest/Node 20` 真实浏览器作业偶发失败，已用空白提交重跑并通过）；`Release` 全绿（[run 35749568666](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35749568666)，附 `tianshu-mcp-0.5.7.tgz`，538527 字节）；[GitHub 发行 v0.5.7](https://github.com/lanlan0811/tianshu-mcp/releases/tag/v0.5.7)、Gitee 发行版 `v0.5.7` 均确认；npm `tianshu-mcp@0.5.7`（`dist.shasum` = `48def1cf…`），registry 实装消费者中的 `skills/tianshu-mcp/*` 与仓库逐字节一致、`check:stdio` 6/6。v0.5.6：CI `9ee03da` 全绿（[run 35741308742](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35741308742)）、[GitHub 发行 v0.5.6](https://github.com/lanlan0811/tianshu-mcp/releases/tag/v0.5.6)、Gitee 发行版 `v0.5.6` 与 npm `tianshu-mcp@0.5.6`（`dist.shasum` = `67d6babc…`）均已确认 |
+| 本次发布实测 | v0.5.8：CI `454b23c` 一次通过 22 作业全绿（[run 35758621021](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35758621021)）；`Release` 全绿（[run 35759258792](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35759258792)，附 `tianshu-mcp-0.5.8.tgz`，544815 字节）；[GitHub 发行 v0.5.8](https://github.com/lanlan0811/tianshu-mcp/releases/tag/v0.5.8) 与 Gitee 发行版 `v0.5.8` 均确认；npm `tianshu-mcp@0.5.8`（`latest`，`dist.shasum` = `5bfc2803…`），从 registry 实装消费者复验：**五个探针脚本齐备**、`check:stdio` 6/6 通过；双仓 `v0.5.8` 与 `master` 同指 `454b23c`。v0.5.7：发布提交 `71af40c`（内容同 `f14924b`）22 作业全绿（[run 35748888882](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35748888882)；`f14924b` 的 [run 35747644604](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35747644604) 曾因 `windows-latest/Node 20` 真实浏览器作业偶发失败，已用空白提交重跑通过）；[GitHub 发行 v0.5.7](https://github.com/lanlan0811/tianshu-mcp/releases/tag/v0.5.7)（[run 35749568666](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35749568666)）与 Gitee 发行版 `v0.5.7` 已确认，npm `tianshu-mcp@0.5.7`（`dist.shasum` = `48def1cf…`），registry 实装消费者中的 `skills/tianshu-mcp/*` 与仓库逐字节一致 |
 
 ### 2.1 Agent 适配现状
 
