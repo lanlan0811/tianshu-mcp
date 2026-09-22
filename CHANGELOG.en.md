@@ -10,11 +10,24 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ## [0.5.6] - 2026-09-22
 
+### Added
+
 - Add the Qoder CN GUI adapter: installation discovery, full-path workspace binding and import, default/custom model selection, and persisted reasoning settings verified through Model Management.
 - Integrate dispatch, liveness, objective acceptance, and same-session rework. Automatic and manual rework write a plan before sending its filename, full path, and complete text.
 - Report model source and actual settings; retain permission mode and disclose global reasoning preferences. Approvals require the user, questions use dedicated controls, and uncertain submissions are never repeated automatically.
 - Windows default/custom model, new workspace and same-session repair acceptance passed on a real desktop. macOS remains research and dispatch is disabled. See the [Qoder guide](docs/qoder-cdp.en.md).
 - Isolate unit test files to prevent discovery command mocks from contaminating Git baseline tests; exclude temporary probes from lint.
+
+### Tests
+
+- Full suite: **826 passed / 12 skipped** (Windows 10 x64, Node 24.18.0; 78 test files passed plus 3 real-browser files skipped by design), roughly 60 cases more than v0.5.5: discovery priority (explicit → D drive → registry/shortcuts → standard directories), wrong installation paths and identity checks, CJK/space/same-name paths, workspace import and read-back failure, cross-group model ambiguity and unsupported tiers, a save that did not persist, uncertain sends and answer submissions never resent, this-turn-bound completion judging (old replies and a static screen do not qualify), same-session repair, unconfirmed cancellation/timeout stops, and macOS branches failing closed.
+- Real-browser gate cases (`TIANSHU_VISUAL_BROWSER_TEST=1`) remain 12/12 on this Windows 10 machine; `npm pack` content validation plus a clean-consumer install and strict stdio check pass locally.
+- Uncovered items are stated plainly: Qoder cancellation, question answering and login/quota/network waiting classification are **covered by hermetic integration tests only**, and macOS has no real GUI validation. See [HANDOFF §9.12](HANDOFF.md).
+
+### Planned
+
+- The Qoder CN macOS hardware matrix (stays `research`; dispatch disabled until verified).
+- Hardware verification of Qoder CN cancellation, question answering and login/quota/network waiting classification (currently covered by hermetic integration tests only).
 
 ## [0.5.5] - 2026-09-20
 

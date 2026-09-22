@@ -158,7 +158,7 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build
 
 ## 4. 架构与模块导览
 
-> 本节是**面向交接的快速导览**（目录 + 两条执行面 + 四个 GUI driver 的执行顺序）。
+> 本节是**面向交接的快速导览**（目录 + 两条执行面 + 五个 GUI driver 的执行顺序）。
 > 系统分层、模块边界、状态机全貌、验收流水线、跨平台策略与扩展点的**完整架构说明见 [ARCHITECTURE.md](ARCHITECTURE.md)**（英文版 [ARCHITECTURE.en.md](ARCHITECTURE.en.md)）。
 
 ```text
@@ -198,11 +198,16 @@ src/
 │   │   ├── discovery.ts（Appx 查询 + 扫盘回退）/ launcher.ts（COM 激活）
 │   │   ├── cdp.ts / selectors.ts / input.ts / model.ts / dialog.ts
 │   │   └── project.ts（自动登记）/ registry.ts / fixplan.ts / verify.ts
-│   └── kimicode/         Kimi Code 桌面端 GUI 驱动（v0.5.5 起）
-│       ├── adapter.ts / run.ts / instance.ts / recovery.ts / discovery.ts
-│       ├── cdp.ts（主窗口 + Overlay 双页面客户端）/ dom.ts / selectors.ts
-│       ├── dialog.ts（原生「添加工作区」）/ model.ts / workspace.ts
-│       └── session.ts / liveness.ts
+│   ├── kimicode/         Kimi Code 桌面端 GUI 驱动（v0.5.5 起）
+│   │   ├── adapter.ts / run.ts / instance.ts / recovery.ts / discovery.ts
+│   │   ├── cdp.ts（主窗口 + Overlay 双页面客户端）/ dom.ts / selectors.ts
+│   │   ├── dialog.ts（原生「添加工作区」）/ model.ts / workspace.ts
+│   │   └── session.ts / liveness.ts
+│   └── qoder/            Qoder CN 桌面端 GUI 驱动（v0.5.6 起）
+│       ├── adapter.ts / run.ts / instance.ts / discovery.ts / profile.ts
+│       ├── cdp.ts / selectors.ts / liveness.ts / references.ts
+│       ├── dialog.ts（原生目录选择）/ workspace.ts（完整路径绑定与新建工作区）
+│       └── model.ts（默认/自定义分组 + 模型管理档位）/ questions.ts（提问答题）
 ├── visual/               可选视觉验收模块（v0.5.0 起；未启用时不影响既有行为）
 │   ├── schema.ts / defaults.ts / config.ts / runtime.ts / errors.ts
 │   ├── engine.ts / capture.ts / compare.ts / images.ts
@@ -449,18 +454,18 @@ npm publish --registry=https://registry.npmjs.org --access public
   `stableRounds` 只启动 `idleTimeoutMs`（默认 10 分钟）空闲计时，不再把约 36 秒静态直接当完成。
 - **异常结束保留实例**：`idle_no_completion` / `timeout` / `aborted` / `cdp_lost` 均不关闭现场；
   `query_task` meta 查看 `agentEndReason` / `keptInstance`。
-- **UI 升级会漂移**：四个 adapter 的选择器分别集中在
-  `src/agents/traework/cdp/selectors.ts`、`src/agents/zcode/selectors.ts`、`src/agents/codex/selectors.ts`、`src/agents/kimicode/selectors.ts`，
+- **UI 升级会漂移**：五个 adapter 的选择器分别集中在
+  `src/agents/traework/cdp/selectors.ts`、`src/agents/zcode/selectors.ts`、`src/agents/codex/selectors.ts`、`src/agents/kimicode/selectors.ts`、`src/agents/qoder/selectors.ts`，
   均可经 profile `gui.selectors` 覆盖；先用探针诊断。
 - **macOS 部分验证**：Codex 与 ZCode 的 macOS 基本闭环（发现/启动/绑定/发送/观察/验收）均已真机通过
   （2026-09-13，分别见 `docs/codex-gui-cdp.md` 与 `docs/zcode-cdp.md`），
   但取消/返修/continue_task/新建项目矩阵未覆盖，二者 darwin 仍标 `research`；
   TraeWork 的原生对话框驱动与真机闭环仍未在 macOS 实测，macOS 分支保持 fail-closed；
-  Kimi Code 的 darwin 同为 `research`（fail-closed，未在 macOS 实测）。
+  Kimi Code 与 Qoder CN 的 darwin 同为 `research`（fail-closed，未在 macOS 实测）。
 - **`mode` 仅 TraeWork 生效**：ZCode / Codex / Kimi Code / Qoder 会拒绝该参数（返回明确错误）。
 - **无项目派发仅 ZCode 且仅 Windows 实测**：`projectPath` 可选只对 ZCode 生效；macOS 上的无项目派发尚未真机验证（v0.5.3 已修掉 Windows 侧实例驻留、切页与归因三个缺陷，但 macOS 未覆盖）。
 - **ZCode 未登记项目的自动导入在 Windows 上不可用**：需先在 ZCode 中手动登记目录，或传 `allowCreateProject=false` 让它显式失败。原因与修复方向见 §9.9。
-- **Windows 上 GUI 实例跨 server 驻留已修复**（v0.5.3）：四处 GUI 实例统一走 `guiInstanceSpawnOptions()`（无条件 `detached` + `unref`）；执行型子进程（`verify/runner`、`visual/services`、`agents/spawn`）语义相反，仍按平台分支。
+- **Windows 上 GUI 实例跨 server 驻留已修复**（v0.5.3）：五处 GUI 实例统一走 `guiInstanceSpawnOptions()`（无条件 `detached` + `unref`）；执行型子进程（`verify/runner`、`visual/services`、`agents/spawn`）语义相反，仍按平台分支。
 - **`continue_task` 仅 codex/zcode/kimicode/qoder**：traework 与 spawn 类 agent 会被拒绝。
 - **Kimi Code 不支持无项目派发**：任务必须绑定工作区文件夹，`workspaceMode=default` 或缺少 `projectPath` 时以 `setup_failed` 显式拒绝。
 - **Qoder CN 的硬边界**：仅支持 Qoder CN（国际版或同名窗口不算）；`projectPath` 与可读 `planDoc` 必填，不支持无项目派发；`modelSource` 与 `极高/xhigh`、`最大`、`关闭思考` 别名是 Qoder 专用参数，传给其他适配器会被拒绝；思考等级是 Qoder **全局偏好**（任务结束不还原），权限模式沿用不切换；macOS 为 `research` 且 fail-closed。取消与提问续答仅由 hermetic 集成测试覆盖（见 §9.12）。
@@ -974,14 +979,15 @@ node scripts/probe-qoder.mjs state --port 9777  # 只读：已有实例与页面
 5. 动视觉模块前先读 `docs/visual-acceptance.md` 与 §9.8：基准必须走「候选 → 用户批准」，规则冻结会拦截绕过；`TIANSHU_VISUAL_BROWSER_TEST=1` 才跑真实浏览器用例。
 6. Codex 与 ZCode 的 macOS 基本闭环均已真机验证；取消/返修/continue_task/新建项目矩阵未补齐前
    不得把 darwin 从 `research` 改为 `ready`；TraeWork 的 macOS 分支仍是 fail-closed，
-   Kimi Code 的 darwin 同为 `research`（fail-closed，未在 macOS 实测）。
+   Kimi Code 与 Qoder CN 的 darwin 同为 `research`（fail-closed，未在 macOS 实测）。
 7. 新增 agent：优先只加 profile（见 `docs/agent-profiles.md`）；需要特殊输出解析再写 adapter。
 8. 发版前务必确认 `src/version.generated.ts`、`package.json` **与 `package-lock.json`** 三者版本一致并同步提交
    （CI 有「构建后无 tracked diff」门禁；v0.5.0 曾漏掉锁文件）。推 `v*` tag 即触发 Release
    （双语正文取 `docs/release-v<ver>.md` + `.en.md`，**缺文档会直接失败**；且要求同 SHA 的成功 CI）。完整步骤见 §6.4。
-9. 未发布计划（见 `CHANGELOG.md` 的「未发布」节）：更多 agent 适配、TraeWork / ZCode / Codex / Kimi Code 的 macOS 验证矩阵、
+9. 未发布计划（见 `CHANGELOG.md` 的「未发布 / 计划中」节）：更多 agent 适配、TraeWork / ZCode / Codex / Kimi Code / Qoder CN 的 macOS 验证矩阵、
    项目级技能播种、`needs_user` 状态取消时经临时 CDP 连接尽力停止 GUI 内等待中的会话、
    Kimi Code 的取消/提问续答真机验证（当前仅 hermetic 集成测试覆盖，见 §9.11）、
+   Qoder CN 的取消真停与提问续答真机验证（同为 hermetic 覆盖，见 §9.12）、
    ZCode 无项目派发的 macOS 真机验证、ZCode 未登记项目自动导入在 Windows 上的修复（§9.9），
    以及 AI 内容校验的后续扩展（跨轮判定翻转熔断、跨任务缓存共享、参考图/设计稿差异比对）。
    注：issue #3 第一阶段（像素级对比 + 图片规格 + 报告 + 返修闭环 + 基准批准/冻结）已随 v0.5.0 完成，issue #3 已关闭；
