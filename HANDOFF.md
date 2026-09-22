@@ -1,6 +1,6 @@
 # HANDOFF.md — 项目交接说明
 
-> **交接快照：2026-09-23 · 开发版本 `0.5.9`；`v0.5.8` 已发布（GitHub Release / Gitee 发行版 / npm `latest` 三者一致，发布提交 `454b23c`；`v0.5.9` 尚未打标签）。**
+> **交接快照：2026-09-23 · 开发版本 `0.5.9`；`v0.5.9` 已发布（GitHub Release / Gitee 发行版 / npm `latest` 三者一致，发布提交 `fa926af`）。**
 > 本文写给**接手本仓库的人**：先说清「这是什么、现在到哪一步」，再给出「怎么跑、怎么改、哪里会踩坑」。
 > 工作区规则见 `AGENTS.md`（gitignore，仅本地）；安装与用法见 `README.md`，本文不重复，只做导览与状态记录。
 
@@ -92,15 +92,15 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build
 | 项 | 状态 |
 |---|---|
 | 分支 | `master`（**只在此分支提交**，不建其他分支） |
-| 版本 / 许可证 | `0.5.9`（开发版本；`v0.5.9` 未打标签、未发布）/ Apache-2.0 |
-| 标签 | `v0.1.0` … `v0.5.8`（均已推双仓；`v0.5.8` 指向 `454b23c`，双仓 tag 对象同为 `9dbfd4a`） |
-| 工作树 | 干净；`github/master` 与 `gitee/master` 均已推到同一提交。本轮三个提交：`537d3c5`（实现，fix(tasks)）、`03194e3`（双语文档与计划）、`ce92b61`（测试修正：把 codex 测试 profile 的探测固定为存在的 command，修掉 CI 上因 MSIX 发现必失败导致的 9 作业全挂） |
+| 版本 / 许可证 | `0.5.9`（**已发布**；上一版本 `0.5.8`）/ Apache-2.0 |
+| 标签 | `v0.1.0` … `v0.5.9`（均已推双仓；`v0.5.9` 指向发布提交 `fa926af`） |
+| 工作树 | 干净；`github/master` 与 `gitee/master` 均已推到同一提交。本轮提交：`537d3c5`（实现，fix(tasks)）、`03194e3`（双语文档）、`ce92b61`（测试修正：把 codex 测试 profile 的探测固定为存在的 command，修掉 CI 上因 MSIX 发现必失败导致的 9 作业全挂）、`c8e2378`（回写 CI 实测）、`fa926af`（删除 `docs/plans/` 并清理指向它的失效链接，即 `v0.5.9` 的发布提交）、以及其后的发布后文档提交 |
 | 测试 | **841 passed / 12 skipped**（80 个测试文件通过 + 3 个真实浏览器文件按设计 skip；较 v0.5.8 净增 15 项：9 单元 + 5 集成 + 1 配置） |
 | 门禁 | lint 0 warning、typecheck clean、全量测试 841 passed、build 成功、`check:stdio` 6/6 通过 |
 | CI | `build-test`（ubuntu/windows/macos × Node 20/22/24）+ `pack-check`，另加 `visual-browser` 真实浏览器矩阵（ubuntu/windows + macos-15-intel/macos-15 × Node 20/22/24）。**本轮实测**：`03194e3` 因新集成用例在无 Codex 的 Linux/macOS runner 上探测失败而 9 个 build-test 作业全挂（[run 35781422397](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35781422397)），修正提交 `ce92b61` 后 **22 作业全绿**（[run 35783321053](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35783321053)）。历史：`9ee03da`（[run 35741308742](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35741308742)）、`e2d4689`（[run 35740269977](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35740269977)） |
-| npm | `tianshu-mcp@0.5.8` 已发布（`latest`）；`0.5.9` **尚未发布**。发布步骤见 `docs/npm-publish-guide.md` |
-| GitHub Release | 推送 `v*` tag 触发 `.github/workflows/release.yml`：先跑完整门禁并校验「tag 版本 === package.json 版本」，正文由 `docs/release-v<ver>.md` + `.en.md` 双语合成（缺文档即报错，不产出空壳正文），**要求同 SHA 的成功 CI**，并附 `tianshu-mcp-<ver>.tgz` |
-| Gitee 发行版 | 由 `scripts/gitee-release.mjs` 用仓库 Secret `GITEE_TOKEN` 幂等补齐；**缺少凭据时工作流阻塞**（不再静默跳过、不冒充发布成功） |
+| npm | `tianshu-mcp@0.5.9` 已发布（`latest`）——`npm view tianshu-mcp dist-tags` 为 `{latest: "0.5.9"}`，`dist.shasum` = `48778ca3…`，231 文件；从 registry 实装消费者复验：版本 `0.5.9`、五个探针脚本齐备、`check:stdio` **6/6 通过**。注意 npm CDN 的 packument 有数分钟缓存，刚发布后 `npm install` 可能短暂报 `ETARGET`，用 `--prefer-online` 或稍候即可。发布步骤见 `docs/npm-publish-guide.md` |
+| GitHub Release | 推送 `v*` tag 触发 `.github/workflows/release.yml`：先跑完整门禁并校验「tag 版本 === package.json 版本」，正文由 `docs/release-v<ver>.md` + `.en.md` 双语合成（缺文档即报错），**要求同 SHA 的成功 CI**，并附 `tianshu-mcp-<ver>.tgz`。**v0.5.9 实测全绿**（[run 35786198143](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35786198143)，14 步全 success），[GitHub 发行 v0.5.9](https://github.com/lanlan0811/tianshu-mcp/releases/tag/v0.5.9) 附件 `tianshu-mcp-0.5.9.tgz`（552965 字节），正文为双语发布说明 |
+| Gitee 发行版 | 由 `scripts/gitee-release.mjs` 用仓库 Secret `GITEE_TOKEN` 幂等补齐；缺少凭据时工作流阻塞。**v0.5.9 已确认**（Gitee `releases/tags/v0.5.9`，正文取 `docs/release-v0.5.9.md`） |
 | 本次发布实测 | v0.5.8：CI `454b23c` 一次通过 22 作业全绿（[run 35758621021](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35758621021)）；`Release` 全绿（[run 35759258792](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35759258792)，附 `tianshu-mcp-0.5.8.tgz`，544815 字节）；[GitHub 发行 v0.5.8](https://github.com/lanlan0811/tianshu-mcp/releases/tag/v0.5.8) 与 Gitee 发行版 `v0.5.8` 均确认；npm `tianshu-mcp@0.5.8`（`latest`，`dist.shasum` = `5bfc2803…`），从 registry 实装消费者复验：**五个探针脚本齐备**、`check:stdio` 6/6 通过；双仓 `v0.5.8` 与 `master` 同指 `454b23c`。v0.5.7：发布提交 `71af40c`（内容同 `f14924b`）22 作业全绿（[run 35748888882](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35748888882)；`f14924b` 的 [run 35747644604](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35747644604) 曾因 `windows-latest/Node 20` 真实浏览器作业偶发失败，已用空白提交重跑通过）；[GitHub 发行 v0.5.7](https://github.com/lanlan0811/tianshu-mcp/releases/tag/v0.5.7)（[run 35749568666](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35749568666)）与 Gitee 发行版 `v0.5.7` 已确认，npm `tianshu-mcp@0.5.7`（`dist.shasum` = `48def1cf…`），registry 实装消费者中的 `skills/tianshu-mcp/*` 与仓库逐字节一致 |
 
 ### 2.1 Agent 适配现状
