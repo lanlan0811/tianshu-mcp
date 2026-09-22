@@ -16,6 +16,11 @@
 - 模型菜单选择后的异步关闭必须确认后才能重开，已补回归用例并通过真实模型管理读回。类型检查、lint、构建、6 项严格 stdio 检查、`npm pack` 内容校验与干净消费者安装 + 严格 stdio 检查已在本机通过。
 - 使用及恢复方法见 [Qoder 中文文档](docs/qoder-cdp.md) / [English guide](docs/qoder-cdp.en.md)。发布提交 `9ee03da` 已同步双仓，CI 22 个作业全绿（[run 35741308742](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35741308742)）；`v0.5.6` tag、[GitHub Release](https://github.com/lanlan0811/tianshu-mcp/releases/tag/v0.5.6)、Gitee 发行版与 npm `tianshu-mcp@0.5.6`（`latest`）均已完成。
 
+**发布后（未发布到 npm 的仓库内容）**：
+
+- 编排技能文档按当前代码逐项重写（`skills/tianshu-mcp/SKILL.md` + `usage-examples.md`）：新增参数兼容矩阵、`needsUserKind` × agent × `continue_task` 行为矩阵、`agentEndReason` → 终态映射；修正 Kimi Code 档位取值域（不含 `中`/`medium`）、`autoVerify` 默认开启、`autoFixRounds` 各 agent 缺省轮数；补齐 meta 新字段与 qoder 章节。详见 `CHANGELOG.md` 的「未发布」节。
+- 技能目录只有中文版（历史沿革如此，非双语），双语发布说明见 `docs/release-v*.md`。
+
 ## 0. 五分钟上手
 
 | 你想做什么 | 看哪节 |

@@ -8,6 +8,21 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- **The orchestration skill docs (`skills/tianshu-mcp/`) were rewritten item by item against the current code** (`SKILL.md` + `usage-examples.md`; the server idempotently syncs them into `~/.rivet/skills/tianshu-mcp/`). Every claim was checked against `src/mcp/tools.ts`, `src/config/schema.ts`, `src/tasks/task.ts`, `src/tasks/task-manager.ts`, `src/loop/fix-loop.ts`, `src/mcp/formatter.ts`, `src/agents/builtin.ts` and the five adapters:
+  - Added a **parameter compatibility matrix** (projectPath / model / modelSource / reasoningLevel / mode / planDoc / designSystem / allowCreateProject / continue_task across five agents) that states plainly what is rejected rather than silently ignored.
+  - Corrected the **Kimi Code tier domain**: it previously read `Low`/`High`/`Max`, but only `低/low`, `高/high`, `max`, `on` and `off` are accepted (deliberately no `中`/`medium`); the tier set is validated against the labels the UI actually renders, and an omitted tier forces `on` for unofficial models.
+  - Corrected the **`autoVerify` default** (on by default at the server level, previously undocumented) and completed the **`autoFixRounds` defaults** (codex 5 / zcode 2 / kimicode 2 / qoder 3 / traework falls back to the server default 0) plus the full `taskTimeoutMs` precedence.
+  - Added a full **qoder** section: `modelSource` disambiguation, saving and reading back the tier in Model Management, the global preference never being restored, send/answer checkpoints that never resend, automatic and manual repair both writing a plan and sending its full text back, macOS dispatch being disabled, and a multi-question JSON answer example.
+  - Added a **`needsUserKind` × agent × `continue_task` behaviour matrix** (six wait kinds × four agents), which previously was scattered per agent and never stated which kinds are confirmation-only and which re-send the complete brief.
+  - Added an **`agentEndReason` → terminal-state mapping** (`task_timeout` / `idle_timeout` / `cdp_disconnected` versus other hard failures landing in `needs_attention` or `failed(spawn)`), plus the missing `project_not_registered`, `unsupported_platform` and `qoder_error` (18 concrete codes) entries.
+  - Completed the **meta field table** with `qoderSessionId`, `actualModel`, `actualReasoningLevel`, `modelSource` and `guiStop`, and noted that `reasoningLevel` is an input that is never echoed while codex's effective tier is only visible in its panel.
+  - Clarified the three **`verify_task`** modes (task re-verification only updates the verdict fields; an independent `projectPath` accepts only a git ref as `baselineRef`; manual verification allocates a new report round) and the required arguments of `prepare_visual_baseline` / `approve_visual_baseline` (UUID plus a 64-hex digest).
+  - Removed duplicated material and split responsibilities: the main file teaches the method, the sub-file gives copy-ready shapes with wording matched to the real error strings.
+
 ## [0.5.6] - 2026-09-22
 
 ### Added

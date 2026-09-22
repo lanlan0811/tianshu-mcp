@@ -7,6 +7,21 @@
 
 ---
 
+## [未发布]
+
+### 变更
+
+- **编排技能文档（`skills/tianshu-mcp/`）按当前代码逐项重写**（`SKILL.md` + `usage-examples.md`，server 启动时幂等同步到 `~/.rivet/skills/tianshu-mcp/`）。逐项核对了 `src/mcp/tools.ts`、`src/config/schema.ts`、`src/tasks/task.ts`、`src/tasks/task-manager.ts`、`src/loop/fix-loop.ts`、`src/mcp/formatter.ts`、`src/agents/builtin.ts` 与五个适配器的实际实现后修正偏差：
+  - 新增**参数兼容矩阵**（projectPath / model / modelSource / reasoningLevel / mode / planDoc / designSystem / allowCreateProject / continue_task 九个维度 × 五个 agent），明确「传错即报错」的边界。
+  - 修正 **Kimi Code 思考档位取值域**：此前写作 `Low`/`High`/`Max`，实际仅接受 `低/low`、`高/high`、`max`、`on`、`off`（刻意不含 `中`/`medium`），且档位集合按界面实际渲染标签校验、非官方模型不传时强制 `on`。
+  - 修正 **`autoVerify` 默认值**（server 默认开启，此前文档未说明），补全 **`autoFixRounds` 缺省轮数**（codex 5 / zcode 2 / kimicode 2 / qoder 3 / traework 落 server 默认 0）与 `taskTimeoutMs` 的完整优先级。
+  - 补齐 **qoder** 章节：`modelSource` 消歧、模型管理档位保存回读、全局偏好不还原、发送/答题检查点不重发、自动与手动返修均先落计划并回发全文、macOS 禁止派发；新增 qoder 多题续答 JSON 对象示例。
+  - 新增 **`needsUserKind` × agent × `continue_task` 行为矩阵**（六类等待 × 四类 agent），此前按 agent 零散描述且未写清哪些类型只作「已处理」确认、哪些会补发完整任务书。
+  - 新增 **`agentEndReason` → 终态映射表**（`task_timeout`/`idle_timeout`/`cdp_disconnected` 与其余硬失败分别落 `needs_attention` 或 `failed(spawn)`），并补 `project_not_registered`、`unsupported_platform`、`qoder_error`（含 18 个具体码）等缺失错误码。
+  - 补齐 **meta 字段全表**缺失项：`qoderSessionId`、`actualModel`、`actualReasoningLevel`、`modelSource`、`guiStop`（并说明 `reasoningLevel` 是入参不回显、codex 实际等级需看面板）。
+  - 明确 **`verify_task` 三种用法差异**（任务复验只更新结论字段；独立 projectPath 的 `baselineRef` 只能是 git ref；手动验收报告轮次分配）与 `prepare_visual_baseline`/`approve_visual_baseline` 的必填参数约束（UUID + 64 位十六进制摘要）。
+  - 清理重复与冗余内容，改为「主文件讲方法论 + 子文件给可复制形状」的分工；中英文表述与代码实际错误文案对齐。
+
 ## [0.5.6] - 2026-09-22
 
 ### 新增
