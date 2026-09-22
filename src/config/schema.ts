@@ -28,6 +28,10 @@ export const ReasoningLevelSchema = z.enum([
   "medium",
   "high",
   "max",
+  "极高",
+  "xhigh",
+  "最大",
+  "关闭思考",
   "on",
   "off",
 ]);
@@ -48,10 +52,12 @@ export const RunTaskParamsSchema = z.object({
    */
   model: z.string().min(1).optional(),
   /**
-   * Codex 思考等级（仅 codex GUI 生效）。中英双语：低/中/高 或 low/medium/high。
-   * 未传时沿用 Codex 面板当前等级。
+   * GUI 思考等级；由具体适配器核对档位。Qoder CN 支持动态菜单校验。
+   * 未传时沿用当前等级。
    */
   reasoningLevel: ReasoningLevelSchema.optional(),
+  /** Qoder CN model group; omitted means unique exact match across groups. */
+  modelSource: z.enum(["default", "custom"]).optional(),
   /**
    * TraeWork 面板模式（仅 GUI 类 agent traework 生效）。
    * 未传时从任务书文本识别「切换 Work/Code/Design 模式」，仍识别不到则保持 Work。
@@ -59,7 +65,7 @@ export const RunTaskParamsSchema = z.object({
    */
   mode: TraeworkModeSchema.optional(),
   /**
-   * 计划文档路径（仅 codex GUI 生效）：相对项目根或绝对路径，
+   * 计划文档路径（Codex / Qoder CN）：相对项目根或绝对路径，Qoder CN 必填。
    * 会被拼进初始开发指令「根据计划文档(<planDoc>)…」。
    */
   planDoc: z.string().min(1).optional(),
@@ -346,7 +352,7 @@ export const AgentProfileSchema = z.object({
    */
   driver: z.enum(["spawn", "gui"]).default("spawn"),
   /** GUI adapter 显式判别；旧 profile 缺省时保持 TraeWork 兼容行为。 */
-  adapter: z.enum(["traework-gui", "zcode-gui", "codex-gui", "kimicode-gui"]).optional(),
+  adapter: z.enum(["traework-gui", "zcode-gui", "codex-gui", "kimicode-gui", "qoder-gui"]).optional(),
   status: z.enum(["ready", "research", "unsupported"]).default("ready"),
   command: z.string().nullable().optional(),
   argsTemplate: z.array(z.string()).default([]),

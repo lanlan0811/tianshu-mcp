@@ -4,7 +4,7 @@ import prettier from "eslint-config-prettier";
 
 export default [
   {
-    ignores: ["dist/**", "node_modules/**", ".tianshu-mcp/**", "analysis-tools/**"],
+    ignores: ["dist/**", "node_modules/**", ".tianshu-mcp/**", ".tmp-check/**", "analysis-tools/**"],
   },
   {
     files: ["src/**/*.ts", "test/**/*.ts"],

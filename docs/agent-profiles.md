@@ -20,7 +20,7 @@
       "displayName": "Codex (OpenAI 桌面端 CLI)",   // 展示名
       "type": "cli",                                  // 目前仅 cli
       "driver": "spawn",                              // spawn=外部子进程（默认）；gui=桌面 UI 自动化
-      "adapter": "zcode-gui",                         // GUI 可选：traework-gui | zcode-gui | codex-gui | kimicode-gui；旧缺省按 TraeWork 兼容
+      "adapter": "zcode-gui",                         // GUI 可选：traework-gui | zcode-gui | codex-gui | kimicode-gui | qoder-gui；旧缺省按 TraeWork 兼容
       "status": "ready",                              // ready | research | unsupported
       "command": null,                                // 可执行；null + discovery 则自动探测
       "argsTemplate": ["exec", "<prompt:arg>", "--skip-git-repo-check"],
@@ -57,7 +57,7 @@
 | `spawn`（默认） | 拉起外部 CLI 子进程（`argsTemplate` + `promptMode`），结果按退出码判定 |
 | `gui` | 通过 CDP 驱动桌面 UI（当前为 `traework` / `zcode` / `codex` / `kimicode`）；不 spawn 子进程，`run_task` 可传 `model` 指定其模型 |
 
-> `driver=gui` 时 `argsTemplate`/`promptMode` 不生效。显式 `adapter` 用于隔离各 GUI 实现；旧 profile 缺失该字段时仍按 TraeWork 行为兼容。分别见 [traework-cdp.md](traework-cdp.md)、[zcode-cdp.md](zcode-cdp.md)、[codex-gui-cdp.md](codex-gui-cdp.md) 与 [kimi-cdp.md](kimi-cdp.md)。
+> `driver=gui` 时 `argsTemplate`/`promptMode` 不生效。显式 `adapter` 用于隔离各 GUI 实现；旧 profile 缺失该字段时仍按 TraeWork 行为兼容。分别见 [traework-cdp.md](traework-cdp.md)、[zcode-cdp.md](zcode-cdp.md)、[codex-gui-cdp.md](codex-gui-cdp.md)、[kimi-cdp.md](kimi-cdp.md) 与 [qoder-cdp.md](qoder-cdp.md)。
 
 TraeWork 存活检测相关字段：`stableRounds` 仅确认 DOM 已稳定；随后还需持续 `idleTimeoutMs` 无变化且无运行信号才返回
 `idle`。`cdpSendTimeoutMs` 限制单次 CDP 命令等待，`progressIntervalMs` 控制 `query_task` 可见的进度事件频率。
@@ -204,6 +204,54 @@ TraeWork 存活检测相关字段：`stableRounds` 仅确认 DOM 已稳定；随
 > 任务以**工作区**（任务文件夹）组织，**不支持无项目派发**：必须提供 `projectPath`，未登记的工作区经原生「添加工作区」对话框导入。
 > 默认权限为「完全自动」、默认自动返修 2 轮。详见 [kimi-cdp.md](kimi-cdp.md)。
 
+### Qoder CN（GUI 驱动，2026-09-22 Windows 真机已验证）
+
+```jsonc
+// ~/.tianshu-mcp/agent-profiles.json （Windows 示例；下列即内置默认值）
+{
+  "profiles": {
+    "qoder": {
+      "displayName": "Qoder CN",
+      "type": "cli",
+      "driver": "gui",
+      "adapter": "qoder-gui",
+      "status": "ready",                 // darwin 为 "research"（fail-closed，禁止派发）
+      "command": null,
+      "argsTemplate": [],
+      "promptMode": "arg",
+      "cwd": "task",
+      "authNote": "复用 Qoder CN 登录态；无法连接的已有实例须用户处理，不自动重启。",
+      "executableDiscovery": {
+        "preferredDrives": ["D:"],
+        "relativePaths": ["Qoder CN/Qoder CN.exe", "Program Files/Qoder CN/Qoder CN.exe"],
+        "fileNames": ["Qoder CN.exe"],   // macOS 为 ["Qoder CN"]
+        "dirs": [
+          "{LOCALAPPDATA}/Programs/Qoder CN",
+          "{PROGRAMFILES}/Qoder CN",
+          "{PROGRAMFILES(X86)}/Qoder CN"
+        ]
+      },
+      "gui": {
+        "cdpPort": 9777,                 // CDP 基准端口；被占用时按 cdpPortRange 自动顺延
+        "cdpPortRange": 20,
+        "launchTimeoutMs": 90000,
+        "cdpSendTimeoutMs": 30000,
+        "stableRounds": 2,
+        "defaultAutoFixRounds": 3,
+        "modeSwitch": false,             // 不支持 mode 参数
+        "modelRequired": false,          // 模型与等级可省略，沿用界面当前值
+        "selectors": {}
+      }
+    }
+  }
+}
+```
+
+> **要点**：`projectPath` 与 `planDoc` 必填；`modelSource` 选填，用于消除“默认/自定义”跨组重名。
+> 显式 `gui.exePath` 无效时直接报错，不会偷偷换用另一份安装；已有实例无可用 CDP 时保留现场并转
+> `needs_user`，绝不关闭或重启。未登记目录经「新的任务 → 工作区 → 新建工作区 → 添加可读写文件夹」导入。
+> 思考等级经「模型管理」保存为**全局偏好**（不自动还原），权限模式沿用不切换。详见 [qoder-cdp.md](qoder-cdp.md)。
+
 ### 历史：Codex 内核 CLI（`codex exec`，已被 GUI 驱动取代）
 
 ```jsonc
@@ -242,14 +290,17 @@ TraeWork 存活检测相关字段：`stableRounds` 仅确认 DOM 已稳定；随
 
 > `kimicode` 使用 `driver=gui` + `adapter=kimicode-gui` + `activation=spawn`（普通 Electron 安装，实测 1.0.2）。`model` 必填且直接填界面模型名（如 `K3`、`K2.8 Preview`、`stepfun/step-3.7-flash:free`），**不支持 `mode`**；CDP 基准端口 `9666`（`cdpPortAuto` 时按 `cdpPortRange` 顺延），`launchTimeoutMs` 90000，默认权限「完全自动」、默认自动返修 2 轮。Windows 真机已验证（成功路径 / 未登记工作区导入 + 自动验收 / 失败→返修→再验收同会话闭环）；macOS 为 `research` 且 fail-closed。详见 [kimi-cdp.md](kimi-cdp.md)。
 
+> `qoder` 使用 `driver=gui` + `adapter=qoder-gui`（仅 Qoder CN）。`projectPath` 与可读 `planDoc` 必填；`modelSource` 选填（`default` / `custom`）；CDP 基准端口 `9777`（`cdpPortAuto` 时按 `cdpPortRange` 顺延），`launchTimeoutMs` 90000，`stableRounds` 2，默认自动返修 3 轮。思考等级经「模型管理」保存为**全局偏好**并回读，权限模式沿用不切换（不自动开启“完全访问”）。Windows 真机已验证（已有工作区默认模型、新登记工作区自定义模型、受控失败 → 落计划 → 原会话返修 → 再验收）；macOS 为 `research` 且 fail-closed。详见 [qoder-cdp.md](qoder-cdp.md)。
+
 ### reasoningLevel 取值域与适用档位
 
-`run_task.reasoningLevel` 的取值域自 v0.5.5 起扩展为两组：
+`run_task.reasoningLevel` 的取值域自 v0.5.5 起扩展，v0.5.6 再补 Qoder 档位：
 
 | 取值 | 说明 |
 |---|---|
 | `low` / `medium` / `high`（别名：`低` / `中` / `高`） | 通用三档，供 Codex 使用 |
 | `max` / `on` / `off` | Kimi Code 的界面档位：官方模型为 `Low` / `High` / `Max`，非官方模型只有 `On` / `Off` |
+| `xhigh` / `极高`、`最大`、`关闭思考` | Qoder CN 档位别名（`最大`/`关闭思考` 复用 `max`/`off`）；仅 `qoder-gui` 接受别名，其他适配器传入即报错 |
 
 各 agent 的适用档位与语义：
 
@@ -257,6 +308,7 @@ TraeWork 存活检测相关字段：`stableRounds` 仅确认 DOM 已稳定；随
 |---|---|---|
 | `codex` | `low` / `medium` / `high` | 不传沿用 Codex 面板当前等级 |
 | `kimicode` | 官方模型 `low` / `high` / `max`；非官方模型 `on` / `off` | 档位集合以**界面实际渲染的档位标签**为准（不内置模型名单）；不传时官方档位沿用界面当前值、非官方档位强制 `on`；请求界面不存在的档位在**发送前**以 `model_mismatch` 响亮报错，绝不静默沿用 |
+| `qoder` | 低 / 中 / 高 / 极高（`xhigh`）/ 最大（`max`）/ 关闭思考（`off`） | 可用档位以**该模型在「模型管理」中实际渲染的选项**为准；不支持的档位在**发送前**报错，禁止静默降级。不传时沿用界面当前值并记录；保存后重新打开回读验证，修改会保留为全局偏好 |
 | `traework` / `zcode` / spawn 类 | 不适用 | 传入会被忽略或按各 adapter 语义拒绝 |
 
 ## 常见问题

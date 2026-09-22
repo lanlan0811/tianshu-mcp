@@ -9,6 +9,8 @@ import { CliAdapter } from "./cli.js";
 import { TraeworkGuiAdapter } from "./traework/adapter.js";
 import { ZcodeGuiAdapter } from "./zcode/adapter.js";
 import { CodexGuiAdapter } from "./codex/adapter.js";
+import { QoderGuiAdapter } from "./qoder/adapter.js";
+import { discoverQoder } from "./qoder/discovery.js";
 import { KimicodeGuiAdapter } from "./kimicode/adapter.js";
 import { discoverZcode } from "./zcode/discovery.js";
 import { discoverCodex } from "./codex/discovery.js";
@@ -29,7 +31,7 @@ export class AgentAdapterRegistry {
   ) {
     // 默认：所有 profile 都用通用 CLI adapter（按 profile.promptMode 传递 prompt）。
     // driver=gui 的 profile 会在 resolve() 时替换为 GUI adapter（见 ensureAdapterFor）。
-    for (const id of ["codex", "zcode", "traework", "kimicode", "stub"]) {
+    for (const id of ["codex", "zcode", "traework", "kimicode", "qoder", "stub"]) {
       this.adapters.set(id, new CliAdapter(id));
     }
   }
@@ -42,7 +44,9 @@ export class AgentAdapterRegistry {
   private ensureAdapterFor(agentId: string, profile: AgentProfile): void {
     const adapterType = profile.adapter ?? (profile.driver === "gui" ? "traework-gui" : undefined);
     const current = this.adapters.get(agentId);
-    if (adapterType === "zcode-gui") {
+    if (adapterType === "qoder-gui") {
+      if (!(current instanceof QoderGuiAdapter)) this.adapters.set(agentId, new QoderGuiAdapter(agentId));
+    } else if (adapterType === "zcode-gui") {
       if (!(current instanceof ZcodeGuiAdapter))
         this.adapters.set(agentId, new ZcodeGuiAdapter(agentId));
     } else if (adapterType === "codex-gui") {
@@ -59,6 +63,7 @@ export class AgentAdapterRegistry {
       current instanceof ZcodeGuiAdapter ||
       current instanceof CodexGuiAdapter ||
       current instanceof KimicodeGuiAdapter ||
+      current instanceof QoderGuiAdapter ||
       !current
     ) {
       this.adapters.set(agentId, new CliAdapter(agentId));
@@ -158,6 +163,16 @@ export class AgentAdapterRegistry {
         message:
           profile.note ||
           `未探测到 Codex 桌面端（Get-AppxPackage 查询与 ${"WindowsApps"} 扫盘均失败）；请确认已安装 Codex`,
+      };
+    }
+    if (profile.adapter === "qoder-gui") {
+      const found = await discoverQoder(profile);
+      return {
+        id: agentId, displayName: profile.displayName || agentId, profile,
+        command: found?.path ?? "", argsTemplate: profile.argsTemplate,
+        ok: !!found && process.platform === "win32",
+        message: process.platform !== "win32" ? "Qoder CN macOS research：未完成真机验证，禁止派发" : found ? "探测到 Qoder CN: " + found.path : "未找到 Qoder CN；请配置 gui.exePath",
+        discovered: found ? {source: found.source === "explicit" ? "explicit" : "discovery",version:found.version} : undefined,
       };
     }
     if (profile.adapter === "kimicode-gui") {

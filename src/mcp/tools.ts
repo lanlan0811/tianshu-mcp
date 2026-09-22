@@ -1,5 +1,5 @@
 /**
- * 工具注册表：9 个工具的 name/description/inputSchema/capability/approval 元数据。
+ * 工具注册表：11 个工具的 name/description/inputSchema/capability/approval 元数据。
  * MCP 层用 inputSchema 声明；capability/requireApproval 供天枢 policy（§5/§11.3）。
  * 能力标注遵守 R11：读/查询/验收 read；run/cancel/rework write + requireApproval。
  */
@@ -43,7 +43,7 @@ export const TOOL_DEFS: ToolDef[] = [
   {
     name: "continue_task",
     description:
-      "恢复处于 needs_user 的任务。zcode：agent_question 时 message 发往原会话，关闭旧实例/登录/系统权限场景中 message 仅作已处理确认。codex：user_confirmation 时重新接入观察 GUI 内运行（不发送消息）；login_required 时复检环境后重发任务书。",
+      "恢复处于 needs_user 的任务。zcode：agent_question 时 message 发往原会话，关闭旧实例/登录/系统权限场景中 message 仅作已处理确认。codex：user_confirmation 时重新接入观察 GUI 内运行（不发送消息）；login_required 时复检环境后重发任务书。qoder：Agent 提问通过专用答题控件回复；多题 message 使用完整问题文字到答案的 JSON 对象。审批或环境处理后仅恢复观察，提交不明时禁止重发。",
     inputSchema: ContinueTaskParamsSchema,
     capability: "write",
     requireApproval: true,
@@ -51,7 +51,7 @@ export const TOOL_DEFS: ToolDef[] = [
   {
     name: "run_task",
     description:
-      "派活：启动外部 AI-Agent 开发任务并可自动验收返修，异步返回 taskId。ZCode 要求 model=供应商/模型，不支持 mode；TraeWork 的 model 可选并支持 Work/Code/Design mode。task/context 内的 ZCode 项目路径引用会在发送前校验。",
+      "派活：启动外部 AI-Agent 开发任务并可自动验收返修，异步返回 taskId。ZCode 要求 model=供应商/模型，不支持 mode；TraeWork 的 model 可选并支持 Work/Code/Design mode。task/context 内的 ZCode 项目路径引用会在发送前校验。Qoder CN 要求已有 projectPath 和可读 planDoc；modelSource 可选 default/custom，省略模型或等级则沿用当前设置。思考等级通过模型管理保存为全局偏好，权限模式不变；macOS research 禁止派发。",
     inputSchema: RunTaskParamsSchema,
     capability: "write",
     requireApproval: true,

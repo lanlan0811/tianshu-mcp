@@ -7,6 +7,14 @@
 
 ---
 
+## [0.5.6] - 2026-09-22
+
+- 新增 Qoder CN GUI 适配：安装发现、完整路径工作区绑定与导入、默认/自定义模型选择、模型管理思考等级保存回读。
+- 接入已有 MCP 开发、运行检测、客观验收和原会话返修流程；自动与手动返修均先保存修复计划，再发送文件名、完整路径与全文。
+- 新增模型来源与实际设置报告；保留权限模式，披露全局思考偏好影响；审批不代批，提问使用专用答题控件，提交不明不重发。
+- Windows 默认/自定义模型、新工作区与原会话返修真机验收通过；macOS 保持 research 并禁止派发。详见 [Qoder 操作说明](docs/qoder-cdp.md)。
+- 恢复单元测试文件隔离，修复安装探测命令 mock 泄漏导致 Git 基线测试依赖执行顺序的问题；lint 排除临时探测目录。
+
 ## [0.5.5] - 2026-09-20
 
 ### 新增
@@ -688,6 +696,7 @@ Codex 桌面端改为 **GUI 驱动**：新增 `codex-gui` adapter，通过 MSIX 
 
 ---
 
+[0.5.6]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.5.2...v0.5.3

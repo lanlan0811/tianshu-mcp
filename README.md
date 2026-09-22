@@ -8,11 +8,11 @@
 
 # tianshu-mcp
 
-视觉验收（v0.5.0 起，含 v0.5.4 可选 AI 内容校验）：[中文指南](docs/visual-acceptance.md) · [验证记录](docs/visual-validation.md) · [最新发布说明](<docs/release-v0.5.4.md>)。
+视觉验收（v0.5.0 起，含 v0.5.4 可选 AI 内容校验）：[中文指南](docs/visual-acceptance.md) · [验证记录](docs/visual-validation.md) · [最新发布说明](<docs/release-v0.5.6.md>)。
 
 **天枢 × AI-Agent 编排 MCP server**
 
-由天枢（Tianshu）当作标准 MCP server 接入，调度外部 AI-Agent（Codex 桌面端、TraeWork/TRAE SOLO CN、ZCode、Kimi Code 均经 CDP 驱动桌面 UI）完成 **项目开发 → 验收 → 失败返修 → 再验收** 的闭环（架构可横向扩展）。
+由天枢（Tianshu）当作标准 MCP server 接入，调度外部 AI-Agent（Codex 桌面端、TraeWork/TRAE SOLO CN、ZCode、Kimi Code、Qoder CN 均经 CDP 驱动桌面 UI）完成 **项目开发 → 验收 → 失败返修 → 再验收** 的闭环（架构可横向扩展）。
 
 > 天枢官方仓库：[github.com/huiliyi37/Tianshu-harness](https://github.com/huiliyi37/Tianshu-harness) —— 基于 harness 工程的终端编程智能体运行时（TUI × GUI），本 MCP 作为其 MCP server 接入。
 
@@ -356,12 +356,15 @@ run_task(projectPath=D:/xxx/my-app, agentId=kimicode, task=「按 `./plan.md` �
 
 ## Agent 适配现状
 
+Qoder CN 使用 `agentId="qoder"`，必须提供已有 `projectPath` 和可读 `planDoc`。`modelSource="default"|"custom"` 区分模型来源；不指定模型和思考等级时沿用当前值。等级通过“模型管理”保存为全局偏好，不自动改变权限模式。操作、答题续传和排障见 [Qoder CN 文档](docs/qoder-cdp.md)。
+
 | agentId | driver / adapter | status | 说明 |
 |---|---|---|---|
 | `codex` | `gui` / `codex-gui` | **ready**（macOS 为 `research`） | Codex 桌面端 GUI（Windows：MSIX COM 激活 + CDP；macOS：spawn .app + CDP）；支持 `model`/`reasoningLevel`/`planDoc`/`designSystem`；等待用户确认、取消与重派护栏均已真机验证（v0.3.2）；Windows 真机已验证；macOS 基本闭环已真机验证（v0.4.0），取消/返修矩阵补齐前保持 `research` |
 | `zcode` | `gui` / `zcode-gui` | **research** | CDP GUI adapter 已实现且 Windows 真机闭环通过；已适配 ZCode 3.11.2 模型菜单与项目绑定（v0.3.3），并加固项目/模型回读与初始化恢复（v0.3.4）；支持无项目派发与 `allowCreateProject`（v0.5.2，issue #12），v0.5.3 修复实例跨 server 驻留、新建任务切页与发送失败归因；macOS 基本闭环已真机验证（2026-09-13，v0.4.0），取消/返修/新建项目矩阵补齐前保持 `research` |
 | `traework` | `gui` / `traework-gui` | **ready** | CDP 驱动 TRAE SOLO CN 桌面 UI；三种面板模式真机验证通过 |
 | `kimicode` | `gui` / `kimicode-gui` | **ready**（macOS 为 `research`） | Kimi Code 桌面端（Electron，实测 1.0.2）；**双渲染进程**（主窗口 + `Kimi Browser Overlay` 浮层承载模型/档位/模式菜单）；工作区以完整路径绑定，未登记时经原生「添加工作区」对话框导入；支持 `model`/`reasoningLevel`，不支持 `mode`；Windows 真机已验证成功路径、未登记工作区导入 + 自动验收、失败 → 返修 → 再验收同会话闭环；取消/提问续答仅由 hermetic 集成测试覆盖，macOS 为 `research` 且 fail-closed |
+| `qoder` | `gui` / `qoder-gui` | Windows 真机闭环通过；macOS **research** | 仅 Qoder CN；完整路径工作区、未登记目录经新建工作区 + 原生目录选择器导入、默认/自定义模型、模型管理全局思考等级保存回读、原会话续答与返修；Windows 真机验证：已有工作区默认模型、新登记工作区自定义模型、受控失败 → 落计划 → 原会话返修 → 再验收均通过；macOS 为 `research` 且 fail-closed（禁止派发） |
 | `stub` | `spawn` | 仅测试 | `test/stub-agent/stub-agent.mjs` 三剧本（good/fix-on-first/never） |
 
 > 新增 agent 通常只需加一个 profile，详见 [docs/agent-profiles.md](docs/agent-profiles.md) 与 [CONTRIBUTING.md](CONTRIBUTING.md)。

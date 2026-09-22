@@ -23,6 +23,7 @@ export function makeBuildCtx(services: AppServices) {
     context: meta.context,
     model: meta.model,
     reasoningLevel: meta.reasoningLevel,
+    modelSource: meta.modelSource,
     planDoc: meta.planDoc,
     designSystem: meta.designSystem,
     mode: meta.mode,
@@ -69,6 +70,19 @@ function buildResume(meta: TaskMeta, round: number): TaskContext["resume"] {
       ...(meta.continueReobserve ? { reobserve: true } : {}),
       boundProjectPath: meta.boundProjectPath,
       model: meta.model,
+      permissionMode: meta.permissionMode,
+    };
+  }
+  if (meta.agentId === "qoder") {
+    if (!continuing && round <= 0) return undefined;
+    return {
+      kind: continuing ? "continue" : "rework",
+      message: meta.continueMessage,
+      sendMessage: meta.continueSendMessage ?? round > 0,
+      reobserve: meta.continueReobserve,
+      sessionId: meta.qoderSessionId,
+      boundProjectPath: meta.boundProjectPath,
+      model: meta.actualModel ?? meta.model,
       permissionMode: meta.permissionMode,
     };
   }

@@ -24,7 +24,7 @@ import { writeRepairPlan } from "./repair-plan.js";
 import { writeCodexFixPlan } from "../agents/codex/fixplan.js";
 import { buildFixPrompt } from "../agents/codex/input.js";
 import { extractFailureEvidence } from "../agents/codex/verify.js";
-import { type TaskMeta, isProjectWorkspace } from "../tasks/task.js";
+import { type TaskMeta, type VerifyReport, isProjectWorkspace } from "../tasks/task.js";
 import { TaskStore } from "../tasks/task-store.js";
 import type { DataHome } from "../config/store.js";
 import { Logger } from "../util/log.js";
@@ -132,6 +132,24 @@ export class TaskOrchestrator {
         [this.initialFeedback, resumedFeedback].filter(Boolean).join("\n") || undefined;
       const maxRounds = meta.autoFixRounds;
 
+      // Manual rework starts a new orchestrator, so it must also materialize a plan
+      // before dispatch; the automatic loop below already does this per failed round.
+      if (meta.agentId === "qoder" && round > 0 && meta.continueMessage === undefined) {
+        const report = meta.reportJson ? await readJsonSafe<VerifyReport>(meta.reportJson) : null;
+        if (!report || report.taskId !== meta.taskId || !meta.reportMd || await readTextSafe(meta.reportMd) == null) {
+          return this.finish("failed", "internal", "Qoder 原验收报告不可读，无法生成返修计划，拒绝发送。");
+        }
+        const plan = await writeRepairPlan({
+          taskId: meta.taskId, round: round - 1, projectPath: meta.projectPath,
+          displayPath: meta.displayPath, taskText: meta.task, report,
+          taskDir: store.dir(meta.taskId), logger,
+        });
+        if (feedback) await fsp.appendFile(plan.taskPath, `\n## 用户追加修复或优化要求\n\n${feedback}\n`);
+        const planText = await readTextSafe(plan.taskPath);
+        if (planText == null) return this.finish("failed", "internal", "Qoder 返修计划不可读，拒绝发送。");
+        feedback = `${buildFixFeedback(meta.task, report.message, meta.reportMd, plan.taskPath)}\n\n修复计划全文（${plan.fileName}）：\n${planText}`;
+      }
+
       for (;;) {
         if (this.aborted()) return this.abortTerminal();
         await store.updateStatus(meta, "running", `第 ${round} 轮 agent 执行`, "started");
@@ -160,10 +178,18 @@ export class TaskOrchestrator {
         meta.lastRunSignal = runRes.endReason ?? meta.lastRunSignal;
         meta.keptInstance = runRes.keptInstance;
         meta.progressSummary = runRes.progressSummary;
+        if (meta.agentId === "qoder") {
+          meta.actualModel = runRes.actualModel ?? meta.actualModel;
+          meta.actualReasoningLevel = runRes.actualReasoningLevel ?? meta.actualReasoningLevel;
+          meta.modelSource = runRes.actualModelSource ?? meta.modelSource;
+          meta.guiStop = runRes.guiStop;
+        }
         if (runRes.session) {
           // 会话锚点按 agent 分槽存放：zcodeSession* 与 kimicodeSession* 语义不同
           // （旧快照里的 zcodeSession* 是 ZCode 会话，拿去 Kimi Code 里定位必然失败）。
-          if (meta.agentId === "kimicode") {
+          if (meta.agentId === "qoder") {
+            meta.qoderSessionId = runRes.session.id ?? meta.qoderSessionId;
+          } else if (meta.agentId === "kimicode") {
             meta.kimicodeSessionId = runRes.session.id ?? meta.kimicodeSessionId;
             meta.kimicodeSessionTitle = runRes.session.title ?? meta.kimicodeSessionTitle;
           } else {
@@ -333,6 +359,7 @@ export class TaskOrchestrator {
             );
           }
           feedback = buildFixFeedback(meta.task, verdict.summary, verdict.mdPath, plan.taskPath);
+          if (meta.agentId === "qoder") feedback += `\n\n修复计划全文（${path.basename(plan.taskPath)}）：\n${planReadable}`;
           continue;
         }
         if (maxRounds === 0) {

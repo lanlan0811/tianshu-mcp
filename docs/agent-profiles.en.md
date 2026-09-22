@@ -15,7 +15,7 @@ built-in (`src/agents/builtin.ts`) → user `agent-profiles.json` overrides by `
       "displayName": "…",
       "type": "cli",                 // only cli today
       "driver": "spawn",             // spawn = external child process (default); gui = desktop UI automation
-      "adapter": "zcode-gui",        // GUI discriminator: traework-gui | zcode-gui | codex-gui | kimicode-gui; missing keeps legacy TraeWork behavior
+      "adapter": "zcode-gui",        // GUI discriminator: traework-gui | zcode-gui | codex-gui | kimicode-gui | qoder-gui; missing keeps legacy TraeWork behavior
       "status": "ready",             // ready | research | unsupported
       "command": null,               // absolute path; null + discovery = auto-probe
       "argsTemplate": ["exec", "<prompt:arg>"],
@@ -51,7 +51,7 @@ built-in (`src/agents/builtin.ts`) → user `agent-profiles.json` overrides by `
 | `spawn` (default) | launches an external CLI child process (`argsTemplate` + `promptMode`); success is decided by exit code |
 | `gui` | drives a desktop UI over CDP (currently `traework` / `zcode` / `codex` / `kimicode`); no child process, and `run_task` may pass `model` to pick its model |
 
-> With `driver=gui`, `argsTemplate`/`promptMode` are unused. An explicit `adapter` isolates each GUI implementation; a legacy profile without it keeps TraeWork behavior. See [traework-cdp.en.md](traework-cdp.en.md), [zcode-cdp.en.md](zcode-cdp.en.md), [codex-gui-cdp.en.md](codex-gui-cdp.en.md) and [kimi-cdp.en.md](kimi-cdp.en.md).
+> With `driver=gui`, `argsTemplate`/`promptMode` are unused. An explicit `adapter` isolates each GUI implementation; a legacy profile without it keeps TraeWork behavior. See [traework-cdp.en.md](traework-cdp.en.md), [zcode-cdp.en.md](zcode-cdp.en.md), [codex-gui-cdp.en.md](codex-gui-cdp.en.md), [kimi-cdp.en.md](kimi-cdp.en.md) and [qoder-cdp.en.md](qoder-cdp.en.md).
 
 TraeWork liveness fields: `stableRounds` only confirms that the DOM is stable; `idle` is returned only after another
 `idleTimeoutMs` without changes or authoritative running signals. `cdpSendTimeoutMs` bounds one CDP command, while
@@ -88,14 +88,17 @@ retain the instance and expose `agentEndReason` / `keptInstance` in metadata.
 
 > `kimicode` uses `driver=gui` + `adapter=kimicode-gui` + `activation=spawn` (a plain Electron install, measured 1.0.2). `model` is required and takes the UI model name directly (e.g. `K3`, `K2.8 Preview`, `stepfun/step-3.7-flash:free`), and `mode` is **not supported**; the CDP base port is `9666` (advancing through `cdpPortRange` when `cdpPortAuto`), `launchTimeoutMs` is 90000, and the defaults are the "fully automatic" permission mode and two automatic repair rounds. Machine-verified on Windows (success path / unregistered-workspace import + auto-acceptance / failure → rework → re-acceptance same-session loop); macOS is `research` and fail-closed. See [kimi-cdp.en.md](kimi-cdp.en.md).
 
+> `qoder` uses `driver=gui` + `adapter=qoder-gui` (Qoder CN only). `projectPath` and a readable `planDoc` are mandatory; `modelSource` is optional (`default` / `custom`). The CDP base port is `9777` (advancing through `cdpPortRange` when `cdpPortAuto`), `launchTimeoutMs` is 90000, `stableRounds` is 2, and the default is three automatic repair rounds. Reasoning tiers are saved in Model Management as a **global preference** and read back; the permission mode is retained and "full access" is never enabled automatically. Machine-verified on Windows (default model in an existing workspace, custom model in a newly registered workspace, controlled failure → plan → same-session repair → re-acceptance); macOS is `research` and fail-closed. See [qoder-cdp.en.md](qoder-cdp.en.md).
+
 ### `reasoningLevel` domain and applicable tiers
 
-Since v0.5.5 the `run_task.reasoningLevel` domain has grown to two groups:
+Since v0.5.5 the `run_task.reasoningLevel` domain has grown, and v0.5.6 added the Qoder tiers:
 
 | Values | Meaning |
 |---|---|
 | `low` / `medium` / `high` (aliases: `低` / `中` / `高`) | The generic three tiers, used by Codex |
 | `max` / `on` / `off` | Kimi Code's UI tiers: official models use `Low` / `High` / `Max`, unofficial models only `On` / `Off` |
+| `xhigh` / `极高`, `最大`, `关闭思考` | Qoder CN tier aliases (`最大` / `关闭思考` reuse `max` / `off`); only `qoder-gui` accepts the aliases, and other adapters reject them |
 
 Per-agent applicability and semantics:
 
@@ -103,6 +106,7 @@ Per-agent applicability and semantics:
 |---|---|---|
 | `codex` | `low` / `medium` / `high` | When omitted, the Codex panel's current level is kept |
 | `kimicode` | official models `low` / `high` / `max`; unofficial models `on` / `off` | The tier set comes from **the tier labels the UI actually renders** (no built-in model list). When omitted, official tiers keep the UI's current value and unofficial tiers force `on`. Requesting a tier the UI does not render fails loudly with `model_mismatch` **before sending** and is never silently kept |
+| `qoder` | 低 / 中 / 高 / 极高 (`xhigh`) / 最大 (`max`) / 关闭思考 (`off`) | The available set comes from **the options the selected model actually renders in Model Management**. An unsupported tier fails **before sending**; silent downgrades are forbidden. When omitted, the UI's current value is kept and reported; after saving, the dialog is reopened for readback, and the change persists as a global preference |
 | `traework` / `zcode` / spawn agents | not applicable | Ignored, or rejected per that adapter's semantics |
 
 ## Real-machine sample
@@ -215,6 +219,51 @@ Per-agent applicability and semantics:
 > **Two renderer processes**: the model / thinking-tier / execution-mode menus render in the `Kimi Browser Overlay` window, while the workspace menu and the "switch model" dialog stay in the main window.
 > Tasks are organised by **workspace** (task folder) and **project-less dispatch is not supported**: `projectPath` is mandatory, and an unregistered workspace is imported through the native "add workspace" dialog.
 > The default permission is "fully automatic" and the default is two automatic repair rounds. Details: [kimi-cdp.en.md](kimi-cdp.en.md).
+
+### Qoder CN (GUI driver, Windows-verified 2026-09-22)
+
+```jsonc
+// ~/.tianshu-mcp/agent-profiles.json (Windows sample; these are the built-in defaults)
+{
+  "profiles": {
+    "qoder": {
+      "displayName": "Qoder CN",
+      "type": "cli",
+      "driver": "gui",
+      "adapter": "qoder-gui",
+      "status": "ready",                 // "research" on darwin (fail-closed, dispatch disabled)
+      "command": null,
+      "argsTemplate": [], "promptMode": "arg", "cwd": "task",
+      "authNote": "reuses the local Qoder CN login; an existing instance that cannot be connected is handled by the user and never restarted automatically",
+      "executableDiscovery": {
+        "preferredDrives": ["D:"],
+        "relativePaths": ["Qoder CN/Qoder CN.exe", "Program Files/Qoder CN/Qoder CN.exe"],
+        "fileNames": ["Qoder CN.exe"],   // ["Qoder CN"] on macOS
+        "dirs": [
+          "{LOCALAPPDATA}/Programs/Qoder CN",
+          "{PROGRAMFILES}/Qoder CN",
+          "{PROGRAMFILES(X86)}/Qoder CN"
+        ]
+      },
+      "gui": {
+        "cdpPort": 9777,                 // CDP base port; falls through cdpPortRange when taken
+        "cdpPortRange": 20,
+        "launchTimeoutMs": 90000,
+        "cdpSendTimeoutMs": 30000,
+        "stableRounds": 2,
+        "defaultAutoFixRounds": 3,
+        "modeSwitch": false,             // the mode parameter is not supported
+        "modelRequired": false,          // model and tier may be omitted and the UI's current values are kept
+        "selectors": {}
+      }
+    }
+  }
+}
+```
+
+> **Essential**: `projectPath` and `planDoc` are mandatory; `modelSource` is optional and only needed to disambiguate identical names across the default/custom groups.
+> An invalid explicit `gui.exePath` fails loudly instead of silently falling back to another installation; an existing instance without usable CDP is preserved in place and turned into `needs_user` — it is never closed or restarted. An unregistered directory is imported through New Task → Workspace → New Workspace → Add Read/Write Folder.
+> Thinking tiers are saved in Model Management as a **global preference** (not restored afterwards) and the permission mode is retained. Details: [qoder-cdp.en.md](qoder-cdp.en.md).
 
 ### Historical: Codex kernel CLI (`codex exec`, superseded by the GUI driver)
 

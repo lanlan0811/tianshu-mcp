@@ -38,6 +38,7 @@ export interface TaskContext {
   model?: string;
   /** Codex GUI 思考等级（已归一 low/medium/high）；其他 agent 忽略 */
   reasoningLevel?: ReasoningLevel;
+  modelSource?: "default" | "custom";
   /** Codex GUI 初始开发指令引用的计划文档路径；其他 agent 忽略 */
   planDoc?: string;
   /** Codex GUI 初始开发指令引用的设计系统目录路径；其他 agent 忽略 */
@@ -111,6 +112,9 @@ export interface AgentRunResult {
     model?: string;
     permissionMode?: string;
   };
+  actualModel?: string;
+  actualReasoningLevel?: string;
+  actualModelSource?: "default" | "custom";
   progressSummary?: string;
 }
 

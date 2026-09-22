@@ -8,11 +8,11 @@
 
 # tianshu-mcp
 
-Visual acceptance (since v0.5.0, with optional AI content validation since v0.5.4): [English guide](docs/visual-acceptance.en.md) · [Validation record](docs/visual-validation.en.md) · [Latest release notes](<docs/release-v0.5.4.en.md>).
+Visual acceptance (since v0.5.0, with optional AI content validation since v0.5.4): [English guide](docs/visual-acceptance.en.md) · [Validation record](docs/visual-validation.en.md) · [Latest release notes](<docs/release-v0.5.6.en.md>).
 
 **Tianshu × AI-Agent orchestration MCP server**
 
-Registered by Tianshu as a standard MCP server, it dispatches external AI-Agents (Codex desktop, TraeWork/TRAE SOLO CN, ZCode and Kimi Code, all driven through their desktop UIs over CDP) to drive the closed loop of **project development → acceptance → failure rework → re-acceptance** (horizontally extensible).
+Registered by Tianshu as a standard MCP server, it dispatches external AI-Agents (Codex desktop, TraeWork/TRAE SOLO CN, ZCode, Kimi Code and Qoder CN, all driven through their desktop UIs over CDP) to drive the closed loop of **project development → acceptance → failure rework → re-acceptance** (horizontally extensible).
 
 > Official Tianshu repository: [github.com/huiliyi37/Tianshu-harness](https://github.com/huiliyi37/Tianshu-harness) — a harness-engineering terminal coding-agent runtime (TUI × GUI); this MCP plugs into it as an MCP server.
 
@@ -355,12 +355,15 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 
 ## Agent support status
 
+Qoder CN uses `agentId="qoder"` and requires an existing `projectPath` plus a readable `planDoc`. Optional `modelSource="default"|"custom"` identifies the model group. Omitted model or reasoning settings retain current values. Model Management saves reasoning preferences globally; permission mode is unchanged. See the [Qoder CN guide](docs/qoder-cdp.en.md) for usage, question answers, and recovery.
+
 | agentId | driver / adapter | status | Notes |
 |---|---|---|---|
 | `codex` | `gui` / `codex-gui` | **ready** (`research` on macOS) | Desktop GUI over CDP (Windows: MSIX COM activation; macOS: spawn .app binary + CDP); supports `model`/`reasoningLevel`/`planDoc`/`designSystem`; wait-user, cancel and dispatch-guard semantics machine-verified (v0.3.2); Windows machine-verified; macOS basic closed loop machine-verified (v0.4.0) — stays `research` until the cancel/rework matrix is covered |
 | `zcode` | `gui` / `zcode-gui` | **research** | CDP GUI adapter with the Windows hardware loop passed; adapted to ZCode 3.11.2 model menu and project binding (v0.3.3), with hardened project/model read-back and initialization recovery (v0.3.4); supports project-less dispatch and `allowCreateProject` (v0.5.2, issue #12), and v0.5.3 fixed instance survival across server exit, new-task page switching and send-failure attribution; macOS basic closed loop machine-verified (2026-09-13, v0.4.0) — stays `research` until the cancel/rework/new-project matrix is covered |
 | `traework` | `gui` / `traework-gui` | **ready** | CDP-driven TRAE SOLO CN desktop UI; all three panel modes machine-verified |
 | `kimicode` | `gui` / `kimicode-gui` | **ready** (`research` on macOS) | Kimi Code desktop (Electron, measured 1.0.2); **two renderer processes** (main window + `Kimi Browser Overlay` carrying the model/tier/mode menus); workspaces bind by full path and unregistered ones are imported through the native "add workspace" dialog; supports `model`/`reasoningLevel` and rejects `mode`; Windows machine-verified for the success path, unregistered-workspace import + auto-acceptance, and the failure → rework → re-acceptance same-session loop; cancellation/question answering are covered by hermetic integration tests only, and macOS stays `research` and fail-closed |
+| `qoder` | `gui` / `qoder-gui` | Windows real GUI loop passed; macOS **research** | Qoder CN only; full-path workspaces, unregistered directories imported via New Workspace + the native folder picker, default/custom models, global reasoning readback through Model Management, same-session answers and rework; Windows machine-verified for default-model development in an existing workspace, custom-model development in a newly imported workspace, and the controlled failure → plan → same-session repair → re-acceptance loop; macOS is `research` and fail-closed (dispatch disabled) |
 | `stub` | `spawn` | tests only | `test/stub-agent/stub-agent.mjs` with 3 playbooks (good/fix-on-first/never) |
 
 > Adding an agent usually needs only a profile — see [docs/agent-profiles.en.md](docs/agent-profiles.en.md) and [CONTRIBUTING.en.md](CONTRIBUTING.en.md).

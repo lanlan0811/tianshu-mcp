@@ -3,6 +3,8 @@
  * run_task / rework / verify 依赖 AppContext 提供的 manager/engine/services。
  */
 import fsp from "node:fs/promises";
+import { validateQoderReferences } from "../agents/qoder/references.js";
+import { normalizeLevel } from "../agents/qoder/model.js";
 import {
   prepareBaseline,
   approveBaseline,
@@ -186,6 +188,17 @@ function runTaskHandler(ctx: AppContext, defaults: Defaults): Handler {
       }
     }
 
+    if (args.modelSource !== undefined && resolved.profile.adapter !== "qoder-gui")
+      return errorResult("modelSource 是 Qoder CN 专用参数");
+    if (args.reasoningLevel && ["极高", "xhigh", "最大", "关闭思考"].includes(args.reasoningLevel) && resolved.profile.adapter !== "qoder-gui")
+      return errorResult("该思考等级别名仅由 Qoder CN 适配器支持；其他适配器须使用其已支持的档位");
+    if (resolved.profile.adapter === "qoder-gui") {
+      if (args.mode !== undefined) return errorResult("Qoder CN 不支持 mode 参数");
+      try {
+        await validateQoderReferences(dir.canonical, args.planDoc);
+        normalizeLevel(args.reasoningLevel);
+      } catch (error) { return errorResult(String(error)); }
+    }
     if (finalAgentId === "kimicode") {
       if (args.mode !== undefined)
         return errorResult("Kimi Code 不支持 mode 参数；请移除 mode 后重试");
@@ -213,6 +226,7 @@ function runTaskHandler(ctx: AppContext, defaults: Defaults): Handler {
       context: args.context,
       model: args.model,
       reasoningLevel: args.reasoningLevel,
+      modelSource: args.modelSource,
       planDoc: args.planDoc,
       designSystem: args.designSystem,
       mode: args.mode,

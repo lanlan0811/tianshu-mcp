@@ -1,12 +1,12 @@
 ---
 name: tianshu-mcp
-description: 让外部 AI-Agent（codex/zcode/traework/kimicode）做项目开发并自动验收、失败返修的编排方法。当任务需要"叫一个 AI-Agent 去开发/改代码/补测试并验收，不行就返修"时先加载本技能：按它用 mcp__tianshu-mcp__ 的 11 个工具（run_task/continue_task/query_task/list_tasks/get_task_report/verify_task/rework_task/cancel_task/get_profiles/prepare_visual_baseline/approve_visual_baseline）派活、暂停继续、轮询、查历史、读验收报告、驱动返修、管理视觉基准，并按硬失败错误码快速定位卡点。小改动或纯问答不需要。
-triggers: '开发|编码|写代码|改代码|实现功能|加功能|修复|重构|补测试|写测试|验收|返修|返工|重做|自动验收|自动返修|任务书|ai.?agent|子代理|外部.?agent|agent|codex|zcode|traework|kimicode|kimi.?code|claude|编排|项目开发|派活|派单'
+description: 让外部 AI-Agent（codex/zcode/traework/kimicode/qoder）做项目开发并自动验收、失败返修的编排方法。当任务需要"叫一个 AI-Agent 去开发/改代码/补测试并验收，不行就返修"时先加载本技能：按它用 mcp__tianshu-mcp__ 的 11 个工具（run_task/continue_task/query_task/list_tasks/get_task_report/verify_task/rework_task/cancel_task/get_profiles/prepare_visual_baseline/approve_visual_baseline）派活、暂停继续、轮询、查历史、读验收报告、驱动返修、管理视觉基准，并按硬失败错误码快速定位卡点。小改动或纯问答不需要。
+triggers: '开发|编码|写代码|改代码|实现功能|加功能|修复|重构|补测试|写测试|验收|返修|返工|重做|自动验收|自动返修|任务书|ai.?agent|子代理|外部.?agent|agent|codex|zcode|traework|kimicode|kimi.?code|qoder|claude|编排|项目开发|派活|派单'
 ---
 
 # tianshu-mcp 编排技能：叫外部 AI-Agent 开发并验收
 
-**首行强指令**：你正处理"派外部 AI-Agent 开发并验收、失败返修"类任务。动手前先通读本技能全文；任务书模板、五种 agent 派活示例、meta 块字段全表、错误码速查、返修提示语模板在同目录 `usage-examples.md`，需要时用读取文件工具查看，长方法论不必背。
+**首行强指令**：你正处理"派外部 AI-Agent 开发并验收、失败返修"类任务。动手前先通读本技能全文；任务书模板、各 agent 派活示例、meta 块字段全表、错误码速查、返修提示语模板在同目录 `usage-examples.md`，需要时用读取文件工具查看，长方法论不必背。
 
 ## 工具面（11 个）
 
@@ -19,7 +19,7 @@ triggers: '开发|编码|写代码|改代码|实现功能|加功能|修复|重�
 | `verify_task` | read | 对任务或任意项目独立验收（不改源码） |
 | `rework_task` | write + 审批 | 手动返修；对视觉阻塞任务先重新验收 |
 | `cancel_task` | write + 审批 | 取消运行中的任务 |
-| `continue_task` | write + 审批 | 恢复 `needs_user`（仅 codex/zcode/kimicode） |
+| `continue_task` | write + 审批 | 恢复 `needs_user`（codex/zcode/kimicode/qoder） |
 | `get_profiles` | read | 查看 agent 适配与可执行探测结果 |
 | `prepare_visual_baseline` | write + 审批 | 视觉基准**候选**准备（截图或导入参考图） |
 | `approve_visual_baseline` | write + 审批 | 用户审阅后批准候选，写入正式基准 |
@@ -30,6 +30,8 @@ triggers: '开发|编码|写代码|改代码|实现功能|加功能|修复|重�
 - 本 MCP 未连接：工具面里看不到 `mcp__tianshu-mcp__*` 时，先提示用户按天枢 `config.json → mcp.servers.tianshu-mcp` 接入（见项目 docs/tianshu-integration.md），**不要空转**，更不要假装调用。
 
 ## 1. 选 agent（默认均为 GUI 驱动：CDP 控制桌面端，非 CLI）
+
+- `qoder`：仅 Qoder CN；已有项目目录和可读 `planDoc` 必填。模型与等级可省略沿用当前值；指定模型时可用 `modelSource=default/custom` 消除跨组重名。等级须由模型管理实际选项支持并保存回读，保留全局设置；权限模式不变。等待审批由用户在 GUI 处理，`continue_task` 只恢复观察；Agent 多题答案使用完整问题文字到答案的 JSON 对象。自动/手动返修都先生成计划再发原会话，提交不明不重发。Windows 真机闭环已验证（默认/自定义模型、原生目录导入、受控失败 → 落计划 → 原会话返修 → 再验收），macOS 为 research 并禁止派发。
 
 - `codex`（默认，推荐先试）：ChatGPT/Codex 桌面端。**model 必填**（面板可选模型名，如 `GPT-5.6 Sol`）；可选 `reasoningLevel`（低/中/高 或 low/medium/high）、`planDoc`（计划文档路径）、`designSystem`（设计系统目录路径）；**不支持 `mode`**（传了直接报错）。Windows 经 MSIX COM 激活 + CDP（冷启动实测 60–90 秒，首轮偏慢属正常）；macOS 直接 spawn `ChatGPT.app` + CDP。
 - `zcode`：ZCode 桌面端（Electron CDP）。要求已安装、已登录；**model 必填**且格式为 `供应商/模型`（如 `DeepSeek/deepseek-flash`）；**不支持 `mode`**；发送前确认「完全访问」权限模式。

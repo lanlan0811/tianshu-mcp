@@ -1,6 +1,6 @@
 # ARCHITECTURE.md — tianshu-mcp Architecture
 
-> Applies to version `0.5.3` (2026-09-15).
+> Applies to version `0.5.6` (2026-09-22).
 > This document describes the **system structure and module boundaries** for developers who will modify this repository.
 > For installation, usage, and host integration see [README.en.md](README.en.md); for handover status, troubleshooting, and lessons learned see [HANDOFF.md](HANDOFF.md).
 > Chinese version: [ARCHITECTURE.md](ARCHITECTURE.md).
@@ -8,6 +8,12 @@
 ---
 
 ## 1. Positioning and system context
+
+### Qoder CN execution surface
+
+`agentId=qoder` uses `src/agents/qoder/` and the common task, verification, and rework engines without adding MCP tools. Discovery checks installation identity and platform support. Instance management preserves existing processes. CDP accepts only the Qoder CN primary workbench and checks visibility and occlusion before clicking. Workspaces bind by full path, models match exactly within source groups, and reasoning preferences are saved and read back through Model Management.
+
+`run.ts` persists `qoder-session.json` before sending instructions or final question answers, preventing duplicate submissions after interruption. `questions.ts` uses dedicated answer controls and requires explicit answers to every question. `liveness.ts` combines this user turn, its matching reply, running signals, and pending interactions. Stable completion evidence without running signals gates objective verification. Manual and automatic rework both save a plan before sending its full text to the original conversation. macOS remains research with dispatch disabled until real GUI validation.
 
 `tianshu-mcp` is an **orchestration layer that Tianshu consumes as a standard MCP server**. Tianshu is the commander and the user-facing surface; this server owns three things:
 

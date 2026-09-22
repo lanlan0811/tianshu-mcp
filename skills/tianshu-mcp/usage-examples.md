@@ -4,6 +4,24 @@
 
 ## 1. 任务书模板
 
+### Qoder CN（v0.5.6 起）
+
+```json
+{
+  "agentId": "qoder",
+  "projectPath": "D:\\projects\\example",
+  "planDoc": "plans/development.md",
+  "task": "按计划实现项目，并满足计划中的验收条件",
+  "modelSource": "custom",
+  "model": "已经配置的模型名称",
+  "reasoningLevel": "极高",
+  "autoVerify": true,
+  "autoFixRounds": 3
+}
+```
+
+模型和等级可省略；不可把示例名称直接当成真实模型。工作区以完整路径匹配，不存在的目录不会自动创建。模型管理保存的是全局思考偏好，权限模式保留。审批由用户处理后 `continue_task` 恢复观察；多题续答的 `message` 应为 JSON 对象字符串，例如 `{"选择语言":"TypeScript","运行环境":"Windows"}`，键必须与界面完整问题一致。自动或手动返修前都会落盘计划并向原会话发送全文。不要在发送或停止未确认时另起重复任务。
+
 给 `run_task` 的 `task` 字段，建议覆盖 5 要素：
 
 ```text

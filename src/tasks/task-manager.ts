@@ -37,6 +37,7 @@ export interface NewTaskInput {
   model?: string;
   /** Codex GUI 思考等级；其他 agent 忽略 */
   reasoningLevel?: ReasoningLevel;
+  modelSource?: "default" | "custom";
   /** Codex GUI 初始开发指令引用的计划文档路径 */
   planDoc?: string;
   /** Codex GUI 初始开发指令引用的设计系统目录路径 */
@@ -146,6 +147,7 @@ export class TaskManager {
       context: input.context,
       model: input.model,
       reasoningLevel: input.reasoningLevel,
+      modelSource: input.modelSource,
       planDoc: input.planDoc,
       designSystem: input.designSystem,
       mode: input.mode,
@@ -178,6 +180,9 @@ export class TaskManager {
     if (!meta) return { found: false, reason: `任务不存在: ${taskId}` };
     if (!isTerminal(meta.status)) {
       return { found: false, reason: `任务仍在进行中（status=${meta.status}），无法 rework` };
+    }
+    if (meta.agentId === "qoder" && (!meta.qoderSessionId || !meta.reportJson)) {
+      return { found: false, reason: "Qoder 原会话或验收报告缺失，无法生成原会话返修计划" };
     }
     if (
       meta.agentId === "zcode" &&
@@ -250,6 +255,12 @@ export class TaskManager {
           reason: `codex 任务等待类型为 ${meta.needsUserKind ?? "unknown"}，仅支持 login_required / user_confirmation`,
         };
       }
+    } else if (meta.agentId === "qoder") {
+      if (meta.needsUserKind === "agent_question" && !meta.qoderSessionId)
+        return { found: false, reason: "原 Qoder 会话锚点丢失，拒绝打开最近会话" };
+      meta.continueMessage = message.trim();
+      meta.continueSendMessage = meta.needsUserKind === "agent_question";
+      meta.continueReobserve = !!meta.qoderSessionId && !meta.continueSendMessage;
     } else if (meta.agentId === "kimicode") {
       if (meta.needsUserKind === "agent_question") {
         // 提问必须回答到**原会话**里：缺会话锚点就无法唯一定位，直接拒绝（绝不退化打开最近会话）
@@ -274,7 +285,7 @@ export class TaskManager {
     } else {
       return {
         found: false,
-        reason: `continue_task 当前仅支持 zcode/codex/kimicode 任务（agentId=${meta.agentId}）`,
+        reason: `continue_task 当前仅支持 zcode/codex/kimicode/qoder 任务（agentId=${meta.agentId}）`,
       };
     }
     meta.status = "queued";

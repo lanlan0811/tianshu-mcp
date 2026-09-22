@@ -38,6 +38,11 @@ export interface MetaBlockFields {
   boundProjectPath?: string;
   modelProvider?: string;
   permissionMode?: string;
+  qoderSessionId?: string;
+  actualModel?: string;
+  actualReasoningLevel?: string;
+  modelSource?: "default" | "custom";
+  guiStop?: {clicked: boolean; idle: boolean};
   progressSummary?: string;
   lastRunSignal?: string;
 }
@@ -95,6 +100,11 @@ export function metaFromTask(meta: TaskMeta, extra?: Partial<MetaBlockFields>): 
     modelProvider: meta.modelProvider,
     permissionMode: meta.permissionMode,
     progressSummary: meta.progressSummary,
+    qoderSessionId: meta.qoderSessionId,
+    actualModel: meta.actualModel,
+    actualReasoningLevel: meta.actualReasoningLevel,
+    modelSource: meta.modelSource,
+    guiStop: meta.guiStop,
     lastRunSignal: meta.lastRunSignal,
     ...extra,
   };

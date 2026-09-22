@@ -8,6 +8,14 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.5.6] - 2026-09-22
+
+- Add the Qoder CN GUI adapter: installation discovery, full-path workspace binding and import, default/custom model selection, and persisted reasoning settings verified through Model Management.
+- Integrate dispatch, liveness, objective acceptance, and same-session rework. Automatic and manual rework write a plan before sending its filename, full path, and complete text.
+- Report model source and actual settings; retain permission mode and disclose global reasoning preferences. Approvals require the user, questions use dedicated controls, and uncertain submissions are never repeated automatically.
+- Windows default/custom model, new workspace and same-session repair acceptance passed on a real desktop. macOS remains research and dispatch is disabled. See the [Qoder guide](docs/qoder-cdp.en.md).
+- Isolate unit test files to prevent discovery command mocks from contaminating Git baseline tests; exclude temporary probes from lint.
+
 ## [0.5.5] - 2026-09-20
 
 ### Added
@@ -793,6 +801,7 @@ project → pick model and reasoning level → send instructions → run detecti
 
 ---
 
+[0.5.6]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.5.2...v0.5.3

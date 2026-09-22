@@ -1,4 +1,5 @@
 import { ZCODE_SETUP_DEFAULTS } from "../config/schema.js";
+import { QODER_PROFILE } from './qoder/profile.js';
 /**
  * 内置 agent profiles（开发计划 §7.2）。用户数据目录 agent-profiles.json 可整键覆盖。
  * 代码优先、profile 可配：真实路径属于机器/环境数据 → 默认只给结构与探测规则。
@@ -6,6 +7,7 @@ import { ZCODE_SETUP_DEFAULTS } from "../config/schema.js";
 import type { AgentProfile } from "../config/schema.js";
 
 export const BUILTIN_PROFILES: Record<string, AgentProfile> = {
+  qoder: QODER_PROFILE,
   codex: {
     displayName: "Codex (ChatGPT 桌面端 GUI)",
     type: "cli",

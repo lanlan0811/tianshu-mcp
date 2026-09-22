@@ -1,0 +1,199 @@
+{
+  "date": "2026-09-22",
+  "platform": "Windows 10 x64",
+  "application": "Qoder CN 0.3.4",
+  "scope": "Actual public MCP tools and GUI; screenshots capture only model-management dialog, excluding account and project paths.",
+  "default": {
+    "taskId": "tsk_20260922055351_932173",
+    "model": "Qwen3.8-Flash",
+    "level": "low",
+    "status": "succeeded",
+    "workspace": "existing",
+    "report": {
+      "taskId": "tsk_20260922055351_932173",
+      "round": 0,
+      "startedAt": "2026-09-21T21:56:38.595Z",
+      "finishedAt": "2026-09-21T21:56:46.536Z",
+      "passed": true,
+      "verdict": "passed",
+      "checks": [
+        {
+          "name": "git-diff-check",
+          "cmd": "git diff --check",
+          "passed": true,
+          "durationMs": 0,
+          "exitCode": null,
+          "outputTail": "",
+          "timeout": false,
+          "skipped": true,
+          "reason": "非 git 仓库，跳过"
+        },
+        {
+          "name": "multiply-contract",
+          "cmd": "<NODE> check-multiply.mjs",
+          "passed": true,
+          "durationMs": 7534,
+          "exitCode": 0,
+          "outputTail": "multiply contract passed\n",
+          "timeout": false,
+          "aborted": false
+        }
+      ]
+    },
+    "source": "default"
+  },
+  "custom": {
+    "taskId": "tsk_20260922055859_099386",
+    "workspace": "new native folder registration",
+    "model": "deepseek-v4-flash",
+    "level": "high",
+    "status": "succeeded",
+    "sameSession": true,
+    "initialReport": {
+      "taskId": "tsk_20260922055859_099386",
+      "round": 0,
+      "startedAt": "2026-09-21T22:01:33.201Z",
+      "finishedAt": "2026-09-21T22:01:37.436Z",
+      "passed": true,
+      "verdict": "passed",
+      "checks": [
+        {
+          "name": "git-diff-check",
+          "cmd": "git diff --check (base=fa24d1d)",
+          "passed": true,
+          "durationMs": 206,
+          "exitCode": 0,
+          "outputTail": "",
+          "timeout": false
+        },
+        {
+          "name": "clamp-contract",
+          "cmd": "<NODE> check-clamp.mjs",
+          "passed": true,
+          "durationMs": 1086,
+          "exitCode": 0,
+          "outputTail": "clamp contract passed\n",
+          "timeout": false,
+          "aborted": false
+        }
+      ]
+    },
+    "regression": "Injected only into isolated fixture clamp.mjs; acceptance unchanged",
+    "rejectedReport": {
+      "taskId": "tsk_20260922055859_099386",
+      "round": 1,
+      "startedAt": "2026-09-21T22:01:37.942Z",
+      "finishedAt": "2026-09-21T22:01:43.840Z",
+      "passed": false,
+      "verdict": "failed",
+      "checks": [
+        {
+          "name": "git-diff-check",
+          "cmd": "git diff --check (base=fa24d1d)",
+          "passed": true,
+          "durationMs": 202,
+          "exitCode": 0,
+          "outputTail": "",
+          "timeout": false
+        },
+        {
+          "name": "clamp-contract",
+          "cmd": "<NODE> check-clamp.mjs",
+          "passed": false,
+          "durationMs": 342,
+          "exitCode": 1,
+          "outputTail": "node:internal/modules/run_main:107\r\n    triggerUncaughtException(\r\n    ^\r\n\r\nAssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\r\n\r\n-2 !== 0\r\n\r\n    at file:///<USER_HOME>/AppData/Local/Temp/tianshu-qoder-custom-%E9%AA%8C%E6%94%B6-KDDKal/check-clamp.mjs:3:38\r\n    at ModuleJob.run (node:internal/modules/esm/module_job:439:25)\r\n    at async node:internal/modules/esm/loader:643:26\r\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {\r\n  generatedMessage: true,\r\n  code: 'ERR_ASSERTION',\r\n  actual: -2,\r\n  expected: 0,\r\n  operator: 'strictEqual',\r\n  diff: 'simple'\r\n}\r\n\r\nNode.js v24.18.0\r\n",
+          "timeout": false,
+          "aborted": false
+        }
+      ]
+    },
+    "repairReport": {
+      "taskId": "tsk_20260922055859_099386",
+      "round": 2,
+      "startedAt": "2026-09-21T22:07:38.642Z",
+      "finishedAt": "2026-09-21T22:07:43.634Z",
+      "passed": true,
+      "verdict": "passed",
+      "checks": [
+        {
+          "name": "git-diff-check",
+          "cmd": "git diff --check (base=fa24d1d)",
+          "passed": true,
+          "durationMs": 328,
+          "exitCode": 0,
+          "outputTail": "",
+          "timeout": false
+        },
+        {
+          "name": "clamp-contract",
+          "cmd": "<NODE> check-clamp.mjs",
+          "passed": true,
+          "durationMs": 764,
+          "exitCode": 0,
+          "outputTail": "clamp contract passed\n",
+          "timeout": false,
+          "aborted": false
+        }
+      ]
+    },
+    "approval": "User explicitly allowed Read of external repair plan; continue_task only reobserved the original session.",
+    "events": [
+      {
+        "status": "queued",
+        "round": 0
+      },
+      {
+        "status": "running",
+        "round": 0
+      },
+      {
+        "status": "verify_start",
+        "round": 0,
+        "session": "c057c267-8c27-4323-aaa6-51617770390d"
+      },
+      {
+        "status": "succeeded",
+        "round": 1,
+        "session": "c057c267-8c27-4323-aaa6-51617770390d"
+      },
+      {
+        "status": "queued",
+        "round": 1,
+        "session": "c057c267-8c27-4323-aaa6-51617770390d"
+      },
+      {
+        "status": "running",
+        "round": 1,
+        "session": "c057c267-8c27-4323-aaa6-51617770390d"
+      },
+      {
+        "status": "needs_user",
+        "round": 1,
+        "needsUserKind": "user_confirmation",
+        "session": "c057c267-8c27-4323-aaa6-51617770390d"
+      },
+      {
+        "status": "running",
+        "round": 1,
+        "session": "c057c267-8c27-4323-aaa6-51617770390d"
+      },
+      {
+        "status": "verify_start",
+        "round": 1,
+        "session": "c057c267-8c27-4323-aaa6-51617770390d"
+      },
+      {
+        "status": "succeeded",
+        "round": 2,
+        "session": "c057c267-8c27-4323-aaa6-51617770390d"
+      }
+    ],
+    "source": "custom"
+  },
+  "limitations": [
+    "macOS GUI not verified; research and dispatch disabled",
+    "Default fixture is not a Git repository; git-diff check skipped, numerical contract executed",
+    "Custom fixture is a dedicated temporary Git repository; regression injected only into clamp.mjs; acceptance script unchanged"
+  ]
+}

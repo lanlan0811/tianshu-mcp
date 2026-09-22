@@ -76,7 +76,7 @@ jobs:
           TGZ="$RUNNER_TEMP/tianshu-mcp-${{ steps.version.outputs.version }}.tgz"
           test -f "$TGZ" || { echo "expected tarball $TGZ not found"; ls "$RUNNER_TEMP"/*.tgz; exit 1; }
           tar -tzf "$TGZ" > "$RUNNER_TEMP/package-list.txt"
-          for REQUIRED in package/dist/agents/zcode/adapter.js package/dist/agents/zcode/run.js package/scripts/probe-zcode.mjs; do
+          for REQUIRED in package/dist/agents/zcode/adapter.js package/dist/agents/zcode/run.js package/scripts/probe-zcode.mjs package/dist/agents/qoder/adapter.js package/dist/agents/qoder/run.js package/scripts/probe-qoder.mjs package/docs/qoder-cdp.md package/docs/qoder-cdp.en.md; do
             grep -qF "$REQUIRED" "$RUNNER_TEMP/package-list.txt" || { echo "missing $REQUIRED"; exit 1; }
           done
           echo "tarball=$TGZ" >> "$GITHUB_OUTPUT"

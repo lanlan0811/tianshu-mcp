@@ -135,6 +135,7 @@ export interface TaskMeta {
   model?: string;
   /** Codex GUI 思考等级（已归一 low/medium/high）；其他 agent 忽略 */
   reasoningLevel?: ReasoningLevel;
+  modelSource?: "default" | "custom";
   /** Codex GUI 初始开发指令引用的计划文档路径 */
   planDoc?: string;
   /** Codex GUI 初始开发指令引用的设计系统目录路径 */
@@ -210,6 +211,11 @@ export interface TaskMeta {
    * 旧快照里的 zcodeSession* 是 ZCode 会话，拿它去 Kimi Code 里定位会话必然失败）。
    * 由 fix-loop 从 AgentRunResult.session 落盘，continue_task/rework 恢复时用于唯一定位原会话。
    */
+  qoderSessionId?: string;
+  qoderTurnId?: string;
+  actualModel?: string;
+  actualReasoningLevel?: string;
+  guiStop?: { clicked: boolean; idle: boolean };
   kimicodeSessionId?: string;
   kimicodeSessionTitle?: string;
   boundProjectPath?: string;

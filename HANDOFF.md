@@ -1,10 +1,20 @@
 # HANDOFF.md — 项目交接说明
 
-> **交接快照：2026-09-20 · 版本 `0.5.5`（tag `v0.5.5`，npm / GitHub / Gitee 均已发布）**
+> **交接快照：2026-09-22 · 开发版本 `0.5.6`；最近已发布版本为 `0.5.5`。Qoder 真机闭环已完成；最终提交、同 SHA CI/Release 与 npm 发布尚未完成，不得宣称已发布。**
 > 本文写给**接手本仓库的人**：先说清「这是什么、现在到哪一步」，再给出「怎么跑、怎么改、哪里会踩坑」。
 > 工作区规则见 `AGENTS.md`（gitignore，仅本地）；安装与用法见 `README.md`，本文不重复，只做导览与状态记录。
 
 ---
+
+### 0.5.6 开发交接
+
+- `src/agents/qoder/` 新增发现、实例、CDP、原生目录选择、工作区、模型管理、提问回复和运行检测模块；与公共验收及返修引擎贯通。
+- `modelSource` 区分默认/自定义模型，实际模型和等级写入任务报告。保持当前权限模式；全局思考等级设置会保留。
+- 会话锚点和发送检查点保存在任务目录；发送或答题提交不明时只观察，不自动重发。自动/手动返修先落完整计划，再回原会话。
+- 已复现并修复 `isolate:false` 导致 Kimi 探测命令 mock 泄漏到 Git 基线测试的问题（`vitest.config.ts` 的 unit project 恢复文件级隔离）。本机全量回归：**826 passed / 12 skipped（78 个测试文件通过 + 3 个真实浏览器文件按设计 skip）**。
+- Windows 公共 MCP 默认模型（Qwen3.8-Flash / 低）已有工作区开发与外部乘法契约验收已通过；自定义模型（deepseek-v4-flash / 高）新工作区登记与首次 clamp 契约验收已通过。独立夹具受控回归被验收拒绝，修复计划已生成并发送原会话，用户允许 Qoder 读取工作区外计划文件后，仅恢复观察原会话，修复与再次验收均通过。macOS research 禁止派发。
+- 模型菜单选择后的异步关闭必须确认后才能重开，已补回归用例并通过真实模型管理读回。类型检查、lint、构建、6 项严格 stdio 检查、`npm pack` 内容校验与干净消费者安装 + 严格 stdio 检查已在本机通过。
+- 使用及恢复方法见 [Qoder 中文文档](docs/qoder-cdp.md) / [English guide](docs/qoder-cdp.en.md)。最终提交、双仓同步、同 SHA CI/Release 与 npm 发布尚未完成。
 
 ## 0. 五分钟上手
 
@@ -23,7 +33,7 @@
 
 ```bash
 git clone https://github.com/lanlan0811/tianshu-mcp.git && cd tianshu-mcp
-npm ci && npm run typecheck && npm run lint && npm test && npm run build   # 期望 532 passed / 10 skipped
+npm ci && npm run typecheck && npm run lint && npm test && npm run build
 ```
 
 ---
@@ -57,10 +67,10 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build   # 期
 | 项 | 状态 |
 |---|---|
 | 分支 | `master`（**只在此分支提交**，不建其他分支） |
-| 版本 / 许可证 | `0.5.5` / Apache-2.0 |
+| 版本 / 许可证 | `0.5.6`（已发布版本 `0.5.5`）/ Apache-2.0 |
 | 标签 | `v0.1.0` … `v0.5.5`（均已推双仓） |
 | 工作树 | 干净；`github/master` 与 `gitee/master` 均同步（发布提交见 `git log` 的 `chore(release): v0.5.5`） |
-| 测试 | **768 passed / 12 skipped**（74 个测试文件；v0.5.5 新增 Kimi Code 适配约 120 项用例） |
+| 测试 | **826 passed / 12 skipped**（78 个测试文件通过 + 3 个真实浏览器文件按设计 skip；含 Qoder 新增约 60 项用例） |
 | 门禁 | lint 0 warning、typecheck clean、build 成功且构建后无跟踪差异、`check:stdio` 6/6 场景通过、`npm pack` 内容校验与干净消费者安装通过；12 项真实浏览器门禁用例在 Windows 10 本机以 `TIANSHU_VISUAL_BROWSER_TEST=1` 跑通 12/12 |
 | CI | `build-test`（ubuntu/windows/macos × Node 20/22/24）+ `pack-check`，另加 `visual-browser` 真实浏览器矩阵（ubuntu/windows + macos-15-intel/macos-15 × Node 20/22/24）；提交 `d762581` 的 22 个作业全绿（[run 35093217490](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35093217490)），随 v0.5.4 tag 全绿 |
 | npm | `tianshu-mcp@0.5.5` 已发布（`latest`）；`npx -y tianshu-mcp` 即为该版本。发布步骤见 `docs/npm-publish-guide.md` |
@@ -76,6 +86,7 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build   # 期
 | `zcode` | `gui` / `zcode-gui` | **research**（常量，非平台分支） | CDP GUI adapter，Windows 真机闭环通过；已适配 ZCode 3.11.2 模型菜单与项目绑定（v0.3.3）、项目/模型回读加固与初始化恢复（v0.3.4）；**无项目派发（`default` 工作区，`projectPath` 可选）与 `allowCreateProject` 自 v0.5.2 起支持**（issue #12，Windows 真机验收）；v0.5.3 修复实例跨 server 驻留、新建任务切页与发送失败归因三个真机缺陷。macOS 基本闭环已真机验证（`docs/zcode-cdp.md`），但无项目派发仅在 Windows 实测、取消/返修/新建项目矩阵未齐，故 `status` 保持常量 `research` |
 | `traework` | `gui` / `traework-gui` | **ready** | CDP 驱动 TRAE SOLO CN 桌面 UI；三种面板模式真机验证通过。注意 `status` 为常量 `ready`，但 **macOS 分支仍 fail-closed**（可执行探测与原生对话框驱动未在 macOS 实测） |
 | `kimicode` | `gui` / `kimicode-gui` | **ready**（darwin 为 `research`） | Kimi Code 桌面端（Electron，实测 1.0.2）；**双渲染进程**（主窗口承载侧栏/会话/composer，`Kimi Browser Overlay` 浮层承载模型/思考档位/执行模式菜单）；工作区以**完整路径**绑定，未登记时经原生「添加工作区」对话框导入；真机验证：成功路径、未登记工作区导入 + 自动验收、失败 → 返修 → 再验收同会话闭环。取消/提问续答/同名歧义仅由 hermetic 集成测试覆盖，macOS 为 `research` 且 fail-closed |
+| `qoder` | `gui` / `qoder-gui` | **ready**（darwin 为 `research`） | Qoder CN 桌面端（实测 0.3.4，CDP 基准端口 `9777`）；`projectPath` + 可读 `planDoc` 必填，`modelSource=default/custom` 消除跨组重名；未登记目录经「新的任务 → 工作区 → 新建工作区 → 添加可读写文件夹」原生导入；思考等级经「模型管理」保存为**全局偏好**并回读，权限模式沿用。Windows 真机已验证：已有工作区默认模型、新登记工作区自定义模型、受控失败 → 落计划 → 原会话返修 → 再验收。取消/提问续答仅由 hermetic 集成测试覆盖；macOS 为 `research` 且 fail-closed |
 | `codex-cli` | `spawn`（用户自建 profile，非内置） | 用户配置 | 无头路径走 `codex exec`；`model` 参数对其不生效（用 `~/.codex/config.toml`）；CLI 需 ≥0.154.0（≤0.130.0 签名证书已吊销）。`get_profiles` 自 v0.4.0 起会列出用户自定义 profile |
 | `stub` | `spawn` | 仅测试 | `test/stub-agent/stub-agent.mjs` 三剧本（good/fix-on-first/never） |
 
@@ -112,6 +123,7 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build   # 期
 | M22 | **ZCode 真机回访修复（issue #12 第二轮）**：GUI 实例跨 server 退出驻留、新建任务不切页导致静默空等、发送失败归因误导（详见 §9.9） | `0.5.3` | **532** |
 | M23 | **视觉验收第二阶段「AI 视觉内容校验」（issue #13）**：`contents[]`/`pages[].content` 内容维度、委托用户自备命令（凭证零管理）、多数票 + 任务级缓存防抖、`uncertain` 与默认仅告警、`pixel:false` 语义页豁免基准、返修计划隔离告警项（详见 §4.3 与 §9.10） | `0.5.4` | **644** |
 | M24 | **Kimi Code GUI 适配（第四个 GUI agent，`agentId=kimicode`）**：双渲染进程 CDP 驱动（主窗口 + `Kimi Browser Overlay` 浮层）、工作区完整路径绑定与原生「添加工作区」对话框导入、模型三级选择与思考档位按界面档位集合校验、执行模式强制「完全自动」、运行检测（`button.stop` / `send.is-starting`）、`needs_user` 六类与 `continue_task` 恢复（详见 §4.2 与 §9.11） | `0.5.5` | **764** |
+| M25 | **Qoder CN GUI 适配（第五个 GUI agent，`agentId=qoder`）**：安装发现（显式 → D 盘 → 注册表/快捷方式 → 标准目录）、实例复用与 `needs_user` 保留现场、完整路径工作区绑定与原生「新建工作区」导入、`modelSource` 默认/自定义分组与模型管理全局思考等级保存回读、本轮消息绑定的运行判定、发送/答题检查点防重发、自动与手动返修先落计划再发原会话（详见 §4.2 与 §9.12） | `0.5.6` | **826** |
 
 ### 3.2 实现期修复记录（都是真机/CI 逼出来的，改相关代码前先读）
 
@@ -139,6 +151,8 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build   # 期
 | 20 | M22 | ZCode 一退出 MCP server 就被连坐杀掉，`needs_user` 提示的窗口已不存在 | `zcode`/`codex` 按平台分支 spawn（`detached: process.platform !== "win32"`），Windows 上子进程不驻留（实测存活 0） → 收敛为 `guiInstanceSpawnOptions()`，三处 GUI 实例共用；执行型子进程仍按平台分支 | `test/unit/gui-instance-spawn.test.ts` |
 | 21 | M22 | 顶部「新建任务」返回 `true` 却不切页，随后空转 30 秒只报 `setup_recovery` | `conversation-new-task` 是惰性挂载图标，会话页 composer **不挂载** `composer-workspace-trigger` → 以「触发器已挂载」验证草稿真的建立，失败回退侧栏 `task-new-button`，两者都失败才 `setup_failed` | `test/integration/zcode-flow.test.ts` |
 | 22 | M22 | 窗口被遮挡时的发送失败文案把用户引向按钮 | Chromium 节流（`visibilityState=hidden`）使按钮在视口内却点不到 → 识别该状态并报「窗口不在前台」+ 置于前台的操作指引；`Page.bringToFront` 实测无法恢复被遮挡的 Electron 窗口，不假装能自动恢复 | `test/integration/zcode-flow.test.ts` |
+| 23 | M25 | 模型菜单点选后**异步关闭**，立刻重开会读到旧值；「保存设置」也可能根本没生效 | 选中模型后先 `wait(model-menu-closed)` 确认菜单真的关闭，再做 `model-readback`；思考等级保存后**重新打开模型管理**核对已持久化的值（`persisted-reasoning`），未生效即响亮报错不发送（详见 §9.12 ④） | `test/unit/qoder-model-controls.test.ts`（延迟关闭 / 保存生效 / 保存未生效三分支） |
+| 24 | M25 | 单元测试 `isolate:false` 使安装探测的命令 mock 泄漏到 Git 基线测试（依赖文件执行顺序） | vitest unit project 恢复文件级隔离（`isolate:true`），mock 不再跨文件泄漏 → 全量回归稳定（详见 §7 门禁纪律 1 同源教训） | `vitest.config.ts` + 全量回归 |
 
 ---
 
@@ -426,12 +440,13 @@ npm publish --registry=https://registry.npmjs.org --access public
   但取消/返修/continue_task/新建项目矩阵未覆盖，二者 darwin 仍标 `research`；
   TraeWork 的原生对话框驱动与真机闭环仍未在 macOS 实测，macOS 分支保持 fail-closed；
   Kimi Code 的 darwin 同为 `research`（fail-closed，未在 macOS 实测）。
-- **`mode` 仅 TraeWork 生效**：ZCode / Codex / Kimi Code 会拒绝该参数（返回明确错误）。
+- **`mode` 仅 TraeWork 生效**：ZCode / Codex / Kimi Code / Qoder 会拒绝该参数（返回明确错误）。
 - **无项目派发仅 ZCode 且仅 Windows 实测**：`projectPath` 可选只对 ZCode 生效；macOS 上的无项目派发尚未真机验证（v0.5.3 已修掉 Windows 侧实例驻留、切页与归因三个缺陷，但 macOS 未覆盖）。
 - **ZCode 未登记项目的自动导入在 Windows 上不可用**：需先在 ZCode 中手动登记目录，或传 `allowCreateProject=false` 让它显式失败。原因与修复方向见 §9.9。
 - **Windows 上 GUI 实例跨 server 驻留已修复**（v0.5.3）：四处 GUI 实例统一走 `guiInstanceSpawnOptions()`（无条件 `detached` + `unref`）；执行型子进程（`verify/runner`、`visual/services`、`agents/spawn`）语义相反，仍按平台分支。
-- **`continue_task` 仅 codex/zcode/kimicode**：traework 与 spawn 类 agent 会被拒绝。
+- **`continue_task` 仅 codex/zcode/kimicode/qoder**：traework 与 spawn 类 agent 会被拒绝。
 - **Kimi Code 不支持无项目派发**：任务必须绑定工作区文件夹，`workspaceMode=default` 或缺少 `projectPath` 时以 `setup_failed` 显式拒绝。
+- **Qoder CN 的硬边界**：仅支持 Qoder CN（国际版或同名窗口不算）；`projectPath` 与可读 `planDoc` 必填，不支持无项目派发；`modelSource` 与 `极高/xhigh`、`最大`、`关闭思考` 别名是 Qoder 专用参数，传给其他适配器会被拒绝；思考等级是 Qoder **全局偏好**（任务结束不还原），权限模式沿用不切换；macOS 为 `research` 且 fail-closed。取消与提问续答仅由 hermetic 集成测试覆盖（见 §9.12）。
 - **`needs_user` 状态下取消是已知边界**：MCP 侧无 CDP 连接，GUI 内等待中的会话停不掉；终态文案会提示。
   经临时 CDP 连接尽力停止 GUI 内会话列在 `CHANGELOG.md` 的「未发布 / 计划中」。
 - **视觉模块的平台证据边界**：macOS 证据来自 CI 托管真机 runner（macOS 15 / Darwin 24.6.0，Intel x64 与 Apple Silicon arm64，Node 20/22/24），
@@ -459,6 +474,7 @@ npm publish --registry=https://registry.npmjs.org --access public
 | 视觉验收不通过 / 基准待批准 / 规则被冻结判 `VISUAL_INTEGRITY` / 离线报告看不开 | §9.8 |
 | AI 内容校验整轮阻塞 / 占位符被拒 / 判定总是 uncertain / 缓存不失效 | §9.10 |
 | Kimi Code 菜单找不到 / 点击被吞 / 思考档位不匹配 / 原生「添加工作区」对话框 | §9.11 |
+| Qoder 模型重名 / 档位被拒 / 工作区未登记 / 会话或发送状态不明 | §9.12 |
 
 ### 9.1 TraeWork 项目文件夹绑定排障（M6 / M7 实战教训）
 
@@ -809,6 +825,70 @@ node scripts/probe-kimicode.mjs all     # 只读诊断：安装 / 进程 / CDP /
 - **同名/同路径工作区歧义**：fail-closed 分支仅由集成测试覆盖。
 - **macOS**：`status` 为 `research` 且 **fail-closed**（可执行探测与原生对话框驱动未在 macOS 实测）。
 
+### 9.12 Qoder CN 排障（M25 / v0.5.6）
+
+> 改 `src/agents/qoder/**` 前先读本节与 [qoder-cdp.md](docs/qoder-cdp.md)。环境事实来自 Windows 10 + Qoder CN 0.3.4 实测（2026-09-20 ~ 09-22）。
+
+**① 权威选择器都在 DOM 属性上，不在文案上**
+
+| 用途 | 实测选择器 |
+|---|---|
+| 发送 / 停止 | `button[data-e2e="chat.send"][data-send-button="normal" \| "generating"]`（同一按钮换 `data-send-button`） |
+| 本轮用户消息 / 助手回复 | `[data-message-kind="user"]` / `[data-message-kind="assistant"]` |
+| 本轮结束证据 | `[data-assistant-actions]`（**没有它就不算完成**） |
+| 失败 / 中断 | `[data-turn-failure-card]`、`[data-assistant-status-note="failed" \| "interrupted"]` |
+| 提问 / 审批 | `[data-pending-interaction-composer]` / `[data-pending-interaction-overlay]` |
+| 工作区入口 | `[data-workspace-picker-trigger]`，面板项 `[role="menuitem"][data-workspace-source="local"]`，表单 `#workspace-editor-form` |
+| 模型 / 档位 | 触发 `button[aria-label^="模型:"]`；菜单 `[data-chat-model-selector-menu][data-state="open"]`；档位 `[role="menuitemradio"]`；模型管理对话框 `[role="dialog"]:has([role="table"][aria-label="模型参数与显示设置"])` |
+
+一律不要用中英文文案匹配（界面文案会随版本变，属性名不会）。选择器可在 profile `gui.selectors` 覆盖。
+
+**② 完成判定必须绑定「本轮」**
+
+- 只有 `expectedUserId === 本轮 user id` 且 `assistantId === assistant:<该 user id>` 且出现 `[data-assistant-actions]`，且**无任何运行信号**时才算完成（`judgeQoderPoll`）。
+- 历史回复里的“完成”、界面静止、连接断开都**不是**完成证据；运行信号（`data-send-button="generating"` / 工具执行 / 流式活动）优先于完成标志。
+- 审批/提问优先于停止按钮：停在等待用户的界面时**先判 `needs_user`**，不要因为停止按钮可见就判「仍在运行」而形成死锁。
+
+**③ 工作区必须用完整路径确认身份**
+
+- 名称只用于查找候选；绑定判据是**规范化后的完整路径**，中文、空格、同名目录都要核对实际路径。
+- 未登记目录走「新的任务 → 工作区入口 → 新建工作区 → 添加可读写文件夹 → 原生目录选择 → 创建」；
+  原生对话框使用本地反斜杠路径并回读，且只操作**新出现**的对话框（不盲点用户既有窗口）。
+- 目录不存在直接报错，**不自动创建磁盘目录**；路径无法核对或匹配有歧义时停派发。
+
+**④ 模型来源与档位**
+
+- `modelSource=default|custom` 消除跨组重名；省略来源时要求**跨组唯一精确匹配**，重名必须补来源，不猜。
+- 档位以「模型管理」中**该模型实际渲染的选项**为准；不支持的档位在**发送前**报错，禁止静默降级。
+- 思考等级保存后必须**重新打开回读**验证；确认写入生效后再发送（选择后的异步关闭要先确认菜单真的关闭，才能重开）。
+- 修改会保留为 Qoder **全局偏好**（不在任务结束后还原），报告会说明其影响；权限模式沿用，不自动开启“完全访问”。
+
+**⑤ 发送与答题的检查点语义**
+
+- 发送任务书、提交多题答案前都先落检查点（`qoder-session.json` + 任务目录）；**没有确认回执时不自动重发**，只观察并如实记录不确定状态。
+- 多题答案以界面上的**完整问题文字**为键（多选可用选项文字数组）；题目变化、缺答案、选项不存在都保留等待，不接受推荐项/默认项代替。
+- `continue_task` 对审批/登录等环境等待只**恢复观察**（不把“已处理”文本发给模型）；只有 `agent_question` 才把答案写回原会话。
+
+**⑥ 取消与实例**
+
+- 取消/超时只对**已绑定的原会话**执行停止并回读；未确认停止时终态明示「GUI 内运行未确认停止」并保留实例，阻止重复派发（`instance_busy`）。
+- 已有实例无可用 CDP 时**保留现场**转 `needs_user`，绝不关闭或重启用户实例（与 Kimi/ZCode 同语义）。
+
+**⑦ 探针用法**
+
+```bash
+node scripts/probe-qoder.mjs install          # 只读：安装发现（显式 → D 盘 → 注册表/快捷方式 → 其它盘）
+node scripts/probe-qoder.mjs state --port 9777  # 只读：已有实例与页面结构（连接可能把工作台置前）
+```
+
+**未真机验证（如实标注，勿在文档或汇报中夸大）**
+
+- **取消（`cancel_task` 真停 GUI）**：实现完整（尽力点停止按钮 + `cancelWaitMs` 内有界等待，未确认时如实落文案），
+  但**仅由 hermetic 集成测试覆盖**，未在真机点停。
+- **提问续答（`agent_question`）**：实现完整（多题答案写回原会话、不重发任务书），但真实提问卡片的真机路径未覆盖。
+- **登录失效 / 额度不足 / 网络错误分类**：归类为 `needs_user`，真机触发未逐个覆盖。
+- **macOS**：`status` 为 `research` 且 **fail-closed**（仅覆盖路径与平台分支的自动化测试，未在 macOS 真机验证 GUI）。
+
 ---
 
 ## 10. 凭证与安全红线
@@ -836,6 +916,7 @@ node scripts/probe-kimicode.mjs all     # 只读诊断：安装 / 进程 / CDP /
 | `docs/zcode-cdp.md` / `.en.md` | ZCode GUI adapter、暂停继续、返修闭环与双平台真机证据状态 |
 | `docs/codex-gui-cdp.md` / `.en.md` | Codex 桌面端 GUI 驱动：MSIX COM 激活、CDP 接管、选择器、运行检测、验收返修 |
 | `docs/kimi-cdp.md` / `.en.md` | Kimi Code GUI 驱动：双渲染进程（主窗口 + `Kimi Browser Overlay`）、工作区完整路径绑定与原生对话框导入、模型三级选择与思考档位、执行模式、运行检测与排障 |
+| `docs/qoder-cdp.md` / `.en.md` | Qoder CN GUI 驱动：安装发现与实例复用、完整路径工作区与原生导入、`modelSource` 与模型管理全局思考等级、发送/答题检查点、运行判定与原会话返修、真机证据与未覆盖项 |
 | `docs/codex-windows-smoke.md` / `.en.md` | Codex Windows 真机验收记录（含失败→计划→返修闭环） |
 | `docs/zcode-windows-smoke.md` / `.en.md` | ZCode Windows 真机开发、同会话返修与提问续跑验收记录 |
 | `docs/zcode-issue-8-10-validation.md` / `.en.md` | ZCode #8/#9/#10 Windows 真机验收记录 |
@@ -846,6 +927,7 @@ node scripts/probe-kimicode.mjs all     # 只读诊断：安装 / 进程 / CDP /
 | `docs/visual-validation.md` / `.en.md` | 视觉验收验证进度：完整平台证据表（系统 / Node / 浏览器 / 命令 / 结果）+ v0.5.4 判定桩端到端记录与未覆盖项 |
 | `docs/visual-validation-evidence/` | 上述验证的原始机器可读记录（Windows 矩阵 JSON、macOS `environment.json`、CI 摘要） |
 | `docs/zcode-issue-12-windows-evidence.md` / `.en.md` | ZCode 无项目派发与 `allowCreateProject` 的 Windows 10 真机验收记录（含 v0.5.2 首轮与「第二轮回访」） |
+| `docs/release-v0.5.6.md` / `.en.md` | v0.5.6 发布说明（新增 Qoder CN GUI 适配、真机验收范围与 macOS research 边界） |
 | `docs/release-v0.5.5.md` / `.en.md` | v0.5.5 发布说明（新增 Kimi Code GUI 适配：双渲染进程 CDP、工作区完整路径绑定与原生对话框导入、模型三级选择与档位按界面集合校验、运行检测、needs_user/continue_task、真机验证与三个真机缺陷修复） |
 | `docs/release-v0.5.4.md` / `.en.md` | v0.5.4 发布说明（可选 AI 视觉内容校验：自备命令委托、多数票防抖、默认仅告警、返修隔离缺陷修复） |
 | `docs/release-v0.5.3.md` / `.en.md` | v0.5.3 发布说明（ZCode 真机回访修复：实例跨 server 驻留、新建任务切页、发送失败归因） |
@@ -865,7 +947,7 @@ node scripts/probe-kimicode.mjs all     # 只读诊断：安装 / 进程 / CDP /
 
 ## 12. 接手人下一步建议
 
-1. 先跑 `npm ci && npm run typecheck && npm run lint && npm test && npm run build`，确认基线绿（768 passed / 12 skipped）。
+1. 先跑 `npm ci && npm run typecheck && npm run lint && npm test && npm run build`，确认基线绿（826 passed / 12 skipped）。
 2. 动代码前先读 [ARCHITECTURE.md](ARCHITECTURE.md) 建立整体心智模型（分层、依赖方向、唯一双路径接缝 `adapter.run`、状态机与验收流水线）；再按专题读本文章节：
    动 GUI adapter 相关代码前，先读对应文档与本文章节：
    TraeWork → `docs/traework-cdp.md` + §9.1 / §9.2；ZCode → `docs/zcode-cdp.md` + §9.5 / §9.6 / §9.9；Codex → `docs/codex-gui-cdp.md` + §9.4；Kimi Code → `docs/kimi-cdp.md` + §9.11。
