@@ -1,6 +1,6 @@
 /**
  * server.ts：组装 —— 加载配置、初始化数据目录/日志、TaskManager/AcceptanceEngine/
- * Registry、注册 9 个工具到 McpServer、触发技能自检安装。被 index.ts 调用以 stdio 启动。
+ * Registry、注册 11 个工具到 McpServer、触发技能自检安装。被 index.ts 调用以 stdio 启动。
  */
 import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -75,7 +75,7 @@ export async function buildServer(
     {
       capabilities: { tools: {} },
       instructions:
-        "tianshu-mcp：调度外部 AI-Agent（codex/zcode/traework）完成项目开发、验收、返修闭环。ZCode 提问或等待用户环境处理时进入 needs_user，可用 continue_task 恢复原会话。run_task 异步返回 taskId，再用 query_task 轮询。",
+        "tianshu-mcp：调度外部 AI-Agent（codex/zcode/traework/kimicode/qoder）完成项目开发、验收、返修闭环。ZCode 提问或等待用户环境处理时进入 needs_user，可用 continue_task 恢复原会话。run_task 异步返回 taskId，再用 query_task 轮询。",
     },
   );
 

@@ -8,7 +8,7 @@
 
 # tianshu-mcp
 
-视觉验收（v0.5.0 起，含 v0.5.4 可选 AI 内容校验）：[中文指南](docs/visual-acceptance.md) · [验证记录](docs/visual-validation.md) · [最新发布说明](<docs/release-v0.5.6.md>)。
+视觉验收（v0.5.0 起，含 v0.5.4 可选 AI 内容校验）：[中文指南](docs/visual-acceptance.md) · [验证记录](docs/visual-validation.md) · [最新发布说明](<docs/release-v0.5.8.md>) · [全部版本](CHANGELOG.md)。
 
 **天枢 × AI-Agent 编排 MCP server**
 
@@ -35,7 +35,7 @@
 
 ## 这是什么
 
-天枢的角色是总指挥；本 MCP server 是**调度层 + 执行面 + 客观验收仪**；外部 AI-Agent（Codex / TraeWork / ZCode / Kimi Code GUI）是执行开发的「工人」。
+天枢的角色是总指挥；本 MCP server 是**调度层 + 执行面 + 客观验收仪**；外部 AI-Agent（Codex / TraeWork / ZCode / Kimi Code / Qoder CN GUI）是执行开发的「工人」。
 
 - **11 个 MCP 工具**：`run_task / continue_task / query_task / list_tasks / get_task_report / cancel_task / verify_task / rework_task / get_profiles`，外加视觉验收的 `prepare_visual_baseline / approve_visual_baseline`
 - **异步契约**：`run_task` 秒回 `taskId`，长任务用 `query_task` 轮询（长任务不卡 `tools/call`）。
@@ -70,7 +70,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 776 项测试：73 个文件，含 Codex/ZCode/TraeWork/Kimi Code 单元/假 CDP/重启/恢复/返修闭环与视觉验收
+npm test             # 826 passed / 12 skipped（838 项，81 个测试文件：单元/集成/协议 + 3 个真实浏览器文件按设计 skip）
 ```
 
 ### 安装 npm 包
@@ -154,14 +154,27 @@ ZCode 提问、需要登录、旧实例无 CDP、系统权限不足，或自动�
 
 ```text
 run_task(projectPath=D:/xxx/my-app, agentId=kimicode, task=「按 `./plan.md` 完成开发」,
-         model=K3, reasoningLevel=High, autoVerify=true, autoFixRounds=2)
+         model=K3, reasoningLevel=high, autoVerify=true, autoFixRounds=2)
 ```
 
 > Kimi Code 为普通 Electron 安装（实测 1.0.2），以 `--remote-debugging-port` 注入后经 CDP 驱动，无需 MSIX COM 激活。
 > **模型菜单 / 思考档位 / 执行模式菜单渲染在独立的 `Kimi Browser Overlay` 浮层窗口**，工作区菜单与「切换模型」对话框仍在主窗口。
 > 任务必须绑定工作区文件夹（**不支持无项目派发**）；未登记的工作区会经原生「添加工作区」对话框导入。
-> `reasoningLevel`：官方模型为 `Low` / `High` / `Max`；**非官方模型（如 `stepfun/step-3.7-flash:free`）只有 `on` / `off`**，
-> 传了界面不存在的档位会在发送前响亮报错。`mode` 参数不支持。详见 [Kimi Code CDP 适配器](docs/kimi-cdp.md)。
+> `reasoningLevel`：官方模型为 `低/low`、`高/high`、`max`；**非官方模型（如 `stepfun/step-3.7-flash:free`）只有 `on` / `off`**，
+> 取值域刻意不含 `中`/`medium`；档位以界面实际渲染的标签集合校验，传了界面不存在的档位会在发送前响亮报错。`mode` 参数不支持。详见 [Kimi Code CDP 适配器](docs/kimi-cdp.md)。
+
+驱动 Qoder CN 时必须提供已有 `projectPath` 与可读 `planDoc`：
+
+```text
+run_task(projectPath=D:/xxx/my-app, agentId=qoder, planDoc=./plans/development.md,
+         modelSource=custom, model=<界面模型名>, reasoningLevel=极高,
+         task=「按计划实现项目」, autoVerify=true, autoFixRounds=3)
+```
+
+> **仅 Qoder CN**（国际版或同名窗口不算）。`modelSource=default|custom` 用于消除「默认/自定义」两组同名；
+> 思考等级经「模型管理」保存为 **Qoder 全局偏好**（任务结束不还原）并重新打开回读，不支持的档位在发送前报错；
+> 权限模式沿用当前设置。自动与手动返修都**先落修复计划**，再把文件名、完整路径与全文发回原会话。
+> macOS 为 `research` 且禁止派发。详见 [Qoder CN 适配器](docs/qoder-cdp.md)。
 
 ## 工具面（11 个）
 
@@ -212,6 +225,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=kimicode, task=「按 `./plan.md` �
 | [docs/kimi-cdp.md](docs/kimi-cdp.md) | Kimi Code GUI 驱动：双渲染进程（主窗口 + `Kimi Browser Overlay`）、工作区完整路径绑定与原生对话框导入、模型三级选择与思考档位、执行模式、运行检测与排障 |
 | [docs/codex-windows-smoke.md](docs/codex-windows-smoke.md) | Codex Windows 真机验收记录（含验收失败→自动生成计划→返修通过闭环） |
 | [docs/qoder-cdp.md](docs/qoder-cdp.md) | Qoder CN GUI 驱动：安装发现与实例复用、完整路径工作区与原生导入、`modelSource` 与模型管理全局思考等级、发送/答题检查点、运行判定与原会话返修、真机证据与未覆盖项 |
+| [docs/release-v0.5.8.md](<docs/release-v0.5.8.md>) | v0.5.8 发布说明（四份主文档按代码逐项核对重写 + 补发 TraeWork 探针与三个 probe script；无运行时变更） |
 | [docs/release-v0.5.7.md](<docs/release-v0.5.7.md>) | v0.5.7 发布说明（编排技能文档按代码实况重写：参数兼容矩阵、默认值优先级、档位修正与 qoder 章节；无运行时变更） |
 | [docs/release-v0.5.6.md](<docs/release-v0.5.6.md>) | v0.5.6 发布说明（Qoder CN GUI 适配、真机验收范围与 macOS research 边界） |
 | [docs/release-v0.5.5.md](<docs/release-v0.5.5.md>) | v0.5.5 发布说明（Kimi Code GUI 适配：双渲染进程、工作区完整路径绑定与原生导入、模型三级选择与档位校验、运行检测与恢复） |
@@ -266,7 +280,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=kimicode, task=「按 `./plan.md` �
 - **工程 / CI** ✅
   - GitHub Actions：`CI`（`build-test` ubuntu/windows/macos × Node 20/22/24 + `pack-check`，另加 `visual-browser` 真实浏览器矩阵 ubuntu/windows/macos-15-intel/macos-15 × Node 20/22/24，随 v0.5.1 tag 全绿）与 `Release`（tag 触发）均绿
   - 技能自检安装已在本机真实 `~/.rivet/skills/tianshu-mcp` 验证生效且幂等
-  - npm 包名 `tianshu-mcp` 自 v0.1.1 起持续发布（当前 `0.5.7`）
+  - npm 包名 `tianshu-mcp` 自 v0.1.1 起持续发布（当前 `0.5.8`）
 - **天枢宿主真实接入（DoD #6）** ✅（2026-09-07，[host-integration-record.md](docs/host-integration-record.md)）
   - 在真实 `D:\Tianshu` 桌面宿主 `mcp.servers` 配置本地模式 → sidecar `MCP: 2 servers connected, 10 tools`（含本 server 8 工具），spawn 子进程并 stdio 连通
   - 实测暴露并修复技能安装源路径 bug（fileURLToPath，提交 55cf2d0）
@@ -360,7 +374,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=kimicode, task=「按 `./plan.md` �
 - **M24 — Kimi Code GUI 适配（第四个 GUI agent）+ v0.5.5**（2026-09-20）— **764 测试**
   - **双渲染进程 CDP 驱动**：模型 / 思考档位 / 执行模式菜单渲染在独立的 `Kimi Browser Overlay` 浮层窗口，工作区菜单与「切换模型」对话框仍在主窗口
   - **工作区完整路径绑定**：未登记目录经原生「添加工作区」对话框导入（Win32 坐标点击 + `WM_SETTEXT`/`WM_GETTEXT` 回读），同名不同目录一律 fail-closed
-  - **模型三级选择与档位校验**：pill 回读 → overlay 快捷菜单 → 「更多模型…」对话框；档位按**界面实际渲染的集合**校验（官方 `Low/High/Max`，非官方 `On/Off`），请求不存在的档位在发送前报错
+  - **模型三级选择与档位校验**：pill 回读 → overlay 快捷菜单 → 「更多模型…」对话框；档位按**界面实际渲染的集合**校验（官方模型 `低/low`、`高/high`、`max`，非官方模型仅 `on`/`off`），请求不到的档位在发送前报错
   - **运行检测与恢复**：`button.stop` / `send.is-starting` 为权威信号；`needs_user` 六类由 `continue_task` 恢复，发布发送确认失败绝不重发
   - 详见 [Kimi Code 文档](docs/kimi-cdp.md) 与 [v0.5.5 发布说明](<docs/release-v0.5.5.md>)
 - **M25 — Qoder CN GUI 适配（第五个 GUI agent）+ v0.5.6**（2026-09-22）— **826 测试**
@@ -376,6 +390,12 @@ run_task(projectPath=D:/xxx/my-app, agentId=kimicode, task=「按 `./plan.md` �
   - **修正 Kimi Code 档位取值域**（`低/low`、`高/high`、`max`、`on`、`off`，刻意不含 `中`/`medium`）与 qoder 章节（`modelSource` 消歧、档位保存回读、检查点不重发、返修先落计划再回发全文、macOS 禁止派发）
   - **新增 `needsUserKind` × agent × `continue_task` 行为矩阵**与 `agentEndReason` → 终态映射，补 `project_not_registered`/`unsupported_platform`/`qoder_error` 等错误码与 meta 新字段
   - 详见 [v0.5.7 发布说明](<docs/release-v0.5.7.md>)
+- **M27 — 四份主文档按代码实况重写 + 打包一致性修复 + v0.5.8**（2026-09-23）— **826 测试**（无运行时变更）
+  - **四份主文档按代码逐项核对**（README 双语 / HANDOFF / ARCHITECTURE 双语）：修正**验收阶段顺序**（内置 `git-diff-check` 在配置检查项之前、视觉在命令检查之后）、**`visual.enabled=false` 仍会冻结核对快照**、**工具返回契约**（两个视觉基准工具与所有错误结果也不带 meta 块）
+  - **五份 agent 表补齐 Qoder CN**（driver 列表、`endReason`、`needsUserKind`、取消能力、registry 探测分支、实例生命周期），并注明 Qoder CN 是唯一能产出全部 6 种等待类型且**不产出 `idle_timeout`** 的适配器
+  - 修正 Kimi Code 档位取值域、测试基线（826 passed / 12 skipped、81 文件）、运行时依赖许可表（Apache-2.0 / ISC），并新增「声明了但无消费方」的 profile 字段提示
+  - **修复分发缺口**：`scripts/probe-traework.mjs` 未随包发布（文档却要求用户运行它）→ 纳入 `files`，并补齐 `probe:traework` / `probe:zcode` / `probe:codex` script
+  - 详见 [v0.5.8 发布说明](<docs/release-v0.5.8.md>)
 
 ## Agent 适配现状
 
@@ -453,7 +473,7 @@ run_task(projectPath=/path/to/项目, agentId=codex-cli, task="任务书", autoV
 | 文档 | 内容 |
 |---|---|
 | [HANDOFF.md](HANDOFF.md) | 项目交接文档：当前状态快照、架构导览、硬性红线、已知限制、接手建议 |
-| [CHANGELOG.md](<CHANGELOG.md>) | 版本变更日志（v0.1.0 → v0.5.7） |
+| [CHANGELOG.md](<CHANGELOG.md>) | 版本变更日志（v0.1.0 → v0.5.8） |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 开发环境、工程规范、提交与发布流程、如何新增 agent |
 | [SECURITY.md](SECURITY.md) | 安全模型（凭证零管理/命令白名单/进程与桌面自动化边界）与私密报告渠道 |
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | 贡献者行为准则 |
@@ -512,13 +532,17 @@ run_task(projectPath=/path/to/项目, agentId=codex-cli, task="任务书", autoV
 
 ### 第三方依赖许可
 
-运行时依赖均为 **MIT** 许可，与 Apache-2.0 兼容：
+运行时依赖的许可如下（均为与 Apache-2.0 兼容的宽松许可）：
 
 | 依赖 | 许可 | 用途 |
 |---|---|---|
 | [`@modelcontextprotocol/sdk`](https://github.com/modelcontextprotocol/sdk) | MIT | MCP 协议实现 |
 | [`zod`](https://github.com/colinhacks/zod) | MIT | 外部输入校验 |
 | [`cross-spawn`](https://github.com/moxystudio/node-cross-spawn) | MIT | 跨平台子进程 |
+| [`puppeteer-core`](https://github.com/puppeteer/puppeteer) | Apache-2.0 | 视觉验收驱动无头浏览器 |
+| [`@puppeteer/browsers`](https://github.com/puppeteer/puppeteer) | Apache-2.0 | 托管 Chrome/Edge 的安装与版本锁定 |
+| [`pixelmatch`](https://github.com/mapbox/pixelmatch) | ISC | 页面截图像素比对 |
+| [`sharp`](https://github.com/lovell/sharp)（optional） | Apache-2.0 | 图片解码与规格校验；缺失时视觉模块明确阻塞 |
 
 开发依赖（TypeScript、ESLint、Prettier、Vitest、Vite、tsx 等）各自遵循其开源许可，且不随 npm 发布产物分发。
 

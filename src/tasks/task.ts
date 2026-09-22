@@ -207,15 +207,18 @@ export interface TaskMeta {
   zcodeSessionId?: string;
   zcodeSessionTitle?: string;
   /**
-   * Kimi Code 专用会话锚点（**不复用 zcodeSession***：语义与迁移风险不同——
-   * 旧快照里的 zcodeSession* 是 ZCode 会话，拿它去 Kimi Code 里定位会话必然失败）。
-   * 由 fix-loop 从 AgentRunResult.session 落盘，continue_task/rework 恢复时用于唯一定位原会话。
+   * Qoder CN 专用会话锚点与实况（**不复用 zcodeSession\***：语义与迁移风险不同——
+   * 旧快照里的 zcodeSession\* 是 ZCode 会话，拿它去 Qoder 里定位会话必然失败）。
+   * `qoderSessionId` 由 fix-loop 从 AgentRunResult.session 落盘，continue_task/rework 恢复时
+   * 用于唯一定位原会话；`qoderTurnId` 预留给按轮定位，当前无写入方。
    */
   qoderSessionId?: string;
   qoderTurnId?: string;
+  /** Qoder CN 实际生效的模型 / 等级 / 模型来源（由适配器回读，写入任务报告） */
   actualModel?: string;
   actualReasoningLevel?: string;
   guiStop?: { clicked: boolean; idle: boolean };
+  /** Kimi Code 专用会话锚点（同样不复用 zcodeSession\*，理由同上） */
   kimicodeSessionId?: string;
   kimicodeSessionTitle?: string;
   boundProjectPath?: string;

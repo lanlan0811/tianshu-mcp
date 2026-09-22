@@ -8,7 +8,7 @@
 
 # tianshu-mcp
 
-Visual acceptance (since v0.5.0, with optional AI content validation since v0.5.4): [English guide](docs/visual-acceptance.en.md) · [Validation record](docs/visual-validation.en.md) · [Latest release notes](<docs/release-v0.5.6.en.md>).
+Visual acceptance (since v0.5.0, with optional AI content validation since v0.5.4): [English guide](docs/visual-acceptance.en.md) · [Validation record](docs/visual-validation.en.md) · [Latest release notes](<docs/release-v0.5.8.en.md>) · [All versions](CHANGELOG.en.md).
 
 **Tianshu × AI-Agent orchestration MCP server**
 
@@ -35,14 +35,14 @@ Registered by Tianshu as a standard MCP server, it dispatches external AI-Agents
 
 ## What this is
 
-Tianshu plays the role of the overall commander; this MCP server is the **scheduler + execution surface + objective acceptance gate**; the external AI-Agent (Codex / TraeWork / ZCode / Kimi Code GUI) is the "worker" that does the development.
+Tianshu plays the role of the overall commander; this MCP server is the **scheduler + execution surface + objective acceptance gate**; the external AI-Agent (Codex / TraeWork / ZCode / Kimi Code / Qoder CN GUI) is the "worker" that does the development.
 
 - **11 MCP tools**: `run_task / continue_task / query_task / list_tasks / get_task_report / cancel_task / verify_task / rework_task / get_profiles`, plus `prepare_visual_baseline / approve_visual_baseline` for visual acceptance
 - **Async contract**: `run_task` returns a `taskId` immediately; long-running work is polled via `query_task` (never blocks `tools/call`).
 - **Objective acceptance**: automated command checks (typecheck/lint/test/build — skipped when absent, plus tech-stack derivation) + programmatic code analysis (changed-file list / diffstat / suspicious signals such as TODO, debugger, secret-like patterns), all relative to a **git baseline**; never auto-commits or stashes. The acceptance engine is **fail-closed**: a test check fails when its output reports zero executed tests even if the exit code is 0; git projects must produce changes relative to the pre-work baseline by default (pure analysis tasks can opt out with `"requireChanges": false` in `.tianshu-mcp/acceptance.json`).
 - **Acceptance parallelism**: command checks run **bounded-parallel** by default (`verifyConcurrency`, default 2, range 1–4). When checks depend on an order (a later check reading build output, `--fix`, shared cache dirs), set it to `1` for fully serial behaviour; a project can override it in `.tianshu-mcp/acceptance.json`, and the server level lives in `config.json`. Report and log formats are unchanged (results are returned in declaration order).
 - **Rework loop**: automatic rework (`autoFixRounds`) + manual `rework_task`; on verification failure a repair-plan file is generated and fed back to the agent; when rounds run out → `needs_attention` awaiting Tianshu's verdict.
-- **Execution surfaces**: `driver: "gui"` selects an explicit, isolated Codex/TraeWork/ZCode/Kimi Code CDP adapter; `driver: "spawn"` runs an external CLI child process.
+- **Execution surfaces**: `driver: "gui"` selects an explicit, isolated Codex/TraeWork/ZCode/Kimi Code/Qoder CN CDP adapter; `driver: "spawn"` runs an external CLI child process.
 - **Project-less dispatch (ZCode, issue #12)**: `run_task`'s `projectPath` may be omitted — ZCode runs the task in its `default` workspace without registering/importing a project, collecting a Git baseline, or running project acceptance (the result is marked structurally as `verificationNotApplicable: "no_project"` and `verify_task`/`get_task_report` return a not-applicable explanation). The companion `allowCreateProject: false` stops dispatch before any import side effect when the target directory is unregistered. See the [ZCode CDP adapter](docs/zcode-cdp.en.md).
 - **Scheduling discipline**: per-project serial queue + global concurrency cap (default 2, configurable).
 - **Optional AI content validation (v0.5.4, off by default)**: validates whether the **content** of an image or page screenshot matches an expectation you declare explicitly. Judgement is fully **delegated to a local command you supply** (the MCP reads, stores, and forwards no keys and ships no model client), it **warns only** by default and can be upgraded to failing per rule, and it debounces with majority sampling plus a task-level cache; split votes or confidence below the threshold yield `uncertain`, which never gates and never triggers rework. Configuration and the command contract are in [visual acceptance](docs/visual-acceptance.en.md).
@@ -70,7 +70,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 776 tests across 73 files, including Codex/ZCode/TraeWork/Kimi Code unit/fake-CDP/restart/recovery/repair loops and visual acceptance
+npm test             # 826 passed / 12 skipped (838 tests, 81 files: unit/integration/protocol plus 3 real-browser files skipped by design)
 ```
 
 ### Install the npm package
@@ -158,14 +158,27 @@ For Kimi Code, `model` is required and takes the UI model name directly, while `
 
 ```text
 run_task(projectPath=D:/xxx/my-app, agentId=kimicode, task="Implement `./plan.md`",
-         model=K3, reasoningLevel=High, autoVerify=true, autoFixRounds=2)
+         model=K3, reasoningLevel=high, autoVerify=true, autoFixRounds=2)
 ```
 
 > Kimi Code is a plain Electron install (measured 1.0.2): injecting `--remote-debugging-port` and driving it over CDP is enough — no MSIX COM activation.
 > **The model menu, thinking tiers and execution-mode menu render in a separate `Kimi Browser Overlay` renderer window**, while the workspace menu and the "switch model" dialog stay in the main window.
 > A task must bind a workspace folder (**project-less dispatch is not supported**); an unregistered workspace is imported through the native "add workspace" dialog.
-> `reasoningLevel`: official models use `Low` / `High` / `Max`; **unofficial models (e.g. `stepfun/step-3.7-flash:free`) only have `on` / `off`**,
-> and a tier the UI does not render fails loudly before sending. The `mode` parameter is not supported. See the [Kimi Code CDP adapter](docs/kimi-cdp.en.md).
+> `reasoningLevel`: official models use `低/low`, `高/high` and `max`; **unofficial models (e.g. `stepfun/step-3.7-flash:free`) only have `on` / `off`**.
+> The domain deliberately excludes `中`/`medium`; tiers are validated against the label set the UI actually renders, and a tier the UI does not render fails loudly before sending. The `mode` parameter is not supported. See the [Kimi Code CDP adapter](docs/kimi-cdp.en.md).
+
+For Qoder CN, an existing `projectPath` and a readable `planDoc` are mandatory:
+
+```text
+run_task(projectPath=D:/xxx/my-app, agentId=qoder, planDoc=./plans/development.md,
+         modelSource=custom, model=<UI model name>, reasoningLevel=极高,
+         task="Implement the project per the plan", autoVerify=true, autoFixRounds=3)
+```
+
+> **Qoder CN only** (the international edition or a similarly titled window is not a substitute). `modelSource=default|custom` disambiguates identical names across the default/custom groups;
+> the thinking tier is saved in Model Management as a **global Qoder preference** (never restored afterwards) and read back by reopening the dialog, and an unsupported tier fails before sending;
+> the permission mode is retained as-is. Both automatic and manual repair **write the plan first**, then send its filename, full path and complete text to the original conversation.
+> macOS is `research` and dispatch is disabled. See the [Qoder CN adapter](docs/qoder-cdp.en.md).
 
 ## Tool surface (11 tools)
 
@@ -215,6 +228,7 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 | [docs/codex-windows-smoke.en.md](docs/codex-windows-smoke.en.md) | Codex Windows hardware record (incl. verify-fail → auto plan → repair-pass loop) |
 | [docs/release-v0.3.4.en.md](<docs/release-v0.3.4.en.md>) | v0.3.4 release notes (ZCode project/model read-back, initialization recovery, session dispatch confirmation, issues #8/#9/#10) |
 | [docs/qoder-cdp.en.md](docs/qoder-cdp.en.md) | Qoder CN GUI driver: installation discovery and instance reuse, full-path workspaces with native import, `modelSource` and global Model Management reasoning tiers, send/answer checkpoints, liveness judging and same-session repair, hardware evidence and uncovered items |
+| [docs/release-v0.5.8.en.md](<docs/release-v0.5.8.en.md>) | v0.5.8 release notes (the four primary documents rewritten against the code, plus the missing TraeWork probe and three probe scripts; no runtime change) |
 | [docs/release-v0.5.7.en.md](<docs/release-v0.5.7.en.md>) | v0.5.7 release notes (orchestration skill docs rewritten against the code: parameter matrix, default precedence, tier correction and the qoder section; no runtime change) |
 | [docs/release-v0.5.6.en.md](<docs/release-v0.5.6.en.md>) | v0.5.6 release notes (Qoder CN GUI adapter, hardware acceptance scope, macOS research boundary) |
 | [docs/release-v0.5.5.en.md](<docs/release-v0.5.5.en.md>) | v0.5.5 release notes (Kimi Code GUI adapter: dual renderer processes, full-path workspace binding with native import, three-stage model selection and tier validation, run detection and recovery) |
@@ -265,7 +279,7 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 - **Engineering / CI** ✅
   - GitHub Actions: `CI` (`build-test` ubuntu/windows/macos × Node 20/22/24 + `pack-check`, plus a `visual-browser` real-browser matrix ubuntu/windows/macos-15-intel/macos-15 × Node 20/22/24, all green with the v0.5.1 tag) and `Release` (tag-triggered) both green
   - Skill self-install verified idempotent on this machine's real `~/.rivet/skills/tianshu-mcp`
-  - npm package name `tianshu-mcp` published continuously since v0.1.1 (currently `0.5.7`)
+  - npm package name `tianshu-mcp` published continuously since v0.1.1 (currently `0.5.8`)
 - **Real Tianshu host integration (DoD #6)** ✅ (2026-09-07)
   - Configured the local mode in the real `D:\Tianshu` desktop host `mcp.servers` → sidecar reported `MCP: 2 servers connected, 10 tools` (including this server's 8 tools), spawned the child process and connected over stdio
   - Exposed and fixed a skill-install source-path bug (fileURLToPath, commit 55cf2d0)
@@ -359,7 +373,7 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 - **M24 — Kimi Code GUI adapter (fourth GUI agent) + v0.5.5** (2026-09-20) — **764 tests**
   - **Dual-renderer CDP driver**: the model / thinking-tier / execution-mode menus render in the separate `Kimi Browser Overlay` window while the workspace menu and the "switch model" dialog stay in the main window
   - **Full-path workspace binding**: an unregistered directory is imported through the native "add workspace" dialog (Win32 coordinate clicks plus `WM_SETTEXT`/`WM_GETTEXT` read-back), and same-name/different-directory cases fail closed
-  - **Three-stage model selection and tier validation**: pill read-back → overlay shortcut menu → "more models…" dialog; tiers are validated against **the set the UI actually renders** (official `Low/High/Max`, unofficial `On/Off`), and a tier the UI does not render fails before sending
+  - **Three-stage model selection and tier validation**: pill read-back → overlay shortcut menu → "more models…" dialog; tiers are validated against **the set the UI actually renders** (official models `低/low`, `高/high`, `max`; unofficial models only `on`/`off`), and a tier the UI does not render fails before sending
   - **Run detection and recovery**: `button.stop` / `send.is-starting` are the authoritative signals; the six `needs_user` kinds recover via `continue_task`, and an uncertain send is never repeated
   - See the [Kimi Code guide](docs/kimi-cdp.en.md) and the [v0.5.5 release notes](<docs/release-v0.5.5.en.md>)
 - **M25 — Qoder CN GUI adapter (fifth GUI agent) + v0.5.6** (2026-09-22) — **826 tests**
@@ -375,6 +389,12 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
   - **Kimi Code tier domain corrected** (`低/low`, `高/high`, `max`, `on`, `off` — deliberately without `中`/`medium`) and the qoder section completed (`modelSource` disambiguation, tier saved then read back, checkpoints that prevent resends, repair writing a plan before sending its full text, macOS dispatch disabled)
   - **New `needsUserKind` × agent × `continue_task` matrix** and an `agentEndReason` → terminal-state mapping, plus `project_not_registered`/`unsupported_platform`/`qoder_error` and the new meta fields
   - See the [v0.5.7 release notes](<docs/release-v0.5.7.en.md>)
+- **M27 — The four primary documents rewritten against the code + packaging fix + v0.5.8** (2026-09-23) — **826 tests** (no runtime change)
+  - **Item-by-item audit of the four primary documents** (bilingual README / HANDOFF / bilingual ARCHITECTURE): corrected the **acceptance stage order** (the built-in `git-diff-check` runs before the configured checks and the visual stage after them), the fact that **`visual.enabled=false` still freezes and compares snapshots**, and the **tool result contract** (the two baseline tools and every error result carry no meta block either)
+  - **All five agent tables now include Qoder CN** (driver list, `endReason`, `needsUserKind`, cancellation capability, registry discovery branches, instance lifecycle), noting that Qoder CN is the only adapter able to emit all six wait kinds and that it **never emits `idle_timeout`**
+  - Corrected the Kimi Code tier domain, the test baseline (826 passed / 12 skipped across 81 files) and the runtime dependency licence table (Apache-2.0 / ISC), and added a callout for **declared-but-unused profile fields**
+  - **Fixed a distribution gap**: `scripts/probe-traework.mjs` was not shipped although the docs tell users to run it → added to `files`, plus the missing `probe:traework` / `probe:zcode` / `probe:codex` scripts
+  - See the [v0.5.8 release notes](<docs/release-v0.5.8.en.md>)
 
 ## Agent support status
 
@@ -451,7 +471,7 @@ Behavior and limits:
 
 | Document | Content |
 |---|---|
-| [CHANGELOG.en.md](<CHANGELOG.en.md>) | Version history (v0.1.0 → v0.5.7) |
+| [CHANGELOG.en.md](<CHANGELOG.en.md>) | Version history (v0.1.0 → v0.5.8) |
 | [CONTRIBUTING.en.md](CONTRIBUTING.en.md) | Dev setup, conventions, commit/release flow, adding an agent |
 | [SECURITY.en.md](SECURITY.en.md) | Security model (zero credentials / command whitelist / process & desktop-automation boundaries) and private reporting |
 | [CODE_OF_CONDUCT.en.md](CODE_OF_CONDUCT.en.md) | Contributor Code of Conduct |
@@ -510,13 +530,17 @@ The software is provided **"AS IS"**, without warranties or conditions of any ki
 
 ### Third-party dependency licenses
 
-Runtime dependencies are all **MIT**-licensed and compatible with Apache-2.0:
+Runtime dependencies are licensed as follows (all permissive and Apache-2.0 compatible):
 
 | Dependency | License | Purpose |
 |---|---|---|
 | [`@modelcontextprotocol/sdk`](https://github.com/modelcontextprotocol/sdk) | MIT | MCP protocol implementation |
 | [`zod`](https://github.com/colinhacks/zod) | MIT | External input validation |
 | [`cross-spawn`](https://github.com/moxystudio/node-cross-spawn) | MIT | Cross-platform child processes |
+| [`puppeteer-core`](https://github.com/puppeteer/puppeteer) | Apache-2.0 | Drives the headless browser for visual acceptance |
+| [`@puppeteer/browsers`](https://github.com/puppeteer/puppeteer) | Apache-2.0 | Installs and version-locks the managed Chrome/Edge |
+| [`pixelmatch`](https://github.com/mapbox/pixelmatch) | ISC | Page-screenshot pixel comparison |
+| [`sharp`](https://github.com/lovell/sharp) (optional) | Apache-2.0 | Image decoding and spec validation; the visual module blocks explicitly when it is missing |
 
 Development dependencies (TypeScript, ESLint, Prettier, Vitest, Vite, tsx, etc.) follow their own open-source licenses and are not distributed with the npm package.
 

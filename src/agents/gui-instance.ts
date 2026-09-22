@@ -1,7 +1,7 @@
 import type { SpawnOptions } from "node:child_process";
 
 /**
- * GUI 桌面实例（ZCode / Codex / TraeWork）的 spawn 选项。
+ * GUI 桌面实例（TraeWork / ZCode / Codex / Kimi Code / Qoder CN）的 spawn 选项。
  *
  * `detached: true` 是**不变量**，不是平台偏好：桌面实例必须自成进程组、脱离父进程，否则父进程
  * （MCP server，或一次性 smoke / probe 脚本）退出时会把它连坐杀掉，`run_task` 的 `keptInstance`

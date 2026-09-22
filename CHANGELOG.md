@@ -7,6 +7,30 @@
 
 ---
 
+## [0.5.8] - 2026-09-23
+
+### 变更
+
+- **四份主文档按代码逐项核对重写**（README 双语 / HANDOFF / ARCHITECTURE 双语），核对范围覆盖 `src/mcp/`、`src/tasks/`、`src/loop/`、`src/agents/`（五个 GUI 适配器全部）、`src/verify/`、`src/visual/`、`src/config/`、`src/util/`：
+  - **验收阶段顺序修正**：内置 `git-diff-check` 在配置的检查项**之前**执行，视觉检查在命令检查**之后**执行（旧文档写反）。
+  - **`visual.enabled=false` 的真实边界**：快照冻结与完整性核对**恒定执行**，与 `enabled` 无关；`enabled` 只决定是否真的跑截图/规格/内容判定（这正是检出「验收配置或基准被改」的机制）。
+  - **工具返回契约修正**：`prepare_visual_baseline` / `approve_visual_baseline` 的成功结果同样不带 meta 块，任何工具的错误结果也不带（旧文档称仅 `get_task_report` 例外）。
+  - **五份 agent 表补齐 Qoder CN**：agent 列表、driver 列表、`endReason` 表、`needsUserKind` 表、取消能力表、registry 特殊探测分支、GUI 实例生命周期、测试分层说明全部由「四个 driver」更正为「五个」，并把 Qoder CN 执行顺序与完成判定写入架构文档。
+  - **`endReason` / `needsUserKind` 逐值核对**：补 Kimi Code 的 `system_permission` / `setup_recovery`；注明 Qoder CN 是唯一能产出全部 6 种 kind 的适配器且**不产出 `idle_timeout`**（静止而无本轮完成证据 → `needs_user(setup_recovery)`）；注明 Codex 因 `needsClose` 从不返回 true 而没有 `close_existing_instance` 路径；注明 ZCode 与 TraeWork 不点界面停止按钮也不回传 `guiStop`。
+  - **取消语义**改为按适配器能力分列；**检查点**明确 `qoder-session.json` 是唯一持久化检查点（含四个 phase 的读写点），其余为内存态判断。
+  - 修正 **Kimi Code 档位取值域**（README 首页示例与里程碑文字由 `Low`/`High`/`Max` 改为 `低/low`、`高/high`、`max`、`on`、`off`）、**测试基线**（776 项/73 文件 → 826 passed / 12 skipped、81 文件，并给出单元 54 / 集成 26 / 协议 1 的构成）、**运行时依赖许可表**（补 Apache-2.0 与 ISC 项，纠正「均为 MIT」）。
+  - 架构文档新增「声明了但当前无消费方」的 profile 字段提示框（`gui.windowMode`、`gui.modelRequired`、ZCode 的 `gui.stallTimeoutMs` / `gui.cancelWaitMs`），并把已知缺口更新为两条真实技术债。
+
+### 修复
+
+- **分发缺口**：`scripts/probe-traework.mjs` 此前不在 `package.json` 的 `files` 中，而文档要求用户运行该探针——npm 包内拿不到该脚本。现已纳入分发，并补齐 `probe:traework` / `probe:zcode` / `probe:codex` 三个 npm script（此前只有 `probe:kimicode` / `probe:qoder`，而对应脚本早已随包发布）。
+- **源码注释与描述**：`src/mcp/handlers.ts`、`src/server.ts` 头注「9 个工具」更正为 11；MCP `instructions` 补 `kimicode` / `qoder`；`src/agents/gui-instance.ts` 头注补全五个使用者；`src/tasks/task.ts` 修正贴在 Qoder 字段上的 Kimi Code 注释并注明 `qoderTurnId` 无写入方。**均无运行时行为变更。**
+
+### 测试
+
+- 全量 **826 passed / 12 skipped**（Windows 10 x64，Node 24.18.0）；类型检查与 lint 通过；`npm pack`（231 文件）核验包含五个探针脚本。
+- 文档相对链接检查：四份主文档 + 技能文档共 **255 条相对链接、0 条失效**。
+
 ## [0.5.7] - 2026-09-22
 
 ### 变更
@@ -724,6 +748,7 @@ Codex 桌面端改为 **GUI 驱动**：新增 `codex-gui` adapter，通过 MSIX 
 
 ---
 
+[0.5.8]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.5.7...v0.5.8
 [0.5.7]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.5.6...v0.5.7
 [0.5.6]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.5.4...v0.5.5

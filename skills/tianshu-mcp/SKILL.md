@@ -39,7 +39,7 @@ run_task（秒回 taskId，异步）
 | `run_task` | write + 审批 | 派活给外部 agent；**异步**返回 `taskId` | 见 §3 |
 | `query_task` | read | 轮询状态 + agent 日志尾（`tailLines` 缺省 40 行） | `taskId`、`tailLines?` |
 | `list_tasks` | read | 查历史任务（每行：taskId / status / agent / project / 摘要） | `projectPath?`、`status?`、`limit?`（缺省 50，上限 200） |
-| `get_task_report` | read | 读某轮验收报告 **Markdown 全文**（唯一不带 meta 块的工具） | `taskId`、`round?`（0-based，缺省最新） |
+| `get_task_report` | read | 读某轮验收报告 **Markdown 全文** | `taskId`、`round?`（0-based，缺省最新） |
 | `verify_task` | read | 对任务或任意项目**独立验收**（不改源码、无需审批） | `taskId` 或 `projectPath` 二选一、`extraChecks?`、`checksMode?`、`baselineRef?` |
 | `rework_task` | write + 审批 | 手动返修：终态任务重新入队续跑（同 agent/项目、同一轮次记账） | `taskId`、`feedback?` |
 | `continue_task` | write + 审批 | 恢复 `needs_user`（仅 codex/zcode/kimicode/qoder） | `taskId`、`message`（必填） |
@@ -207,7 +207,7 @@ meta 的 `needsUserKind` 给出等待类型，`pendingQuestion` 给出问题原�
 
 ### 8.1 验收报告解读
 
-`get_task_report(taskId, round?)` 返回报告 Markdown 全文（**唯一不带 meta 块的工具**；其他工具结果末尾都带 `---tianshu-mcp-meta---` JSON 块，字段全表见 usage-examples.md §4）。
+`get_task_report(taskId, round?)` 返回报告 Markdown 全文。**注意：报告类与视觉基准类工具的成功结果不带 meta 块**——`get_task_report` 返回报告原文，`prepare_visual_baseline` / `approve_visual_baseline` 返回视觉操作的 JSON 原文；其余工具结果末尾都带 `---tianshu-mcp-meta---` JSON 块（字段全表见 usage-examples.md §4），任何工具的**错误**结果也不带 meta 块。
 
 - `checks[]`：每项 PASS / FAIL / SKIP + 输出尾部。默认**并行 2 条**（`verifyConcurrency`，1–4）；checks 之间有顺序依赖（后续读 build 产物、带 `--fix`、共享缓存目录）时**必须显式设 1**，否则偶发误报。
 - `analysis`：变更清单、diffstat、可疑标记命中（TODO/FIXME、`console.log`/`debugger`、疑似密钥形态、超大单文件改动告警）。这是**确定性规则，不是 LLM 评审**，命中只提示人工，不等同于任务失败。

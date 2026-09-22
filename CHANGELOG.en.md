@@ -8,6 +8,30 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.5.8] - 2026-09-23
+
+### Changed
+
+- **The four primary documents were rewritten item by item against the code** (bilingual README / HANDOFF / bilingual ARCHITECTURE). The audit covered `src/mcp/`, `src/tasks/`, `src/loop/`, `src/agents/` (all five GUI adapters), `src/verify/`, `src/visual/`, `src/config/` and `src/util/`:
+  - **Acceptance stage order fixed**: the built-in `git-diff-check` runs **before** the configured checks, and the visual stage runs **after** the command checks (the old text had it reversed).
+  - **The real boundary of `visual.enabled=false`**: snapshot freezing and integrity checking run **unconditionally**, independent of `enabled`; `enabled` only decides whether screenshots/specs/content judgement actually run — which is exactly what detects edits to the acceptance config or baselines.
+  - **Tool result contract fixed**: `prepare_visual_baseline` / `approve_visual_baseline` success results also carry no meta block, and neither does any tool's error result (the old text claimed only `get_task_report` was an exception).
+  - **All five agent tables now include Qoder CN**: the agent list, driver list, `endReason` table, `needsUserKind` table, cancellation-capability table, registry special discovery branches, GUI instance lifecycle and test-layer descriptions were corrected from "four drivers" to "five", and Qoder CN's execution order and completion criterion were added to the architecture document.
+  - **`endReason` / `needsUserKind` verified value by value**: added Kimi Code's `system_permission` / `setup_recovery`; noted that Qoder CN is the only adapter able to emit all six kinds and that it **never emits `idle_timeout`** (static screen without this-turn evidence → `needs_user(setup_recovery)`); noted that Codex has no `close_existing_instance` path because `needsClose` never returns true; and that ZCode and TraeWork never click a stop button and never report `guiStop`.
+  - **Cancellation semantics** are now split per adapter capability; **checkpoints** now state that `qoder-session.json` is the only persisted checkpoint (with all four phases and their read/write points) while the rest keep in-memory state.
+  - Corrected the **Kimi Code tier domain** (README front-page example and milestone text changed from `Low`/`High`/`Max` to `低/low`, `高/high`, `max`, `on`, `off`), the **test baseline** (776 tests/73 files → 826 passed / 12 skipped across 81 files, broken down as unit 54 / integration 26 / protocol 1) and the **runtime dependency licence table** (Apache-2.0 and ISC entries added, "all MIT" corrected).
+  - The architecture document gained a callout for **declared-but-unused profile fields** (`gui.windowMode`, `gui.modelRequired`, ZCode's `gui.stallTimeoutMs` / `gui.cancelWaitMs`), and the known-gaps list now carries two real debts instead of a stale tool-count note.
+
+### Fixed
+
+- **Distribution gap**: `scripts/probe-traework.mjs` was not in `package.json`'s `files`, yet the docs tell users to run that probe — npm consumers could not get it. It is now shipped, and the `probe:traework` / `probe:zcode` / `probe:codex` npm scripts were added (previously only `probe:kimicode` / `probe:qoder` existed although the corresponding scripts had long been published).
+- **Source comments and strings**: the "9 tools" header comments in `src/mcp/handlers.ts` and `src/server.ts` now say 11; the MCP `instructions` string mentions `kimicode` / `qoder`; `src/agents/gui-instance.ts` lists all five users; `src/tasks/task.ts` fixes a Kimi Code comment that sat on the Qoder fields and notes that `qoderTurnId` has no writer. **No runtime behaviour change.**
+
+### Tests
+
+- Full regression: **826 passed / 12 skipped** (Windows 10 x64, Node 24.18.0); typecheck and lint pass; `npm pack` (231 files) verified to include all five probe scripts.
+- Documentation link check: the four primary documents plus the skill docs contain **255 relative links, 0 broken**.
+
 ## [0.5.7] - 2026-09-22
 
 ### Changed
@@ -829,6 +853,7 @@ project → pick model and reasoning level → send instructions → run detecti
 
 ---
 
+[0.5.8]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.5.7...v0.5.8
 [0.5.7]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.5.6...v0.5.7
 [0.5.6]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/lanlan0811/tianshu-mcp/compare/v0.5.4...v0.5.5

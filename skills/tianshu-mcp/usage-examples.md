@@ -219,7 +219,11 @@ run_task(projectPath=/path/to/项目, agentId=codex-cli,
 
 ## 4. meta 块解读（字段全表）
 
-除 `get_task_report` 外，各工具结果文本末尾都是「人类可读文本 + 结构化 meta」：
+除下列情况外，各工具结果文本末尾都是「人类可读文本 + 结构化 meta」：
+
+- `get_task_report` 成功时直接返回 `report-<round>.md` 原文；
+- `prepare_visual_baseline` / `approve_visual_baseline` 成功时直接返回视觉操作的 JSON 原文；
+- **任何工具的错误结果**都只有 `Error: …` 文本，不带 meta 块。
 
 ```text
 ---tianshu-mcp-meta---
