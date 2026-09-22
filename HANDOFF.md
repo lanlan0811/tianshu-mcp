@@ -1,10 +1,23 @@
 # HANDOFF.md — 项目交接说明
 
-> **交接快照：2026-09-23 · 开发版本 `0.5.9`；`v0.5.9` 已发布（GitHub Release / Gitee 发行版 / npm `latest` 三者一致，发布提交 `fa926af`）。**
+> **交接快照：2026-09-23 · 开发版本 `0.5.10`；`v0.5.10` 的发布流程见 §2 与 §6.4（Release / Gitee / npm 实测在发布后回写本节）。**
 > 本文写给**接手本仓库的人**：先说清「这是什么、现在到哪一步」，再给出「怎么跑、怎么改、哪里会踩坑」。
 > 工作区规则见 `AGENTS.md`（gitignore，仅本地）；安装与用法见 `README.md`，本文不重复，只做导览与状态记录。
 
 ---
+
+### 0.5.10 开发交接（派单/验收幂等键，issue #15）
+
+- **问题**：`run_task` 每次调用都 `genTaskId()` 新建任务、`verify_task` 独立路径用 `vfy_<Date.now()>` 新建记录，两个入口都没有幂等键。宿主在 `tools/call` 超时（长任务 + 网络抖动时最常发生）后重试，就会对同一项目排队**两轮 agent**（重复劳动、重复消耗外部配额，且第二轮在第一轮产物上继续改，验收归因混叠），或把整套验收命令重跑一遍（`build`/`e2e`/部署类检查的副作用被重复执行）。协议层唯一的防线是技能文档里的行为约束。
+- **新增**：`run_task` / `verify_task` 的可选 `idempotencyKey`（trim 后 1..128 字符、无控制字符；两工具**各自独立命名空间**）。
+  - `run_task`：TTL（默认 24h）内同键同参重复提交**恒返回原 `taskId` 与当前 meta**（含终态，只读不重派）；同键异参 fail-closed 报错并回报原 `taskId`。
+  - `verify_task`：执行中 → **成功结果** + `idempotencyReplay: "in_progress"`（刻意不是 `isError`，否则宿主会把它当失败再重试放大）；已完成 → 既有报告路径与 `reportRound`/结论，**不重跑**。
+- **落盘与配置**：`<数据目录>/idempotency.json`（原子写、惰性加载、TTL + `maxEntries` 容量裁剪；跨 server 重启仍生效）；`config.json` → `idempotency.ttlMs`（默认 86400000）与 `idempotency.maxEntries`（默认 2000）。键**明文不入日志与事件流**（只用 `keyDigest()` 摘前 8 位）。
+- **正确性要点**（改这块前必读）：① 同一临界区内**先落映射、后建任务**（`runExclusive` 按 `(scope,key)` 串行化），崩溃于两者之间时重试看到「有映射无任务快照」即视为未生效重新派发；② 映射写入失败 **fail-open**——仍返回已派发的任务并明示「无法被同键重放」，绝不把跑起来的 agent 报成派发失败；③ 映射文件损坏时告警并从任务快照重建一次。
+- **边界**：`verify_task(taskId=…)` 的键**不写入任务快照**（该字段承载任务的派单键，避免覆盖），这一种组合的重建依赖 `idempotency.json`；「执行中」标记仅进程内（重启后未完成验收不会被缓存，重试即重新执行，如实）；不给 `rework_task`/`continue_task`/`cancel_task`/视觉基准工具加键；不做跨进程分布式幂等。
+- **协议层**：`tools/list` 的 `annotations.idempotentHint` 对两个工具置 true——**声明幂等的前提是调用方传键**（工具描述、README 与技能文档均已写明）；未传键时 `run_task` 仍会点名同工作区未结束的任务（`projectActiveTask`）。
+- 测试：新增 16 单元（`test/unit/idempotency.test.ts`）+ 8 集成（`test/integration/idempotency.test.ts`），另补协议 `idempotentHint` 断言与配置默认值/覆盖用例；全量 **867 passed / 12 skipped**（85 文件）在本机通过。
+- 详见 [v0.5.10 发布说明](docs/release-v0.5.10.md) 与 [ARCHITECTURE](ARCHITECTURE.md) §5.6。
 
 ### 0.5.9 开发交接（GUI 终态如实化：server 退出 / 重启归档，issue #14）
 
@@ -92,11 +105,11 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build
 | 项 | 状态 |
 |---|---|
 | 分支 | `master`（**只在此分支提交**，不建其他分支） |
-| 版本 / 许可证 | `0.5.9`（**已发布**；上一版本 `0.5.8`）/ Apache-2.0 |
+| 版本 / 许可证 | `0.5.10`（本机已实现并自测；发布流程见 §6.4）/ Apache-2.0 |
 | 标签 | `v0.1.0` … `v0.5.9`（均已推双仓；`v0.5.9` 指向发布提交 `fa926af`） |
 | 工作树 | 干净；`github/master` 与 `gitee/master` 均已推到同一提交。本轮提交：`537d3c5`（实现，fix(tasks)）、`03194e3`（双语文档）、`ce92b61`（测试修正：把 codex 测试 profile 的探测固定为存在的 command，修掉 CI 上因 MSIX 发现必失败导致的 9 作业全挂）、`c8e2378`（回写 CI 实测）、`fa926af`（删除 `docs/plans/` 并清理指向它的失效链接，即 `v0.5.9` 的发布提交）、以及其后的发布后文档提交 |
-| 测试 | **841 passed / 12 skipped**（80 个测试文件通过 + 3 个真实浏览器文件按设计 skip；较 v0.5.8 净增 15 项：9 单元 + 5 集成 + 1 配置） |
-| 门禁 | lint 0 warning、typecheck clean、全量测试 841 passed、build 成功、`check:stdio` 6/6 通过 |
+| 测试 | **867 passed / 12 skipped**（82 个测试文件通过 + 3 个真实浏览器文件按设计 skip，共 85 文件；较 v0.5.9 净增 26 项：16 单元 + 8 集成 + 1 协议 + 1 配置） |
+| 门禁 | lint 0 warning、typecheck clean、全量测试 867 passed、build 成功、`check:stdio` 6/6 通过、`pack:check` 通过 |
 | CI | `build-test`（ubuntu/windows/macos × Node 20/22/24）+ `pack-check`，另加 `visual-browser` 真实浏览器矩阵（ubuntu/windows + macos-15-intel/macos-15 × Node 20/22/24）。**本轮实测**：`03194e3` 因新集成用例在无 Codex 的 Linux/macOS runner 上探测失败而 9 个 build-test 作业全挂（[run 35781422397](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35781422397)），修正提交 `ce92b61` 后 **22 作业全绿**（[run 35783321053](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35783321053)）。历史：`9ee03da`（[run 35741308742](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35741308742)）、`e2d4689`（[run 35740269977](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35740269977)） |
 | npm | `tianshu-mcp@0.5.9` 已发布（`latest`）——`npm view tianshu-mcp dist-tags` 为 `{latest: "0.5.9"}`，`dist.shasum` = `48778ca3…`，231 文件；从 registry 实装消费者复验：版本 `0.5.9`、五个探针脚本齐备、`check:stdio` **6/6 通过**。注意 npm CDN 的 packument 有数分钟缓存，刚发布后 `npm install` 可能短暂报 `ETARGET`，用 `--prefer-online` 或稍候即可。发布步骤见 `docs/npm-publish-guide.md` |
 | GitHub Release | 推送 `v*` tag 触发 `.github/workflows/release.yml`：先跑完整门禁并校验「tag 版本 === package.json 版本」，正文由 `docs/release-v<ver>.md` + `.en.md` 双语合成（缺文档即报错），**要求同 SHA 的成功 CI**，并附 `tianshu-mcp-<ver>.tgz`。**v0.5.9 实测全绿**（[run 35786198143](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35786198143)，14 步全 success），[GitHub 发行 v0.5.9](https://github.com/lanlan0811/tianshu-mcp/releases/tag/v0.5.9) 附件 `tianshu-mcp-0.5.9.tgz`（552965 字节），正文为双语发布说明 |
@@ -203,7 +216,7 @@ src/
 │   ├── context.ts        meta → TaskContext（含 resume / continue 语义）
 │   └── formatter.ts      文本 + meta 块
 ├── tasks/                状态机、每项目串行队列、全局并发闸、事件流落盘
-│   └── task.ts / task-manager.ts / task-store.ts
+│   └── task.ts / task-manager.ts / task-store.ts / idempotency.ts（issue #15 幂等键索引）
 ├── loop/
 │   ├── fix-loop.ts       单任务编排（自动返修循环；含视觉冻结核对与阻塞恢复）
 │   └── repair-plan.ts    验收失败时生成修复计划文件（MCP 任务目录）
@@ -460,8 +473,8 @@ npm publish --registry=https://registry.npmjs.org --access public
 
 | 层级 | 位置 | 说明 |
 |---|---|---|
-| 单元 | `test/unit/`（54 文件） | 纯函数与组件逻辑：traework 全套（reply / selectors / launcher / guard / driver / session / liveness / dialog / cdp-client / repair-plan）、codex-core、zcode-core / zcode-handler / zcode-dom / zcode-dialog / zcode-recovery、kimicode 与 qoder 全套、gui-instance-spawn、acceptance（含并行）、baseline（含归因 / 预脏）、atomic-write、log、config / profile 热加载、project-dir-guard、skill-format、以及视觉模块（visual-config / images / baselines / report / runtime / content-*）等 |
-| 集成 | `test/integration/`（26 文件） | stub-agent 三剧本、取消 / 超时 / 基线、traework 假 CDP（单轮 + 返修 + 绑定兜底）、codex-flow、zcode-flow / restart / rework-loop / default-workspace、kimicode-flow、qoder-flow / qoder-mcp、rework 竞态回归、verify-params、task-flow、以及视觉（services / capture / flow / rework / browser-smoke / content-*） |
+| 单元 | `test/unit/`（56 文件） | 纯函数与组件逻辑：traework 全套（reply / selectors / launcher / guard / driver / session / liveness / dialog / cdp-client / repair-plan）、codex-core、zcode-core / zcode-handler / zcode-dom / zcode-dialog / zcode-recovery、kimicode 与 qoder 全套、gui-instance-spawn、acceptance（含并行）、baseline（含归因 / 预脏）、atomic-write、log、config / profile 热加载、project-dir-guard、skill-format、idempotency（issue #15 幂等索引）、以及视觉模块（visual-config / images / baselines / report / runtime / content-*）等 |
+| 集成 | `test/integration/`（28 文件） | stub-agent 三剧本、取消 / 超时 / 基线、traework 假 CDP（单轮 + 返修 + 绑定兜底）、codex-flow、zcode-flow / restart / rework-loop / default-workspace、kimicode-flow、qoder-flow / qoder-mcp、rework 竞态回归、verify-params、task-flow、idempotency（issue #15 重放 / 冲突 / 执行中 / 跨重启）、以及视觉（services / capture / flow / rework / browser-smoke / content-*） |
 | 协议 | `test/protocol/`（1 文件） | 官方 SDK 客户端断言 11 工具面与返回格式 |
 | 真机 | `scripts/probe-*.mjs`（traework / zcode / codex / kimicode / qoder，共 5 个）/ `scripts/smoke-zcode.mjs` / `scripts/evidence-visual-windows.mjs` | **手动**，需真实客户端 / 已安装浏览器 |
 | 消费者 | `scripts/check-visual-consumer.mjs` | 从生产 tarball 安装到无开发依赖目录后跑真实浏览器视觉验收与离线报告 |
