@@ -29,6 +29,8 @@ function handlers(metaOverride?: Record<string, unknown>) {
       };
     },
     getMaxRunning: () => 1,
+    // issue #15：run_task 未传幂等键时也会探测「同工作区未结束任务」用于重复派单提示
+    activeTaskOfWorkspace: () => undefined,
     getMeta: async () =>
       metaOverride ? ({ taskId: "tsk_default", ...metaOverride } as never) : null,
   };

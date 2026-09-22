@@ -17,7 +17,7 @@ import {
   guiAppNameOf,
   guiStopDisclosure,
 } from "./task.js";
-import type { TraeworkMode, ReasoningLevel } from "../config/schema.js";
+import type { TraeworkMode, ReasoningLevel, IdempotencyScope } from "../config/schema.js";
 import { TaskOrchestrator } from "../loop/fix-loop.js";
 import { genTaskId, nowIso } from "../util/id.js";
 import type { DataHome } from "../config/store.js";
@@ -51,6 +51,16 @@ export interface NewTaskInput {
   autoVerify: boolean;
   autoFixRounds: number;
   taskTimeoutMs: number;
+  /**
+   * 幂等路径预生成的任务 id（issue #15）：让调用方能在 `submit()` **之前**把
+   * 「幂等键 → taskId」落盘，从而消除「映射已写、任务尚未建」这一崩溃窗口；
+   * 省略时维持原行为（内部 `genTaskId()`）。
+   */
+  taskId?: string;
+  /** 调用方幂等键原文（issue #15）；随快照落盘供审计与映射重建。 */
+  idempotencyKey?: string;
+  idempotencyScope?: IdempotencyScope;
+  idempotencyDigest?: string;
 }
 
 /**
@@ -197,11 +207,33 @@ export class TaskManager {
     return metas;
   }
 
+  /**
+   * 该工作区队列键下「尚未结束」的任务（issue #15 的重复派单提示）。
+   * 活动态（queued/running/verify_start/fixing）与 needs_user 都算在途——两者都表示
+   * 该项目/default 工作区已有未终结的工作；仅用于在 run_task 响应里点名提示，**不参与任何判定**。
+   * 取进程内存而非全盘扫描：重启遗留任务已被归档为 interrupted，不存在漏报实际在途状态的情况。
+   */
+  activeTaskOfWorkspace(workspace: {
+    workspaceMode?: WorkspaceMode;
+    projectPath: string;
+  }): TaskMeta | undefined {
+    const key = queueKeyOf(workspace);
+    let found: TaskMeta | undefined;
+    for (const meta of this.tasks.values()) {
+      if (queueKeyOf(meta) !== key) continue;
+      const unfinished = ACTIVE_STATUSES.includes(meta.status) || meta.status === "needs_user";
+      if (!unfinished) continue;
+      // 取最早创建的，保证同一状态下提示稳定
+      if (!found || meta.createdAt < found.createdAt) found = meta;
+    }
+    return found;
+  }
+
   /** 创建并排队一个新任务（run_task）。立即返回 queued meta。 */
   async submit(input: NewTaskInput): Promise<TaskMeta> {
     const now = nowIso();
     const meta: TaskMeta = {
-      taskId: genTaskId(),
+      taskId: input.taskId ?? genTaskId(),
       workspaceMode: input.workspaceMode,
       projectPath: input.projectPath,
       displayPath: input.displayPath,
@@ -218,6 +250,9 @@ export class TaskManager {
       autoVerify: input.autoVerify,
       autoFixRounds: input.autoFixRounds,
       taskTimeoutMs: input.taskTimeoutMs,
+      idempotencyKey: input.idempotencyKey,
+      idempotencyScope: input.idempotencyScope,
+      idempotencyDigest: input.idempotencyDigest,
       round: 0,
       roundsUsed: 0,
       status: "queued",

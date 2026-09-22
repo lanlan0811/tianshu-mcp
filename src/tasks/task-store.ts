@@ -209,4 +209,17 @@ export class TaskStore {
     );
     return metas.filter((m): m is TaskMeta => m !== null);
   }
+
+  /**
+   * 扫描全部记录快照：`tsk_*`（派单任务）与 `vfy_*`（独立路径验收记录）。
+   * 仅供幂等映射损坏时的重建使用（issue #15）——故意不改动 `listTaskSnapshots()`
+   * 的 `tsk_` 过滤，`list_tasks` 的既有语义与列宽保持不变。
+   */
+  async scanAllSnapshots(): Promise<TaskMeta[]> {
+    const dirs = await readDirSafe(path.join(this.home, "tasks"));
+    const metas = await Promise.all(
+      dirs.filter((d) => d.startsWith("tsk_") || d.startsWith("vfy_")).map((d) => this.readSnapshot(d)),
+    );
+    return metas.filter((m): m is TaskMeta => m !== null);
+  }
 }

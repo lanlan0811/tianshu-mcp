@@ -134,4 +134,24 @@ describe("S5 projects Zod schema + last-known-good", () => {
     const overridden = await dh.loadConfig();
     expect(overridden.shutdown?.guiStopWaitMs).toBe(3_000);
   });
+
+  // issue #15：幂等映射的 TTL 与容量上限必须可配置且默认值稳定
+  it("idempotency.ttlMs 默认 24h、maxEntries 默认 2000，且可由 config.json 覆盖", async () => {
+    const home = await mkHome();
+    const dh = new DataHome(home, silentLogger, { stub: STUB });
+    const p = path.join(home, "config.json");
+
+    await fsp.writeFile(p, JSON.stringify({}));
+    const defaults = await dh.loadConfig();
+    expect(defaults.idempotency?.ttlMs).toBe(24 * 60 * 60_000);
+    expect(defaults.idempotency?.maxEntries).toBe(2000);
+
+    await fsp.writeFile(
+      p,
+      JSON.stringify({ idempotency: { ttlMs: 60_000, maxEntries: 10 } }),
+    );
+    const overridden = await dh.loadConfig();
+    expect(overridden.idempotency?.ttlMs).toBe(60_000);
+    expect(overridden.idempotency?.maxEntries).toBe(10);
+  });
 });

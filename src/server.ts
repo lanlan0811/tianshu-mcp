@@ -102,6 +102,9 @@ export async function buildServer(
             tool.name === "rework_task" ||
             tool.name === "approve_visual_baseline",
           openWorldHint: tool.name === "run_task",
+          // 幂等提示（issue #15）：声明为幂等的**前提**是调用方传入 idempotencyKey
+          // （run_task 的 TTL 内重放、verify_task 的进行中/已完成重放），工具描述里已写明。
+          idempotentHint: tool.name === "run_task" || tool.name === "verify_task",
           title: tool.name,
         },
       },

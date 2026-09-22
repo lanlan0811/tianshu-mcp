@@ -2,7 +2,7 @@
  * Task 类型 / 状态枚举 / 状态机迁移表。
  * 状态机见开发计划 §6：queued → running → … → succeeded/failed/cancelled/interrupted。
  */
-import type { TraeworkMode, ReasoningLevel } from "../config/schema.js";
+import type { TraeworkMode, ReasoningLevel, IdempotencyScope } from "../config/schema.js";
 import type { VisualReport } from "../visual/types.js";
 
 /**
@@ -249,6 +249,15 @@ export interface TaskMeta {
   continueSendMessage?: boolean;
   /** continue_task 待消费：codex user_confirmation 恢复走「重新接入观察」，不发送消息 */
   continueReobserve?: boolean;
+  /**
+   * 调用方提供的幂等键原文（issue #15）。仅落本地任务快照，**不写日志正文**
+   * （日志与事件流只用 `keyDigest` 摘要）；供 `query_task` 审计与映射文件损坏时重建。
+   */
+  idempotencyKey?: string;
+  /** 幂等键所属命名空间（issue #15）：run_task / verify_task 各自独立。 */
+  idempotencyScope?: IdempotencyScope;
+  /** 幂等键对应的入参摘要（issue #15）：重建后仍能识别「同键异参」冲突。 */
+  idempotencyDigest?: string;
 }
 
 /** manager 记录任务所需最小信息（内存态），与 TaskMeta 解耦 */

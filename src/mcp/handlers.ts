@@ -22,13 +22,27 @@ import {
   type VerifyTaskParams,
   type ReworkTaskParams,
   type ContinueTaskParams,
+  type ServerConfig,
 } from "../config/schema.js";
 import { toAcceptanceDef, type DataHome } from "../config/store.js";
 import type { TaskManager } from "../tasks/task-manager.js";
 import type { AcceptanceEngine } from "../verify/acceptance.js";
 import type { AgentAdapterRegistry } from "../agents/registry.js";
 import type { TaskStore } from "../tasks/task-store.js";
-import { isDefaultWorkspace, type TaskMeta } from "../tasks/task.js";
+import {
+  isDefaultWorkspace,
+  isTerminal,
+  type TaskMeta,
+  type TaskStatus,
+  type VerifyReport,
+} from "../tasks/task.js";
+import {
+  canonicalDigest,
+  IdempotencyIndex,
+  keyDigest,
+  type IdempotencyEntry,
+} from "../tasks/idempotency.js";
+import { genTaskId, genVerifyId, nowIso } from "../util/id.js";
 import type { Logger } from "../util/log.js";
 import {
   formatToolResult,
@@ -36,6 +50,7 @@ import {
   metaFromTask,
   readLogTail,
   textResult,
+  type MetaBlockFields,
   type ToolResult,
 } from "./formatter.js";
 import {
@@ -78,7 +93,175 @@ export interface Defaults {
   defaultAutoFixRounds: number;
 }
 
+/* ---------------- 幂等键（issue #15）：文案、错误与判定 ---------------- */
+
+/** 同键异参的 fail-closed 错误：回报原记录 id，绝不静默返回错误对象的结果。 */
+function idempotencyConflictError(
+  scope: "run_task" | "verify_task",
+  key: string,
+  entry: IdempotencyEntry,
+): ToolResult {
+  const noun = scope === "run_task" ? "任务" : "验收记录";
+  return errorResult(
+    `idempotencyKey '${key}' 已被${noun} ${entry.taskId} 占用，但本次参数与首次提交不同。` +
+      `幂等键不能在参数变更后复用：请改用新的 key，或直接对原记录操作（query_task / get_task_report / rework_task）。`,
+  );
+}
+
+/** 幂等命中时向原任务/记录的事件流补一条审计 note；键明文不入事件流（只用摘要）。 */
+async function appendIdempotencyNote(
+  ctx: AppContext,
+  entry: IdempotencyEntry,
+  status: TaskStatus,
+  detail: string,
+): Promise<void> {
+  await ctx.store
+    .appendEvent(entry.taskId, "note", status, `幂等重放：keyDigest=${keyDigest(entry.key)}（${detail}）`)
+    .catch((e) => ctx.logger.warn(`幂等审计事件写入失败（${entry.taskId}）：${String(e)}`));
+}
+
+/** run_task 幂等摘要的语义字段（不含幂等键本身，也不含运行期默认值/profile 派生物）。 */
+function runTaskKeyedFields(args: RunTaskParams): Record<string, unknown> {
+  return {
+    agentId: args.agentId,
+    task: args.task,
+    context: args.context,
+    model: args.model,
+    reasoningLevel: args.reasoningLevel,
+    modelSource: args.modelSource,
+    planDoc: args.planDoc,
+    designSystem: args.designSystem,
+    mode: args.mode,
+    allowCreateProject: args.allowCreateProject,
+    autoVerify: args.autoVerify,
+    autoFixRounds: args.autoFixRounds,
+    taskTimeoutMs: args.taskTimeoutMs,
+  };
+}
+
+/** 幂等重放的响应行：如实回报既有任务的当前状态（含终态），不承诺会重新派发。 */
+function runTaskReplayLines(meta: TaskMeta): string[] {
+  const lines = [
+    `幂等重放：该 idempotencyKey 已对应任务 ${meta.taskId}（未新建任务）。`,
+    describeStatus(meta),
+    `Agent: ${meta.agentId}`,
+    `项目: ${meta.projectPath || "（无项目模式：ZCode default 工作区）"}`,
+    meta.lastMessage ? `最近消息: ${meta.lastMessage}` : "",
+  ].filter((s) => s !== "");
+  if (isTerminal(meta.status)) {
+    lines.push(
+      `任务已处于终态（${meta.status}）：如需继续处理请用 rework_task(${meta.taskId})，或改用新的 idempotencyKey 重新派单。`,
+    );
+  } else {
+    lines.push(`请用 query_task(${meta.taskId}) 继续轮询。`);
+  }
+  return lines;
+}
+
+/** run_task 的锁外预检：命中即重放（连校验都不再跑），冲突即报错，其余返回 null 继续。 */
+async function precheckRunTask(
+  ctx: AppContext,
+  idempotency: IdempotencyIndex,
+  key: string,
+  digest: string,
+): Promise<ToolResult | null> {
+  const found = await idempotency.lookup("run_task", key, digest);
+  if (found.kind === "conflict") return idempotencyConflictError("run_task", key, found.entry);
+  if (found.kind === "miss") return null;
+  const existing = await ctx.manager.getMeta(found.entry.taskId);
+  if (!existing) {
+    // 记录存在但任务快照不可读 = 上次进程在「写完映射、建任务之前」崩溃：视为未生效并重新派发
+    ctx.logger.warn(
+      `幂等记录 ${found.entry.taskId}（keyDigest=${keyDigest(key)}）无对应任务快照，视为未生效并重新派发`,
+    );
+    return null;
+  }
+  await appendIdempotencyNote(ctx, found.entry, existing.status, "未新建任务");
+  return formatToolResult(
+    runTaskReplayLines(existing).join("\n"),
+    metaFromTask(existing, { idempotencyReplay: "hit" }),
+  );
+}
+
+/** 幂等提交的结局：重放/冲突（直接返回结果）或已创建（继续拼装新派单响应）。 */
+type KeyedSubmitOutcome =
+  | { kind: "result"; result: ToolResult }
+  | { kind: "created"; meta: TaskMeta; persistenceWarning?: string };
+
+/**
+ * 锁内「判定 → 落映射 → 建任务」：并发同名请求在此排队并复检，不会各自建一个任务。
+ * 先落映射再建任务，消除「映射已写、任务未建」的崩溃窗口（§6.1）。
+ */
+async function submitKeyedTask(opts: {
+  ctx: AppContext;
+  idempotency: IdempotencyIndex;
+  key: string;
+  digest: string;
+  submit: (taskId: string) => Promise<TaskMeta>;
+}): Promise<KeyedSubmitOutcome> {
+  const { ctx, idempotency, key, digest, submit } = opts;
+  return idempotency.runExclusive("run_task", key, async () => {
+    const again = await idempotency.lookup("run_task", key, digest);
+    if (again.kind === "conflict") {
+      return { kind: "result", result: idempotencyConflictError("run_task", key, again.entry) };
+    }
+    if (again.kind === "hit") {
+      const existing = await ctx.manager.getMeta(again.entry.taskId);
+      if (existing) {
+        await appendIdempotencyNote(ctx, again.entry, existing.status, "未新建任务");
+        return {
+          kind: "result",
+          result: formatToolResult(
+            runTaskReplayLines(existing).join("\n"),
+            metaFromTask(existing, { idempotencyReplay: "hit" }),
+          ),
+        };
+      }
+    }
+    const taskId = genTaskId();
+    const rec = await idempotency.record({
+      scope: "run_task",
+      key,
+      digest,
+      taskId,
+      kind: "task",
+      createdAt: nowIso(),
+    });
+    const meta = await submit(taskId);
+    return {
+      kind: "created",
+      meta,
+      persistenceWarning: rec.persisted
+        ? undefined
+        : `幂等记录写入失败（${rec.error ?? "未知原因"}），本任务无法被同键重放`,
+    };
+  });
+}
+
+/** 未传幂等键时的重复派单提示（只读内存，不参与任何判定）。 */
+function duplicateDispatchLine(active: TaskMeta): string {
+  return `提示：该工作区已有未结束任务 ${active.taskId}（状态 ${active.status}），本次为新派单；若这是对上一次请求的重试，请改用 idempotencyKey 或先 query_task 复核。`;
+}
+
+/** 新派单响应里的幂等说明行。 */
+function idempotencyCreatedLine(key: string): string {
+  return `幂等键：${key}（重复提交将返回本任务，不会新建；TTL 见 server 配置 idempotency.ttlMs，默认 24h）。`;
+}
+
+/** 幂等映射落盘失败时的如实披露（fail-open：绝不把已派发的任务报成失败）。 */
+function idempotencyWarningLine(warning: string): string {
+  return `注意：${warning}。`;
+}
+
 export function makeHandlers(ctx: AppContext, defaults: Defaults) {
+  // 幂等索引（issue #15）：实例挂在闭包里而不是进 AppContext，避免牵动全部构造点
+  // （含测试里的假上下文）。索引内部懒加载、懒算路径，不传幂等键时完全不触盘。
+  const idempotency = new IdempotencyIndex({
+    home: ctx.dataHome.dir,
+    store: ctx.store,
+    logger: ctx.logger,
+    loadConfig: () => ctx.dataHome.loadConfig(),
+  });
   return {
     prepare_visual_baseline: async (args: Record<string, unknown>) =>
       textResult(
@@ -98,12 +281,12 @@ export function makeHandlers(ctx: AppContext, defaults: Defaults) {
           2,
         ),
       ),
-    run_task: runTaskHandler(ctx, defaults),
+    run_task: runTaskHandler(ctx, defaults, idempotency),
     query_task: queryTaskHandler(ctx),
     list_tasks: listTasksHandler(ctx),
     get_task_report: getReportHandler(ctx),
     cancel_task: cancelTaskHandler(ctx),
-    verify_task: verifyTaskHandler(ctx),
+    verify_task: verifyTaskHandler(ctx, idempotency),
     rework_task: reworkTaskHandler(ctx),
     continue_task: continueTaskHandler(ctx),
     get_profiles: getProfilesHandler(ctx),
@@ -129,13 +312,19 @@ async function gitDirtyCount(dir: string): Promise<number | null> {
   }
 }
 
-function runTaskHandler(ctx: AppContext, defaults: Defaults): Handler {
+function runTaskHandler(
+  ctx: AppContext,
+  defaults: Defaults,
+  idempotency: IdempotencyIndex,
+): Handler {
   const { manager, dataHome, logger } = ctx;
   return async (rawArgs) => {
     const args = rawArgs as RunTaskParams;
     // 无项目模式（issue #12）：省略 projectPath 时不做目录校验与项目登记，
     // 待解析出最终 agent 之后再判断它是否支持无项目。
-    if (args.projectPath === undefined) return runTaskWithoutProject(ctx, defaults, args);
+    if (args.projectPath === undefined) {
+      return runTaskWithoutProject(ctx, defaults, args, idempotency);
+    }
     // 安全闸门：绝对路径 + 存在 + realpath 消除符号链接 + 拒绝主目录/系统根目录
     let dir: ReturnType<typeof assertSafeProjectDir>;
     try {
@@ -144,7 +333,22 @@ function runTaskHandler(ctx: AppContext, defaults: Defaults): Handler {
       return errorResult(e instanceof Error ? e.message : String(e));
     }
     const norm = dir.norm;
+    const digest = canonicalDigest({
+      workspaceMode: "project",
+      projectPath: norm,
+      args: runTaskKeyedFields(args),
+    });
+    // 幂等预检（锁外）：命中即重放，连校验都不再跑——原任务是否存在与当前 agent 是否可用无关
+    if (args.idempotencyKey !== undefined) {
+      const early = await precheckRunTask(ctx, idempotency, args.idempotencyKey, digest);
+      if (early) return early;
+    }
     const dirtyCount = await gitDirtyCount(dir.canonical);
+    // 重复派单提示必须在 submit 之前采样，否则会命中刚建的任务自身
+    const activeTask = manager.activeTaskOfWorkspace({
+      workspaceMode: "project",
+      projectPath: norm,
+    });
 
     // 项目自动登记（首次出现即登记，R10）
     const agentId = args.agentId ?? defaults.defaultAgentId;
@@ -218,26 +422,47 @@ function runTaskHandler(ctx: AppContext, defaults: Defaults): Handler {
     // 有效任务超时（R2）：调用参数 > profile > server 默认值，在提交时固化
     const taskTimeoutMs =
       args.taskTimeoutMs ?? resolved.profile.timeoutMs ?? cfg.defaultTaskTimeoutMs ?? 30 * 60_000;
-    const meta = await manager.submit({
-      projectPath: norm,
-      displayPath: dir.raw,
-      agentId: finalAgentId,
-      task: args.task,
-      context: args.context,
-      model: args.model,
-      reasoningLevel: args.reasoningLevel,
-      modelSource: args.modelSource,
-      planDoc: args.planDoc,
-      designSystem: args.designSystem,
-      mode: args.mode,
-      allowCreateProject: args.allowCreateProject,
-      autoVerify: args.autoVerify ?? defaults.defaultAutoVerify,
-      autoFixRounds:
-        args.autoFixRounds ??
-        resolved.profile.gui?.defaultAutoFixRounds ??
-        defaults.defaultAutoFixRounds,
-      taskTimeoutMs,
-    });
+    const submit = (taskId?: string) =>
+      manager.submit({
+        taskId,
+        projectPath: norm,
+        displayPath: dir.raw,
+        agentId: finalAgentId,
+        task: args.task,
+        context: args.context,
+        model: args.model,
+        reasoningLevel: args.reasoningLevel,
+        modelSource: args.modelSource,
+        planDoc: args.planDoc,
+        designSystem: args.designSystem,
+        mode: args.mode,
+        allowCreateProject: args.allowCreateProject,
+        autoVerify: args.autoVerify ?? defaults.defaultAutoVerify,
+        autoFixRounds:
+          args.autoFixRounds ??
+          resolved.profile.gui?.defaultAutoFixRounds ??
+          defaults.defaultAutoFixRounds,
+        taskTimeoutMs,
+        idempotencyKey: args.idempotencyKey,
+        idempotencyScope: args.idempotencyKey === undefined ? undefined : "run_task",
+        idempotencyDigest: args.idempotencyKey === undefined ? undefined : digest,
+      });
+    let meta: TaskMeta;
+    let persistenceWarning: string | undefined;
+    if (args.idempotencyKey === undefined) {
+      meta = await submit();
+    } else {
+      const outcome = await submitKeyedTask({
+        ctx,
+        idempotency,
+        key: args.idempotencyKey,
+        digest,
+        submit,
+      });
+      if (outcome.kind === "result") return outcome.result;
+      meta = outcome.meta;
+      persistenceWarning = outcome.persistenceWarning;
+    }
     logger.info(`run_task 已提交 ${meta.taskId} (agent=${finalAgentId}, project=${norm})`);
     const lines = [
       `任务已提交：${meta.taskId}`,
@@ -247,12 +472,22 @@ function runTaskHandler(ctx: AppContext, defaults: Defaults): Handler {
       `队列位置：每项目串行 + 全局并发 ${ctx.manager.getMaxRunning()}。请用 query_task(${meta.taskId}) 轮询（建议间隔 5–10 秒）。`,
       `任务书摘要: ${args.task.slice(0, 120)}${args.task.length > 120 ? "…" : ""}`,
     ];
+    if (activeTask) lines.push(duplicateDispatchLine(activeTask));
+    if (args.idempotencyKey !== undefined) lines.push(idempotencyCreatedLine(args.idempotencyKey));
     if (dirtyCount !== null && dirtyCount > 0) {
       lines.push(
         `注意：该仓库当前有 ${dirtyCount} 个未提交变更（可能有其他会话/在途工作共处），worker 将直接在原工作区上改动，验收仅归因相对基线的净变更。`,
       );
     }
-    return formatToolResult(lines.join("\n"), metaFromTask(meta));
+    if (persistenceWarning) lines.push(idempotencyWarningLine(persistenceWarning));
+    return formatToolResult(
+      lines.join("\n"),
+      metaFromTask(meta, {
+        projectActiveTask: activeTask
+          ? { taskId: activeTask.taskId, status: activeTask.status }
+          : undefined,
+      }),
+    );
   };
 }
 
@@ -266,9 +501,21 @@ async function runTaskWithoutProject(
   ctx: AppContext,
   defaults: Defaults,
   args: RunTaskParams,
+  idempotency: IdempotencyIndex,
 ): Promise<ToolResult> {
   const { manager, logger } = ctx;
   const agentId = args.agentId ?? defaults.defaultAgentId;
+  const digest = canonicalDigest({
+    workspaceMode: "default",
+    projectPath: "",
+    args: runTaskKeyedFields(args),
+  });
+  // 幂等预检（锁外）：命中即重放，连校验都不再跑
+  if (args.idempotencyKey !== undefined) {
+    const early = await precheckRunTask(ctx, idempotency, args.idempotencyKey, digest);
+    if (early) return early;
+  }
+  const activeTask = manager.activeTaskOfWorkspace({ workspaceMode: "default", projectPath: "" });
   const resolved = await ctx.registry.resolve(agentId, true);
   if (!resolved.ok) {
     return formatToolResult(`agent '${agentId}' 当前不可用：${resolved.message}`, {
@@ -304,34 +551,63 @@ async function runTaskWithoutProject(
   const cfg = await ctx.dataHome.loadConfig();
   const taskTimeoutMs =
     args.taskTimeoutMs ?? resolved.profile.timeoutMs ?? cfg.defaultTaskTimeoutMs ?? 30 * 60_000;
-  const meta = await manager.submit({
-    workspaceMode: "default",
-    projectPath: "",
-    displayPath: "",
-    agentId,
-    task: args.task,
-    context: args.context,
-    model: args.model,
-    reasoningLevel: args.reasoningLevel,
-    planDoc: args.planDoc,
-    designSystem: args.designSystem,
-    mode: args.mode,
-    allowCreateProject: args.allowCreateProject,
-    autoVerify: false,
-    autoFixRounds: 0,
-    taskTimeoutMs,
-  });
+  const submit = (taskId?: string) =>
+    manager.submit({
+      taskId,
+      workspaceMode: "default",
+      projectPath: "",
+      displayPath: "",
+      agentId,
+      task: args.task,
+      context: args.context,
+      model: args.model,
+      reasoningLevel: args.reasoningLevel,
+      planDoc: args.planDoc,
+      designSystem: args.designSystem,
+      mode: args.mode,
+      allowCreateProject: args.allowCreateProject,
+      autoVerify: false,
+      autoFixRounds: 0,
+      taskTimeoutMs,
+      idempotencyKey: args.idempotencyKey,
+      idempotencyScope: args.idempotencyKey === undefined ? undefined : "run_task",
+      idempotencyDigest: args.idempotencyKey === undefined ? undefined : digest,
+    });
+  let meta: TaskMeta;
+  let persistenceWarning: string | undefined;
+  if (args.idempotencyKey === undefined) {
+    meta = await submit();
+  } else {
+    const outcome = await submitKeyedTask({
+      ctx,
+      idempotency,
+      key: args.idempotencyKey,
+      digest,
+      submit,
+    });
+    if (outcome.kind === "result") return outcome.result;
+    meta = outcome.meta;
+    persistenceWarning = outcome.persistenceWarning;
+  }
   logger.info(`run_task 已提交 ${meta.taskId}（agent=${agentId}，无项目模式）`);
+  const lines = [
+    `任务已提交：${meta.taskId}`,
+    `Agent: ${agentId}（无项目模式：ZCode default 工作区）`,
+    `模式: default —— 不采集 Git 基线、不执行项目验收、不创建/登记 ZCode 项目`,
+    `自动验收: 关（无项目模式固定关闭，执行完成后不会生成验收报告）`,
+    `队列位置：全局并发 ${ctx.manager.getMaxRunning()}。请用 query_task(${meta.taskId}) 轮询（建议间隔 5–10 秒）。`,
+    `任务书摘要: ${args.task.slice(0, 120)}${args.task.length > 120 ? "…" : ""}`,
+  ];
+  if (activeTask) lines.push(duplicateDispatchLine(activeTask));
+  if (args.idempotencyKey !== undefined) lines.push(idempotencyCreatedLine(args.idempotencyKey));
+  if (persistenceWarning) lines.push(idempotencyWarningLine(persistenceWarning));
   return formatToolResult(
-    [
-      `任务已提交：${meta.taskId}`,
-      `Agent: ${agentId}（无项目模式：ZCode default 工作区）`,
-      `模式: default —— 不采集 Git 基线、不执行项目验收、不创建/登记 ZCode 项目`,
-      `自动验收: 关（无项目模式固定关闭，执行完成后不会生成验收报告）`,
-      `队列位置：全局并发 ${ctx.manager.getMaxRunning()}。请用 query_task(${meta.taskId}) 轮询（建议间隔 5–10 秒）。`,
-      `任务书摘要: ${args.task.slice(0, 120)}${args.task.length > 120 ? "…" : ""}`,
-    ].join("\n"),
-    metaFromTask(meta),
+    lines.join("\n"),
+    metaFromTask(meta, {
+      projectActiveTask: activeTask
+        ? { taskId: activeTask.taskId, status: activeTask.status }
+        : undefined,
+    }),
   );
 }
 
@@ -465,10 +741,125 @@ function cancelTaskHandler(ctx: AppContext): Handler {
   };
 }
 
-function verifyTaskHandler(ctx: AppContext): Handler {
-  const { manager, engine, dataHome, store, logger } = ctx;
+/** verify_task 幂等摘要的语义字段（只做路径归一，不采集基线、不跑命令）。 */
+async function verifyIdempotencyDigest(args: VerifyTaskParams): Promise<string> {
+  let pathNorm: string | undefined;
+  if (args.projectPath && !args.taskId) {
+    try {
+      pathNorm = assertSafeProjectDir(args.projectPath).norm;
+    } catch {
+      // 路径本身不合法：摘要退回词法归一，真正的报错交给主流程
+      pathNorm = normPath(args.projectPath);
+    }
+  }
+  return canonicalDigest({
+    taskId: args.taskId,
+    projectPath: pathNorm,
+    checksMode: args.checksMode,
+    extraChecks: args.extraChecks,
+    baselineRef: args.baselineRef,
+  });
+}
+
+/** 同键验收正在执行：返回**成功结果**（不是 error，避免宿主把它当失败再重试放大）。 */
+function verifyInProgressResult(
+  key: string,
+  taskId: string,
+  existingTaskMode: boolean,
+  status?: TaskStatus,
+): ToolResult {
+  const lines = [
+    "该 idempotencyKey 对应的验收仍在执行中（未重复执行）。",
+    existingTaskMode
+      ? `任务 ${taskId}：请用 query_task(${taskId}) 查看进度，完成后用 get_task_report(${taskId}) 读报告。`
+      : `验收记录 ${taskId}：该记录在验收完成后才落盘；请稍后用同一 key 重试（会返回既有报告，不会重跑），或完成后用 get_task_report(${taskId}) 读取。`,
+  ];
+  return formatToolResult(lines.join("\n"), {
+    ok: true,
+    taskId,
+    status,
+    message: "幂等命中：同一 key 的验收正在执行中",
+    idempotencyKey: key,
+    idempotencyReplay: "in_progress",
+  });
+}
+
+/** 已完成验收的幂等重放：如实回报该 key 那次验收的轮次与结论，绝不重跑。 */
+async function verifyReplayResult(
+  ctx: AppContext,
+  key: string,
+  entry: IdempotencyEntry,
+): Promise<ToolResult> {
+  const real = await ctx.manager.getMeta(entry.taskId);
+  if (real) await appendIdempotencyNote(ctx, entry, real.status, "未重跑验收");
+  const message = `幂等重放：第 ${entry.reportRound ?? 0} 轮验收（未重跑）`;
+  const replayFields: Partial<MetaBlockFields> = {
+    ok: entry.verdict === "passed",
+    reportRound: entry.reportRound,
+    verificationSource: "manual",
+    latestVerificationVerdict: entry.verdict,
+    reportFiles:
+      entry.reportMd || entry.reportJson
+        ? { md: entry.reportMd, json: entry.reportJson }
+        : undefined,
+    idempotencyReplay: "hit",
+    message,
+  };
+  const lines = [
+    `${entry.verdict === "passed" ? "[PASS]" : "[FAIL]"} 幂等重放：该 idempotencyKey 已对应第 ${entry.reportRound ?? 0} 轮验收（未重跑）。`,
+  ];
+  if (entry.reportMd) lines.push(`报告：${entry.reportMd}`);
+  if (entry.reportJson) lines.push(`JSON：${entry.reportJson}`);
+  if (real) return formatToolResult(lines.join("\n"), metaFromTask(real, replayFields));
+  const fallback: MetaBlockFields = {
+    taskId: entry.taskId,
+    status: "succeeded",
+    ...replayFields,
+    message,
+    ok: entry.verdict === "passed",
+  };
+  return formatToolResult(lines.join("\n"), fallback);
+}
+
+/**
+ * verify_task 的幂等判定。
+ * `includeInFlight`：锁外预检要看「执行中」；抢占成功后**必须**跳过它——否则会把本次自己
+ * 刚抢占的标记误判成「别人在执行」。
+ */
+async function precheckVerify(
+  ctx: AppContext,
+  idempotency: IdempotencyIndex,
+  key: string,
+  digest: string,
+  existingTaskMode: boolean,
+  includeInFlight: boolean,
+): Promise<ToolResult | null> {
+  if (includeInFlight) {
+    const inflight = idempotency.inFlightOf("verify_task", key);
+    if (inflight) {
+      const status = existingTaskMode
+        ? (await ctx.manager.getMeta(inflight.taskId))?.status
+        : undefined;
+      return verifyInProgressResult(key, inflight.taskId, existingTaskMode, status);
+    }
+  }
+  const found = await idempotency.lookup("verify_task", key, digest);
+  if (found.kind === "conflict") return idempotencyConflictError("verify_task", key, found.entry);
+  if (found.kind === "hit") return verifyReplayResult(ctx, key, found.entry);
+  return null;
+}
+
+function verifyTaskHandler(ctx: AppContext, idempotency: IdempotencyIndex): Handler {
+  const { manager, dataHome, store } = ctx;
   return async (rawArgs) => {
     const args = rawArgs as VerifyTaskParams;
+    const key = args.idempotencyKey;
+    const digest = key === undefined ? undefined : await verifyIdempotencyDigest(args);
+    // 幂等预检放在昂贵步骤（基线采集、命令执行）之前
+    if (key !== undefined && digest !== undefined) {
+      const early = await precheckVerify(ctx, idempotency, key, digest, args.taskId !== undefined, true);
+      if (early) return early;
+    }
     const extraChecks = args.extraChecks?.map((c) => toAcceptanceDef(c));
     // 用任务或项目
     let projectPath: string;
@@ -544,80 +935,189 @@ function verifyTaskHandler(ctx: AppContext): Handler {
     // round 分配：手动验收写入任务目录时不能覆盖已有 report-0.*，分配下一可用轮次
     let round = await nextReportRound(store, taskId);
 
-    const verifyTaskId = taskId ?? `vfy_${Date.now()}`;
-    const req = {
-      taskId: verifyTaskId,
-      projectPath,
-      displayPath,
-      taskText,
-      round,
-      config: cfg,
-      extraChecks,
-      checksMode: args.checksMode ?? "append",
-      projectVerify,
-      baseline,
-      store,
-      logger,
-    };
-    const { report, passed } = await engine.runVerify(req);
-    round = report.round;
-    const head = passed
-      ? `[PASS] 手动验收通过（reportRound ${round}）：${report.checks.filter((c) => c.passed).length}/${report.checks.length} 项检查通过。`
-      : `[FAIL] 手动验收失败（reportRound ${round}）：${report.checks.filter((c) => !c.passed && !c.skipped).length} 项检查未通过。`;
-    const changed = report.analysis.changedFiles.length + report.analysis.untrackedFiles.length;
-    const diffstat = `+${report.analysis.diffstat.totalAdd} -${report.analysis.diffstat.totalDel}`;
-
-    // S4：taskId 模式下更新并持久化原任务元数据（保留原 agentId，不改任务终态；新增单独验收结论字段）。
-    let resultMeta: TaskMeta;
-    if (taskId) {
-      const real = await manager.getMeta(taskId);
-      if (!real) return errorResult(`任务不存在: ${taskId}`);
-      real.reportRound = round;
-      real.verificationSource = "manual";
-      real.latestVerificationVerdict = passed ? "passed" : "failed";
-      real.reportMd = report.files.md;
-      real.reportJson = report.files.json;
-      real.lastMessage = head;
-      real.changedFiles = [...report.analysis.changedFiles, ...report.analysis.untrackedFiles];
-      real.diffstat = diffstat;
-      real.updatedAt = report.finishedAt;
-      await manager.persistMetaUpdate(real);
-      resultMeta = real;
-    } else {
-      // 独立 projectPath 验收：创建并持久化独立 vfy 记录
-      resultMeta = {
-        taskId: verifyTaskId,
-        status: passed ? "succeeded" : report.blockingIssues?.length ? "needs_attention" : "failed",
+    const verifyTaskId = taskId ?? genVerifyId();
+    // 抢占同键「执行中」标记：未抢到说明同键验收正在执行——立刻如实回报，而不是排队数分钟
+    let reserved = false;
+    if (key !== undefined && digest !== undefined) {
+      reserved = idempotency.reserveInFlight("verify_task", key, verifyTaskId);
+      if (!reserved) {
+        const cur = idempotency.inFlightOf("verify_task", key);
+        const status = taskId ? (await manager.getMeta(taskId))?.status : undefined;
+        return verifyInProgressResult(
+          key,
+          cur?.taskId ?? verifyTaskId,
+          taskId !== undefined,
+          status,
+        );
+      }
+      // 抢占后复检（跳过自己的在途标记）：上一次同键调用可能已在本次判定与抢占之间完成并落了报告
+      const raced = await precheckVerify(ctx, idempotency, key, digest, taskId !== undefined, false);
+      if (raced) {
+        idempotency.releaseInFlight("verify_task", key);
+        return raced;
+      }
+    }
+    try {
+      const executed = await executeVerify(ctx, {
+        args,
         projectPath,
         displayPath,
-        agentId: "manual-verify",
-        task: taskText ?? "(手动验收)",
-        autoVerify: true,
-        autoFixRounds: 0,
-        taskTimeoutMs: 0,
-        round: 0,
-        roundsUsed: 0,
-        reportRound: round,
-        verificationSource: "manual",
-        latestVerificationVerdict: passed ? "passed" : "failed",
-        createdAt: report.startedAt,
-        updatedAt: report.finishedAt,
-        lastMessage: head,
-        changedFiles: [...report.analysis.changedFiles, ...report.analysis.untrackedFiles],
-        diffstat,
-        reportMd: report.files.md,
-        reportJson: report.files.json,
-      };
-      await manager.persistMetaUpdate(resultMeta);
+        taskText,
+        taskId,
+        verifyTaskId,
+        baseline,
+        cfg,
+        projectVerify,
+        round,
+        extraChecks,
+        idempotencyKey: key,
+        idempotencyDigest: digest,
+      });
+      if (executed.kind === "error") return executed.result;
+      const detailLines = [
+        `${executed.head}`,
+        `变更 ${executed.changed} 个文件，diffstat ${executed.resultMeta.diffstat}。`,
+        `报告：${executed.report.files.md}`,
+        `JSON：${executed.report.files.json}`,
+      ];
+      if (key !== undefined && digest !== undefined) {
+        const rec = await idempotency.record({
+          scope: "verify_task",
+          key,
+          digest,
+          taskId: executed.resultMeta.taskId,
+          kind: "verify",
+          createdAt: nowIso(),
+          reportRound: executed.round,
+          verdict: executed.passed ? "passed" : "failed",
+          reportMd: executed.report.files.md,
+          reportJson: executed.report.files.json,
+        });
+        detailLines.push(
+          rec.persisted
+            ? `幂等键：${key}（重复提交将返回本轮报告，不会重跑验收）。`
+            : idempotencyWarningLine(
+                `幂等记录写入失败（${rec.error ?? "未知原因"}），本 key 无法重放`,
+              ),
+        );
+      }
+      return formatToolResult(detailLines.join("\n"), metaFromTask(executed.resultMeta));
+    } finally {
+      if (reserved && key !== undefined) idempotency.releaseInFlight("verify_task", key);
     }
-    const detailLines = [
-      `${head}`,
-      `变更 ${changed} 个文件，diffstat ${resultMeta.diffstat}。`,
-      `报告：${report.files.md}`,
-      `JSON：${report.files.json}`,
-    ];
-    return formatToolResult(detailLines.join("\n"), metaFromTask(resultMeta));
   };
+}
+
+/**
+ * 执行一次真实验收并持久化结果（issue #15 抽出的执行体：让幂等路径能用 try/finally
+ * 保证「执行中」标记一定释放，同时保持原有文案与行为逐字不变）。
+ * 独立 projectPath 模式会把幂等键写进新建的 vfy 记录（供映射损坏时重建）；
+ * taskId 模式**不写**原任务快照的幂等字段——避免覆盖该任务的派单键、避免语义混淆。
+ */
+async function executeVerify(
+  ctx: AppContext,
+  input: {
+    args: VerifyTaskParams;
+    projectPath: string;
+    displayPath: string;
+    taskText: string | undefined;
+    taskId: string | undefined;
+    verifyTaskId: string;
+    baseline: BaselineT | undefined;
+    cfg: ServerConfig;
+    projectVerify:
+      | { name: string; cmd: string[]; displayCmd: string }[]
+      | undefined;
+    round: number;
+    extraChecks: ReturnType<typeof toAcceptanceDef>[] | undefined;
+    idempotencyKey: string | undefined;
+    idempotencyDigest: string | undefined;
+  },
+): Promise<
+  | {
+      kind: "ok";
+      resultMeta: TaskMeta;
+      report: VerifyReport;
+      passed: boolean;
+      head: string;
+      changed: number;
+      round: number;
+    }
+  | { kind: "error"; result: ToolResult }
+> {
+  const { manager, engine, store, logger } = ctx;
+  const { args, projectPath, displayPath, taskText, taskId, verifyTaskId, baseline } = input;
+  let round = input.round;
+  const req = {
+    taskId: verifyTaskId,
+    projectPath,
+    displayPath,
+    taskText,
+    round,
+    config: input.cfg,
+    extraChecks: input.extraChecks,
+    checksMode: args.checksMode ?? "append",
+    projectVerify: input.projectVerify,
+    baseline,
+    store,
+    logger,
+  };
+  const { report, passed } = await engine.runVerify(req);
+  round = report.round;
+  const head = passed
+    ? `[PASS] 手动验收通过（reportRound ${round}）：${report.checks.filter((c) => c.passed).length}/${report.checks.length} 项检查通过。`
+    : `[FAIL] 手动验收失败（reportRound ${round}）：${report.checks.filter((c) => !c.passed && !c.skipped).length} 项检查未通过。`;
+  const changed = report.analysis.changedFiles.length + report.analysis.untrackedFiles.length;
+  const diffstat = `+${report.analysis.diffstat.totalAdd} -${report.analysis.diffstat.totalDel}`;
+
+  // S4：taskId 模式下更新并持久化原任务元数据（保留原 agentId，不改任务终态；新增单独验收结论字段）。
+  let resultMeta: TaskMeta;
+  if (taskId) {
+    const real = await manager.getMeta(taskId);
+    if (!real) return { kind: "error", result: errorResult(`任务不存在: ${taskId}`) };
+    real.reportRound = round;
+    real.verificationSource = "manual";
+    real.latestVerificationVerdict = passed ? "passed" : "failed";
+    real.reportMd = report.files.md;
+    real.reportJson = report.files.json;
+    real.lastMessage = head;
+    real.changedFiles = [...report.analysis.changedFiles, ...report.analysis.untrackedFiles];
+    real.diffstat = diffstat;
+    real.updatedAt = report.finishedAt;
+    await manager.persistMetaUpdate(real);
+    resultMeta = real;
+  } else {
+    // 独立 projectPath 验收：创建并持久化独立 vfy 记录
+    resultMeta = {
+      taskId: verifyTaskId,
+      status: passed ? "succeeded" : report.blockingIssues?.length ? "needs_attention" : "failed",
+      projectPath,
+      displayPath,
+      agentId: "manual-verify",
+      task: taskText ?? "(手动验收)",
+      autoVerify: true,
+      autoFixRounds: 0,
+      taskTimeoutMs: 0,
+      round: 0,
+      roundsUsed: 0,
+      reportRound: round,
+      verificationSource: "manual",
+      latestVerificationVerdict: passed ? "passed" : "failed",
+      createdAt: report.startedAt,
+      updatedAt: report.finishedAt,
+      lastMessage: head,
+      changedFiles: [...report.analysis.changedFiles, ...report.analysis.untrackedFiles],
+      diffstat,
+      reportMd: report.files.md,
+      reportJson: report.files.json,
+      // 幂等键随独立记录落盘：映射文件损坏时可由 vfy 快照重建该键的重放能力
+      idempotencyKey: input.idempotencyKey,
+      idempotencyScope: input.idempotencyKey === undefined ? undefined : "verify_task",
+      idempotencyDigest: input.idempotencyKey === undefined ? undefined : input.idempotencyDigest,
+    };
+    await manager.persistMetaUpdate(resultMeta);
+  }
+  return { kind: "ok", resultMeta, report, passed, head, changed, round };
 }
 
 function reworkTaskHandler(ctx: AppContext): Handler {

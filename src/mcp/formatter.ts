@@ -50,6 +50,15 @@ export interface MetaBlockFields {
   guiStopUnconfirmed?: boolean;
   progressSummary?: string;
   lastRunSignal?: string;
+  /** 本次调用携带的幂等键（issue #15）；未传时省略 */
+  idempotencyKey?: string;
+  /**
+   * 幂等命中标记（issue #15）：`hit` = 返回既有任务/报告且未执行；
+   * `in_progress` = 同键验收正在执行、本次未重复执行；缺省 = 本次为真实执行。
+   */
+  idempotencyReplay?: "hit" | "in_progress";
+  /** 未传幂等键时，同工作区已有的未结束任务（issue #15 的重复派单提示，仅供人工判断） */
+  projectActiveTask?: { taskId: string; status: string };
 }
 
 export type ToolResult = {
@@ -115,6 +124,7 @@ export function metaFromTask(meta: TaskMeta, extra?: Partial<MetaBlockFields>): 
     guiStopUnconfirmed:
       meta.guiResidualUnconfirmed === true || meta.interruptedCleanStop === false ? true : undefined,
     lastRunSignal: meta.lastRunSignal,
+    idempotencyKey: meta.idempotencyKey,
     ...extra,
   };
 }

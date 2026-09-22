@@ -51,7 +51,7 @@ export const TOOL_DEFS: ToolDef[] = [
   {
     name: "run_task",
     description:
-      "派活：启动外部 AI-Agent 开发任务并可自动验收返修，异步返回 taskId。ZCode 要求 model=供应商/模型，不支持 mode；TraeWork 的 model 可选并支持 Work/Code/Design mode。task/context 内的 ZCode 项目路径引用会在发送前校验。Qoder CN 要求已有 projectPath 和可读 planDoc；modelSource 可选 default/custom，省略模型或等级则沿用当前设置。思考等级通过模型管理保存为全局偏好，权限模式不变；macOS research 禁止派发。",
+      "派活：启动外部 AI-Agent 开发任务并可自动验收返修，异步返回 taskId。ZCode 要求 model=供应商/模型，不支持 mode；TraeWork 的 model 可选并支持 Work/Code/Design mode。task/context 内的 ZCode 项目路径引用会在发送前校验。Qoder CN 要求已有 projectPath 和可读 planDoc；modelSource 可选 default/custom，省略模型或等级则沿用当前设置。思考等级通过模型管理保存为全局偏好，权限模式不变；macOS research 禁止派发。可选 idempotencyKey（1..128 字符）：同一 key 在 TTL（默认 24h）内重复提交恒返回原 taskId 与当前状态、不新建任务，参数变更则报冲突——重试请复用同一 key。",
     inputSchema: RunTaskParamsSchema,
     capability: "write",
     requireApproval: true,
@@ -89,7 +89,7 @@ export const TOOL_DEFS: ToolDef[] = [
   {
     name: "verify_task",
     description:
-      "对已完成任务或项目路径执行一次验收（不改源码）：自动命令检查 + 代码分析（相对 git 基线）。可用 extraChecks 临时加验。需任务/项目二选一。",
+      "对已完成任务或项目路径执行一次验收（不改源码）：自动命令检查 + 代码分析（相对 git 基线）。可用 extraChecks 临时加验。需任务/项目二选一。可选 idempotencyKey：同一 key 重试不重跑验收——执行中的同键请求返回进行中提示，已完成的直接返回既有报告与轮次，参数变更则报冲突。",
     inputSchema: VerifyTaskParamsSchema,
     capability: "read",
     requireApproval: false,

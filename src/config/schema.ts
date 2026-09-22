@@ -37,6 +37,31 @@ export const ReasoningLevelSchema = z.enum([
 ]);
 export type ReasoningLevel = z.infer<typeof ReasoningLevelSchema>;
 
+/**
+ * 幂等键（issue #15）：调用方为「同一次逻辑派单/验收」提供的稳定标识。
+ * trim 后 1..128 字符、不允许控制字符；键在 `run_task` 与 `verify_task` 中**各自独立命名空间**。
+ * 键明文只落本地任务快照，日志与事件流只用摘要（见 `keyDigest`）。
+ */
+export const IdempotencyKeySchema = z
+  .string()
+  .transform((s) => s.trim())
+  .pipe(
+    z
+      .string()
+      .min(1, "idempotencyKey 不能为空白")
+      .max(128, "idempotencyKey 过长（上限 128 字符）")
+      .regex(/^[^\u0000-\u001f\u007f]+$/, "idempotencyKey 不允许控制字符"),
+  );
+export type IdempotencyKey = z.infer<typeof IdempotencyKeySchema>;
+
+/** 幂等键命名空间：一次派单与一次验收互不干扰（issue #15）。 */
+export const IdempotencyScopeSchema = z.enum(["run_task", "verify_task"]);
+export type IdempotencyScope = z.infer<typeof IdempotencyScopeSchema>;
+
+/** 幂等映射默认 TTL（24h）与条目上限（超限逐出最旧）。 */
+export const IDEMPOTENCY_TTL_DEFAULT_MS = 24 * 60 * 60_000;
+export const IDEMPOTENCY_MAX_ENTRIES_DEFAULT = 2000;
+
 export const RunTaskParamsSchema = z.object({
   /**
    * 项目绝对路径。**省略** = 无项目模式（issue #12）：目前仅 ZCode 支持——任务在其 `default`
@@ -84,6 +109,11 @@ export const RunTaskParamsSchema = z.object({
   allowCreateProject: z.boolean().optional(),
   context: z.string().optional(),
   taskTimeoutMs: z.number().int().positive().optional(),
+  /**
+   * 幂等键（issue #15）：TTL（默认 24h）内重复提交同一键**恒返回原 taskId 与当前 meta**，
+   * 不新建任务；同一键携带不同参数会被 fail-closed 拒绝。不传 = 保持既有行为。
+   */
+  idempotencyKey: IdempotencyKeySchema.optional(),
 });
 export type RunTaskParams = z.infer<typeof RunTaskParamsSchema>;
 
@@ -142,6 +172,11 @@ export const VerifyTaskParamsSchema = z.object({
    * 独立 projectPath 验收缺省不设 = 采集当前基线，仅做项目当前健康检查。
    */
   baselineRef: z.string().min(1).optional(),
+  /**
+   * 幂等键（issue #15）：重复提交同一键不重跑验收——执行中返回进行中提示，
+   * 已完成直接返回已有报告与轮次；同一键携带不同参数会被 fail-closed 拒绝。
+   */
+  idempotencyKey: IdempotencyKeySchema.optional(),
 });
 export type VerifyTaskParams = z.infer<typeof VerifyTaskParamsSchema>;
 
@@ -195,6 +230,22 @@ export const ServerConfigSchema = z.object({
   shutdown: z
     .object({
       guiStopWaitMs: z.number().int().positive().default(15_000),
+    })
+    .default({}),
+  /**
+   * 幂等键映射（issue #15）。
+   * `ttlMs`：`<数据目录>/idempotency.json` 里键→taskId 记录的有效期，到期即视为未命中并清除；
+   * `maxEntries`：条目上限，超限按 `createdAt` 逐出最旧（防映射文件无限增长）。
+   */
+  idempotency: z
+    .object({
+      ttlMs: z.number().int().positive().default(IDEMPOTENCY_TTL_DEFAULT_MS),
+      maxEntries: z
+        .number()
+        .int()
+        .min(1)
+        .max(100_000)
+        .default(IDEMPOTENCY_MAX_ENTRIES_DEFAULT),
     })
     .default({}),
 });

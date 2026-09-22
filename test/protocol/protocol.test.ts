@@ -49,6 +49,28 @@ describe("工具 annotations（S4/S6：直接断言真实 tools/list）", () => 
     expect(byName.get("run_task")?.annotations?.openWorldHint).toBe(true);
     expect(byName.get("query_task")?.annotations?.openWorldHint).toBe(false);
   });
+
+  // issue #15：MCP 四注解补齐——幂等提示只在支持 idempotencyKey 的两个工具上为 true
+  it("idempotentHint 仅 run_task / verify_task 为 true", async () => {
+    const tools = await ts.client.listTools();
+    const byName = new Map(tools.tools.map((t) => [t.name, t]));
+    for (const name of ["run_task", "verify_task"]) {
+      expect(byName.get(name)?.annotations?.idempotentHint, `${name} idempotent`).toBe(true);
+    }
+    for (const name of [
+      "query_task",
+      "list_tasks",
+      "get_task_report",
+      "get_profiles",
+      "cancel_task",
+      "rework_task",
+      "continue_task",
+      "prepare_visual_baseline",
+      "approve_visual_baseline",
+    ]) {
+      expect(byName.get(name)?.annotations?.idempotentHint, `${name} idempotent`).not.toBe(true);
+    }
+  });
 });
 
 describe("工具面", () => {
