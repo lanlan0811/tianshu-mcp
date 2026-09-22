@@ -107,7 +107,7 @@ node dist/index.js visual <cmd>   → visual acceptance CLI subcommands
 resolveDataHome → Logger → DataHome(BUILTIN_PROFILES) → init()
   → loadConfig() → maxRunning
   → TaskStore → AgentAdapterRegistry(loadProfiles) → AcceptanceEngine
-  → TaskManager(+makeBuildCtx) → manager.initialize(maxRunning)   # archive leftover active tasks
+  → TaskManager(+makeBuildCtx) → manager.initialize({maxRunning, guiStopWaitMs})   # archive leftover active tasks
   → skill self-install (background, does not block the handshake)
   → register 11 tools → return ServerAssembly{server, manager, dataHome, store, logger, close}
 ```
@@ -234,16 +234,29 @@ Concurrent-write protection: `TaskStore` chains writes for the same task through
 | `queued` | Removed from the queue → `cancelled` |
 | `needs_user` | Directly → `cancelled`; the terminal message states plainly that the GUI-side waiting session was not stopped (the MCP side holds no CDP connection) |
 | Active | `markCancelRequested` → abort → bounded poll for a terminal state (`CANCEL_SETTLE_TIMEOUT_MS = 30s`); returns `settled:false` when the stop is unconfirmed |
-| Terminal | No-op |
+| Terminal | No cancellation action; if the task carries the GUI pending marker (`guiResidualUnconfirmed`) this call performs the **manual acknowledgement** instead (terminal status unchanged, see §5.5) |
 
 Cancellation of a GUI agent is **best-effort and honestly reported**, but the adapters differ in what they can do:
 
 | Adapter | Clicks the in-UI stop button on cancel? | Reports `guiStop`? |
 |---|---|---|
 | Codex / Kimi Code / Qoder CN | Yes — clicks stop over CDP and bounded-waits (`cancelWaitMs`) for the GUI to go idle | Yes (when `idle=false` the terminal message must admit the stop is unconfirmed) |
-| ZCode / TraeWork | **No** — only stops MCP-side observation and keeps the instance | No |
+| ZCode / TraeWork | **No** — only stops MCP-side observation and keeps the instance | No (the terminal message states "no stop result to confirm") |
 
-Shutdown (`shutdownInterrupt()`): abort every controller → bounded 2 s wait per task → mark both `running` and `queued` as `interrupted`.
+Shutdown (`shutdownInterrupt()`, issue #14): abort every controller → **spawn tasks keep their bounded 2 s wait per task, while GUI tasks wait until the shared `shutdown.guiStopWaitMs` (15 s by default) global deadline** → mark both `running` and `queued` as `interrupted`. A GUI task's terminal message branches honestly on `guiStop` (confirmed / unconfirmed / no stop result) and **never** claims "the process has been terminated", which only holds for spawn children.
+
+### 5.5 GUI terminal-state facts and manual acknowledgement (issue #14)
+
+| Field | Meaning | Written by |
+|---|---|---|
+| `TaskMeta.guiStop` | the GUI-side stop result `{clicked, idle}` of the most recent abort (persisted for **every** GUI agent) | `abortTerminal()` / run-result capture |
+| `TaskMeta.interruptedCleanStop` | whether this interruption is **confirmed** stopped (true only when `guiStop.idle === true`) | `abortTerminal()` / `persistInterrupted()` |
+| `TaskMeta.guiResidualUnconfirmed` | a GUI leftover archived on restart awaits manual confirmation (no connection exists at restart, so it is always set) | `initialize()`; cleared by `cancel_task` |
+| meta block `guiStopUnconfirmed` | the single read-side predicate: `guiResidualUnconfirmed===true \|\| interruptedCleanStop===false` | `metaFromTask()` |
+
+Decision matrix (the single implementation of red line 8, `guiStopDisclosure()`): `idle===true` → confirmed stopped; `idle===false` → a stop was attempted but is unconfirmed; **field absent → no stop result, and a stop must not be claimed either**.
+
+The window name is derived from `profile.displayName` (`guiAppNameOf()`, stripping descriptive parentheticals and generic suffixes, falling back to the original string when stripping would empty it) instead of hard-coding `agentId`. **Explicitly not done**: `initialize()` never reconnects over CDP to click stop — there is no session anchor after a restart and the adapters are fail-closed for instances without proof of ownership, so unattended clicking carries more risk than value.
 
 ---
 
@@ -604,7 +617,7 @@ CLI subcommands (`node dist/index.js visual ...`): `init` (writes a disabled tem
 
 | Config | Location | Notes |
 |---|---|---|
-| Server config | `<data home>/config.json` | `concurrency.maxRunning` (2), `defaultTaskTimeoutMs` (30 min), `verifyCommandTimeoutMs` (5 min), `verifyConcurrency` (2, 1..4), `skills.autoInstall` (true) |
+| Server config | `<data home>/config.json` | `concurrency.maxRunning` (2), `defaultTaskTimeoutMs` (30 min), `verifyCommandTimeoutMs` (5 min), `verifyConcurrency` (2, 1..4), `shutdown.guiStopWaitMs` (15 s, global upper bound for the GUI stop wait on shutdown), `skills.autoInstall` (true) |
 | Agent profiles | `<data home>/agent-profiles.json` | **Whole-key override** of built-in profiles |
 | Project registry | `<data home>/projects.json` | Includes each project's `verify[]` records |
 | Project acceptance | `<project>/.tianshu-mcp/acceptance.json` | `checks[]`, `visual`, `requireChanges` (true), `verifyConcurrency` |
@@ -744,9 +757,9 @@ Ordered by impact on a successor:
 6. **Kimi Code cancellation / question answering / same-name workspace ambiguity are covered by hermetic integration tests only** (no hardware stop click, no real question card triggered).
 7. **Visual module platform-evidence boundary** — macOS evidence comes from CI-hosted runners and has not been re-confirmed on the maintainer's own macOS device.
 8. **Acceptance fail-closed affects pure analysis tasks** — a git project requires changes by default, so pure Q&A/analysis tasks must explicitly set `requireChanges: false`.
-9. **Tool counts in doc comments are stale** — the header comments in `src/mcp/tools.ts`, `src/mcp/handlers.ts`, and `src/server.ts` still say "9 tools" while `TOOL_DEFS` actually has 11 entries. A comment-level staleness with no runtime effect; worth correcting in passing later.
-10. **Execution children have no shared spawn-option helper** — `agents/spawn`, `verify/runner`, `visual/services` and `visual/content-command` each inline the same platform branch (`detached: process.platform !== "win32"`). Same semantics, four copies; an edit can easily miss one.
-11. **Some profile fields are declared but unused** — `gui.windowMode`, `gui.modelRequired`, and ZCode's `gui.stallTimeoutMs` / `gui.cancelWaitMs` (see the note in §10.3).
+9. **Execution children have no shared spawn-option helper** — `agents/spawn`, `verify/runner`, `visual/services` and `visual/content-command` each inline the same platform branch (`detached: process.platform !== "win32"`). Same semantics, four copies; an edit can easily miss one.
+10. **Some profile fields are declared but unused** — `gui.windowMode`, `gui.modelRequired`, and ZCode's `gui.stallTimeoutMs` / `gui.cancelWaitMs` (see the note in §10.3).
+11. **No automatic GUI stop on restart** — `initialize()` only labels GUI leftovers honestly and sets `guiResidualUnconfirmed`; it never reconnects over CDP to click stop, because there is no session anchor after a restart and the adapters are fail-closed for instances without proof of ownership. Confirmation is manual, through `cancel_task` (§5.5).
 
 ---
 

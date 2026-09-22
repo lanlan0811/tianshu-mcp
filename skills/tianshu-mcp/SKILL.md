@@ -179,7 +179,7 @@ meta 的 `needsUserKind` 给出等待类型，`pendingQuestion` 给出问题原�
 | `succeeded` | 验收通过（或未开验收且 agent 正常退出） | `get_task_report(taskId, round?)` 取 changedFiles / diffstat / checks，向用户汇报 |
 | `failed` | 未开自动返修时的失败，或**硬失败**（`errorType=spawn`） | 读 `agentEndReason`（§9）区分：硬失败按表中处置；真失败给**针对性** feedback 调 `rework_task` |
 | `needs_attention` | ①自动返修轮次用尽仍失败；②验收**阻塞**（配置/完整性错误、缺基准、页面不可达等）；③GUI 空闲/超时/断线（`errorType=agent_failed`/`timeout`） | 先读报告定位，再决定 `rework_task` 或转人工 |
-| `cancelled` / `interrupted` | 取消 / 超时或中断 | 看 `abortSource`（`user`/`shutdown`/`timeout`/`internal`） |
+| `cancelled` / `interrupted` | 取消 / 超时或中断 | 看 `abortSource`（`user`/`shutdown`/`timeout`/`internal`）；GUI 任务另看 `guiStopUnconfirmed`（见下） |
 
 关键区别：
 
@@ -189,6 +189,7 @@ meta 的 `needsUserKind` 给出等待类型，`pendingQuestion` 给出问题原�
 - **`running` 卡死**才用 `cancel_task`：CLI agent 终止进程树；GUI agent 尽力点击界面停止并等待空闲（有界超时），取消文案会如实标注 GUI 侧是否已停。
   **标注“未确认停止”时不要重派同项目任务**——窗口内可能仍在跑，重派护栏也会以 `instance_busy` 拒绝。
 - **`needs_user` 状态下取消**：run 协程已退出、CDP 已断开，MCP 无法再点 GUI 停止按钮，文案会提示人工检查。
+- **`interrupted` + `guiStopUnconfirmed=true`（server 退出 / 宿主 EOF / 重启归档）**：`tianshu-mcp` 对 GUI 进程没有所有权，**“编排器已停”不等于“窗口里的任务已停”**。先让用户人工打开对应窗口确认没有还在跑的 turn，再调 `cancel_task(taskId, reason="已人工核对窗口无残留运行")` 清除待确认标记（终态仍是 `interrupted`），**之后**才可安全重派同项目任务。详见 `usage-examples.md` §9.5.1。
 
 汇报纪律：**不要反复空转重试**。多次仍不过或不可修时，如实汇报 `errorType`/`agentEndReason`、失败 check 与输出尾部、变更清单，并给建议（人工看报告 / 换 agent / 缩小任务）。
 

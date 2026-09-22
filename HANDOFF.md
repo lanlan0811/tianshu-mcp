@@ -1,10 +1,21 @@
 # HANDOFF.md — 项目交接说明
 
-> **交接快照：2026-09-23 · 开发版本 `0.5.8`；`v0.5.8` 已发布（GitHub Release / Gitee 发行版 / npm `latest` 三者一致，发布提交 `454b23c`）。**
+> **交接快照：2026-09-23 · 开发版本 `0.5.9`；`v0.5.8` 已发布（GitHub Release / Gitee 发行版 / npm `latest` 三者一致，发布提交 `454b23c`；`v0.5.9` 尚未打标签）。**
 > 本文写给**接手本仓库的人**：先说清「这是什么、现在到哪一步」，再给出「怎么跑、怎么改、哪里会踩坑」。
 > 工作区规则见 `AGENTS.md`（gitignore，仅本地）；安装与用法见 `README.md`，本文不重复，只做导览与状态记录。
 
 ---
+
+### 0.5.9 开发交接（GUI 终态如实化：server 退出 / 重启归档，issue #14）
+
+- **问题**：`persistInterrupted()` 对所有活动任务统一写「server 退出，进程已终止」；`initialize()` 归档重启遗留只写「server 重启遗留（启动时归档，不续跑）。」。但 `driver="gui"` 的 agent 是**外部桌面应用**，server 对其进程**没有所有权**：abort 后适配器至多"尽力点击界面停止"（且只有 Codex / Kimi Code / Qoder CN 有这能力）。该文案只对 spawn 子进程成立，于是快照谎报已停止，而窗口中的任务可能仍在改用户项目，重启后更无人观察——**编排器已死 + GUI 持续改用户项目 + 无人观察 = 效应残留**。
+- **修复**：终态文案按 `driver` 分流——spawn 类维持原文案；GUI 类按适配器回报的 `guiStop` 落「已确认 … 内运行停止」/「未确认停止，窗口中的任务可能仍在继续，请人工打开 … 确认无残留运行」/「无停止结果可确认」（ZCode、TraeWork 不点停止、不回传 `guiStop`）。判定只有一条：`guiStop.idle === true` 才允许说"已确认停止"；`idle === false` 与字段缺失都按未确认处理，取消路径与中断路径共用 `guiStopDisclosure()`。
+- **有界等待**：新增配置 `config.json` → `shutdown.guiStopWaitMs`（默认 15000），`shutdownInterrupt()` 给 GUI 任务一份**全局共享**预算（退出耗时不随任务数增长），让"尽力停止 + 有界等待"跑完再落终态；spawn 类保持原 2s。若 orchestrator 先落终态（携带更精确的适配器结果），管理器直接让位。
+- **结构化与人工确认**：新增 `TaskMeta.interruptedCleanStop`（本次中断是否**已确认**停止）与 `guiResidualUnconfirmed`（重启归档待人工确认）；meta 块新增 `guiStopUnconfirmed`（读侧单一判据）。人工核实窗口无残留运行后调用 `cancel_task`，可清除待确认标记并追加 `gui_residual_acknowledged` 事件——**不新增工具（仍 11 个）、不改终态与 `errorType`**。
+- **窗口名不再硬编码**：改由 `profile.displayName` 派生（`guiAppNameOf()`，剥说明性括号段与通用后缀，剥空退回原名，无 `displayName` 回退 `agentId`）。旧实现把 `zcode`/`qoder` 一律写成 "Codex"，本身即失真。
+- **明确不做**：`initialize()` 不自动 CDP 重连去点停止——重启后无会话锚点、适配器对无归属证明的实例 fail-closed，自动动手风险高于收益（见 ARCHITECTURE §5.5 与 §15 已知限制 11）。
+- 测试：新增 9 单元（`test/unit/gui-stop-disclosure.test.ts`）+ 5 集成（`test/integration/gui-shutdown-interrupt.test.ts`）；集成用例必须以**真实 `CodexGuiAdapter` 子类**注入（`ensureAdapterFor()` 会重建非本类 adapter，普通实现会被静默替换）。全量 **841 passed / 12 skipped**（83 文件）在本机通过。
+- 详见 [v0.5.9 发布说明](docs/release-v0.5.9.md) 与 [实施计划](docs/plans/issue-14-gui-shutdown-interrupt-plan.md)。
 
 ### 0.5.6 开发交接
 
@@ -81,11 +92,11 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build
 | 项 | 状态 |
 |---|---|
 | 分支 | `master`（**只在此分支提交**，不建其他分支） |
-| 版本 / 许可证 | `0.5.8`（已发布；上一版本 `0.5.7`）/ Apache-2.0 |
+| 版本 / 许可证 | `0.5.9`（开发版本；`v0.5.9` 未打标签、未发布）/ Apache-2.0 |
 | 标签 | `v0.1.0` … `v0.5.8`（均已推双仓；`v0.5.8` 指向 `454b23c`，双仓 tag 对象同为 `9dbfd4a`） |
-| 工作树 | 干净；`github/master` 与 `gitee/master` 均同步（本轮见 `git log` 的 `docs: 按代码实况重写四份主文档` 与 `docs(handoff): 回写 v0.5.8`） |
-| 测试 | **826 passed / 12 skipped**（78 个测试文件通过 + 3 个真实浏览器文件按设计 skip；含 Qoder 新增约 60 项用例） |
-| 门禁 | lint 0 warning、typecheck clean、build 成功且构建后无跟踪差异、`check:stdio` 6/6 场景通过、`npm pack`（230 文件）内容校验与干净消费者安装 + 严格 stdio 检查通过；12 项真实浏览器门禁用例在 Windows 10 本机以 `TIANSHU_VISUAL_BROWSER_TEST=1` 跑通 12/12 |
+| 工作树 | 本轮变更见 `git log` 的 `fix(tasks): server 退出路径的 GUI 终态按 guiStop 如实分流` 与 `docs: 补齐 v0.5.9 双语文档与交接记录` |
+| 测试 | **841 passed / 12 skipped**（80 个测试文件通过 + 3 个真实浏览器文件按设计 skip；较 v0.5.8 净增 15 项：9 单元 + 5 集成 + 1 配置） |
+| 门禁 | lint 0 warning、typecheck clean、全量测试 841 passed、build 成功、`check:stdio` 通过 |
 | CI | `build-test`（ubuntu/windows/macos × Node 20/22/24）+ `pack-check`，另加 `visual-browser` 真实浏览器矩阵（ubuntu/windows + macos-15-intel/macos-15 × Node 20/22/24）；发布提交 `9ee03da` 的 22 个作业全绿（[run 35741308742](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35741308742)），`e2d4689` 同样全绿（[run 35740269977](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35740269977)） |
 | npm | `tianshu-mcp@0.5.8` 已发布（`latest`）；`npx -y tianshu-mcp` 即为该版本。发布步骤见 `docs/npm-publish-guide.md` |
 | GitHub Release | 推送 `v*` tag 触发 `.github/workflows/release.yml`：先跑完整门禁并校验「tag 版本 === package.json 版本」，正文由 `docs/release-v<ver>.md` + `.en.md` 双语合成（缺文档即报错，不产出空壳正文），**要求同 SHA 的成功 CI**，并附 `tianshu-mcp-<ver>.tgz` |
@@ -351,6 +362,9 @@ MSIX 发现（Appx 查询优先 + 扫盘回退） → COM 激活 + 专属 user-d
 7. **路径不硬编码**：机器路径 / 用户名 / 端口走 profile 或占位符（`{LOCALAPPDATA}`、`{PROGRAMFILES}` 等；展开大小写不敏感）。
 8. **GUI 取消不得谎报**：`cancel_task` 对 GUI agent 必须尽力点击停止 + 在 `gui.cancelWaitMs` 内有界等待确认；
    未确认停止时终态必须明示「GUI 内运行未确认停止」。重派前必须确认受管实例空闲，否则以 `instance_busy` 拒绝（防 turn 交叠）。
+   **同一标准覆盖 server 退出与重启归档（issue #14）**：`shutdownInterrupt()` / `initialize()` 对 `driver="gui"` 的任务
+   不得写「进程已终止」（server 对其进程无所有权），必须按 `guiStop` 如实落「已确认停止 / 未确认停止 / 无停止结果可确认」，
+   并置 `interruptedCleanStop` / `guiResidualUnconfirmed`；`guiStopUnconfirmed` 为真时先人工确认再重派。
 9. **验收 fail-closed**：测试命令退出码 0 但输出显示零用例 → 判失败；git 项目默认要求相对基线产生变更
    （`requireChanges: false` 显式关闭）。不得为「让任务变绿」放松这两个门禁。
 10. **路径闸门不得放宽**：`projectPath` 必须是存在的绝对目录，`realpath` 归一后落在主目录或系统/根级目录一律拒绝；盘符根由单独判定覆盖，不依赖枚举清单。
@@ -490,6 +504,11 @@ npm publish --registry=https://registry.npmjs.org --access public
 - **Qoder CN 的硬边界**：仅支持 Qoder CN（国际版或同名窗口不算）；`projectPath` 与可读 `planDoc` 必填，不支持无项目派发；`modelSource` 与 `极高/xhigh`、`最大`、`关闭思考` 别名是 Qoder 专用参数，传给其他适配器会被拒绝；思考等级是 Qoder **全局偏好**（任务结束不还原），权限模式沿用不切换；macOS 为 `research` 且 fail-closed。取消与提问续答仅由 hermetic 集成测试覆盖（见 §9.12）。
 - **`needs_user` 状态下取消是已知边界**：MCP 侧无 CDP 连接，GUI 内等待中的会话停不掉；终态文案会提示。
   经临时 CDP 连接尽力停止 GUI 内会话列在 `CHANGELOG.md` 的「未发布 / 计划中」。
+- **server 退出 / 重启归档不自动停 GUI（issue #14 的边界）**：`shutdownInterrupt()` 会给 GUI 任务一份全局共享的
+  `shutdown.guiStopWaitMs`（默认 15s）让"尽力停止 + 有界等待"跑完，但**未确认时只如实标注**；
+  `initialize()` 归档重启遗留时**不会**自动 CDP 重连去点停止（重启后无会话锚点，适配器对无归属证明的实例 fail-closed，
+  宁可不动也不误杀用户会话），改为置 `guiResidualUnconfirmed` + 提示人工检查。人工核实无残留后调用 `cancel_task` 清除标记
+  （不改终态），随后才可安全重派。见 ARCHITECTURE §5.5 与 §15 已知限制 11。
 - **视觉模块的平台证据边界**：macOS 证据来自 CI 托管真机 runner（macOS 15 / Darwin 24.6.0，Intel x64 与 Apple Silicon arm64，Node 20/22/24），
   未在维护者个人 macOS 设备复验；Windows 10 矩阵覆盖 `scripts/evidence-visual-windows.mjs` 列出的项。详见 `docs/visual-validation.md` 与 `docs/visual-validation-evidence/`。
 - **验收 fail-closed 对纯分析任务的影响**：git 项目默认要求产生变更；纯问答 / 分析任务必须在

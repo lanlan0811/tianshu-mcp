@@ -8,6 +8,28 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.5.9] - 2026-09-23
+
+### Fixed
+
+- **The GUI terminal state is no longer a false claim on server exit or restart archiving** ([issue #14](https://github.com/lanlan0811/tianshu-mcp/issues/14)). A GUI agent is an external desktop application and the server **owns no process** for it: after an abort the adapter can at best best-effort click the in-app stop control. The old code wrote "server exited, process terminated" for every active task, applying a statement that only holds for spawn children to GUI agents — the orchestrator was dead, the GUI might still be editing the user's project, and nobody was watching.
+  - `persistInterrupted()` now branches on the driver: spawn keeps the original wording; GUI writes the honest outcome derived from the adapter's `guiStop` — "confirmed stopped", "stop unconfirmed, the task in the … window may still be running, please open … and confirm there is no residual run", or "no stop result to confirm" (ZCode and TraeWork never click stop and never report `guiStop`).
+  - `shutdownInterrupt()` gives GUI tasks a **globally shared** `guiStopWaitMs` budget (new config, default 15000, overridable in `config.json`) so the best-effort stop and bounded wait can finish before the terminal state is written; spawn tasks keep their 2 s budget. An unconfirmed outcome is stated as such.
+  - `initialize()` appends "stop unconfirmed + please check manually" when archiving GUI leftovers and sets `guiResidualUnconfirmed`; an unreadable profile is conservatively treated as GUI.
+  - `abortTerminal()` (the competing writer in the shutdown race) now persists `guiStop` plus the structured fields on both branches, and derives the window name from `profile.displayName` (the old hard-coded mapping reported zcode/qoder as "Codex", itself a distortion). `runRes.guiStop` is persisted for every agent instead of only qoder, which previously lost the adapter's stop result in the shutdown race.
+
+### Added
+
+- New structured `TaskMeta` fields `interruptedCleanStop` (whether the stop is **confirmed**) and `guiResidualUnconfirmed` (pending manual confirmation after restart archiving). The `query_task` / `list_tasks` meta block gains `guiStopUnconfirmed`, giving the orchestrator one structured reason not to re-dispatch.
+- A manual acknowledgement path with **no new tool**: calling `cancel_task` on a terminal GUI task clears `guiResidualUnconfirmed` and appends a `gui_residual_acknowledged` event, **without changing the terminal status or errorType**.
+- New config `config.json` → `shutdown.guiStopWaitMs` (default 15000): the global upper bound for the GUI stop wait on shutdown, decoupled from `gui.cancelWaitMs` (the cancellation path).
+
+### Tests
+
+- New unit cases `test/unit/gui-stop-disclosure.test.ts` (three-state disclosure, window-name derivation with the "never strip to empty" fallback, and the guarantee that no input produces "the process has been terminated").
+- New integration cases `test/integration/gui-shutdown-interrupt.test.ts` (the `idle=true` / `idle=false` / no-stop-result shutdown paths, restart archiving plus the `cancel_task` acknowledgement, and spawn tasks being unaffected by the GUI branching).
+- `config-hotreload` gained default and override cases for `guiStopWaitMs`; the running-cancellation case in `codex-flow` now asserts the structured fields as well.
+
 ## [0.5.8] - 2026-09-23
 
 ### Changed

@@ -278,7 +278,8 @@ run_task(projectPath=/path/to/项目, agentId=codex-cli,
 | `zcodeSessionId` / `qoderSessionId` / `boundProjectPath` | 会话锚点与项目绑定回执（kimicode 的锚点仅在服务端保留，不回显） |
 | `modelProvider` / `permissionMode` | 实际生效的供应商标识与权限模式（zcode 等） |
 | `actualModel` / `actualReasoningLevel` / `modelSource` | 实际生效模型、等级与模型来源（qoder） |
-| `guiStop` | 取消时 GUI 停止的点击与空闲确认结果（`clicked` / `idle`） |
+| `guiStop` | 最近一次中断时 GUI 停止的点击与空闲确认结果（`clicked` / `idle`）；`idle=true` 才是**已确认**停止 |
+| `guiStopUnconfirmed` | 出现即为 `true`：GUI 任务的终态**未确认**停止（`guiStop.idle=false` 或重启归档无任何确认手段），重派前必须先人工确认并用 `cancel_task` 消除（§9.5.1） |
 | `progressSummary` / `lastRunSignal` | 轮询期进度摘要 / 最近运行信号 |
 | `finishedAt` | 终态落定时间 |
 | `model` / `mode` | 本次派单传入的模型 / 面板模式 |
@@ -502,13 +503,38 @@ continue_task(taskId=tsk_..., message={"选择开发语言":"TypeScript","需要
 ```text
 cancel_task(taskId, reason="用户要求停止")
 → 返回 meta.message 可能为：
-  "已取消：…；GUI 内运行已停止。"                       ← 已确认停止，可安全重派
-  "已取消：…；GUI 内运行未确认停止，…窗口中的任务可能仍在继续。"  ← 需人工检查
+  "已取消：…；已确认 <窗口名> 内运行停止。"                    ← 已确认停止，可安全重派
+  "已取消：…；<窗口名> 内运行未确认停止，窗口中的任务可能仍在继续，请人工打开 <窗口名> 确认无残留运行。"  ← 需人工检查
+  "已取消：…；<窗口名> 内运行无停止结果可确认，…（ZCode / TraeWork 无停止能力）"  ← 需人工检查
   "已取消（等待用户处理时）：…；GUI 内可能仍有等待中的会话，请人工检查。"
   "已取消 …（尚未落终态：GUI 侧停止可能未完成，请稍后 query_task 复核）"
 ```
 
-GUI agent 取消语义：尽力点击界面停止按钮并等待 GUI 空闲（有界超时）。**未确认停止前不要重派同项目任务**——重派护栏会以 `instance_busy` 拒绝派发（防止新旧 turn 交叠），宁可等人工确认。也可看 meta 的 `guiStop`（`clicked` / `idle`）：`idle=false` 即未确认停止。
+GUI agent 取消语义：尽力点击界面停止按钮并等待 GUI 空闲（有界超时）。**未确认停止前不要重派同项目任务**——重派护栏会以 `instance_busy` 拒绝派发（防止新旧 turn 交叠），宁可等人工确认。也可看 meta 的 `guiStop`（`clicked` / `idle`）与 `guiStopUnconfirmed`：`guiStopUnconfirmed=true` 或 `guiStop.idle=false` 即未确认停止。
+
+### 9.5.1 server 退出 / 重启后的 GUI 残留确认（issue #14）
+
+```text
+# server 退出（宿主退出 / stdio EOF）后重新接入：
+query_task(taskId)
+→ meta.status = "interrupted"，meta.abortSource = "shutdown"
+   文案二选一：
+     "server 退出；已确认 <窗口名> 内运行停止。"                 ← 停止已确认，可安全重派
+     "server 退出；<窗口名> 内运行未确认停止，窗口中的任务可能仍在继续，请人工打开 <窗口名> 确认无残留运行。"
+     "server 退出；<窗口名> 内运行无停止结果可确认，…"           ← 无停止能力（zcode / traework）
+   meta.interruptedCleanStop = false、meta.guiStopUnconfirmed = true
+
+# 重启归档（上一进程被 kill，来不及落终态）：
+→ 文案为 "server 重启遗留（启动时归档，不续跑）；… 请人工打开 <窗口名> 确认无残留运行。"
+   meta.guiResidualUnconfirmed = true
+
+# 人工打开该窗口，确认没有还在跑的 turn 之后：
+cancel_task(taskId, reason="已人工核对窗口无残留运行")
+→ 清除待确认标记（追加 gui_residual_acknowledged 事件），status 仍是 interrupted
+→ meta.guiStopUnconfirmed 变为不存在、meta.guiResidualUnconfirmed = false
+```
+
+**顺序纪律**：`guiStopUnconfirmed` 为真时**先人工确认、再重派**同项目任务——`tianshu-mcp` 对 GUI 进程没有所有权，`interrupted` 只说明**编排器**不再观察，不等于窗口里的任务已停。服务端在 shutdown 时会给 GUI 任务一份全局共享的 `shutdown.guiStopWaitMs`（默认 15 秒）预算去"尽力停止 + 有界等待"，但到期仍无法确认时只会如实标注，**不会**替你断言已停止；重启归档更是**不会**自动去点停止（无会话锚点、对无归属证明的实例 fail-closed）。
 
 ### 9.6 agent-profiles.json 相关配置（可选）
 
@@ -531,6 +557,14 @@ GUI agent 取消语义：尽力点击界面停止按钮并等待 GUI 空闲（�
 - `selectors.userGate`：等待用户界面的检测选择器（如结账页 `embedded-checkout`），配置后命中即快速转 `needs_user`；**默认未配置 = 禁用**，配置前请真机核对。
 - `defaultAutoFixRounds`：该 agent 的自动返修缺省轮数（codex 5 / zcode 2 / kimicode 2 / qoder 3）。
 - 整键覆盖语义：数据目录 `agent-profiles.json` 里同名键会**覆盖**内置 profile 的对应字段；用户自定义 profile（如 `codex-cli`）会出现在 `get_profiles` 中。
+
+### 9.7 server 级配置（config.json，可选）
+
+```json
+{ "shutdown": { "guiStopWaitMs": 15000 } }
+```
+
+- `shutdown.guiStopWaitMs`：server 退出时，GUI agent 任务「尽力点击界面停止 + 有界等待空闲」的**全局共享**上限（默认 15000 = 15 秒，全部 GUI 任务共用一份预算，退出耗时不随任务数增长）。spawn 类任务不受影响（固定 2 秒等 `killTree` 收尾）。到期仍未确认空闲时，终态如实写「未确认停止」并置 `guiStopUnconfirmed`；调大它可以让退出时更容易等到确认结果，代价是退出（以及宿主关闭）变慢。
 
 ---
 

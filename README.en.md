@@ -8,7 +8,7 @@
 
 # tianshu-mcp
 
-Visual acceptance (since v0.5.0, with optional AI content validation since v0.5.4): [English guide](docs/visual-acceptance.en.md) · [Validation record](docs/visual-validation.en.md) · [Latest release notes](<docs/release-v0.5.8.en.md>) · [All versions](CHANGELOG.en.md).
+Visual acceptance (since v0.5.0, with optional AI content validation since v0.5.4): [English guide](docs/visual-acceptance.en.md) · [Validation record](docs/visual-validation.en.md) · [Latest release notes](<docs/release-v0.5.9.en.md>) · [All versions](CHANGELOG.en.md).
 
 **Tianshu × AI-Agent orchestration MCP server**
 
@@ -189,7 +189,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=qoder, planDoc=./plans/development.m
 | `query_task` | read | Poll status / progress / log tail |
 | `list_tasks` | read | Filtered history of tasks |
 | `get_task_report` | read | Full text of a verification round's report (`report.md`) |
-| `cancel_task` | write + approval | Cancel a running task: CLI agents kill the process tree; GUI agents click the in-app stop control over CDP and bounded-wait (`gui.cancelWaitMs`, default 15s) for the GUI to go idle, stating so explicitly in the final message when the stop is unconfirmed |
+| `cancel_task` | write + approval | Cancel a running task: CLI agents kill the process tree; GUI agents click the in-app stop control over CDP and bounded-wait (`gui.cancelWaitMs`, default 15s) for the GUI to go idle, stating so explicitly in the final message when the stop is unconfirmed. For a terminal GUI task this call doubles as the manual acknowledgement entry point — after verifying the window holds no residual run, it clears the `guiStopUnconfirmed` marker |
 | `verify_task` | read | Run one verification pass on a task/project path (no source changes) |
 | `rework_task` | write + approval | Manual rework (feed the failure report back to the same agent) |
 | `get_profiles` | read | Inspect agent adapters and executable discovery results |
@@ -228,6 +228,7 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 | [docs/codex-windows-smoke.en.md](docs/codex-windows-smoke.en.md) | Codex Windows hardware record (incl. verify-fail → auto plan → repair-pass loop) |
 | [docs/release-v0.3.4.en.md](<docs/release-v0.3.4.en.md>) | v0.3.4 release notes (ZCode project/model read-back, initialization recovery, session dispatch confirmation, issues #8/#9/#10) |
 | [docs/qoder-cdp.en.md](docs/qoder-cdp.en.md) | Qoder CN GUI driver: installation discovery and instance reuse, full-path workspaces with native import, `modelSource` and global Model Management reasoning tiers, send/answer checkpoints, liveness judging and same-session repair, hardware evidence and uncovered items |
+| [docs/release-v0.5.9.en.md](<docs/release-v0.5.9.en.md>) | v0.5.9 release notes (truthful GUI terminal state on server exit / restart archiving: wording branches on `guiStop`, the bounded `shutdown.guiStopWaitMs` wait, structured pending fields and the manual acknowledgement entry point; issue #14) |
 | [docs/release-v0.5.8.en.md](<docs/release-v0.5.8.en.md>) | v0.5.8 release notes (the four primary documents rewritten against the code, plus the missing TraeWork probe and three probe scripts; no runtime change) |
 | [docs/release-v0.5.7.en.md](<docs/release-v0.5.7.en.md>) | v0.5.7 release notes (orchestration skill docs rewritten against the code: parameter matrix, default precedence, tier correction and the qoder section; no runtime change) |
 | [docs/release-v0.5.6.en.md](<docs/release-v0.5.6.en.md>) | v0.5.6 release notes (Qoder CN GUI adapter, hardware acceptance scope, macOS research boundary) |
@@ -279,7 +280,7 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 - **Engineering / CI** ✅
   - GitHub Actions: `CI` (`build-test` ubuntu/windows/macos × Node 20/22/24 + `pack-check`, plus a `visual-browser` real-browser matrix ubuntu/windows/macos-15-intel/macos-15 × Node 20/22/24, all green with the v0.5.1 tag) and `Release` (tag-triggered) both green
   - Skill self-install verified idempotent on this machine's real `~/.rivet/skills/tianshu-mcp`
-  - npm package name `tianshu-mcp` published continuously since v0.1.1 (currently `0.5.8`)
+  - npm package name `tianshu-mcp` published continuously since v0.1.1 (currently `0.5.9`)
 - **Real Tianshu host integration (DoD #6)** ✅ (2026-09-07)
   - Configured the local mode in the real `D:\Tianshu` desktop host `mcp.servers` → sidecar reported `MCP: 2 servers connected, 10 tools` (including this server's 8 tools), spawned the child process and connected over stdio
   - Exposed and fixed a skill-install source-path bug (fileURLToPath, commit 55cf2d0)
@@ -395,6 +396,11 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
   - Corrected the Kimi Code tier domain, the test baseline (826 passed / 12 skipped across 81 files) and the runtime dependency licence table (Apache-2.0 / ISC), and added a callout for **declared-but-unused profile fields**
   - **Fixed a distribution gap**: `scripts/probe-traework.mjs` was not shipped although the docs tell users to run it → added to `files`, plus the missing `probe:traework` / `probe:zcode` / `probe:codex` scripts
   - See the [v0.5.8 release notes](<docs/release-v0.5.8.en.md>)
+- **M28 — Truthful GUI terminal state (server exit / restart archiving) + v0.5.9** (2026-09-23) — 9 new unit cases + 5 new integration cases (issue #14)
+  - **No more false claims**: a GUI agent is an external desktop application and the server owns no process for it, so `persistInterrupted()` and `initialize()` now branch honestly on `guiStop` (confirmed / unconfirmed / no stop result) and **never** write "the process has been terminated", which only holds for spawn children
+  - **Bounded wait**: the new `shutdown.guiStopWaitMs` (15 s default, one shared budget) lets the best-effort stop finish before the terminal state is written; both branches of `abortTerminal()` now persist `guiStop` plus the structured fields, and the window name is derived from `profile.displayName`
+  - **Manual acknowledgement entry point**: new `TaskMeta.interruptedCleanStop` / `guiResidualUnconfirmed` and the meta-block `guiStopUnconfirmed`; calling `cancel_task` on a terminal GUI task clears the pending marker (no new tool, terminal status unchanged)
+  - See the [v0.5.9 release notes](<docs/release-v0.5.9.en.md>)
 
 ## Agent support status
 
@@ -471,7 +477,7 @@ Behavior and limits:
 
 | Document | Content |
 |---|---|
-| [CHANGELOG.en.md](<CHANGELOG.en.md>) | Version history (v0.1.0 → v0.5.8) |
+| [CHANGELOG.en.md](<CHANGELOG.en.md>) | Version history (v0.1.0 → v0.5.9) |
 | [CONTRIBUTING.en.md](CONTRIBUTING.en.md) | Dev setup, conventions, commit/release flow, adding an agent |
 | [SECURITY.en.md](SECURITY.en.md) | Security model (zero credentials / command whitelist / process & desktop-automation boundaries) and private reporting |
 | [CODE_OF_CONDUCT.en.md](CODE_OF_CONDUCT.en.md) | Contributor Code of Conduct |

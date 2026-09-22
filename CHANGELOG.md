@@ -7,6 +7,28 @@
 
 ---
 
+## [0.5.9] - 2026-09-23
+
+### 修复
+
+- **server 退出 / 重启归档路径的 GUI 终态不再谎报已停止**（[issue #14](https://github.com/lanlan0811/tianshu-mcp/issues/14)）：GUI agent 是外部桌面应用，server 对其进程**没有所有权**，abort 后适配器至多"尽力点击界面停止"，旧实现统一写「server 退出，进程已终止」是把只对 spawn 子进程成立的断言套到了 GUI 上——编排器已死、GUI 可能仍在改用户项目、且无人观察。
+  - `persistInterrupted()` 按 `driver` 分流：spawn 类维持原文案；GUI 类按适配器回报的 `guiStop` 如实落「已确认 … 内运行停止」/「未确认停止，窗口中的任务可能仍在继续，请人工打开 … 确认无残留运行」/「无停止结果可确认」（ZCode、TraeWork 不点停止、不回传 `guiStop`）。
+  - `shutdownInterrupt()` 为 GUI 任务提供**全局共享**的 `guiStopWaitMs` 预算（新配置，默认 15000，`config.json` 可覆盖），让"尽力停止 + 有界等待"跑完再落终态；spawn 类保持原 2s 预算。到期未确认时如实标注。
+  - `initialize()` 归档重启遗留任务时，GUI 类追加「未确认停止 + 请人工检查」并置 `guiResidualUnconfirmed`；profile 不可读时保守按 GUI 处理。
+  - `abortTerminal()`（shutdown 竞态中的另一写方）两个分支都落 `guiStop` 与结构化字段；窗口名改由 `profile.displayName` 派生（旧实现把 zcode/qoder 一律写成 "Codex"，本身即失真）；`runRes.guiStop` 改为对所有 agent 落盘（此前只写 qoder，其余 GUI agent 的停止结果在 shutdown 竞态里丢失）。
+
+### 新增
+
+- `TaskMeta` 新增结构化字段 `interruptedCleanStop`（是否**已确认**停止）与 `guiResidualUnconfirmed`（重启归档的待人工确认标记）；`query_task` / `list_tasks` 的 meta 块新增 `guiStopUnconfirmed`，编排方据此禁止直接重派。
+- 人工确认路径（**不新增工具**）：对已终态的 GUI 任务调用 `cancel_task`，可清除 `guiResidualUnconfirmed` 并追加 `gui_residual_acknowledged` 事件，**不改终态与 errorType**。
+- 新配置 `config.json` → `shutdown.guiStopWaitMs`（默认 15000）：server 关闭时 GUI 停止等待的全局上限，与 `gui.cancelWaitMs`（取消路径）解耦。
+
+### 测试
+
+- 新增单元用例 `test/unit/gui-stop-disclosure.test.ts`（三态披露判定、窗口名派生与"剥空退回原名"、任何输入都不得出现「进程已终止」）。
+- 新增集成用例 `test/integration/gui-shutdown-interrupt.test.ts`（shutdown 的 `idle=true`/`idle=false`/无停止结果三条路径、重启归档 + `cancel_task` 确认清除、spawn 类不受 GUI 分流影响）。
+- `config-hotreload` 补 `guiStopWaitMs` 默认值与覆盖用例；`codex-flow` 的运行中取消用例同步为结构化断言。
+
 ## [0.5.8] - 2026-09-23
 
 ### 变更

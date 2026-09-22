@@ -11,6 +11,12 @@
 
 合并规则：先内置，再用户级覆盖（同 `id` 用户级胜出）。
 
+> profile 之外，server 级开关在数据目录 `config.json`：`concurrency.maxRunning`（默认 2）、`defaultTaskTimeoutMs`、
+> `verifyCommandTimeoutMs`、`verifyConcurrency`、`skills.autoInstall`，以及 **`shutdown.guiStopWaitMs`（默认 15000）**——
+> 后者是 server 退出时 GUI 任务「尽力点击界面停止 + 有界等待空闲」的**全局共享**上限（issue #14）。
+> 到期仍未确认空闲时终态如实写「未确认停止」并置 `guiStopUnconfirmed`，绝不谎报已停止；调大它可提高确认成功率，
+> 代价是退出变慢。ZCode / TraeWork 不点停止按钮，因此对它们只会落「无停止结果可确认」。
+
 ## Profile 字段
 
 ```jsonc

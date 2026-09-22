@@ -96,9 +96,9 @@ node dist/index.js visual <cmd>   → 视觉验收 CLI 子命令族
 
 ```text
 resolveDataHome → Logger → DataHome(BUILTIN_PROFILES) → init()
-  → loadConfig() → maxRunning
+  → loadConfig() → maxRunning / shutdown.guiStopWaitMs
   → TaskStore → AgentAdapterRegistry(loadProfiles) → AcceptanceEngine
-  → TaskManager(+makeBuildCtx) → manager.initialize(maxRunning)   # 归档重启遗留的 active 任务
+  → TaskManager(+makeBuildCtx) → manager.initialize({maxRunning, guiStopWaitMs})  # 归档重启遗留的 active 任务
   → 技能自检安装（后台，不阻塞握手）
   → 注册 11 个工具 → 返回 ServerAssembly{server, manager, dataHome, store, logger, close}
 ```
@@ -225,16 +225,29 @@ resolveDataHome → Logger → DataHome(BUILTIN_PROFILES) → init()
 | `queued` | 直接从队列移除 → `cancelled` |
 | `needs_user` | 直接 → `cancelled`；终态文案明示「GUI 内等待中的会话未被停止」（MCP 侧无 CDP 连接） |
 | 活动态 | `markCancelRequested` → abort → 有界轮询等待终态（`CANCEL_SETTLE_TIMEOUT_MS = 30s`）；未确认停止时返回 `settled:false` |
-| 终态 | 无动作 |
+| 终态 | 无取消动作；若带 GUI 待确认标记（`guiResidualUnconfirmed`）则由本次调用**人工确认清除**（不改终态，见 §5.5） |
 
 GUI agent 的取消是**尽力而为且诚实回报**，但各适配器能力不同：
 
 | 适配器 | 取消时是否点界面停止 | 是否回传 `guiStop` |
 |---|---|---|
 | Codex / Kimi Code / Qoder CN | 点停止按钮 + `cancelWaitMs` 内有界等待空闲 | 是（`idle=false` 时终态必须明示未确认停止） |
-| ZCode / TraeWork | **不点停止按钮**，只终止 MCP 侧观察并保留实例 | 否 |
+| ZCode / TraeWork | **不点停止按钮**，只终止 MCP 侧观察并保留实例 | 否（终态文案按「无停止结果可确认」如实披露） |
 
-关停路径 `shutdownInterrupt()`：abort 全部控制器 → 每任务有界等待 2s → 把 `running` 与 `queued` 一并标 `interrupted`。
+关停路径 `shutdownInterrupt()`（issue #14）：abort 全部控制器 → **spawn 类每任务有界等待 2s；GUI 类等到共享的 `shutdown.guiStopWaitMs`（默认 15s）全局 deadline** → 把 `running` 与 `queued` 一并标 `interrupted`。GUI 任务的终态文案按 `guiStop` 如实分流（已确认停止 / 未确认停止 / 无停止结果），**绝不写只对 spawn 子进程成立的「进程已终止」**。
+
+### 5.5 GUI 终态的事实字段与人工确认（issue #14）
+
+| 字段 | 语义 | 写入点 |
+|---|---|---|
+| `TaskMeta.guiStop` | 最近一次 abort 的 GUI 侧停止结果 `{clicked, idle}`（**所有** GUI agent 都落盘） | `abortTerminal()` / 运行结果落盘 |
+| `TaskMeta.interruptedCleanStop` | 本次 interrupted 是否**已确认**停止（仅 `guiStop.idle === true` 为 true） | `abortTerminal()` / `persistInterrupted()` |
+| `TaskMeta.guiResidualUnconfirmed` | 重启归档的 GUI 遗留任务待人工确认残留（重启时无任何连接可确认，故无条件置 true） | `initialize()`；由 `cancel_task` 清除 |
+| meta 块 `guiStopUnconfirmed` | 读侧单一判据：`guiResidualUnconfirmed===true \|\| interruptedCleanStop===false` | `metaFromTask()` |
+
+判定矩阵（红线 8 的单一实现，`guiStopDisclosure()`）：`idle===true` → 已确认停止；`idle===false` → 点击过但未确认；**字段缺失 → 无停止结果，同样不得声称已停止**。
+
+窗口名由 `profile.displayName` 派生（`guiAppNameOf()`，剥说明性括号与通用后缀，剥空退回原名），不再按 `agentId` 硬编码。**明确不做**：`initialize()` 不自动 CDP 重连去点停止——重启后无会话锚点、适配器对无归属证明的实例 fail-closed，自动动手风险高于收益。
 
 ---
 
@@ -577,7 +590,7 @@ CLI 子命令族（`node dist/index.js visual ...`）：`init`（写入禁用的
 
 | 配置 | 位置 | 说明 |
 |---|---|---|
-| server 配置 | `<数据目录>/config.json` | `concurrency.maxRunning`(2)、`defaultTaskTimeoutMs`(30min)、`verifyCommandTimeoutMs`(5min)、`verifyConcurrency`(2, 1..4)、`skills.autoInstall`(true) |
+| server 配置 | `<数据目录>/config.json` | `concurrency.maxRunning`(2)、`defaultTaskTimeoutMs`(30min)、`verifyCommandTimeoutMs`(5min)、`verifyConcurrency`(2, 1..4)、`shutdown.guiStopWaitMs`(15s，关停时 GUI 停止等待的全局上限)、`skills.autoInstall`(true) |
 | agent profile | `<数据目录>/agent-profiles.json` | 按 key **整键覆盖**内置 profile |
 | 项目登记 | `<数据目录>/projects.json` | 含每项目 `verify[]` 验收记录 |
 | 项目验收 | `<项目>/.tianshu-mcp/acceptance.json` | `checks[]`、`visual`、`requireChanges`(true)、`verifyConcurrency` |
@@ -717,9 +730,9 @@ CLI 子命令族（`node dist/index.js visual ...`）：`init`（写入禁用的
 6. **Kimi Code 的取消/提问续答/同名工作区歧义仅由 hermetic 集成测试覆盖**（未在真机点停、未触发真实提问卡片）。
 7. **视觉模块的平台证据边界**——macOS 证据来自 CI 托管 runner，未在维护者个人 macOS 设备复验。
 8. **验收 fail-closed 对纯分析任务的影响**——git 项目默认要求产生变更，纯问答/分析任务必须显式设 `requireChanges: false`。
-9. **文档注释中的工具计数已过时**——`src/mcp/tools.ts`、`src/mcp/handlers.ts`、`src/server.ts` 的头部注释仍写「9 个工具」，实际 `TOOL_DEFS` 为 11 项。属注释层面的陈旧，不影响运行时行为，建议后续顺手校正。
-10. **执行型子进程的 spawn 选项没有共用 helper**——`agents/spawn`、`verify/runner`、`visual/services`、`visual/content-command` 各自内联同一段平台分支字面量（`detached: process.platform !== "win32"`）。语义一致但四处重复，改动时容易漏改其中一处。
-11. **若干 profile 字段声明了但无消费方**——`gui.windowMode`、`gui.modelRequired`，以及 ZCode 的 `gui.stallTimeoutMs` / `gui.cancelWaitMs`（详见 §10.3 的提示框）。
+9. **执行型子进程的 spawn 选项没有共用 helper**——`agents/spawn`、`verify/runner`、`visual/services`、`visual/content-command` 各自内联同一段平台分支字面量（`detached: process.platform !== "win32"`）。语义一致但四处重复，改动时容易漏改其中一处。
+10. **若干 profile 字段声明了但无消费方**——`gui.windowMode`、`gui.modelRequired`，以及 ZCode 的 `gui.stallTimeoutMs` / `gui.cancelWaitMs`（详见 §10.3 的提示框）。
+11. **重启不做自动 GUI 停止**——`initialize()` 归档遗留 GUI 任务只如实标注 + 置 `guiResidualUnconfirmed`，不自动 CDP 重连去点停止：重启后无会话锚点，适配器对无归属证明的实例 fail-closed，自动动手风险高于收益。确认由人工经 `cancel_task` 完成（§5.5）。
 
 ---
 
