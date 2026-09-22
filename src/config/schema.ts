@@ -185,6 +185,18 @@ export const ServerConfigSchema = z.object({
       autoInstall: z.boolean().default(true),
     })
     .default({}),
+  /**
+   * server 关闭路径的预算（issue #14）。
+   * `guiStopWaitMs`：`shutdownInterrupt()` 对 GUI agent 任务"尽力点击界面停止 + 有界等待空闲"
+   * 的**全局**等待上限（全部 GUI 任务共享一份预算，避免多任务串行拖长退出），到期仍无法确认时
+   * 终态如实写「未确认停止」。与 `gui.cancelWaitMs`（cancel_task 路径）解耦：cancel 由调用方
+   * 主动等待，shutdown 受进程退出时限约束，因此默认值单独可调。
+   */
+  shutdown: z
+    .object({
+      guiStopWaitMs: z.number().int().positive().default(15_000),
+    })
+    .default({}),
 });
 export type ServerConfig = z.infer<typeof ServerConfigSchema>;
 

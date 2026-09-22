@@ -117,4 +117,21 @@ describe("S5 projects Zod schema + last-known-good", () => {
     const after = await dh.loadConfig();
     expect(after.concurrency?.maxRunning).toBe(7);
   });
+
+  // issue #14：server 关闭时 GUI 任务的停止等待预算必须可配置且默认值稳定
+  it("shutdown.guiStopWaitMs 默认 15000，且可由 config.json 覆盖", async () => {
+    const home = await mkHome();
+    const dh = new DataHome(home, silentLogger, { stub: STUB });
+    const p = path.join(home, "config.json");
+
+    // 未配置 → Zod 默认值
+    await fsp.writeFile(p, JSON.stringify({}));
+    const defaults = await dh.loadConfig();
+    expect(defaults.shutdown?.guiStopWaitMs).toBe(15_000);
+
+    // 显式配置 → 覆盖生效
+    await fsp.writeFile(p, JSON.stringify({ shutdown: { guiStopWaitMs: 3_000 } }));
+    const overridden = await dh.loadConfig();
+    expect(overridden.shutdown?.guiStopWaitMs).toBe(3_000);
+  });
 });

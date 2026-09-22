@@ -81,7 +81,7 @@ export const TOOL_DEFS: ToolDef[] = [
   {
     name: "cancel_task",
     description:
-      "取消运行中任务：CLI agent 终止进程树；GUI agent（codex 等）尽力点击界面停止按钮并等待 GUI 空闲（有界超时），未确认停止时结果中明示。排队中任务直接移除；终态任务无动作。",
+      "取消运行中任务：CLI agent 终止进程树；GUI agent（codex 等）尽力点击界面停止按钮并等待 GUI 空闲（有界超时），未确认停止时结果中明示。排队中任务直接移除。对已处于终态的 GUI 任务，本调用兼任人工确认入口：人工核实窗口中已无残留运行后调用，可清除 meta 的 guiStopUnconfirmed 待确认标记（不改终态）。",
     inputSchema: CancelTaskParamsSchema,
     capability: "write",
     requireApproval: true,

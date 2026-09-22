@@ -24,7 +24,13 @@ import { writeRepairPlan } from "./repair-plan.js";
 import { writeCodexFixPlan } from "../agents/codex/fixplan.js";
 import { buildFixPrompt } from "../agents/codex/input.js";
 import { extractFailureEvidence } from "../agents/codex/verify.js";
-import { type TaskMeta, type VerifyReport, isProjectWorkspace } from "../tasks/task.js";
+import {
+  type TaskMeta,
+  type VerifyReport,
+  isProjectWorkspace,
+  guiAppNameOf,
+  guiStopDisclosure,
+} from "../tasks/task.js";
 import { TaskStore } from "../tasks/task-store.js";
 import type { DataHome } from "../config/store.js";
 import { Logger } from "../util/log.js";
@@ -182,8 +188,10 @@ export class TaskOrchestrator {
           meta.actualModel = runRes.actualModel ?? meta.actualModel;
           meta.actualReasoningLevel = runRes.actualReasoningLevel ?? meta.actualReasoningLevel;
           meta.modelSource = runRes.actualModelSource ?? meta.modelSource;
-          meta.guiStop = runRes.guiStop;
         }
+        // GUI 停止结果对所有 agent 落盘（issue #14）：此前只写 qoder，导致其余 GUI agent
+        // 在 shutdown 竞态里丢失适配器已回报的停止结果，只能写"无停止结果可确认"。
+        if (runRes.guiStop) meta.guiStop = runRes.guiStop;
         if (runRes.session) {
           // 会话锚点按 agent 分槽存放：zcodeSession* 与 kimicodeSession* 语义不同
           // （旧快照里的 zcodeSession* 是 ZCode 会话，拿去 Kimi Code 里定位必然失败）。
@@ -414,8 +422,9 @@ export class TaskOrchestrator {
    * - 用户取消（cancelRequestedAt 已置位 / abortSource=user / 排队中）→ cancelled
    * - server 关闭/EOF/未显式取消的中止 → interrupted
    * - 超时 → failed(timeout) + timeout_killed（委托 timeoutTerminal）
-   * guiStop（issue #6）：取消时 GUI agent 的界面停止结果，如实写进终态文案——
-   * idle=false 时必须明示「GUI 内运行未停止」，编排方不得误以为已停。
+   * guiStop（issue #6 / #14）：GUI 停止结果必须如实写进**终态文案与结构化字段**——
+   * `idle=false` 与"无停止结果"（ZCode/TraeWork 无停止能力、或未及尝试）都不得声称已停止。
+   * 窗口名按 profile 派生，不再按 agentId 硬编码（旧实现把 zcode/qoder 都写成 "Codex" 是失真的）。
    */
   private async abortTerminal(guiStop?: {
     clicked: boolean;
@@ -428,28 +437,53 @@ export class TaskOrchestrator {
     }
     this.done = true;
     const meta = this.meta;
+    // 落结构化停止结果：manager 的 persistInterrupted 在 shutdown 竞态里依赖它决定文案，
+    // query_task 也可直接读 meta.guiStop 判断是否已确认停止。
+    if (guiStop) meta.guiStop = guiStop;
+    // 只有 driver=gui 的 agent 才谈「GUI 内运行是否已确认停止」：spawn 子进程由 killTree 终止，
+    // 对其套用 GUI 文案本身就是新的失真。
+    const disclosure = (await this.isGuiDriver())
+      ? guiStopDisclosure(meta.guiStop, await this.guiAppName())
+      : { clean: true, text: "" };
+    meta.interruptedCleanStop = disclosure.clean;
     // 用户取消只认结构化意图。排队中用户取消由 TaskManager.cancel 直接落终态，不会进入本分支；
     // orchestrator 尚在采集基线时 status 仍可能是 queued，server shutdown 不得因此误记为用户取消。
     const isCancelled = Boolean(meta.cancelRequestedAt) || meta.abortSource === "user";
     if (isCancelled) {
       meta.errorType = "cancelled";
       meta.abortSource = "user";
-      meta.lastMessage = meta.cancelReason ? `已取消：${meta.cancelReason}` : "已取消";
-      if (guiStop) {
-        // 窗口名按 agent 取，文案不得与实际 agent 不符（未确认停止必须明示「可能仍在继续」）。
-        const guiName = meta.agentId === "kimicode" ? "Kimi Code" : "Codex";
-        meta.lastMessage += guiStop.idle
-          ? "；GUI 内运行已停止。"
-          : `；GUI 内运行未确认停止，${guiName} 窗口中的任务可能仍在继续。`;
-      }
+      meta.guiResidualUnconfirmed = !disclosure.clean;
+      meta.lastMessage =
+        (meta.cancelReason ? `已取消：${meta.cancelReason}` : "已取消") + disclosure.text;
       await this.deps.store.updateStatus(meta, "cancelled", meta.lastMessage);
     } else {
       meta.errorType = "interrupted";
       meta.abortSource = "shutdown";
-      meta.lastMessage = "任务已中断（server 退出 / 父进程 EOF / 未显式取消的中止）。";
+      meta.guiResidualUnconfirmed = !disclosure.clean;
+      meta.lastMessage = `任务已中断（server 退出 / 父进程 EOF / 未显式取消的中止）。${disclosure.text}`;
       await this.deps.store.updateStatus(meta, "interrupted", meta.lastMessage);
     }
     return { status: meta.status, meta, reason: meta.lastMessage, summary: meta.lastMessage };
+  }
+
+  /** 该任务是否由 GUI driver 驱动；profile 不可读时保守按 GUI 处理（宁可多提示人工检查）。 */
+  private async isGuiDriver(): Promise<boolean> {
+    try {
+      const profile = await this.deps.dataHome.getProfile(this.meta.agentId);
+      return profile ? profile.driver === "gui" : true;
+    } catch {
+      return true;
+    }
+  }
+
+  /** 终态文案里的界面窗口称呼：profile 派生，读取失败回退 agentId（issue #14）。 */
+  private async guiAppName(): Promise<string> {
+    try {
+      const profile = await this.deps.dataHome.getProfile(this.meta.agentId);
+      return guiAppNameOf(profile?.displayName, this.meta.agentId);
+    } catch {
+      return guiAppNameOf(undefined, this.meta.agentId);
+    }
   }
 
   private async finish(

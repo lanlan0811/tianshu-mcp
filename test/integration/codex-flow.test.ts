@@ -824,7 +824,7 @@ describe("Codex TaskManager 恢复与取消", () => {
     expect(fake.sent).toBe(1); // 重观察轮没有第二次发送
   }, 60_000);
 
-  it("运行中取消：点击 GUI 停止按钮、有界等待落终态，文案明示 GUI 已停止", async () => {
+  it("运行中取消：点击 GUI 停止按钮、有界等待落终态，文案明示 GUI 已确认停止", async () => {
     const project = await makeTmpRoot("codex-mgr-cancel");
     cleanup.push(project);
     const fake = new CancelableCodex(project);
@@ -850,7 +850,14 @@ describe("Codex TaskManager 恢复与取消", () => {
 
     const final = await manager.getMeta(meta.taskId);
     expect(final?.status).toBe("cancelled");
-    expect(final?.lastMessage).toContain("GUI 内运行已停止");
+    // issue #14：取消路径文案与结构化字段走同一套如实判定（guiStopDisclosure），
+    // 窗口名由 profile.displayName 派生（本夹具为 "Codex test"）
+    expect(final?.lastMessage).toContain("已确认 Codex test 内运行停止");
+    expect(final?.lastMessage).toContain("已取消：测试取消");
+    expect(final?.guiStop).toEqual({ clicked: true, idle: true });
+    expect(final?.interruptedCleanStop).toBe(true);
+    expect(final?.guiResidualUnconfirmed).toBe(false);
+    expect(final?.lastMessage).not.toContain("进程已终止");
     expect(final?.finishedAt).toBeTruthy();
     expect(fake.stopClicked).toBe(true);
     expect(fake.sent).toBe(1);

@@ -41,6 +41,9 @@ export async function buildServer(
   await dataHome.init();
   const cfg = await dataHome.loadConfig();
   const maxRunning = opts.maxRunningOverride ?? cfg.concurrency?.maxRunning ?? 2;
+  // shutdown 预算（issue #14）：GUI 任务在 server 退出时的停止等待上限，注入 manager 供
+  // shutdownInterrupt() 使用；与 profile 的 gui.cancelWaitMs（取消路径）解耦。
+  const guiStopWaitMs = cfg.shutdown?.guiStopWaitMs ?? 15_000;
 
   const store = new TaskStore(home, logger);
   const registry = new AgentAdapterRegistry(() => dataHome.loadProfiles(), logger);
@@ -53,7 +56,7 @@ export async function buildServer(
     logger,
     makeBuildCtx({ store, dataHome }),
   );
-  await manager.initialize(maxRunning);
+  await manager.initialize({ maxRunning, guiStopWaitMs });
 
   // 技能自检安装（失败仅告警不阻断，§17.5）；后台执行，不阻塞握手
   if (!opts.skipSkillInstall && (cfg.skills?.autoInstall ?? true)) {

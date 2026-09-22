@@ -58,6 +58,7 @@ export type TaskEventName =
   | "cancelled"
   | "interrupted"
   | "timeout_killed"
+  | "gui_residual_acknowledged"
   | "note";
 
 export interface TaskEvent {
@@ -217,7 +218,24 @@ export interface TaskMeta {
   /** Qoder CN 实际生效的模型 / 等级 / 模型来源（由适配器回读，写入任务报告） */
   actualModel?: string;
   actualReasoningLevel?: string;
+  /**
+   * 最近一次 abort 得到的 GUI 侧停止结果（`clicked`/`idle`）。
+   * 语义为「本次中断实际尝试过什么」：`idle=true` 才是**已确认**界面空闲；
+   * 字段缺失表示该 agent 无停止能力或未及尝试——**不得**据此声称已停止（issue #14）。
+   */
   guiStop?: { clicked: boolean; idle: boolean };
+  /**
+   * 本次 interrupted 是否**已确认** GUI 内运行停止（issue #14）。
+   * 仅当 `guiStop.idle === true` 时为 true；false/缺失都表示未确认停止，
+   * 终态文案必须明示「窗口中的任务可能仍在继续」。
+   */
+  interruptedCleanStop?: boolean;
+  /**
+   * GUI 任务的 interrupted 终态尚待人工确认残留（issue #14）。
+   * 重启归档（`initialize`）时服务器对 GUI 无任何连接，必然无法确认，故无条件置 true；
+   * 由 `cancel_task` 对终态任务做人工确认后清除。
+   */
+  guiResidualUnconfirmed?: boolean;
   /** Kimi Code 专用会话锚点（同样不复用 zcodeSession\*，理由同上） */
   kimicodeSessionId?: string;
   kimicodeSessionTitle?: string;
@@ -277,4 +295,58 @@ export function isProjectWorkspace(meta: Pick<TaskMeta, "workspaceMode">): boole
 
 export function isDefaultWorkspace(meta: Pick<TaskMeta, "workspaceMode">): boolean {
   return workspaceModeOf(meta) === "default";
+}
+
+/* ---------------- GUI 停止结果的如实披露（issue #14） ---------------- */
+
+/**
+ * 由 profile.displayName 派生「界面窗口称呼」，供终态文案使用。
+ * 剥掉括号内的形式说明与「桌面端 / 客户端 / Desktop」等通用后缀——写进文案的是窗口名，
+ * 不是 profile 文档里的自我介绍；无 displayName 时回退 agentId。
+ * 纯字符串处理，无平台/文件系统依赖。
+ * @param displayName profile.displayName（可能缺失）
+ * @param agentId 回退用的 agentId
+ */
+export function guiAppNameOf(displayName: string | undefined, agentId: string): string {
+  const raw = (displayName ?? "").trim() || agentId;
+  // 只剥"说明性质"的括号段（含 GUI/桌面/客户端/Desktop 等描述词），以及这些通用后缀词本身。
+  // 刻意不做无限剥离：像「TraeWork（测试）」这类有实际意义的括号段必须保留；
+  // 凡是剥空的都不采纳，退回原名——文案可以长，不能失真。
+  const stripped = raw
+    .replace(/[（(]([^（()）]*)[)）]/g, (whole: string, inner: string) =>
+      /gui|desktop|桌面|客户端|应用|窗口/i.test(inner) ? "" : whole,
+    )
+    .replace(/\b(desktop|gui)\b/gi, "")
+    .replace(/桌面端|桌面版/g, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/^[\s\-–—·]+|[\s\-–—·]+$/g, "")
+    .trim();
+  return stripped || raw.replace(/\s{2,}/g, " ").trim();
+}
+
+/**
+ * GUI 停止结果的如实披露（红线 8 的单一实现）。
+ * 判定矩阵：`idle === true` → 已确认停止；`idle === false` → 点击过但未确认；
+ * `undefined` → 无停止结果（该 agent 无停止能力或未及尝试）——后两者都**不得**声称已停止。
+ * @param stop 适配器回报的 guiStop；缺失即无停止结果
+ * @param app 界面窗口称呼（见 guiAppNameOf）
+ * @returns undefined 表示无需披露（非 GUI agent 调用方自行判断）
+ */
+export function guiStopDisclosure(
+  stop: { clicked: boolean; idle: boolean } | undefined,
+  app: string,
+): { clean: boolean; text: string } {
+  if (stop?.idle === true) {
+    return { clean: true, text: `；已确认 ${app} 内运行停止。` };
+  }
+  if (!stop) {
+    return {
+      clean: false,
+      text: `；${app} 内运行无停止结果可确认，窗口中的任务可能仍在继续，请人工打开 ${app} 确认无残留运行。`,
+    };
+  }
+  return {
+    clean: false,
+    text: `；${app} 内运行未确认停止，窗口中的任务可能仍在继续，请人工打开 ${app} 确认无残留运行。`,
+  };
 }

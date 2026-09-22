@@ -14,6 +14,8 @@ import {
   ACTIVE_STATUSES,
   isTerminal,
   isProjectWorkspace,
+  guiAppNameOf,
+  guiStopDisclosure,
 } from "./task.js";
 import type { TraeworkMode, ReasoningLevel } from "../config/schema.js";
 import { TaskOrchestrator } from "../loop/fix-loop.js";
@@ -68,6 +70,15 @@ function queueKeyOf(meta: Pick<TaskMeta, "workspaceMode" | "projectPath">): stri
   return isProjectWorkspace(meta) ? meta.projectPath : DEFAULT_WORKSPACE_QUEUE_KEY;
 }
 
+/**
+ * spawn 类任务在 server 关闭时等待 `killTree` 收尾的预算（issue #14 保留原值）。
+ * GUI 类任务不复用该值：其停止等待预算见 `shutdown.guiStopWaitMs`（默认 15s）。
+ */
+const SPAWN_INTERRUPT_SETTLE_MS = 2000;
+
+/** `initialize()` 参数：兼容历史的数字签名（既有多处测试调用）。 */
+export type InitializeOptions = number | { maxRunning: number; guiStopWaitMs?: number };
+
 export class TaskManager {
   private tasks = new Map<string, TaskMeta>();
   private queue = new Map<string, string[]>();
@@ -75,6 +86,12 @@ export class TaskManager {
   private runningCount = 0;
   private abortControllers = new Map<string, AbortController>();
   private maxRunning = 2;
+  /**
+   * server 关闭时 GUI agent 任务的停止等待预算（issue #14）：
+   * 由 `initialize()` 注入（config.json 的 `shutdown.guiStopWaitMs`），与 profile 的
+   * `gui.cancelWaitMs` 解耦——shutdown 受进程退出时限约束，取消路径由调用方主动等待。
+   */
+  private guiStopWaitMs = 15_000;
 
   constructor(
     private readonly store: TaskStore,
@@ -85,18 +102,64 @@ export class TaskManager {
     private readonly buildCtx: (meta: TaskMeta, round: number, feedback?: string) => TaskContext,
   ) {}
 
-  /** 启动前注入并发上限，并归档遗留活动任务（不续跑） */
-  async initialize(maxRunning: number): Promise<void> {
+  /**
+   * 启动前注入并发上限与 shutdown 预算，并归档遗留活动任务（不续跑）。
+   * 遗留的 GUI 任务必须如实标注「GUI 内运行未确认停止，请人工检查」（issue #14）：
+   * 此刻服务器对该 GUI 无任何连接，必然无法确认，绝不写「进程已终止」。
+   */
+  async initialize(opts: InitializeOptions): Promise<void> {
+    const { maxRunning, guiStopWaitMs } =
+      typeof opts === "number" ? { maxRunning: opts, guiStopWaitMs: undefined } : opts;
     this.maxRunning = maxRunning;
+    if (guiStopWaitMs !== undefined) this.guiStopWaitMs = guiStopWaitMs;
     const legacy = await this.store.scanLegacyActive();
     for (const meta of legacy) {
       this.tasks.set(meta.taskId, meta);
       meta.errorType = "interrupted";
       meta.abortSource = "shutdown";
-      meta.lastMessage = "server 重启遗留（启动时归档，不续跑）。";
-      await this.store.updateStatus(meta, "interrupted", "server 重启遗留归档");
+      // 遗留快照里的 guiStop 是上一次 abort 的结果，不构成本次重启后的确认，先清掉。
+      delete meta.guiStop;
+      let message = "server 重启遗留（启动时归档，不续跑）。";
+      if (await this.isGuiDriver(meta.agentId)) {
+        const app = await this.guiAppName(meta.agentId);
+        const disclosure = guiStopDisclosure(undefined, app);
+        meta.interruptedCleanStop = false;
+        meta.guiResidualUnconfirmed = true;
+        // 启动归档没有"点击停止"这一步（适配器要求实例归属证明，缺失即 fail-closed），
+        // 因此文案用「无停止结果可确认」而不是「未确认停止」。
+        message = `server 重启遗留（启动时归档，不续跑）${disclosure.text}`;
+      }
+      meta.lastMessage = message;
+      // 逐个 await：与 shutdownInterrupt 同款的「先写状态再等快照」竞态必须避免，
+      // 否则紧随其后的 query_task 可能读到半截 meta。
+      await this.store
+        .updateStatus(meta, "interrupted", "server 重启遗留归档")
+        .catch((e) => this.logger.warn(`遗留任务 ${meta.taskId} 归档失败：${String(e)}`));
     }
     if (legacy.length) this.logger.warn(`启动归档 ${legacy.length} 个遗留任务（interrupted）`);
+  }
+
+  /** agent 是否由 GUI 驱动（driver="gui"）。profile 不可读时保守按 GUI 处理，绝不谎报已停止。 */
+  private async isGuiDriver(agentId: string): Promise<boolean> {
+    try {
+      const profiles = await this.dataHome.loadProfiles();
+      const profile = profiles[agentId];
+      if (!profile) return true;
+      return profile.driver === "gui";
+    } catch (e) {
+      this.logger.warn(`读取 agent profile 失败（${agentId}），按 GUI 保守处理：${String(e)}`);
+      return true;
+    }
+  }
+
+  /** 终态文案里的界面窗口称呼（profile 派生，无法读取时回退 agentId）。 */
+  private async guiAppName(agentId: string): Promise<string> {
+    try {
+      const profiles = await this.dataHome.loadProfiles();
+      return guiAppNameOf(profiles[agentId]?.displayName, agentId);
+    } catch {
+      return guiAppNameOf(undefined, agentId);
+    }
   }
 
   get activeCount(): number {
@@ -310,11 +373,13 @@ export class TaskManager {
    * 返回 settled 表示任务是否已在本调用内落终态（issue #6）：活动中任务会 abort 编排
    * 协程，GUI agent 侧 run 协程先尽力点击界面停止按钮并等待空闲（gui.cancelWaitMs，
    * 默认 15s），本方法有界等待其落终态后再返回，取消结果不再"请求即成功"。
+   * 对**已是终态**的 GUI 任务，本方法兼任「人工确认消除残留待确认状态」的入口（issue #14），
+   * 此时返回 cleared=true（见方法末尾注释）。
    */
   async cancel(
     taskId: string,
     reason?: string,
-  ): Promise<{ found: boolean; reason?: string; settled?: boolean }> {
+  ): Promise<{ found: boolean; reason?: string; settled?: boolean; cleared?: boolean }> {
     const meta = await this.getMeta(taskId);
     if (!meta) return { found: false, reason: `任务不存在: ${taskId}` };
     if (meta.status === "queued") {
@@ -377,30 +442,57 @@ export class TaskManager {
           "已请求取消，但任务尚未在本调用内落终态（GUI 侧停止可能未完成）；请稍后 query_task 复核",
       };
     }
+    // 终态任务：不取消，但承担 issue #14 的「人工确认消除」职责——GUI 任务被 shutdown/重启
+    // 归档为 interrupted 时会留下「GUI 内运行未确认停止」的待确认状态，人与 AI 检查过 GUI
+    // 无残留运行后，用同一个 cancel_task 清除标记（不新增工具）。仅清标记，不改终态与 errorType。
+    if (meta.guiResidualUnconfirmed || meta.interruptedCleanStop === false) {
+      const app = await this.guiAppName(meta.agentId);
+      const note = reason
+        ? `已确认人工核查（${app}）无残留运行：${reason}`
+        : `已确认人工核查（${app}）无残留运行`;
+      meta.guiResidualUnconfirmed = false;
+      meta.interruptedCleanStop = true;
+      meta.lastMessage = `${meta.lastMessage ?? ""}（${note}）`;
+      await this.store.appendEvent(meta.taskId, "gui_residual_acknowledged", meta.status, note);
+      await this.store.writeSnapshot(meta);
+      this.tasks.set(meta.taskId, meta);
+      return {
+        found: true,
+        settled: true,
+        cleared: true,
+        reason: `任务已处于终态（${meta.status}）：${note}`,
+      };
+    }
     return { found: true, reason: `任务已处于终态（${meta.status}），无需取消`, settled: true };
   }
 
-  /** server 退出：终止全部活动任务并标 interrupted（排队中任务也归档） */
+  /**
+   * server 退出：终止全部活动任务并标 interrupted（排队中任务也归档）。
+   * GUI agent 是外部桌面应用，server 对其进程没有所有权：abort 后适配器至多"尽力点击界面停止"。
+   * 因此这里给 GUI 类任务一份**全局共享**的 `guiStopWaitMs` 预算（issue #14），让适配器的停止逻辑
+   * 跑完并把结果经 orchestrator / meta 如实落盘；到期仍无法确认时由 `persistInterrupted` 写「未确认停止」。
+   * 绝不写「进程已终止」这类只对 spawn 子进程成立的断言。
+   */
   async shutdownInterrupt(): Promise<void> {
     for (const ac of this.abortControllers.values()) ac.abort();
-    // 有界等待 kill：每个任务最多给 2s，全部并行的等待不超过 ~2s，避免固定 400ms 竞态
+    // 全局 deadline：N 个 GUI 任务并行等待，退出的最坏耗时仍是 guiStopWaitMs（不是 N 倍）
+    const guiDeadline = Date.now() + this.guiStopWaitMs;
     const killPromises: Promise<void>[] = [];
     for (const id of this.running) {
       const meta = this.tasks.get(id);
       if (meta && ACTIVE_STATUSES.includes(meta.status)) {
-        killPromises.push(this.persistInterrupted(meta));
+        killPromises.push(this.persistInterrupted(meta, guiDeadline));
       }
     }
     await Promise.all(killPromises);
     // 排队中任务归档
-    for (const [taskId, meta] of this.tasks) {
+    for (const meta of this.tasks.values()) {
       if (meta.status === "queued") {
         meta.status = "interrupted";
         meta.errorType = "interrupted";
         meta.abortSource = "shutdown";
         meta.lastMessage = "server 退出，排队中任务已归档";
         await this.store.updateStatus(meta, "interrupted", meta.lastMessage).catch(() => {});
-        void taskId;
       }
     }
     this.running.clear();
@@ -408,21 +500,34 @@ export class TaskManager {
     this.queue.clear();
   }
 
-  /** 有界等待子进程真正关闭后落 interrupted（server 关闭路径，不得误记为 cancelled） */
-  private async persistInterrupted(meta: TaskMeta): Promise<void> {
-    const deadline = Date.now() + 2000;
+  /**
+   * 有界等待子进程/停止动作收尾后落 interrupted（server 关闭路径，不得误记为 cancelled）。
+   * - spawn 类：沿用 2s 预算（给 `killTree` 收尾）；
+   * - GUI 类：等到共享的 `guiDeadline`，把适配器的停止结果如实写进文案与字段（issue #14）。
+   * 若 orchestrator 已在本预算内落了终态，则直接返回，保留它更精确的文案。
+   */
+  private async persistInterrupted(meta: TaskMeta, guiDeadline: number): Promise<void> {
+    const gui = await this.isGuiDriver(meta.agentId);
+    const deadline = gui ? guiDeadline : Date.now() + SPAWN_INTERRUPT_SETTLE_MS;
     for (;;) {
       if (!ACTIVE_STATUSES.includes(meta.status)) return; // orchestrator 已落终态
       if (Date.now() >= deadline) break;
       await new Promise((r) => setTimeout(r, 50));
     }
-    if (ACTIVE_STATUSES.includes(meta.status)) {
-      meta.status = "interrupted";
-      meta.errorType = "interrupted";
-      meta.abortSource = "shutdown";
+    if (!ACTIVE_STATUSES.includes(meta.status)) return;
+    meta.status = "interrupted";
+    meta.errorType = "interrupted";
+    meta.abortSource = "shutdown";
+    if (gui) {
+      const app = await this.guiAppName(meta.agentId);
+      const disclosure = guiStopDisclosure(meta.guiStop, app);
+      meta.interruptedCleanStop = disclosure.clean;
+      meta.guiResidualUnconfirmed = !disclosure.clean;
+      meta.lastMessage = `server 退出${disclosure.text}`;
+    } else {
       meta.lastMessage = "server 退出，进程已终止";
-      await this.store.updateStatus(meta, "interrupted", meta.lastMessage).catch(() => {});
     }
+    await this.store.updateStatus(meta, "interrupted", meta.lastMessage).catch(() => {});
   }
 
   private enqueue(meta: TaskMeta): void {

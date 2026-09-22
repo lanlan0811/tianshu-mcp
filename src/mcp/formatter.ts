@@ -43,6 +43,11 @@ export interface MetaBlockFields {
   actualReasoningLevel?: string;
   modelSource?: "default" | "custom";
   guiStop?: {clicked: boolean; idle: boolean};
+  /**
+   * GUI 任务终态是否**未确认**停止（issue #14）：true 时窗口中的任务可能仍在运行，
+   * 必须先人工确认再重派；确认后用 cancel_task 清除（清除后回 false）。
+   */
+  guiStopUnconfirmed?: boolean;
   progressSummary?: string;
   lastRunSignal?: string;
 }
@@ -105,6 +110,10 @@ export function metaFromTask(meta: TaskMeta, extra?: Partial<MetaBlockFields>): 
     actualReasoningLevel: meta.actualReasoningLevel,
     modelSource: meta.modelSource,
     guiStop: meta.guiStop,
+    // 待确认的两个来源取并集：shutdown 路径的 interruptedCleanStop===false，以及重启归档的
+    // guiResidualUnconfirmed。未确认时为 true——编排方据此禁止直接重派。
+    guiStopUnconfirmed:
+      meta.guiResidualUnconfirmed === true || meta.interruptedCleanStop === false ? true : undefined,
     lastRunSignal: meta.lastRunSignal,
     ...extra,
   };

@@ -4,6 +4,7 @@ AGENTS.md
 .codex/*
 .trae/*
 .codebuddy/*
+.dsh/*
 .rivet/*
 
 # tianshu-mcp-web目录是开发tianshu-mcp官网的目录，进行开发mcp时请勿修改官网开发目录代码
