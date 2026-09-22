@@ -23,6 +23,7 @@ import { Logger } from "../../src/util/log.js";
 import { normPath } from "../../src/util/path.js";
 import { makeGitProject, rmrf } from "../test-utils.js";
 import type { AgentAdapter, AgentRunResult } from "../../src/agents/adapter.js";
+import type { AgentProfile } from "../../src/config/schema.js";
 import type { TaskMeta } from "../../src/tasks/task.js";
 
 type AbortScript = { kind: "noResult" } | { kind: "idle"; idle: boolean };
@@ -103,6 +104,24 @@ let logger: Logger;
 let home: string;
 const cleanup: string[] = [];
 
+/**
+ * 本文件用的 codex profile：以内置 codex（driver=gui）为底，只覆盖可执行探测。
+ *
+ * 为什么必须覆盖：编排器在调用 adapter.run 之前先 `registry.resolve(agentId)`，**未通过探测就
+ * 直接落 `failed(agent_unresolved)`、根本不会进入 running**。内置 codex profile 走 MSIX 发现
+ * （`discoverCodex`），在 Windows 真机能探测到、在 CI 的 Linux/macOS runner 上必然探测不到——
+ * 那会让断言"等 running"变成平台相关的偶发失败（首次 CI 即如此，9 个 job 全挂）。
+ * 这里显式给一个存在的 command，让 resolve 走通用路径稳定通过（GUI driver 不用它 spawn）。
+ */
+function codexTestProfile(): AgentProfile {
+  return {
+    ...(BUILTIN_PROFILES["codex"] as AgentProfile),
+    status: "ready",
+    command: process.execPath,
+    executableDiscovery: undefined,
+  };
+}
+
 beforeAll(async () => {
   home = path.join(process.env.TEMP ?? "/tmp", `tianshu-issue14-${Date.now()}`);
   fs.mkdirSync(home, { recursive: true });
@@ -118,7 +137,7 @@ async function makeManager(
   adapter: CodexGuiAdapter,
   guiStopWaitMs: number,
 ): Promise<{ manager: TaskManager; project: string }> {
-  const data = new DataHome(home, logger, BUILTIN_PROFILES);
+  const data = new DataHome(home, logger, { ...BUILTIN_PROFILES, codex: codexTestProfile() });
   await data.init();
   const store = new TaskStore(home, logger);
   const registry = new AgentAdapterRegistry(() => data.loadProfiles(), logger);
@@ -225,7 +244,7 @@ describe("issue #14：GUI 任务的 shutdown/重启终态不得谎报已停止",
 
   it("重启归档：遗留 GUI 任务置 guiResidualUnconfirmed + 人工检查文案，并以 cancel_task 确认清除", async () => {
     // 手工造遗留 running 快照（真实重启场景：上一进程被 kill，来不及落终态）
-    const data = new DataHome(home, logger, BUILTIN_PROFILES);
+    const data = new DataHome(home, logger, { ...BUILTIN_PROFILES, codex: codexTestProfile() });
     await data.init();
     const store = new TaskStore(home, logger);
     const taskId = `tsk_issue14_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -282,7 +301,7 @@ describe("issue #14：GUI 任务的 shutdown/重启终态不得谎报已停止",
     // 独立 home：避免与其它用例的 agent-profiles/task 目录互相干扰
     const spawnHome = path.join(home, `spawn-${Date.now()}`);
     fs.mkdirSync(spawnHome, { recursive: true });
-    const data = new DataHome(spawnHome, logger, BUILTIN_PROFILES);
+    const data = new DataHome(spawnHome, logger, { ...BUILTIN_PROFILES, codex: codexTestProfile() });
     await data.init();
     // 写一个最小 spawn profile：orchestrator 在调用 adapter.run 之前先 registry.resolve()，
     // 未配置的 agentId 会以 agent_unresolved 失败（本用例要验证的是中断文案，不是探测）。
@@ -303,6 +322,9 @@ describe("issue #14：GUI 任务的 shutdown/重启终态不得谎报已停止",
             timeoutMs: 120_000,
             killTree: "taskkill",
           },
+          // 同步落一份 codex 覆盖：loadProfiles 会缓存整份合并结果，
+          // 只写 stub 会把内置 codex 的探测覆盖也一并回退成 MSIX 发现（CI 上必然失败）。
+          codex: codexTestProfile(),
         },
       }),
       "utf8",
