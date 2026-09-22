@@ -14,7 +14,7 @@
 - 已复现并修复 `isolate:false` 导致 Kimi 探测命令 mock 泄漏到 Git 基线测试的问题（`vitest.config.ts` 的 unit project 恢复文件级隔离）。本机全量回归：**826 passed / 12 skipped（78 个测试文件通过 + 3 个真实浏览器文件按设计 skip）**。
 - Windows 公共 MCP 默认模型（Qwen3.8-Flash / 低）已有工作区开发与外部乘法契约验收已通过；自定义模型（deepseek-v4-flash / 高）新工作区登记与首次 clamp 契约验收已通过。独立夹具受控回归被验收拒绝，修复计划已生成并发送原会话，用户允许 Qoder 读取工作区外计划文件后，仅恢复观察原会话，修复与再次验收均通过。macOS research 禁止派发。
 - 模型菜单选择后的异步关闭必须确认后才能重开，已补回归用例并通过真实模型管理读回。类型检查、lint、构建、6 项严格 stdio 检查、`npm pack` 内容校验与干净消费者安装 + 严格 stdio 检查已在本机通过。
-- 使用及恢复方法见 [Qoder 中文文档](docs/qoder-cdp.md) / [English guide](docs/qoder-cdp.en.md)。最终提交、双仓同步、同 SHA CI/Release 与 npm 发布尚未完成。
+- 使用及恢复方法见 [Qoder 中文文档](docs/qoder-cdp.md) / [English guide](docs/qoder-cdp.en.md)。发布提交 `e2d4689` 已同步双仓且 CI 22 个作业全绿；`v0.5.6` tag、Release、Gitee 发行版与 npm 发布待完成（缺一步都不得称作已发布）。
 
 ## 0. 五分钟上手
 
@@ -67,16 +67,16 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build
 | 项 | 状态 |
 |---|---|
 | 分支 | `master`（**只在此分支提交**，不建其他分支） |
-| 版本 / 许可证 | `0.5.6`（已发布版本 `0.5.5`）/ Apache-2.0 |
-| 标签 | `v0.1.0` … `v0.5.5`（均已推双仓） |
-| 工作树 | 干净；`github/master` 与 `gitee/master` 均同步（发布提交见 `git log` 的 `chore(release): v0.5.5`） |
+| 版本 / 许可证 | `0.5.6`（开发中；最近已发布 `0.5.5`）/ Apache-2.0 |
+| 标签 | `v0.1.0` … `v0.5.5`（均已推双仓）；`v0.5.6` 待发布提交的 CI 全绿后推送 |
+| 工作树 | 干净；`github/master` 与 `gitee/master` 均同步至发布提交 `e2d4689`（`实现 Qoder CN GUI 驱动基础与安装探测`） |
 | 测试 | **826 passed / 12 skipped**（78 个测试文件通过 + 3 个真实浏览器文件按设计 skip；含 Qoder 新增约 60 项用例） |
-| 门禁 | lint 0 warning、typecheck clean、build 成功且构建后无跟踪差异、`check:stdio` 6/6 场景通过、`npm pack` 内容校验与干净消费者安装通过；12 项真实浏览器门禁用例在 Windows 10 本机以 `TIANSHU_VISUAL_BROWSER_TEST=1` 跑通 12/12 |
-| CI | `build-test`（ubuntu/windows/macos × Node 20/22/24）+ `pack-check`，另加 `visual-browser` 真实浏览器矩阵（ubuntu/windows + macos-15-intel/macos-15 × Node 20/22/24）；提交 `d762581` 的 22 个作业全绿（[run 35093217490](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35093217490)），随 v0.5.4 tag 全绿 |
-| npm | `tianshu-mcp@0.5.5` 已发布（`latest`）；`npx -y tianshu-mcp` 即为该版本。发布步骤见 `docs/npm-publish-guide.md` |
+| 门禁 | lint 0 warning、typecheck clean、build 成功且构建后无跟踪差异、`check:stdio` 6/6 场景通过、`npm pack`（230 文件）内容校验与干净消费者安装 + 严格 stdio 检查通过；12 项真实浏览器门禁用例在 Windows 10 本机以 `TIANSHU_VISUAL_BROWSER_TEST=1` 跑通 12/12 |
+| CI | `build-test`（ubuntu/windows/macos × Node 20/22/24）+ `pack-check`，另加 `visual-browser` 真实浏览器矩阵（ubuntu/windows + macos-15-intel/macos-15 × Node 20/22/24）；提交 `e2d4689` 的 22 个作业全绿（[run 35740269977](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35740269977)） |
+| npm | `tianshu-mcp@0.5.5` 已发布（`latest`）；`0.5.6` 发布步骤见 `docs/npm-publish-guide.md` |
 | GitHub Release | 推送 `v*` tag 触发 `.github/workflows/release.yml`：先跑完整门禁并校验「tag 版本 === package.json 版本」，正文由 `docs/release-v<ver>.md` + `.en.md` 双语合成（缺文档即报错，不产出空壳正文），**要求同 SHA 的成功 CI**，并附 `tianshu-mcp-<ver>.tgz` |
 | Gitee 发行版 | 由 `scripts/gitee-release.mjs` 用仓库 Secret `GITEE_TOKEN` 幂等补齐；**缺少凭据时工作流阻塞**（不再静默跳过、不冒充发布成功） |
-| 本次发布实测 | CI `9f160fe` 全绿（[run 35472766462](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35472766462)）；`Release` 全绿并产出 [v0.5.5 发行](https://github.com/lanlan0811/tianshu-mcp/releases/tag/v0.5.5)（[run 35473249541](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35473249541)，附 `tianshu-mcp-0.5.5.tgz`）；Gitee 镜像发行版 `v0.5.5` 已建；双仓 `v0.5.5` 与 `master` 均指向 `9f160fe`；npm `tianshu-mcp@0.5.5` 已发布（`latest`），`dist.shasum` = `ae020f31…` |
+| 本次发布实测 | 待 `v0.5.6` tag 推送后回填（CI/Release/Gitee/npm 四段证据） |
 
 ### 2.1 Agent 适配现状
 
@@ -225,7 +225,7 @@ src/
 
 `TaskOrchestrator.runAgentOnce` 的分支逻辑：`adapter.run` 存在 → 调用它；否则走 `runChild`。**这是唯一需要理解的双路径接缝。**
 
-### 4.2 四个 GUI adapter 的执行顺序（实测结论，勿随意调整）
+### 4.2 五个 GUI adapter 的执行顺序（实测结论，勿随意调整）
 
 **TraeWork**（详见 §9.1 / §9.2）：
 
@@ -272,6 +272,23 @@ MSIX 发现（Appx 查询优先 + 扫盘回退） → COM 激活 + 专属 user-d
 > 未登记的工作区经原生「添加工作区」对话框导入（与 ZCode/TraeWork 同构，Win32 坐标点击）；
 > 环境类等待项分别转 `close_existing_instance` / `login_required` / `system_permission` / `setup_recovery`，
 > 提问转 `agent_question`，等待用户确认转 `user_confirmation`，均由 `continue_task` 恢复。
+
+**Qoder CN**（详见 `docs/qoder-cdp.md` 与 §9.12）：
+
+```text
+发现安装（显式 gui.exePath → D 盘优先候选 → 相对路径模板 → 标准目录）
+  → 启动/复用 CDP 实例（已有实例无可用 CDP → needs_user，保留现场不重启）
+  → 新建会话 → 绑定工作区（完整路径判据；未登记走「新建工作区 → 添加可读写文件夹」原生导入）
+  → 选模型（默认/自定义分组精确匹配 + modelSource 消歧）→ 思考等级（模型管理保存后重开回读）
+  → 发送（先落检查点 → 标记 + 有界确认） → 运行检测（data-send-button=generating）
+  → 本轮 user id ↔ assistant:<user id> 配对且出现 data-assistant-actions → 轮询到完成
+```
+
+> 完成判定**必须绑定本轮用户消息**：历史回复里的“完成”、界面静止、连接断开都不算；
+> 审批/提问优先于停止按钮（停在等待用户的界面先判 `needs_user`，不要死锁成 `running`）。
+> 发送与答题提交前落检查点（`qoder-session.json`），未确认回执时只观察、不自动重发；
+> `continue_task` 对审批/登录等环境等待只恢复观察，仅 `agent_question` 把答案写回原会话。
+> 取消/超时只停**已绑定的原会话**并回读，未确认时终态明示「GUI 内运行未确认停止」并保留实例阻止重派。
 
 ### 4.3 视觉验收的一条独立链路（v0.5.0 起，内容校验自 v0.5.4）
 
