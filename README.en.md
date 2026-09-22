@@ -215,6 +215,7 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 | [docs/codex-windows-smoke.en.md](docs/codex-windows-smoke.en.md) | Codex Windows hardware record (incl. verify-fail → auto plan → repair-pass loop) |
 | [docs/release-v0.3.4.en.md](<docs/release-v0.3.4.en.md>) | v0.3.4 release notes (ZCode project/model read-back, initialization recovery, session dispatch confirmation, issues #8/#9/#10) |
 | [docs/qoder-cdp.en.md](docs/qoder-cdp.en.md) | Qoder CN GUI driver: installation discovery and instance reuse, full-path workspaces with native import, `modelSource` and global Model Management reasoning tiers, send/answer checkpoints, liveness judging and same-session repair, hardware evidence and uncovered items |
+| [docs/release-v0.5.7.en.md](<docs/release-v0.5.7.en.md>) | v0.5.7 release notes (orchestration skill docs rewritten against the code: parameter matrix, default precedence, tier correction and the qoder section; no runtime change) |
 | [docs/release-v0.5.6.en.md](<docs/release-v0.5.6.en.md>) | v0.5.6 release notes (Qoder CN GUI adapter, hardware acceptance scope, macOS research boundary) |
 | [docs/release-v0.5.5.en.md](<docs/release-v0.5.5.en.md>) | v0.5.5 release notes (Kimi Code GUI adapter: dual renderer processes, full-path workspace binding with native import, three-stage model selection and tier validation, run detection and recovery) |
 | [docs/release-v0.5.4.en.md](<docs/release-v0.5.4.en.md>) | v0.5.4 release notes (optional AI visual content validation: user-supplied command delegation, majority-vote debouncing, warning-only by default) |
@@ -264,7 +265,7 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 - **Engineering / CI** ✅
   - GitHub Actions: `CI` (`build-test` ubuntu/windows/macos × Node 20/22/24 + `pack-check`, plus a `visual-browser` real-browser matrix ubuntu/windows/macos-15-intel/macos-15 × Node 20/22/24, all green with the v0.5.1 tag) and `Release` (tag-triggered) both green
   - Skill self-install verified idempotent on this machine's real `~/.rivet/skills/tianshu-mcp`
-  - npm package name `tianshu-mcp` published continuously since v0.1.1 (currently `0.5.6`)
+  - npm package name `tianshu-mcp` published continuously since v0.1.1 (currently `0.5.7`)
 - **Real Tianshu host integration (DoD #6)** ✅ (2026-09-07)
   - Configured the local mode in the real `D:\Tianshu` desktop host `mcp.servers` → sidecar reported `MCP: 2 servers connected, 10 tools` (including this server's 8 tools), spawned the child process and connected over stdio
   - Exposed and fixed a skill-install source-path bug (fileURLToPath, commit 55cf2d0)
@@ -368,6 +369,12 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
   - **Liveness and same-session repair**: completion must belong to this turn's user message (old replies, a static screen, and disconnects never qualify); both automatic and manual repair write the plan first, then send its filename, full path, and complete text to the original conversation
   - **Platform boundary**: the Windows hardware loop passed (default/custom models, a newly registered workspace, and controlled failure → plan → same-session repair → re-acceptance); macOS is `research` and fail-closed
   - See the [Qoder CN guide](docs/qoder-cdp.en.md) and the [v0.5.6 release notes](<docs/release-v0.5.6.en.md>)
+- **M26 — Orchestration skill docs rewritten against the code + v0.5.7** (2026-09-22) — **826 tests** (no runtime change)
+  - **Parameter compatibility matrix**: `projectPath`/`model`/`modelSource`/`reasoningLevel`/`mode`/`planDoc`/`designSystem`/`allowCreateProject`/`continue_task` across the five built-in agents, stating plainly that a wrong parameter is rejected
+  - **Default precedence**: `autoVerify` (on by default at the server level), `autoFixRounds` (codex 5 / zcode 2 / kimicode 2 / qoder 3) and `taskTimeoutMs`
+  - **Kimi Code tier domain corrected** (`低/low`, `高/high`, `max`, `on`, `off` — deliberately without `中`/`medium`) and the qoder section completed (`modelSource` disambiguation, tier saved then read back, checkpoints that prevent resends, repair writing a plan before sending its full text, macOS dispatch disabled)
+  - **New `needsUserKind` × agent × `continue_task` matrix** and an `agentEndReason` → terminal-state mapping, plus `project_not_registered`/`unsupported_platform`/`qoder_error` and the new meta fields
+  - See the [v0.5.7 release notes](<docs/release-v0.5.7.en.md>)
 
 ## Agent support status
 
@@ -444,7 +451,7 @@ Behavior and limits:
 
 | Document | Content |
 |---|---|
-| [CHANGELOG.en.md](<CHANGELOG.en.md>) | Version history (v0.1.0 → v0.5.6) |
+| [CHANGELOG.en.md](<CHANGELOG.en.md>) | Version history (v0.1.0 → v0.5.7) |
 | [CONTRIBUTING.en.md](CONTRIBUTING.en.md) | Dev setup, conventions, commit/release flow, adding an agent |
 | [SECURITY.en.md](SECURITY.en.md) | Security model (zero credentials / command whitelist / process & desktop-automation boundaries) and private reporting |
 | [CODE_OF_CONDUCT.en.md](CODE_OF_CONDUCT.en.md) | Contributor Code of Conduct |

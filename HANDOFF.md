@@ -1,6 +1,6 @@
 # HANDOFF.md — 项目交接说明
 
-> **交接快照：2026-09-22 · 开发版本 `0.5.6`；`v0.5.6` 已发布（GitHub Release / Gitee 发行版 / npm `latest` 三者一致，发布提交 `9ee03da`）。**
+> **交接快照：2026-09-22 · 开发版本 `0.5.7`；最近已发布版本为 `0.5.6`。技能文档重写待发布，发布门禁与双仓同步进行中，不得宣称已发布。**
 > 本文写给**接手本仓库的人**：先说清「这是什么、现在到哪一步」，再给出「怎么跑、怎么改、哪里会踩坑」。
 > 工作区规则见 `AGENTS.md`（gitignore，仅本地）；安装与用法见 `README.md`，本文不重复，只做导览与状态记录。
 
@@ -16,10 +16,10 @@
 - 模型菜单选择后的异步关闭必须确认后才能重开，已补回归用例并通过真实模型管理读回。类型检查、lint、构建、6 项严格 stdio 检查、`npm pack` 内容校验与干净消费者安装 + 严格 stdio 检查已在本机通过。
 - 使用及恢复方法见 [Qoder 中文文档](docs/qoder-cdp.md) / [English guide](docs/qoder-cdp.en.md)。发布提交 `9ee03da` 已同步双仓，CI 22 个作业全绿（[run 35741308742](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35741308742)）；`v0.5.6` tag、[GitHub Release](https://github.com/lanlan0811/tianshu-mcp/releases/tag/v0.5.6)、Gitee 发行版与 npm `tianshu-mcp@0.5.6`（`latest`）均已完成。
 
-**发布后（未发布到 npm 的仓库内容）**：
+**0.5.7 开发交接（技能文档重写，无运行时变更）**：
 
-- 编排技能文档按当前代码逐项重写（`skills/tianshu-mcp/SKILL.md` + `usage-examples.md`）：新增参数兼容矩阵、`needsUserKind` × agent × `continue_task` 行为矩阵、`agentEndReason` → 终态映射；修正 Kimi Code 档位取值域（不含 `中`/`medium`）、`autoVerify` 默认开启、`autoFixRounds` 各 agent 缺省轮数；补齐 meta 新字段与 qoder 章节。详见 `CHANGELOG.md` 的「未发布」节。
-- 技能目录只有中文版（历史沿革如此，非双语），双语发布说明见 `docs/release-v*.md`。
+- 编排技能文档按当前代码逐项重写（`skills/tianshu-mcp/SKILL.md` + `usage-examples.md`）：新增**参数兼容矩阵**（九维度 × 五 agent）、**`needsUserKind` × agent × `continue_task` 行为矩阵**、**`agentEndReason` → 终态映射表**；修正 Kimi Code 档位取值域（实际不含 `中`/`medium`）、`autoVerify` 默认开启、`autoFixRounds` 各 agent 缺省轮数；补齐 meta 新字段（`qoderSessionId`/`actualModel`/`actualReasoningLevel`/`modelSource`/`guiStop`）与完整 qoder 章节。详见 [v0.5.7 发布说明](docs/release-v0.5.7.md) 与 `CHANGELOG.md` 的 `[0.5.7]` 节。
+- 技能目录只有中文版（历史沿革如此，非双语），双语发布说明见 `docs/release-v*.md`；技能随包分发，server 启动按内容 hash 幂等同步到 `~/.rivet/skills/tianshu-mcp/`，**新会话生效**（无热加载）。
 
 ## 0. 五分钟上手
 
@@ -72,16 +72,16 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build
 | 项 | 状态 |
 |---|---|
 | 分支 | `master`（**只在此分支提交**，不建其他分支） |
-| 版本 / 许可证 | `0.5.6`（已发布；上一版本 `0.5.5`）/ Apache-2.0 |
-| 标签 | `v0.1.0` … `v0.5.6`（均已推双仓；`v0.5.6` 指向 `9ee03da`，双仓 tag 对象同为 `6cc0447`） |
-| 工作树 | 干净；`github/master` 与 `gitee/master` 均同步（发布提交见 `git log` 的 `实现 Qoder CN GUI 驱动基础与安装探测` / `docs: 补充 Qoder 里程碑与 v0.5.6 测试/计划小节`） |
+| 版本 / 许可证 | `0.5.7`（开发中；上一版本 `0.5.6`）/ Apache-2.0 |
+| 标签 | `v0.1.0` … `v0.5.6`（均已推双仓）；`v0.5.7` 待发布提交的 CI 全绿后推送 |
+| 工作树 | 干净；`github/master` 与 `gitee/master` 均同步（技能文档重写见 `git log` 的 `重构技能文档`） |
 | 测试 | **826 passed / 12 skipped**（78 个测试文件通过 + 3 个真实浏览器文件按设计 skip；含 Qoder 新增约 60 项用例） |
 | 门禁 | lint 0 warning、typecheck clean、build 成功且构建后无跟踪差异、`check:stdio` 6/6 场景通过、`npm pack`（230 文件）内容校验与干净消费者安装 + 严格 stdio 检查通过；12 项真实浏览器门禁用例在 Windows 10 本机以 `TIANSHU_VISUAL_BROWSER_TEST=1` 跑通 12/12 |
 | CI | `build-test`（ubuntu/windows/macos × Node 20/22/24）+ `pack-check`，另加 `visual-browser` 真实浏览器矩阵（ubuntu/windows + macos-15-intel/macos-15 × Node 20/22/24）；发布提交 `9ee03da` 的 22 个作业全绿（[run 35741308742](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35741308742)），`e2d4689` 同样全绿（[run 35740269977](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35740269977)） |
-| npm | `tianshu-mcp@0.5.6` 已发布（`latest`）；`npx -y tianshu-mcp` 即为该版本。发布步骤见 `docs/npm-publish-guide.md` |
+| npm | `tianshu-mcp@0.5.6` 已发布（`latest`）；`0.5.7` 发布步骤见 `docs/npm-publish-guide.md` |
 | GitHub Release | 推送 `v*` tag 触发 `.github/workflows/release.yml`：先跑完整门禁并校验「tag 版本 === package.json 版本」，正文由 `docs/release-v<ver>.md` + `.en.md` 双语合成（缺文档即报错，不产出空壳正文），**要求同 SHA 的成功 CI**，并附 `tianshu-mcp-<ver>.tgz` |
 | Gitee 发行版 | 由 `scripts/gitee-release.mjs` 用仓库 Secret `GITEE_TOKEN` 幂等补齐；**缺少凭据时工作流阻塞**（不再静默跳过、不冒充发布成功） |
-| 本次发布实测 | CI `9ee03da` 全绿（[run 35741308742](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35741308742)）；`Release` 全绿并产出 [v0.5.6 发行](https://github.com/lanlan0811/tianshu-mcp/releases/tag/v0.5.6)（[run 35742181558](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35742181558)，附 `tianshu-mcp-0.5.6.tgz`，529651 字节）；Gitee 镜像发行版 `v0.5.6` 已建（2026-09-22 22:44 UTC+8 创建）；双仓 `v0.5.6` 与 `master` 均指向 `9ee03da`；npm `tianshu-mcp@0.5.6` 已发布（`latest`），`dist.shasum` = `67d6babc…`，并从 registry 实装消费者复验 `check:stdio` 6/6 通过 |
+| 本次发布实测 | v0.5.6：CI `9ee03da` 全绿（[run 35741308742](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35741308742)）；`Release` 全绿（[run 35742181558](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35742181558)，附 `tianshu-mcp-0.5.6.tgz`）；[GitHub 发行 v0.5.6](https://github.com/lanlan0811/tianshu-mcp/releases/tag/v0.5.6)、Gitee 发行版 `v0.5.6` 与 npm `tianshu-mcp@0.5.6`（`dist.shasum` = `67d6babc…`）均已确认。v0.5.7：待 tag 推送后回填 |
 
 ### 2.1 Agent 适配现状
 
@@ -129,6 +129,7 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build
 | M23 | **视觉验收第二阶段「AI 视觉内容校验」（issue #13）**：`contents[]`/`pages[].content` 内容维度、委托用户自备命令（凭证零管理）、多数票 + 任务级缓存防抖、`uncertain` 与默认仅告警、`pixel:false` 语义页豁免基准、返修计划隔离告警项（详见 §4.3 与 §9.10） | `0.5.4` | **644** |
 | M24 | **Kimi Code GUI 适配（第四个 GUI agent，`agentId=kimicode`）**：双渲染进程 CDP 驱动（主窗口 + `Kimi Browser Overlay` 浮层）、工作区完整路径绑定与原生「添加工作区」对话框导入、模型三级选择与思考档位按界面档位集合校验、执行模式强制「完全自动」、运行检测（`button.stop` / `send.is-starting`）、`needs_user` 六类与 `continue_task` 恢复（详见 §4.2 与 §9.11） | `0.5.5` | **764** |
 | M25 | **Qoder CN GUI 适配（第五个 GUI agent，`agentId=qoder`）**：安装发现（显式 → D 盘 → 注册表/快捷方式 → 标准目录）、实例复用与 `needs_user` 保留现场、完整路径工作区绑定与原生「新建工作区」导入、`modelSource` 默认/自定义分组与模型管理全局思考等级保存回读、本轮消息绑定的运行判定、发送/答题检查点防重发、自动与手动返修先落计划再发原会话（详见 §4.2 与 §9.12） | `0.5.6` | **826** |
+| M26 | **编排技能文档按代码实况重写**：参数兼容矩阵（九维度 × 五 agent）、`needsUserKind` × agent × `continue_task` 行为矩阵、`agentEndReason` → 终态映射、Kimi Code 档位取值域修正、qoder 章节与 meta 新字段补齐；**无运行时行为变更**（详见 §0 的 0.5.7 交接与 `docs/release-v0.5.7.md`） | `0.5.7` | 826 |
 
 ### 3.2 实现期修复记录（都是真机/CI 逼出来的，改相关代码前先读）
 
@@ -356,7 +357,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 542 项（532 passed / 10 skipped）
+npm test             # 826 passed / 12 skipped（838 项，78 文件通过 + 3 真实浏览器文件按设计 skip）
 ```
 
 日常循环（改 `src/` 后）：
@@ -954,6 +955,7 @@ node scripts/probe-qoder.mjs state --port 9777  # 只读：已有实例与页面
 | `docs/visual-validation.md` / `.en.md` | 视觉验收验证进度：完整平台证据表（系统 / Node / 浏览器 / 命令 / 结果）+ v0.5.4 判定桩端到端记录与未覆盖项 |
 | `docs/visual-validation-evidence/` | 上述验证的原始机器可读记录（Windows 矩阵 JSON、macOS `environment.json`、CI 摘要） |
 | `docs/zcode-issue-12-windows-evidence.md` / `.en.md` | ZCode 无项目派发与 `allowCreateProject` 的 Windows 10 真机验收记录（含 v0.5.2 首轮与「第二轮回访」） |
+| `docs/release-v0.5.7.md` / `.en.md` | v0.5.7 发布说明（编排技能文档按代码实况重写：参数兼容矩阵、默认值优先级、档位修正、qoder 章节与 meta 新字段；无运行时变更） |
 | `docs/release-v0.5.6.md` / `.en.md` | v0.5.6 发布说明（新增 Qoder CN GUI 适配、真机验收范围与 macOS research 边界） |
 | `docs/release-v0.5.5.md` / `.en.md` | v0.5.5 发布说明（新增 Kimi Code GUI 适配：双渲染进程 CDP、工作区完整路径绑定与原生对话框导入、模型三级选择与档位按界面集合校验、运行检测、needs_user/continue_task、真机验证与三个真机缺陷修复） |
 | `docs/release-v0.5.4.md` / `.en.md` | v0.5.4 发布说明（可选 AI 视觉内容校验：自备命令委托、多数票防抖、默认仅告警、返修隔离缺陷修复） |

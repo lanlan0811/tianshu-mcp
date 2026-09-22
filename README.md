@@ -212,6 +212,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=kimicode, task=「按 `./plan.md` �
 | [docs/kimi-cdp.md](docs/kimi-cdp.md) | Kimi Code GUI 驱动：双渲染进程（主窗口 + `Kimi Browser Overlay`）、工作区完整路径绑定与原生对话框导入、模型三级选择与思考档位、执行模式、运行检测与排障 |
 | [docs/codex-windows-smoke.md](docs/codex-windows-smoke.md) | Codex Windows 真机验收记录（含验收失败→自动生成计划→返修通过闭环） |
 | [docs/qoder-cdp.md](docs/qoder-cdp.md) | Qoder CN GUI 驱动：安装发现与实例复用、完整路径工作区与原生导入、`modelSource` 与模型管理全局思考等级、发送/答题检查点、运行判定与原会话返修、真机证据与未覆盖项 |
+| [docs/release-v0.5.7.md](<docs/release-v0.5.7.md>) | v0.5.7 发布说明（编排技能文档按代码实况重写：参数兼容矩阵、默认值优先级、档位修正与 qoder 章节；无运行时变更） |
 | [docs/release-v0.5.6.md](<docs/release-v0.5.6.md>) | v0.5.6 发布说明（Qoder CN GUI 适配、真机验收范围与 macOS research 边界） |
 | [docs/release-v0.5.5.md](<docs/release-v0.5.5.md>) | v0.5.5 发布说明（Kimi Code GUI 适配：双渲染进程、工作区完整路径绑定与原生导入、模型三级选择与档位校验、运行检测与恢复） |
 | [docs/release-v0.5.4.md](<docs/release-v0.5.4.md>) | v0.5.4 发布说明（可选 AI 视觉内容校验：自备命令委托、多数票防抖、默认仅告警） |
@@ -265,7 +266,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=kimicode, task=「按 `./plan.md` �
 - **工程 / CI** ✅
   - GitHub Actions：`CI`（`build-test` ubuntu/windows/macos × Node 20/22/24 + `pack-check`，另加 `visual-browser` 真实浏览器矩阵 ubuntu/windows/macos-15-intel/macos-15 × Node 20/22/24，随 v0.5.1 tag 全绿）与 `Release`（tag 触发）均绿
   - 技能自检安装已在本机真实 `~/.rivet/skills/tianshu-mcp` 验证生效且幂等
-  - npm 包名 `tianshu-mcp` 自 v0.1.1 起持续发布（当前 `0.5.6`）
+  - npm 包名 `tianshu-mcp` 自 v0.1.1 起持续发布（当前 `0.5.7`）
 - **天枢宿主真实接入（DoD #6）** ✅（2026-09-07，[host-integration-record.md](docs/host-integration-record.md)）
   - 在真实 `D:\Tianshu` 桌面宿主 `mcp.servers` 配置本地模式 → sidecar `MCP: 2 servers connected, 10 tools`（含本 server 8 工具），spawn 子进程并 stdio 连通
   - 实测暴露并修复技能安装源路径 bug（fileURLToPath，提交 55cf2d0）
@@ -369,6 +370,12 @@ run_task(projectPath=D:/xxx/my-app, agentId=kimicode, task=「按 `./plan.md` �
   - **运行判定与原会话返修**：完成必须绑定本轮用户消息（历史回复、界面静止、断线均不算）；自动与手动返修都先落修复计划，再把文件名、完整路径与全文发送原会话
   - **平台边界**：Windows 真机闭环通过（默认/自定义模型、新登记工作区、受控失败 → 落计划 → 原会话返修 → 再验收）；macOS 为 `research` 且 fail-closed
   - 详见 [Qoder CN 文档](docs/qoder-cdp.md) 与 [v0.5.6 发布说明](<docs/release-v0.5.6.md>)
+- **M26 — 编排技能文档按代码实况重写 + v0.5.7**（2026-09-22）— **826 测试**（无运行时变更）
+  - **参数兼容矩阵**：`projectPath`/`model`/`modelSource`/`reasoningLevel`/`mode`/`planDoc`/`designSystem`/`allowCreateProject`/`continue_task` 九个维度 × 五个内置 agent，写清「传错即报错」
+  - **默认值优先级**：`autoVerify`（server 默认开启）、`autoFixRounds`（codex 5 / zcode 2 / kimicode 2 / qoder 3）、`taskTimeoutMs` 取值顺序
+  - **修正 Kimi Code 档位取值域**（`低/low`、`高/high`、`max`、`on`、`off`，刻意不含 `中`/`medium`）与 qoder 章节（`modelSource` 消歧、档位保存回读、检查点不重发、返修先落计划再回发全文、macOS 禁止派发）
+  - **新增 `needsUserKind` × agent × `continue_task` 行为矩阵**与 `agentEndReason` → 终态映射，补 `project_not_registered`/`unsupported_platform`/`qoder_error` 等错误码与 meta 新字段
+  - 详见 [v0.5.7 发布说明](<docs/release-v0.5.7.md>)
 
 ## Agent 适配现状
 
@@ -446,7 +453,7 @@ run_task(projectPath=/path/to/项目, agentId=codex-cli, task="任务书", autoV
 | 文档 | 内容 |
 |---|---|
 | [HANDOFF.md](HANDOFF.md) | 项目交接文档：当前状态快照、架构导览、硬性红线、已知限制、接手建议 |
-| [CHANGELOG.md](<CHANGELOG.md>) | 版本变更日志（v0.1.0 → v0.5.6） |
+| [CHANGELOG.md](<CHANGELOG.md>) | 版本变更日志（v0.1.0 → v0.5.7） |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 开发环境、工程规范、提交与发布流程、如何新增 agent |
 | [SECURITY.md](SECURITY.md) | 安全模型（凭证零管理/命令白名单/进程与桌面自动化边界）与私密报告渠道 |
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | 贡献者行为准则 |
