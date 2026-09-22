@@ -16,4 +16,4 @@ Real public MCP verification passed on Windows 10 / Qoder CN 0.3.4: default-mode
 
 macOS remains `research`: path and platform branches have automated coverage, but real GUI dispatch is disabled pending desktop validation. The Windows sample models are verification configurations, not hardcoded product defaults.
 
-Publication still requires final regression, matching commits on both remotes, successful CI and Release, and npm artifact confirmation. These notes alone do not establish completion of those publication steps.
+Publication is complete: both remotes carry the same `master` and `v0.5.6` tag at release commit `9ee03da`, CI is green across all 22 jobs ([run 35741308742](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35741308742)), and the Release workflow succeeded ([run 35742181558](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35742181558)) with `tianshu-mcp-0.5.6.tgz` attached and the Gitee mirror release `v0.5.6` created. `tianshu-mcp@0.5.6` is published on npm as `latest` (`dist.shasum` = `67d6babc…`), and a consumer installed from the registry re-passed the strict stdio check 6/6.

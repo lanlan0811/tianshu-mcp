@@ -214,6 +214,9 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 | [docs/kimi-cdp.en.md](docs/kimi-cdp.en.md) | Kimi Code GUI driver: two renderer processes (main window + `Kimi Browser Overlay`), full-path workspace binding with native-dialog import, three-stage model selection and thinking tiers, execution mode, run detection and troubleshooting |
 | [docs/codex-windows-smoke.en.md](docs/codex-windows-smoke.en.md) | Codex Windows hardware record (incl. verify-fail → auto plan → repair-pass loop) |
 | [docs/release-v0.3.4.en.md](<docs/release-v0.3.4.en.md>) | v0.3.4 release notes (ZCode project/model read-back, initialization recovery, session dispatch confirmation, issues #8/#9/#10) |
+| [docs/qoder-cdp.en.md](docs/qoder-cdp.en.md) | Qoder CN GUI driver: installation discovery and instance reuse, full-path workspaces with native import, `modelSource` and global Model Management reasoning tiers, send/answer checkpoints, liveness judging and same-session repair, hardware evidence and uncovered items |
+| [docs/release-v0.5.6.en.md](<docs/release-v0.5.6.en.md>) | v0.5.6 release notes (Qoder CN GUI adapter, hardware acceptance scope, macOS research boundary) |
+| [docs/release-v0.5.5.en.md](<docs/release-v0.5.5.en.md>) | v0.5.5 release notes (Kimi Code GUI adapter: dual renderer processes, full-path workspace binding with native import, three-stage model selection and tier validation, run detection and recovery) |
 | [docs/release-v0.5.4.en.md](<docs/release-v0.5.4.en.md>) | v0.5.4 release notes (optional AI visual content validation: user-supplied command delegation, majority-vote debouncing, warning-only by default) |
 | [docs/release-v0.5.3.en.md](<docs/release-v0.5.3.en.md>) | v0.5.3 release notes (ZCode hardware-revisit fixes: instance survival across server exit, new-task page switch, send-failure attribution) |
 | [docs/release-v0.5.2.en.md](<docs/release-v0.5.2.en.md>) | v0.5.2 release notes (ZCode project-less dispatch and `allowCreateProject`, issue #12) |
@@ -261,7 +264,7 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
 - **Engineering / CI** ✅
   - GitHub Actions: `CI` (`build-test` ubuntu/windows/macos × Node 20/22/24 + `pack-check`, plus a `visual-browser` real-browser matrix ubuntu/windows/macos-15-intel/macos-15 × Node 20/22/24, all green with the v0.5.1 tag) and `Release` (tag-triggered) both green
   - Skill self-install verified idempotent on this machine's real `~/.rivet/skills/tianshu-mcp`
-  - npm package name `tianshu-mcp` published continuously since v0.1.1 (currently `0.5.4`)
+  - npm package name `tianshu-mcp` published continuously since v0.1.1 (currently `0.5.6`)
 - **Real Tianshu host integration (DoD #6)** ✅ (2026-09-07)
   - Configured the local mode in the real `D:\Tianshu` desktop host `mcp.servers` → sidecar reported `MCP: 2 servers connected, 10 tools` (including this server's 8 tools), spawned the child process and connected over stdio
   - Exposed and fixed a skill-install source-path bug (fileURLToPath, commit 55cf2d0)
@@ -352,6 +355,19 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
   - **Fail-closed**: once enabled, an unresolvable command or a missing env reference yields a whole-round `configurationError` with no result rows; a single command failure produces only a blocked warning item that stays visible in the round message and in the repair plan's "warning-only items (no fix required)" section
   - **Defect fix**: the repair plan no longer lists `optional:true` failures as "must fix"
   - **CLI/diagnostics**: added `visual content probe <project> [ruleId]` and `visual content cache clear <taskId>`; `visual doctor` gained content-command resolution and budget-comparison findings
+- **M24 — Kimi Code GUI adapter (fourth GUI agent) + v0.5.5** (2026-09-20) — **764 tests**
+  - **Dual-renderer CDP driver**: the model / thinking-tier / execution-mode menus render in the separate `Kimi Browser Overlay` window while the workspace menu and the "switch model" dialog stay in the main window
+  - **Full-path workspace binding**: an unregistered directory is imported through the native "add workspace" dialog (Win32 coordinate clicks plus `WM_SETTEXT`/`WM_GETTEXT` read-back), and same-name/different-directory cases fail closed
+  - **Three-stage model selection and tier validation**: pill read-back → overlay shortcut menu → "more models…" dialog; tiers are validated against **the set the UI actually renders** (official `Low/High/Max`, unofficial `On/Off`), and a tier the UI does not render fails before sending
+  - **Run detection and recovery**: `button.stop` / `send.is-starting` are the authoritative signals; the six `needs_user` kinds recover via `continue_task`, and an uncertain send is never repeated
+  - See the [Kimi Code guide](docs/kimi-cdp.en.md) and the [v0.5.5 release notes](<docs/release-v0.5.5.en.md>)
+- **M25 — Qoder CN GUI adapter (fifth GUI agent) + v0.5.6** (2026-09-22) — **826 tests**
+  - **Installation discovery and instance reuse**: explicit `gui.exePath` → D-drive-first candidates → relative-path templates → standard directories, with Qoder CN identity checks; an existing instance without usable CDP is preserved in place and turned into `needs_user`, never closed or restarted
+  - **Workspaces and models**: full-path binding, with unregistered directories imported through New Task → Workspace → New Workspace → Add Read/Write Folder; `modelSource=default/custom` disambiguates cross-group name clashes; the thinking tier is saved in Model Management as a **global preference** and read back by reopening it, and an unsupported tier fails before sending
+  - **Send and answer checkpoints**: a checkpoint is written before sending the brief or submitting multi-question answers, and an unconfirmed receipt means observe-only, never an automatic resend; `continue_task` only reobserves for approval/login environment waits
+  - **Liveness and same-session repair**: completion must belong to this turn's user message (old replies, a static screen, and disconnects never qualify); both automatic and manual repair write the plan first, then send its filename, full path, and complete text to the original conversation
+  - **Platform boundary**: the Windows hardware loop passed (default/custom models, a newly registered workspace, and controlled failure → plan → same-session repair → re-acceptance); macOS is `research` and fail-closed
+  - See the [Qoder CN guide](docs/qoder-cdp.en.md) and the [v0.5.6 release notes](<docs/release-v0.5.6.en.md>)
 
 ## Agent support status
 
@@ -428,7 +444,7 @@ Behavior and limits:
 
 | Document | Content |
 |---|---|
-| [CHANGELOG.en.md](<CHANGELOG.en.md>) | Version history (v0.1.0 → v0.5.4) |
+| [CHANGELOG.en.md](<CHANGELOG.en.md>) | Version history (v0.1.0 → v0.5.6) |
 | [CONTRIBUTING.en.md](CONTRIBUTING.en.md) | Dev setup, conventions, commit/release flow, adding an agent |
 | [SECURITY.en.md](SECURITY.en.md) | Security model (zero credentials / command whitelist / process & desktop-automation boundaries) and private reporting |
 | [CODE_OF_CONDUCT.en.md](CODE_OF_CONDUCT.en.md) | Contributor Code of Conduct |

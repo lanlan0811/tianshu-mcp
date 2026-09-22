@@ -16,4 +16,4 @@ Windows 10 / Qoder CN 0.3.4 的公共 MCP 真机验证已通过：已有工作�
 
 macOS 保持 `research`，有路径与平台分支自动化覆盖，但没有真机 GUI 验证，因此禁止派发。Windows 样例模型名称只是验证配置，不是产品硬编码。
 
-发布前还须以最终提交完成全量回归、双仓同提交、CI、Release 和 npm 产物确认；本说明本身不代表这些发布动作已经完成。
+发布已完成：发布提交 `9ee03da` 的双仓 `master` 与 `v0.5.6` tag 一致，CI 22 个作业全绿（[run 35741308742](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35741308742)）；Release 工作流全绿（[run 35742181558](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35742181558)），GitHub 发行附 `tianshu-mcp-0.5.6.tgz`，Gitee 镜像发行版 `v0.5.6` 已建；npm `tianshu-mcp@0.5.6` 已发布为 `latest`（`dist.shasum` = `67d6babc…`），并从 registry 实装消费者复验严格 stdio 检查 6/6 通过。

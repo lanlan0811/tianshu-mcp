@@ -1,6 +1,6 @@
 # HANDOFF.md — 项目交接说明
 
-> **交接快照：2026-09-22 · 开发版本 `0.5.6`；最近已发布版本为 `0.5.5`。Qoder 真机闭环已完成；最终提交、同 SHA CI/Release 与 npm 发布尚未完成，不得宣称已发布。**
+> **交接快照：2026-09-22 · 开发版本 `0.5.6`；`v0.5.6` 已发布（GitHub Release / Gitee 发行版 / npm `latest` 三者一致，发布提交 `9ee03da`）。**
 > 本文写给**接手本仓库的人**：先说清「这是什么、现在到哪一步」，再给出「怎么跑、怎么改、哪里会踩坑」。
 > 工作区规则见 `AGENTS.md`（gitignore，仅本地）；安装与用法见 `README.md`，本文不重复，只做导览与状态记录。
 
@@ -14,7 +14,7 @@
 - 已复现并修复 `isolate:false` 导致 Kimi 探测命令 mock 泄漏到 Git 基线测试的问题（`vitest.config.ts` 的 unit project 恢复文件级隔离）。本机全量回归：**826 passed / 12 skipped（78 个测试文件通过 + 3 个真实浏览器文件按设计 skip）**。
 - Windows 公共 MCP 默认模型（Qwen3.8-Flash / 低）已有工作区开发与外部乘法契约验收已通过；自定义模型（deepseek-v4-flash / 高）新工作区登记与首次 clamp 契约验收已通过。独立夹具受控回归被验收拒绝，修复计划已生成并发送原会话，用户允许 Qoder 读取工作区外计划文件后，仅恢复观察原会话，修复与再次验收均通过。macOS research 禁止派发。
 - 模型菜单选择后的异步关闭必须确认后才能重开，已补回归用例并通过真实模型管理读回。类型检查、lint、构建、6 项严格 stdio 检查、`npm pack` 内容校验与干净消费者安装 + 严格 stdio 检查已在本机通过。
-- 使用及恢复方法见 [Qoder 中文文档](docs/qoder-cdp.md) / [English guide](docs/qoder-cdp.en.md)。发布提交 `e2d4689` 已同步双仓且 CI 22 个作业全绿；`v0.5.6` tag、Release、Gitee 发行版与 npm 发布待完成（缺一步都不得称作已发布）。
+- 使用及恢复方法见 [Qoder 中文文档](docs/qoder-cdp.md) / [English guide](docs/qoder-cdp.en.md)。发布提交 `9ee03da` 已同步双仓，CI 22 个作业全绿（[run 35741308742](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35741308742)）；`v0.5.6` tag、[GitHub Release](https://github.com/lanlan0811/tianshu-mcp/releases/tag/v0.5.6)、Gitee 发行版与 npm `tianshu-mcp@0.5.6`（`latest`）均已完成。
 
 ## 0. 五分钟上手
 
@@ -67,16 +67,16 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build
 | 项 | 状态 |
 |---|---|
 | 分支 | `master`（**只在此分支提交**，不建其他分支） |
-| 版本 / 许可证 | `0.5.6`（开发中；最近已发布 `0.5.5`）/ Apache-2.0 |
-| 标签 | `v0.1.0` … `v0.5.5`（均已推双仓）；`v0.5.6` 待发布提交的 CI 全绿后推送 |
-| 工作树 | 干净；`github/master` 与 `gitee/master` 均同步至发布提交 `e2d4689`（`实现 Qoder CN GUI 驱动基础与安装探测`） |
+| 版本 / 许可证 | `0.5.6`（已发布；上一版本 `0.5.5`）/ Apache-2.0 |
+| 标签 | `v0.1.0` … `v0.5.6`（均已推双仓；`v0.5.6` 指向 `9ee03da`，双仓 tag 对象同为 `6cc0447`） |
+| 工作树 | 干净；`github/master` 与 `gitee/master` 均同步（发布提交见 `git log` 的 `实现 Qoder CN GUI 驱动基础与安装探测` / `docs: 补充 Qoder 里程碑与 v0.5.6 测试/计划小节`） |
 | 测试 | **826 passed / 12 skipped**（78 个测试文件通过 + 3 个真实浏览器文件按设计 skip；含 Qoder 新增约 60 项用例） |
 | 门禁 | lint 0 warning、typecheck clean、build 成功且构建后无跟踪差异、`check:stdio` 6/6 场景通过、`npm pack`（230 文件）内容校验与干净消费者安装 + 严格 stdio 检查通过；12 项真实浏览器门禁用例在 Windows 10 本机以 `TIANSHU_VISUAL_BROWSER_TEST=1` 跑通 12/12 |
-| CI | `build-test`（ubuntu/windows/macos × Node 20/22/24）+ `pack-check`，另加 `visual-browser` 真实浏览器矩阵（ubuntu/windows + macos-15-intel/macos-15 × Node 20/22/24）；提交 `e2d4689` 的 22 个作业全绿（[run 35740269977](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35740269977)） |
-| npm | `tianshu-mcp@0.5.5` 已发布（`latest`）；`0.5.6` 发布步骤见 `docs/npm-publish-guide.md` |
+| CI | `build-test`（ubuntu/windows/macos × Node 20/22/24）+ `pack-check`，另加 `visual-browser` 真实浏览器矩阵（ubuntu/windows + macos-15-intel/macos-15 × Node 20/22/24）；发布提交 `9ee03da` 的 22 个作业全绿（[run 35741308742](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35741308742)），`e2d4689` 同样全绿（[run 35740269977](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35740269977)） |
+| npm | `tianshu-mcp@0.5.6` 已发布（`latest`）；`npx -y tianshu-mcp` 即为该版本。发布步骤见 `docs/npm-publish-guide.md` |
 | GitHub Release | 推送 `v*` tag 触发 `.github/workflows/release.yml`：先跑完整门禁并校验「tag 版本 === package.json 版本」，正文由 `docs/release-v<ver>.md` + `.en.md` 双语合成（缺文档即报错，不产出空壳正文），**要求同 SHA 的成功 CI**，并附 `tianshu-mcp-<ver>.tgz` |
 | Gitee 发行版 | 由 `scripts/gitee-release.mjs` 用仓库 Secret `GITEE_TOKEN` 幂等补齐；**缺少凭据时工作流阻塞**（不再静默跳过、不冒充发布成功） |
-| 本次发布实测 | 待 `v0.5.6` tag 推送后回填（CI/Release/Gitee/npm 四段证据） |
+| 本次发布实测 | CI `9ee03da` 全绿（[run 35741308742](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35741308742)）；`Release` 全绿并产出 [v0.5.6 发行](https://github.com/lanlan0811/tianshu-mcp/releases/tag/v0.5.6)（[run 35742181558](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35742181558)，附 `tianshu-mcp-0.5.6.tgz`，529651 字节）；Gitee 镜像发行版 `v0.5.6` 已建（2026-09-22 22:44 UTC+8 创建）；双仓 `v0.5.6` 与 `master` 均指向 `9ee03da`；npm `tianshu-mcp@0.5.6` 已发布（`latest`），`dist.shasum` = `67d6babc…`，并从 registry 实装消费者复验 `check:stdio` 6/6 通过 |
 
 ### 2.1 Agent 适配现状
 

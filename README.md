@@ -204,13 +204,16 @@ run_task(projectPath=D:/xxx/my-app, agentId=kimicode, task=「按 `./plan.md` �
 | [ARCHITECTURE.md](ARCHITECTURE.md) | **架构说明**：分层模型与模块边界、启动装配、数据目录、状态机、验收与返修流水线、Agent 驱动层契约、GUI 实例生命周期、跨平台策略、安全红线、扩展点、已知缺口 |
 | [docs/tianshu-integration.md](docs/tianshu-integration.md) | 天枢 config.json 两种接入模式、UI/API 操作、冒烟步骤、FAQ |
 | [docs/agent-profiles.md](docs/agent-profiles.md) | agent profiles 字段说明 + 真实机器样例（codex M2 定稿） |
-| [docs/adapter-matrix.md](docs/adapter-matrix.md) | 各 Agent 能力调研矩阵（Codex/Zcode/TraeWork/Kimi Code/扩展位） |
+| [docs/adapter-matrix.md](docs/adapter-matrix.md) | 各 Agent 能力调研矩阵（Codex/Zcode/TraeWork/Kimi Code/Qoder CN/扩展位） |
 | [docs/traework-cdp.md](docs/traework-cdp.md) | TraeWork GUI 驱动（CDP）：原理、配置、模式切换、选择器、安全红线、踩坑记录、验证记录 |
 | [docs/zcode-cdp.md](docs/zcode-cdp.md) | ZCode GUI 驱动：安装探测、精确项目/模型、完全访问、暂停继续、验收返修与双平台状态 |
 | [docs/zcode-windows-smoke.md](docs/zcode-windows-smoke.md) | ZCode Windows 真机开发、同会话返修与提问续跑验收记录 |
 | [docs/codex-gui-cdp.md](docs/codex-gui-cdp.md) | Codex 桌面端 GUI 驱动：MSIX COM 激活、CDP 接管、选择器、运行检测、验收返修 |
 | [docs/kimi-cdp.md](docs/kimi-cdp.md) | Kimi Code GUI 驱动：双渲染进程（主窗口 + `Kimi Browser Overlay`）、工作区完整路径绑定与原生对话框导入、模型三级选择与思考档位、执行模式、运行检测与排障 |
 | [docs/codex-windows-smoke.md](docs/codex-windows-smoke.md) | Codex Windows 真机验收记录（含验收失败→自动生成计划→返修通过闭环） |
+| [docs/qoder-cdp.md](docs/qoder-cdp.md) | Qoder CN GUI 驱动：安装发现与实例复用、完整路径工作区与原生导入、`modelSource` 与模型管理全局思考等级、发送/答题检查点、运行判定与原会话返修、真机证据与未覆盖项 |
+| [docs/release-v0.5.6.md](<docs/release-v0.5.6.md>) | v0.5.6 发布说明（Qoder CN GUI 适配、真机验收范围与 macOS research 边界） |
+| [docs/release-v0.5.5.md](<docs/release-v0.5.5.md>) | v0.5.5 发布说明（Kimi Code GUI 适配：双渲染进程、工作区完整路径绑定与原生导入、模型三级选择与档位校验、运行检测与恢复） |
 | [docs/release-v0.5.4.md](<docs/release-v0.5.4.md>) | v0.5.4 发布说明（可选 AI 视觉内容校验：自备命令委托、多数票防抖、默认仅告警） |
 | [docs/release-v0.5.3.md](<docs/release-v0.5.3.md>) | v0.5.3 发布说明（ZCode 真机回访修复：实例跨 server 驻留、新建任务切页、发送失败归因） |
 | [docs/release-v0.5.2.md](<docs/release-v0.5.2.md>) | v0.5.2 发布说明（ZCode 无项目派发与 `allowCreateProject`，issue #12） |
@@ -262,7 +265,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=kimicode, task=「按 `./plan.md` �
 - **工程 / CI** ✅
   - GitHub Actions：`CI`（`build-test` ubuntu/windows/macos × Node 20/22/24 + `pack-check`，另加 `visual-browser` 真实浏览器矩阵 ubuntu/windows/macos-15-intel/macos-15 × Node 20/22/24，随 v0.5.1 tag 全绿）与 `Release`（tag 触发）均绿
   - 技能自检安装已在本机真实 `~/.rivet/skills/tianshu-mcp` 验证生效且幂等
-  - npm 包名 `tianshu-mcp` 自 v0.1.1 起持续发布（当前 `0.5.4`）
+  - npm 包名 `tianshu-mcp` 自 v0.1.1 起持续发布（当前 `0.5.6`）
 - **天枢宿主真实接入（DoD #6）** ✅（2026-09-07，[host-integration-record.md](docs/host-integration-record.md)）
   - 在真实 `D:\Tianshu` 桌面宿主 `mcp.servers` 配置本地模式 → sidecar `MCP: 2 servers connected, 10 tools`（含本 server 8 工具），spawn 子进程并 stdio 连通
   - 实测暴露并修复技能安装源路径 bug（fileURLToPath，提交 55cf2d0）
@@ -353,6 +356,19 @@ run_task(projectPath=D:/xxx/my-app, agentId=kimicode, task=「按 `./plan.md` �
   - **fail-closed**：启用后命令不可解析/env 引用缺失 → 整轮 `configurationError` 且不产出结果行；单项命令失败仅产生 blocked 告警项，并在整轮消息与返修计划的「仅告警项（不必修复）」小节可见
   - **缺陷修复**：返修计划不再把 `optional:true` 的失败列为「必须修复」
   - **CLI/诊断**：新增 `visual content probe <project> [ruleId]` 与 `visual content cache clear <taskId>`；`visual doctor` 新增内容命令解析与预算对比两项 finding
+- **M24 — Kimi Code GUI 适配（第四个 GUI agent）+ v0.5.5**（2026-09-20）— **764 测试**
+  - **双渲染进程 CDP 驱动**：模型 / 思考档位 / 执行模式菜单渲染在独立的 `Kimi Browser Overlay` 浮层窗口，工作区菜单与「切换模型」对话框仍在主窗口
+  - **工作区完整路径绑定**：未登记目录经原生「添加工作区」对话框导入（Win32 坐标点击 + `WM_SETTEXT`/`WM_GETTEXT` 回读），同名不同目录一律 fail-closed
+  - **模型三级选择与档位校验**：pill 回读 → overlay 快捷菜单 → 「更多模型…」对话框；档位按**界面实际渲染的集合**校验（官方 `Low/High/Max`，非官方 `On/Off`），请求不存在的档位在发送前报错
+  - **运行检测与恢复**：`button.stop` / `send.is-starting` 为权威信号；`needs_user` 六类由 `continue_task` 恢复，发布发送确认失败绝不重发
+  - 详见 [Kimi Code 文档](docs/kimi-cdp.md) 与 [v0.5.5 发布说明](<docs/release-v0.5.5.md>)
+- **M25 — Qoder CN GUI 适配（第五个 GUI agent）+ v0.5.6**（2026-09-22）— **826 测试**
+  - **安装发现与实例复用**：显式 `gui.exePath` → D 盘优先候选 → 相对路径模板 → 标准目录；校验 Qoder CN 身份；已有实例无可用 CDP 时保留现场转 `needs_user`，绝不关闭或重启
+  - **工作区与模型**：完整路径绑定，未登记目录经「新的任务 → 工作区 → 新建工作区 → 添加可读写文件夹」原生导入；`modelSource=default/custom` 消除跨组重名；思考等级经「模型管理」保存为**全局偏好**并重新打开回读，不支持的档位在发送前报错
+  - **发送与答题检查点**：发送任务书与提交多题答案前落检查点，未确认回执时只观察、不自动重发；`continue_task` 对审批/登录等环境等待只恢复观察
+  - **运行判定与原会话返修**：完成必须绑定本轮用户消息（历史回复、界面静止、断线均不算）；自动与手动返修都先落修复计划，再把文件名、完整路径与全文发送原会话
+  - **平台边界**：Windows 真机闭环通过（默认/自定义模型、新登记工作区、受控失败 → 落计划 → 原会话返修 → 再验收）；macOS 为 `research` 且 fail-closed
+  - 详见 [Qoder CN 文档](docs/qoder-cdp.md) 与 [v0.5.6 发布说明](<docs/release-v0.5.6.md>)
 
 ## Agent 适配现状
 
@@ -430,7 +446,7 @@ run_task(projectPath=/path/to/项目, agentId=codex-cli, task="任务书", autoV
 | 文档 | 内容 |
 |---|---|
 | [HANDOFF.md](HANDOFF.md) | 项目交接文档：当前状态快照、架构导览、硬性红线、已知限制、接手建议 |
-| [CHANGELOG.md](<CHANGELOG.md>) | 版本变更日志（v0.1.0 → v0.5.4） |
+| [CHANGELOG.md](<CHANGELOG.md>) | 版本变更日志（v0.1.0 → v0.5.6） |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 开发环境、工程规范、提交与发布流程、如何新增 agent |
 | [SECURITY.md](SECURITY.md) | 安全模型（凭证零管理/命令白名单/进程与桌面自动化边界）与私密报告渠道 |
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | 贡献者行为准则 |
