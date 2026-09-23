@@ -1,7 +1,11 @@
 /**
  * 工具注册表：11 个工具的 name/description/inputSchema/capability/approval 元数据。
  * MCP 层用 inputSchema 声明；capability/requireApproval 供天枢 policy（§5/§11.3）。
- * 能力标注遵守 R11：读/查询/验收 read；run/cancel/rework write + requireApproval。
+ * 能力标注遵守 R11（三族语义）：
+ * - read：读/查询，无副作用；`server.ts` 据此推导 MCP `readOnlyHint: true`。
+ * - write：派活/取消/返修/视觉基准写盘等有副作用操作，全部 requireApproval。
+ * - execute：会执行项目侧命令（可产生构建产物），但不改源码；当前仅 `verify_task`，
+ *   按 R11 仍免审批——`readOnlyHint` 会因此为 false，审批与否由 `_meta.requireApproval` 单独承载。
  */
 import { z } from "zod";
 import { PrepareBaselineSchema, ApproveBaselineSchema } from "../visual/baselines.js";
@@ -20,7 +24,7 @@ export interface ToolDef {
   name: string;
   description: string;
   inputSchema: z.ZodTypeAny;
-  capability: "read" | "write" | "execute" | "network";
+  capability: "read" | "write" | "execute";
   requireApproval: boolean;
 }
 
@@ -91,7 +95,7 @@ export const TOOL_DEFS: ToolDef[] = [
     description:
       "对已完成任务或项目路径执行一次验收（不改源码）：自动命令检查 + 代码分析（相对 git 基线）。可用 extraChecks 临时加验。需任务/项目二选一。可选 idempotencyKey：同一 key 重试不重跑验收——执行中的同键请求返回进行中提示，已完成的直接返回既有报告与轮次，参数变更则报冲突。",
     inputSchema: VerifyTaskParamsSchema,
-    capability: "read",
+    capability: "execute",
     requireApproval: false,
   },
   {

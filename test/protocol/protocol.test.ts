@@ -1,6 +1,6 @@
 /**
  * 协议级测试：官方 SDK client 连接 in-memory transport 后的 server。
- * 断言 9 个工具可见、调用返回格式（文本 + meta 块 / 参数校验错误）。
+ * 断言 11 个工具可见、调用返回格式（文本 + meta 块 / 参数校验错误）。
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { startTestServer, callTool, parseMeta, rmrf, type TestServer } from "../test-utils.js";
@@ -26,21 +26,16 @@ describe("服务版本", () => {
 });
 
 describe("工具 annotations（S4/S6：直接断言真实 tools/list）", () => {
-  it("read 类工具 readOnlyHint=true，write 类 false；cancel/rework destructiveHint=true", async () => {
+  it("read 类工具 readOnlyHint=true，write/execute 类 false；cancel/rework destructiveHint=true", async () => {
     const tools = await ts.client.listTools();
     const byName = new Map(tools.tools.map((t) => [t.name, t]));
     // 读类
     for (const name of ["query_task", "list_tasks", "get_task_report", "get_profiles"]) {
       expect(byName.get(name)?.annotations?.readOnlyHint, `${name} readOnly`).toBe(true);
     }
-    // 写类
+    // 写类 + execute 类
     for (const name of ["run_task", "cancel_task", "rework_task", "continue_task", "verify_task"]) {
-      const ann = byName.get(name)?.annotations;
-      if (name === "verify_task") {
-        expect(ann?.readOnlyHint).toBe(true); // read 能力
-      } else {
-        expect(ann?.readOnlyHint).toBe(false);
-      }
+      expect(byName.get(name)?.annotations?.readOnlyHint, `${name} readOnly`).toBe(false);
     }
     // destructive
     expect(byName.get("cancel_task")?.annotations?.destructiveHint).toBe(true);
@@ -48,6 +43,50 @@ describe("工具 annotations（S4/S6：直接断言真实 tools/list）", () => 
     // openWorld：仅 run_task
     expect(byName.get("run_task")?.annotations?.openWorldHint).toBe(true);
     expect(byName.get("query_task")?.annotations?.openWorldHint).toBe(false);
+  });
+
+  // issue #17：capability 真值表——11 工具 × capability × 四个 MCP 注解逐一锁定。
+  // verify_task 自 v0.6.1 起归 execute：会跑项目命令，故 readOnlyHint 诚实为 false，
+  // 但 requireApproval 仍为 false（免审批），这是本次唯一对外可见的元数据变更。
+  it("能力真值表：capability / requireApproval / 四注解逐工具一致", async () => {
+    const { tools } = await ts.client.listTools();
+    const byName = new Map(tools.map((t) => [t.name, t]));
+    const table: Array<{
+      name: string;
+      capability: "read" | "write" | "execute";
+      requireApproval: boolean;
+      readOnlyHint: boolean;
+      destructiveHint: boolean;
+      openWorldHint: boolean;
+      idempotentHint: boolean;
+    }> = [
+      { name: "run_task", capability: "write", requireApproval: true, readOnlyHint: false, destructiveHint: false, openWorldHint: true, idempotentHint: true },
+      { name: "continue_task", capability: "write", requireApproval: true, readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false },
+      { name: "query_task", capability: "read", requireApproval: false, readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: false },
+      { name: "list_tasks", capability: "read", requireApproval: false, readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: false },
+      { name: "get_task_report", capability: "read", requireApproval: false, readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: false },
+      { name: "cancel_task", capability: "write", requireApproval: true, readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: false },
+      { name: "verify_task", capability: "execute", requireApproval: false, readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+      { name: "rework_task", capability: "write", requireApproval: true, readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: false },
+      { name: "get_profiles", capability: "read", requireApproval: false, readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: false },
+      { name: "prepare_visual_baseline", capability: "write", requireApproval: true, readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false },
+      { name: "approve_visual_baseline", capability: "write", requireApproval: true, readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: false },
+    ];
+    // 真值表必须与真实工具面一一对应（多一个少一个都算漂移）
+    expect(table.map((r) => r.name).sort()).toEqual([...byName.keys()].sort());
+    for (const row of table) {
+      const def = TOOL_DEFS.find((d) => d.name === row.name);
+      expect(def?.capability, `${row.name} capability(TOOL_DEFS)`).toBe(row.capability);
+      expect(def?.requireApproval, `${row.name} requireApproval(TOOL_DEFS)`).toBe(row.requireApproval);
+      const tool = byName.get(row.name);
+      expect(tool?._meta?.capability, `${row.name} _meta.capability`).toBe(row.capability);
+      expect(tool?._meta?.requireApproval, `${row.name} _meta.requireApproval`).toBe(row.requireApproval);
+      const ann = tool?.annotations;
+      expect(ann?.readOnlyHint, `${row.name} readOnlyHint`).toBe(row.readOnlyHint);
+      expect(ann?.destructiveHint, `${row.name} destructiveHint`).toBe(row.destructiveHint);
+      expect(ann?.openWorldHint, `${row.name} openWorldHint`).toBe(row.openWorldHint);
+      expect(ann?.idempotentHint, `${row.name} idempotentHint`).toBe(row.idempotentHint);
+    }
   });
 
   // issue #15：MCP 四注解补齐——幂等提示只在支持 idempotencyKey 的两个工具上为 true
@@ -95,8 +134,12 @@ describe("工具面", () => {
       const def = TOOL_DEFS.find((d) => d.name === t.name);
       expect(def, `工具 ${t.name} 缺声明`).toBeDefined();
       expect(def!.inputSchema).toBeDefined();
-      expect(["read", "write", "execute", "network"]).toContain(def!.capability);
+      expect(["read", "write", "execute"]).toContain(def!.capability);
     }
+    // issue #17：数量硬断言——TOOL_DEFS 与真实工具面必须一一对应。
+    // 仅比对名字数组相等时，TOOL_DEFS 多一条无人注册的条目不会被拦住。
+    expect(TOOL_DEFS).toHaveLength(tools.tools.length);
+    expect(new Set(TOOL_DEFS.map((d) => d.name)).size).toBe(tools.tools.length);
   });
 
   it("continue_task 是需审批的写工具", () => {

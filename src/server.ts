@@ -101,6 +101,9 @@ export async function buildServer(
         inputSchema: tool.inputSchema,
         _meta: { requireApproval: tool.requireApproval, capability: tool.capability },
         annotations: {
+          // readOnlyHint 只对 capability:"read" 为 true。capability:"execute"（目前仅 verify_task）
+          // 会跑项目侧命令、可产生构建产物，故 readOnlyHint 诚实为 false——但那不等于需要审批：
+          // 审批与否由 _meta.requireApproval 单独承载（verify_task 按 R11 仍免审批）。
           readOnlyHint: tool.capability === "read",
           destructiveHint:
             tool.name === "cancel_task" ||
