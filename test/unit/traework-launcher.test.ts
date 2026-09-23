@@ -132,8 +132,16 @@ describe("diagnosePortFailure（issue #23 C3）", () => {
     expect(msg).toContain("未由本模块启动新实例");
   });
 
-  it("诊断串始终包含端口监听者枚举口径", async () => {
+  it("进程枚举口径仅在 Windows 生效（非 Windows 不查询端口监听者）", async () => {
+    // issue #23 C3：TraeWork 为 Windows 应用（macOS 为 research）；端口监听者枚举用 CIM，
+    // 只在 win32 执行。此处按平台断言，避免在 Linux/macOS CI 上误报。
     const msg = await diagnosePortFailure(inst({ pid: process.pid }), 9222, silentLogger);
-    expect(msg).toContain("--remote-debugging-port=9222");
+    if (process.platform === "win32") {
+      expect(msg).toContain("--remote-debugging-port=9222");
+    } else {
+      expect(msg).not.toContain("--remote-debugging-port=9222");
+    }
+    // 两平台都必须给出子进程状态（诊断核心）
+    expect(msg).toContain("9222");
   });
 });
