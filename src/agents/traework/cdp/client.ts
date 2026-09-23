@@ -11,6 +11,7 @@
 import { get as httpGet } from "node:http";
 import type { SelectorKey, SelectorOverrides } from "./selectors.js";
 import { candidateArrayExpr } from "./selectors.js";
+import { visibleLabelsExpr, normalizeLabels } from "../../gui-diagnostics.js";
 
 /** Node 22+ 全局 WebSocket 的最小接口（规避各版本 ambient 类型差异） */
 interface CdpWebSocket {
@@ -277,6 +278,18 @@ export class TraeworkCdpClient {
 
   async evaluateString(expression: string): Promise<string> {
     return (await this.evaluate<string>(expression)) || "";
+  }
+
+  /**
+   * 收集页面可见候选标签（issue #23 诊断机制）。选择器解析失败时用于定位漂移；
+   * 永不抛错——失败返回空数组，不影响主流程。
+   */
+  async visibleLabels(scopeCss?: string): Promise<string[]> {
+    try {
+      return normalizeLabels(await this.evaluate<unknown>(visibleLabelsExpr({ scope: scopeCss })));
+    } catch {
+      return [];
+    }
   }
 
   /* ---------------- DOM 查询（带选择器回退） ---------------- */

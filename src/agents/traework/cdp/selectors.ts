@@ -12,8 +12,8 @@ export interface SelectorSpec {
   primary: string;
   /** 回退候选（按顺序尝试） */
   fallbacks: string[];
-  /** 是否已在本机实测 */
-  verified: boolean;
+  /** 实测版本（未实测写「未实测」）；本机实测 install 0.1.64 / 文件版本 2.3.82597 */
+  verifiedVersion: string;
   /** 说明 */
   note: string;
 }
@@ -48,63 +48,63 @@ export const SELECTORS: Record<SelectorKey, SelectorSpec> = {
   chatInput: {
     primary: ".chat-input-v2-input-box-editable",
     fallbacks: [".solo-lite-chat-input-field", '[contenteditable="true"][class*="chat-input"]'],
-    verified: true,
+    verifiedVersion: "0.1.64",
     note: "聊天输入框（contenteditable）；发送前 focus + Input.insertText",
   },
   newTask: {
     primary: ".task-list-new-task-item",
     fallbacks: ["[class*='task-list-new-task']", "[class*='new-task-item']"],
-    verified: true,
+    verifiedVersion: "0.1.64",
     note: "侧边栏「新建任务」；每任务开干净会话",
   },
   taskListItem: {
     // 实机 1.107.1：会话标题是 .taskText；任务列表按项目分组（.task-list-group-name）
     primary: ".taskText",
     fallbacks: [".solo-lite-task-item", '[class*="task-item-text"]'],
-    verified: true,
+    verifiedVersion: "0.1.64",
     note: "任务列表中的会话标题（.taskText）；注意 .task-list-new-task-item 是「新建任务/插件市场」等按钮，不可当会话项",
   },
   taskListGroupName: {
     // 实机：侧边栏按项目文件夹分组，组名即项目名（图1 的 docode-s3 / zhiyu）
     primary: ".task-list-group-name",
     fallbacks: ['[class*="task-list-group-name"]'],
-    verified: true,
+    verifiedVersion: "0.1.64",
     note: "任务列表的项目分组名（= 项目文件夹名称）",
   },
   modeTab: {
     primary: '[class*="mode-switcher-btn"] [class*="tab"]',
     fallbacks: ["[class*='mode-switcher'] [class*='tab']"],
-    verified: true,
+    verifiedVersion: "0.1.64",
     note: "模式切换分段（Work/Code/Design）；项目文件夹按钮仅在 Work 模式出现",
   },
   modelTrigger: {
     primary: ".core-model-select-trigger",
     fallbacks: ["[class*='model-select-trigger']"],
-    verified: true,
+    verifiedVersion: "0.1.64",
     note: "模型下拉触发器；坐标点击用",
   },
   modelTriggerValue: {
     primary: ".core-model-select-trigger-value",
     fallbacks: ["[class*='model-select-trigger'] [class*='value']"],
-    verified: true,
+    verifiedVersion: "0.1.64",
     note: "当前模型显示名；切换后严格验证",
   },
   modelOption: {
     primary: ".core-model-select-model-item",
     fallbacks: ["[class*='model-select-model-item']"],
-    verified: true,
+    verifiedVersion: "0.1.64",
     note: "下拉模型项（虚拟滚动，需逐步滚动收集）",
   },
   modelList: {
     primary: ".core-model-select-model-list",
     fallbacks: ["[class*='model-select-model-list']"],
-    verified: true,
+    verifiedVersion: "0.1.64",
     note: "模型下拉滚动容器",
   },
   modeSwitcher: {
     primary: '[class*="mode-switcher-btn"]',
     fallbacks: ["[class*='mode-switcher']"],
-    verified: true,
+    verifiedVersion: "0.1.64",
     note: "Work/Code/Design 形态切换器（agent 形态检测用）",
   },
   projectButton: {
@@ -114,13 +114,13 @@ export const SELECTORS: Record<SelectorKey, SelectorSpec> = {
     // （同排还有文本为「本地」的 inputBarButton，不能用宽选择器）。
     primary: '[class*="projectButtonPlaceholder"]',
     fallbacks: ["[class*='projectButton']", "[class*='folderButton']"],
-    verified: true,
+    verifiedVersion: "0.1.64",
     note: "图2 项目按钮（未绑定态）；已绑定态由 session.ts 按文本识别",
   },
   cascadeMenu: {
     primary: '[class*="cascadeMenu"]',
     fallbacks: ["[class*='cascade-menu']", "[class*='dropdown-menu']"],
-    verified: true,
+    verifiedVersion: "0.1.64",
     note: "图2 项目文件夹下拉浮层",
   },
   cascadeMenuItem: {
@@ -128,74 +128,74 @@ export const SELECTORS: Record<SelectorKey, SelectorSpec> = {
     // 故主选择器要求 WithSubtitle，回退时由代码按「是否为内层」过滤。
     primary: '[class*="cascadeMenuItemWithSubtitle"]',
     fallbacks: ['[class*="cascadeMenuItem"]'],
-    verified: true,
+    verifiedVersion: "0.1.64",
     note: "下拉中的项目项（含标题+副标题路径）；勿把 cascadeMenuItemInner/Title/Subtitle 当项",
   },
   cascadeMenuItemTitle: {
     primary: '[class*="cascadeMenuItemTitle"]',
     fallbacks: ['[class*="item-title"]'],
-    verified: true,
+    verifiedVersion: "0.1.64",
     note: "项目项标题（项目名）",
   },
   cascadeMenuItemSubtitle: {
     primary: '[class*="cascadeMenuItemSubtitle"]',
     fallbacks: ['[class*="item-subtitle"]'],
-    verified: true,
+    verifiedVersion: "0.1.64",
     note: "项目项副标题（项目绝对路径）",
   },
   cascadeMenuGroupHeader: {
     primary: '[class*="cascadeMenuGroupHeader"]',
     fallbacks: ['[class*="cascadeMenuGroupTitle"]'],
-    verified: true,
+    verifiedVersion: "0.1.64",
     note: "分组标题（如「最近」）",
   },
   cascadeMenuFooter: {
     // 实机 1.107.1：底部「选择文件夹」是 BUTTON.cascadeFooterButton-ISVymP（内层 DIV.cascadeFooter-gPXKNi）
     primary: '[class*="cascadeFooterButton"]',
     fallbacks: ['[class*="cascadeFooter"]', '[class*="cascadeMenuFooter"]', '[class*="footer"] [class*="utton"]'],
-    verified: true,
+    verifiedVersion: "0.1.64",
     note: "下拉底部「选择文件夹」按钮（点击后弹 Windows 原生对话框）；注意 click() 可能不触发原生弹窗，需确认对话框真的出现",
   },
   messageContainer: {
     primary: ".message-list-cache-container",
     fallbacks: ["[class*='message-list']"],
-    verified: true,
+    verifiedVersion: "0.1.64",
     note: "消息容器；新会话发消息后出现",
   },
   toolCard: {
     primary: ".core-toolcall-base-card,.core-run-command-card,.core-web-search-card,.core-mcp-content",
     fallbacks: ["[class*='toolcall']", "[class*='run-command']"],
-    verified: true,
+    verifiedVersion: "0.1.64",
     note: "Trae 原生工具卡片；用于检测 agent 形态执行痕迹",
   },
   sendButton: {
     primary: ".chat-input-v2-send-button",
     fallbacks: ["[class*='send-button']"],
-    verified: true,
+    verifiedVersion: "0.1.64",
     note: "发送按钮容器；用于定位生成期间出现的停止图标",
   },
   stopButton: {
     primary: ".chat-input-v2-send-button-stop-icon",
     fallbacks: ["[class*='send-button-stop-icon']", "[class*='stop-icon']"],
-    verified: true,
+    verifiedVersion: "0.1.64",
     note: "发送按钮停止态；任务仍在生成的主运行信号",
   },
   taskTail: {
     primary: ".core-task-tail",
     fallbacks: ["[class*='core-task-tail']"],
-    verified: true,
+    verifiedVersion: "0.1.64",
     note: "任务尾部容器；用于定位在途 bridge 请求状态",
   },
   taskTailLoading: {
     primary: ".core-task-tail--loading",
     fallbacks: ["[class*='task-tail--loading']"],
-    verified: true,
+    verifiedVersion: "0.1.64",
     note: "在途 bridge 请求；任务仍在生成的次运行信号",
   },
   thinkingStream: {
     primary: ".thinking-stream-content",
     fallbacks: ["[class*='thinking-stream-content']"],
-    verified: true,
+    verifiedVersion: "0.1.64",
     note: "思考流内容；仅用于诊断，历史节点可能残留，不作为运行阻塞依据",
   },
 };

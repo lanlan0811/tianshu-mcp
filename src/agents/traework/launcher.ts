@@ -82,6 +82,12 @@ export interface SpawnedInstance {
   commandLine: string;
   exePath: string;
   child?: ChildProcess;
+  /**
+   * 子进程退出信息（issue #23 C3 诊断）。
+   * TraeWork 为单实例应用：若既有实例未带调试端口，新实例可能把启动交接给它后自身退出，
+   * 导致端口从未监听。记录退出码/信号以区分「启动失败」与「单实例交接」。
+   */
+  exit?: { code: number | null; signal: string | null };
 }
 
 /** 读取进程命令行（Windows 用 CIM；其他平台读 /proc 或 ps） */
@@ -139,8 +145,15 @@ export function launchInstance(opts: LaunchOptions): SpawnedInstance {
   child.unref();
   const pid = child.pid ?? -1;
   const commandLine = [nativeExe, ...args].join(" ");
+  const inst: SpawnedInstance = { pid, port, commandLine, exePath: nativeExe, child };
+  // issue #23 C3 诊断：记录退出码/信号，便于在「端口未就绪」时区分启动失败与单实例交接。
+  // 注意：仍然 unref 且不接管 stdio（沿用既有安全语义，绝不影响用户实例）。
+  child.once("exit", (code, signal) => {
+    inst.exit = { code, signal };
+    logger.info(`[traework] 启动的子进程已退出 pid=${pid} code=${code ?? "null"} signal=${signal ?? "null"}`);
+  });
   logger.info(`[traework] 已启动实例 pid=${pid} port=${port} cmd=${commandLine}`);
-  return { pid, port, commandLine, exePath: nativeExe, child };
+  return inst;
 }
 
 /** 等待 CDP 就绪 */
@@ -159,6 +172,66 @@ export async function waitReady(port: number, timeoutMs: number, logger: AgentRu
     await new Promise((r) => setTimeout(r, 1_000));
   }
   throw new Error(`等待 TraeWork CDP 就绪超时（${timeoutMs}ms，端口 ${port}）。请确认窗口已打开且未处于登录/引导页`);
+}
+
+/**
+ * 端口未就绪时的现场诊断（issue #23 C3，D3：只诊断，不改启动策略、不杀进程）。
+ * 输出：子进程是否仍存活/退出码；命令行含该调试端口的进程数（期望 >0）；
+ * 以及未带调试端口的既有 TRAE SOLO CN 进程数（单实例锁的常见触发条件）。
+ */
+export async function diagnosePortFailure(
+  inst: SpawnedInstance | null,
+  port: number,
+  logger: AgentRunLogger,
+): Promise<string> {
+  const parts: string[] = [];
+  if (inst) {
+    if (inst.exit) {
+      parts.push(`启动子进程 pid=${inst.pid} 已退出（code=${inst.exit.code ?? "null"}，signal=${inst.exit.signal ?? "null"}）`);
+      if (inst.exit.code === 0)
+        parts.push("退出码为 0：很可能是单实例锁把启动交接给既有实例后自身退出，故新端口从未监听");
+    } else if (isAlive(inst.pid)) {
+      parts.push(`启动子进程 pid=${inst.pid} 仍存活，但未监听端口 ${port}`);
+    } else {
+      parts.push(`启动子进程 pid=${inst.pid} 已不存在（且未捕获退出码）`);
+    }
+  } else {
+    parts.push("本次未由本模块启动新实例（复用了既有实例）");
+  }
+  if (process.platform === "win32") {
+    try {
+      const listeners = await execFileAsync(
+        "powershell",
+        [
+          "-NoProfile",
+          "-Command",
+          `@(Get-CimInstance Win32_Process -Filter "Name='TRAE SOLO CN.exe'" | Where-Object { $_.CommandLine -like '*--remote-debugging-port=${port}*' }).Count`,
+        ],
+        { timeoutMs: 10_000 },
+      );
+      parts.push(`命令行含 --remote-debugging-port=${port} 的 TRAE SOLO CN 进程数=${listeners.stdout.trim() || "0"}`);
+      const existing = await execFileAsync(
+        "powershell",
+        [
+          "-NoProfile",
+          "-Command",
+          `@(Get-CimInstance Win32_Process -Filter "Name='TRAE SOLO CN.exe'" | Where-Object { $_.CommandLine -notlike '*--remote-debugging-port*' }).Count`,
+        ],
+        { timeoutMs: 10_000 },
+      );
+      const n = Number(existing.stdout.trim() || "0");
+      if (n > 0)
+        parts.push(
+          `检测到 ${n} 个未带调试端口的既有 TRAE SOLO CN 进程（单实例锁会拦下新的调试实例）；` +
+            "请先关闭这些窗口，或以任务书要求用户手动启动后再 continue_task（MCP 不自动终止既有实例）",
+        );
+    } catch (e) {
+      parts.push(`进程枚举失败：${(e as Error).message}`);
+    }
+  }
+  const msg = parts.join("；");
+  logger.warn(`[traework] 端口未就绪诊断：${msg}`);
+  return msg;
 }
 
 /**

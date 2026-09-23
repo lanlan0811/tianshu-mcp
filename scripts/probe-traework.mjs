@@ -37,7 +37,7 @@ if (mode === "selectors") {
     const exists = await cdp.exists(key);
     const text = exists ? (await cdp.text(key)).slice(0, 60) : "";
     const mark = exists ? "OK  " : "MISS";
-    console.log(`  ${mark} ${key.padEnd(22)} verified=${spec.verified ? "Y" : "N"} ${exists ? JSON.stringify(text) : `(${resolveSelectors(key)[0]})`}`);
+    console.log(`  ${mark} ${key.padEnd(22)} verifiedVersion=${String(spec.verifiedVersion).padEnd(8)} ${exists ? JSON.stringify(text) : `(${resolveSelectors(key)[0]})`}`);
   }
   const liveness = await cdp.probeLiveness();
   console.log("[probe] 运行状态探针：", JSON.stringify(liveness));

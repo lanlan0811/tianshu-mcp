@@ -15,6 +15,7 @@ import { KimicodeGuiAdapter } from "./kimicode/adapter.js";
 import { discoverZcode } from "./zcode/discovery.js";
 import { discoverCodex } from "./codex/discovery.js";
 import { discoverKimicode } from "./kimicode/discovery.js";
+import { discoverTraework } from "./traework/discovery.js";
 import type { AgentProfile } from "../config/schema.js";
 import type { SpawnResult } from "./spawn.js";
 import { Logger } from "../util/log.js";
@@ -163,6 +164,26 @@ export class AgentAdapterRegistry {
         message:
           profile.note ||
           `未探测到 Codex 桌面端（Get-AppxPackage 查询与 ${"WindowsApps"} 扫盘均失败）；请确认已安装 Codex`,
+      };
+    }
+    if (profile.adapter === "traework-gui") {
+      const found = await discoverTraework(profile);
+      return {
+        id: agentId,
+        displayName: profile.displayName || agentId,
+        profile,
+        command: found?.path ?? "",
+        argsTemplate: profile.argsTemplate,
+        ok: !!found && process.platform === "win32",
+        message:
+          process.platform !== "win32"
+            ? "TraeWork macOS research：未完成真机验证，禁止派发"
+            : found
+              ? `探测到 TraeWork: ${found.path}${found.version ? ` (v${found.version})` : ""}`
+              : "未找到 TraeWork；请配置 gui.exePath",
+        discovered: found
+          ? { source: found.source === "explicit" ? "explicit" : "discovery", version: found.version }
+          : undefined,
       };
     }
     if (profile.adapter === "qoder-gui") {

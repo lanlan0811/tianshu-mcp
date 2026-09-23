@@ -31,6 +31,7 @@ import {
   releaseInstance,
   resolvePort,
   waitReady,
+  diagnosePortFailure,
   type LaunchOptions,
   type ReadyInstance,
   type SpawnedInstance,
@@ -148,7 +149,12 @@ async function waitForUi(
     // eslint-disable-next-line no-await-in-loop
     await sleep(1_000);
   }
-  throw new Error(`等待 TraeWork 聊天面板渲染超时（${timeoutMs}ms）——窗口可能仍在加载或未登录`);
+  // issue #23 诊断机制：渲染超时时把页面可见候选写进错误，便于定位选择器漂移。
+  const labels = await cdp.visibleLabels().catch(() => [] as string[]);
+  throw new Error(
+    `等待 TraeWork 聊天面板渲染超时（${timeoutMs}ms）——窗口可能仍在加载或未登录` +
+      (labels.length ? `；页面可见候选=[${labels.join(" | ")}]` : ""),
+  );
 }
 
 /** 默认 GUI 配置（profile.gui 缺省时兜底，与 schema 默认值一致） */
@@ -289,7 +295,14 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
       }
       logger.info(`[traework] 端口 ${port} 无就绪实例，启动新实例：${resolved.command}`);
       spawned = deps.launch({ exePath: resolved.command, port, gui, logger });
-      ready = await deps.waitReady(port, gui.launchTimeoutMs, logger);
+      try {
+        ready = await deps.waitReady(port, gui.launchTimeoutMs, logger);
+      } catch (error) {
+        // issue #23 C3：端口未就绪时输出现场诊断（退出码 / 端口监听者枚举 / 既有实例检测），
+        // 只诊断不改启动策略。诊断串并入错误，便于下一轮定位（single-instance 锁 / 参数 / 环境）。
+        const diag = await diagnosePortFailure(spawned, port, logger);
+        throw new Error(`${(error as Error).message}；诊断：${diag}`);
+      }
     } else {
       logger.info(`[traework] 复用已就绪实例（端口 ${port}，${ready.title ?? "page"}）`);
     }

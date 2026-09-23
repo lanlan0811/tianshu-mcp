@@ -143,20 +143,21 @@ export const BUILTIN_PROFILES: Record<string, AgentProfile> = {
     killTree: "taskkill",
     authNote: "复用 TraeWork 桌面端登录态；窗口需保持可见（发送依赖模拟输入）",
     executableDiscovery: {
+      // issue #23 C3：原先写成 {APPDATA}/TRAE SOLO CN（Roaming），实际安装在
+      // {LOCALAPPDATA}/Programs（Local）。补 preferredDrives + relativePaths + 注册表探测
+      // （由 traework/discovery.ts 消费），Windows 只认 TRAE SOLO CN.exe。
       dirs: [
-        "D:/TRAE Work CN",
-        "{PROGRAMFILES}/TRAE WORK CN",
-        "{PROGRAMFILES(X86)}/TRAE WORK CN",
-        "{LOCALAPPDATA}/Programs/TRAE WORK CN",
-        "{LOCALAPPDATA}/TRAE WORK CN",
-        "{APPDATA}/TRAE SOLO CN",
+        "{LOCALAPPDATA}/Programs/TRAE SOLO CN",
+        "{LOCALAPPDATA}/TRAE SOLO CN",
+        "{PROGRAMFILES}/TRAE SOLO CN",
+        "{PROGRAMFILES(X86)}/TRAE SOLO CN",
         "/Applications/TraeWork.app/Contents/MacOS",
         "/Applications/Trae CN.app/Contents/MacOS",
       ],
-      fileNames: ["TRAE SOLO CN.exe", "TraeWork", "TraeWork CN", "Trae CN"],
+      fileNames: process.platform === "darwin" ? ["TRAE SOLO CN", "TraeWork", "Trae CN"] : ["TRAE SOLO CN.exe"],
       fallbackCommand: undefined,
-      preferredDrives: [],
-      relativePaths: [],
+      preferredDrives: ["D:"],
+      relativePaths: ["TRAE Work CN/TRAE SOLO CN.exe"],
       installRelativeExe: [],
       scanRoots: [],
     },
