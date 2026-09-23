@@ -1,10 +1,21 @@
 # HANDOFF.md — 项目交接说明
 
-> **交接快照：2026-09-23 · 开发版本 `0.6.0`；`v0.6.0` 已发布（GitHub Release / Gitee 发行版 / npm `latest` 三者一致，发布提交 `db85349`）。**
+> **交接快照：2026-09-23 · 开发版本 `0.6.2`（v0.6.1 已发布；v0.6.2 待发布）。**
 > 本文写给**接手本仓库的人**：先说清「这是什么、现在到哪一步」，再给出「怎么跑、怎么改、哪里会踩坑」。
 > 工作区规则见 `AGENTS.md`（gitignore，仅本地）；安装与用法见 `README.md`，本文不重复，只做导览与状态记录。
 
 ---
+
+### 0.6.2 开发交接（GUI 选择器版本漂移，issue #23）
+
+- **范围**：三例 GUI 适配层修复 + 统一诊断，无新工具/数据模型/协议变更。
+- **① Codex 触发器文案漂移**：`projectPickerTrigger` 的 `aria-label` 跨版本漂移（本机 26.915 实测「切换项目」，issue 报告 26.917 为「选择项目」）；主/回退/模板并列覆盖两文案，`boundProjectName`（`src/agents/codex/cdp.ts`）回读同步兼容。新增 `scripts/probe-codex.mjs audit` 模式（20 键命中表），**本机 26.915 除该触发器外无其他漂移**，9 个已实测键 `verifiedVersion` → `26.915.x`。
+- **② Qoder 选择器分层 + 工作区修复**：`src/agents/qoder/selectors.ts` 由扁平字符串升级为 `primary/fallbacks/texts/ariaLabels/ariaPatterns/verifiedVersion`（27 键）+ `qoderCandidates()`；`QoderCdpClient` 保留 `selector()` 字符串语义，新增 `candidates()/existsKey()/clickKey()`（按候选顺序「先探测后点击」，多候选不浪费超时）。**真机重探更正 issue 结论**：0.3.4 工作区菜单**并非不渲染**，真因是页面有**两个** `[data-workspace-picker-trigger]` 致唯一点击判歧义失败；主选择器改用唯一的 `button[aria-label^="切换或清空当前工作区"]`，`[data-workspace-picker-trigger]` 降为回退；生产 `bindWorkspace` 已在真实 0.3.4 跑通（`docs/issue-23-selector-drift-record.md` §3）。
+- **③ TraeWork discovery + 安装目录**：新增 `src/agents/traework/discovery.ts`（显式 → 固定盘相对路径 → 注册表 → 快捷键 → 标准目录 → PATH），`registry.ts` 增 `traework-gui` 专用分支。`builtin.ts` 删除错误的 `{APPDATA}/TRAE SOLO CN`（实测是**用户数据目录**），改 `{LOCALAPPDATA}/Programs/TRAE SOLO CN` 等，补 `preferredDrives:["D:"]`/`relativePaths`；**Windows 只认 `TRAE SOLO CN.exe`**（旧清单含 `Trae CN` → 误匹配 TraeCode CN）。`launcher.ts` 新增 `diagnosePortFailure()`（端口未就绪时输出退出码/监听者/既有实例），**只诊断、不改启动策略、不终止既有实例**。
+- **④ 统一诊断**：新增 `src/agents/gui-diagnostics.ts`（`visibleLabelsExpr`/`normalizeLabels`/`formatCandidates`/`withDiagnostics`），三 GUI agent 解析失败时附「页面可见候选」。
+- **⑤ 字段统一**：TraeWork `verified: boolean` → `verifiedVersion: string`（与 codex/kimicode 一致）。
+- 测试：全量 **966 passed / 12 skipped**（86 文件；较 v0.6.1 的 940 净增 26）；`check:stdio` dist 与 src 均 **8/8**；`pack:check` 234 文件。真机证据见 [issue #23 验证记录](docs/issue-23-selector-drift-record.md)；发布说明 [v0.6.2](docs/release-v0.6.2.md)。
+- **残留**：Codex 条件渲染键（stopButton/reasoningSlider/modelMenuItem/menuItem/permissionOption/sourceFolderArea/createProjectButton）审计时未展开对应菜单/对话框，未提 `verifiedVersion`；TraeWork 端口未就绪根因（single-instance 锁/参数/环境）未复现，诊断已就位；Qoder 其余键未逐一真机复验。
 
 ### 0.6.1 开发交接（五项小项扫尾，issue #17）
 
@@ -130,9 +141,9 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build
 | 项 | 状态 |
 |---|---|
 | 分支 | `master`（**只在此分支提交**，不建其他分支） |
-| 版本 / 许可证 | `0.6.1`（**已发布**；上一版本 `0.6.0`；发布提交 `a1fe7cd`）/ Apache-2.0 |
-| 标签 | `v0.1.0` … `v0.6.1`（均已推双仓；`v0.6.1` → `a1fe7cd`） |
-| 工作树 | 干净；`github/master` 与 `gitee/master` 均已推到同一提交。本轮提交：`e6d4d58`（路径子树拒绝）、`f086067`（capability 三族）、`4db3e69`（登记返回值消费）、`04be759`（文档矩阵）、`a1fe7cd`（版本 `0.6.1` + 交接快照，即 `v0.6.1` 的发布提交） |
+| 版本 / 许可证 | `0.6.2`（**v0.6.1 已发布**，上一版本 `0.6.1`；本版待发布）/ Apache-2.0 |
+| 标签 | `v0.1.0` … `v0.6.1`（均已推双仓；`v0.6.1` → `a1fe7cd`）；`v0.6.2` 待打 |
+| 工作树 | 见下方「发布记录」（v0.6.2 完成后回写） |
 | 测试 | **940 passed / 12 skipped**（83 个测试文件通过 + 3 个真实浏览器文件按设计 skip，共 86 文件；较 v0.6.0 净增 42 项：33 路径闸门 + 2 登记 + 1 真值表 + 2 分词，另改写 1 条 readOnlyHint 用例） |
 | 门禁 | lint 0 warning、typecheck clean、全量测试 940 passed、build 成功、`check:stdio` **8/8** 通过（dist 与 src 两条入口，另在 npm registry 实装消费者布局复跑同样 8/8）、`pack:check` 通过（232 文件） |
 | CI | `build-test`（ubuntu/windows/macos × Node 20/22/24）+ `pack-check`，另加 `visual-browser` 真实浏览器矩阵（ubuntu/windows + macos-15-intel/macos-15 × Node 20/22/24）。**v0.6.1 实测**：`a1fe7cd` 一次通过 **22 作业全绿**（[run 35869019004](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35869019004)，含 macOS 作业——本轮子树改动未误伤 `/var/folders`）。历史：v0.6.0 的 `db85349` 一次通过（[run 35861049131](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35861049131)） |
