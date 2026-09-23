@@ -38,11 +38,17 @@ describe("选择器表", () => {
     }
   });
 
-  it("实测项标记 verified=true（含聊天输入与新建任务）", () => {
-    expect(SELECTORS.chatInput.verified).toBe(true);
-    expect(SELECTORS.newTask.verified).toBe(true);
-    expect(SELECTORS.projectButton.verified).toBe(true);
-    expect(SELECTORS.cascadeMenuItem.verified).toBe(true);
+  it("实测项标记 verifiedVersion 字符串（含聊天输入与新建任务）", () => {
+    // issue #23 D11：字段由 verified 布尔统一为 verifiedVersion 字符串，与 codex/kimicode 一致。
+    for (const key of Object.keys(SELECTORS)) {
+      const spec = SELECTORS[key as keyof typeof SELECTORS];
+      expect(typeof spec.verifiedVersion, `${key}.verifiedVersion 非字符串`).toBe("string");
+      expect(spec.verifiedVersion.length, `${key}.verifiedVersion 为空`).toBeGreaterThan(0);
+    }
+    expect(SELECTORS.chatInput.verifiedVersion).toBe("0.1.64");
+    expect(SELECTORS.newTask.verifiedVersion).toBe("0.1.64");
+    expect(SELECTORS.projectButton.verifiedVersion).toBe("0.1.64");
+    expect(SELECTORS.cascadeMenuItem.verifiedVersion).toBe("0.1.64");
   });
 });
 

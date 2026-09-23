@@ -1,9 +1,15 @@
 /**
  * 单元测试：TraeWork 启动器安全逻辑（开发计划 §4.4 / §9）。
  * 重点覆盖「误杀用户实例」事故后的安全红线：只终止自建且命令行核对通过的进程。
+ * 另含 issue #23 C3 的「端口未就绪诊断」。
  */
 import { describe, it, expect, vi } from "vitest";
-import { isPortFree, findFreePort, releaseInstance, type SpawnedInstance } from "../../src/agents/traework/launcher.js";
+import { isPortFree, findFreePort, releaseInstance, diagnosePortFailure, type SpawnedInstance } from "../../src/agents/traework/launcher.js";
+
+// diagnosePortFailure 在 win32 下会枚举进程：替换 exec 层为空结果，避免触达真实系统。
+vi.mock("../../src/verify/exec.js", () => ({
+  execFileAsync: async () => ({ status: 0, stdout: "", stderr: "", timedOut: false, durationMs: 0 }),
+}));
 
 const silentLogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
 
@@ -103,5 +109,31 @@ describe("releaseInstance 安全红线", () => {
     });
     expect(r.released).toBe(false);
     expect(kill).not.toHaveBeenCalled();
+  });
+});
+
+describe("diagnosePortFailure（issue #23 C3）", () => {
+  it("子进程以 code=0 退出 → 提示单实例交接", async () => {
+    const msg = await diagnosePortFailure(inst({ exit: { code: 0, signal: null } }), 9222, silentLogger);
+    expect(msg).toContain("已退出");
+    expect(msg).toContain("单实例锁");
+    // 不得包含任何「终止既有实例」的动作语义
+    expect(msg).not.toMatch(/已终止|taskkill/i);
+  });
+
+  it("子进程有非 0 退出码 → 只报告退出码，不误判单实例", async () => {
+    const msg = await diagnosePortFailure(inst({ exit: { code: 1, signal: null } }), 9222, silentLogger);
+    expect(msg).toContain("code=1");
+    expect(msg).not.toContain("单实例锁");
+  });
+
+  it("未启动新实例（复用既有）→ 明确说明", async () => {
+    const msg = await diagnosePortFailure(null, 9222, silentLogger);
+    expect(msg).toContain("未由本模块启动新实例");
+  });
+
+  it("诊断串始终包含端口监听者枚举口径", async () => {
+    const msg = await diagnosePortFailure(inst({ pid: process.pid }), 9222, silentLogger);
+    expect(msg).toContain("--remote-debugging-port=9222");
   });
 });

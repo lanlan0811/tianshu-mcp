@@ -724,13 +724,19 @@ describe("Codex 选择器规范", () => {
     expect(CODEX_SELECTORS.messageArea.fallbacks).not.toContain("#root");
   });
 
-  it("项目选择触发器靠「切换项目」文案（真机实测：侧栏另有「添加新项目」需避免误点）", () => {
+  it("项目选择触发器同时兼容「选择项目」(26.917) 与「切换项目」(26.915 及更早)（issue #23 文案漂移）", () => {
     const spec = CODEX_SELECTORS.projectPickerTrigger;
-    expect(spec.primary).toContain("切换项目");
+    // issue #23：文案在不同版本间漂移。26.915（本机实测）为「切换项目」，26.917（issue 报告）为「选择项目」；
+    // 两者都必须命中，故一个在主选择器、另一个在回退与模板中。
+    expect(spec.primary).toContain('aria-haspopup="dialog"');
+    expect(spec.primary).toContain("选择项目");
+    expect((spec.fallbacks ?? []).join(" ")).toContain("切换项目");
+    expect((spec.ariaPatterns ?? []).join(" ")).toContain("切换项目");
+    expect((spec.ariaPatterns ?? []).join(" ")).toContain("选择项目");
+    expect(spec.verifiedVersion).toContain("26.915");
     // 不能把侧栏「添加新项目」或「不在项目中工作」混入本键（后者是独立动作按钮）
     expect(JSON.stringify(spec)).not.toContain("添加新项目");
     expect(JSON.stringify(spec.ariaLabels ?? [])).not.toContain("不在项目中工作");
-    expect((spec.ariaPatterns ?? []).join(" ")).toContain("切换项目");
   });
 
   it("源文件夹点击目标必须是按钮而非「源文件夹」label（真机实测点 label 不弹对话框）", () => {
@@ -773,6 +779,32 @@ describe("Codex 选择器规范", () => {
     expect(() => fn([], [], [], [], [])).not.toThrow();
     // 数组内缺省段位也不得抛错（防御性）
     expect(() => fn([])).not.toThrow();
+  });
+
+  it("boundProjectName 回读兼容「选择项目」(26.917) 与「切换项目」(26.915)（issue #23 文案漂移）", async () => {
+    const { CodexCdpClient } = await import("../../src/agents/codex/cdp.js");
+    const vm = await import("node:vm");
+    const cdp = new CodexCdpClient(1, 1);
+    let expr = "";
+    // 捕获页面表达式（不改断言目标：只借 evaluate 取出源码）
+    const stub = cdp as unknown as { evaluate: (e: string) => Promise<string> };
+    stub.evaluate = async (e: string) => {
+      expr = e;
+      return "";
+    };
+    await cdp.boundProjectName();
+    const runWith = (label: string): string => {
+      const el = {
+        getAttribute: (n: string) => (n === "aria-label" ? label : null),
+        getBoundingClientRect: () => ({ width: 10, height: 10, top: 0, left: 0, right: 10, bottom: 10 }),
+      };
+      const document = { querySelectorAll: () => [el] };
+      return vm.runInNewContext(expr, { document, innerWidth: 1000, innerHeight: 1000 }) as string;
+    };
+    expect(runWith("选择项目：tianshu-mcp")).toBe("tianshu-mcp"); // 26.917
+    expect(runWith("切换项目：tianshu-mcp")).toBe("tianshu-mcp"); // 26.915 及更早
+    expect(runWith("Switch project: my-repo")).toBe("my-repo"); // 英文回退
+    expect(runWith("不在项目中工作")).toBe(""); // 未绑定：不得误命中
   });
 });
 

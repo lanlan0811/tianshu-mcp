@@ -23,8 +23,11 @@ class WorkspaceControls extends QoderCdpClient {
     throw new Error(`Unexpected read: ${expr}`);
   }
   override async exists(css:string){
-    if(css===this.selector('workspaceSearch'))return this.picker;
-    if(css===this.selector('workspaceForm'))return this.form;
+    // issue #23：选择器升级为多候选，桩按候选集合匹配（候选顺序由生产代码决定，这里只需回答「在不在」）。
+    if(this.candidates('workspaceSearch').includes(css))return this.picker;
+    if(this.candidates('workspaceMenu').includes(css))return false;
+    if(this.candidates('workspaceForm').includes(css))return this.form;
+    if(this.candidates('workspace').includes(css))return true;
     if(css.includes('[title='))return this.selectedFolder;
     throw new Error(`Unexpected control: ${css}`);
   }
