@@ -7,6 +7,33 @@
 
 ---
 
+## [0.6.1] - 2026-09-23
+
+### 新增
+
+- **危险目录判定收敛为可注入平台的纯函数** `isDangerousProjectDir(norm, platform)`（`src/util/path.ts`）：精确根 / 盘符根 / 系统目录子树三选一判定，任意平台都能验证三平台形态。
+
+### 变更
+
+- **`verify_task` 的能力由 `read` 改为 `execute`**（[issue #17](https://github.com/lanlan0811/tianshu-mcp/issues/17) 问题 2）：它会执行项目配置命令、可产生构建产物，本就不是只读。**宿主需知**：其 MCP `readOnlyHint` 由 `true` 变为 **`false`**；`requireApproval` 维持 `false`（仍免审批，R11 结论不变）——**策略层请以 `_meta.requireApproval` 而非 `readOnlyHint` 判断是否需授权**，`docs/tianshu-integration` 双语的 policy 示例已同步。
+- **`ToolDef.capability` 联合类型删除始终无人使用的 `"network"`**，收敛为三族语义（`read` / `write` / `execute`），并写进类型定义与 `tools.ts` 头注释。
+
+### 修复
+
+- **系统目录改为子树拒绝**（issue #17 问题 4）：`/etc`、`/usr`、`/bin`、`/sbin`、`/private/etc` 与 `c:/windows`、`c:/program files`、`c:/program files (x86)` 由「仅精确相等」升级为**边界感知子树拒绝**，修补了 `c:/windows/system32`、`/etc/anything` 这类漏挡。边界感知使 `c:/windows.old`、`/etcetera`、`/usrlocal` 不被误伤；`/var`、`/tmp`、`/opt`、用户主目录等维持精确匹配（macOS 的 `os.tmpdir()` 就是 `/var/folders/...`，子树拒绝会切断测试基座与合法工作区）。
+- **项目登记失败不再静默**（issue #17 问题 3）：`run_task` 原先丢弃 `registerProject` 的返回值（`void registered;`）又用 `projectByPath` 二次读取同一条记录；现直接消费返回值、删除冗余读取，登记失败时记 `WARN` 并返回结构化 `isError` 且**不派单**（杜绝「任务已建、项目未登记」的半状态）。
+- **计数与实际不符收尾**（issue #17 问题 1）：改正 `test/protocol/protocol.test.ts` 头注释残留的「9 个工具」，并新增 `TOOL_DEFS` 数量硬断言；`ci.yml` 注释、`HANDOFF`（两处）与 `CONTRIBUTING` 双语滞后的「6 场景」同步为 **8**（issue #16 新增两技能场景后未同步）。
+
+### 文档
+
+- **`cmd` 字符串形态的坑显式化**（issue #17 问题 5，零行为变更）：`docs/acceptance-config.md` / `.en.md` 新增实测表（无转义、引号不闭合不报错、空引号产出空参数），`schema.ts` / `store.ts` 注释、`SKILL.md`、`usage-examples.md` 补「推荐一律用数组形态」提示。
+- 双语：README（`verify_task` 能力列 + M31 里程碑）、ARCHITECTURE（工具表三族语义 + `readOnlyHint` 推导规则 + §15 两条新缺口）、SECURITY（§3 危险目录匹配语义 + §5 措辞改准）、`docs/tianshu-integration`、`docs/acceptance-config`；单语：HANDOFF、`SKILL.md`、`usage-examples.md`；新增 `docs/issue-17-small-fixes-record.md`（实测证据）。
+
+### 测试
+
+- 全量 **940 passed / 12 skipped**（Windows 10 x64，Node 24.18.0），较 v0.6.0 的 898 净增 **42** 项：`project-dir-guard` 新增 `isDangerousProjectDir` 三平台表驱动用例（含 `c:/windows.old`、`/etcetera`、`/private/var/folders/...` 三个关键反例）与 win32 子树集成用例；`protocol` 新增 11 工具 × capability × 四注解**真值表**与数量硬断言；`zcode-handler` 新增登记失败不派单、返回值被消费（断言 `projectByPath` 调用计数为 0）；`core` 新增 `splitCmd` 边界语义锁定。
+- 严格 stdio 门禁 dist 与 src 两条入口各 **8/8**；`pack:check` 通过（232 文件）。
+
 ## [0.6.0] - 2026-09-23
 
 ### 新增

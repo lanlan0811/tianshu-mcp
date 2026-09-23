@@ -8,6 +8,33 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.6.1] - 2026-09-23
+
+### Added
+
+- **Dangerous-directory decision collapsed into a platform-injectable pure function** `isDangerousProjectDir(norm, platform)` (`src/util/path.ts`): exact root / drive root / system-directory subtree, so all three platform shapes are verifiable on any OS.
+
+### Changed
+
+- **`verify_task` capability moves from `read` to `execute`** ([issue #17](https://github.com/lanlan0811/tianshu-mcp/issues/17) item 2): it runs the project's configured commands and may produce build artifacts, so it never was read-only. **Host note**: its MCP `readOnlyHint` changes from `true` to **`false`**; `requireApproval` stays `false` (still approval-free, the R11 conclusion is unchanged) — **policy layers should key off `_meta.requireApproval`, not `readOnlyHint`**. The policy examples in `docs/tianshu-integration` (both languages) are updated.
+- **The `"network"` value, used by no tool at all, is removed from the `ToolDef.capability` union**, collapsed to three families (`read` / `write` / `execute`) documented on the type and in the `tools.ts` header.
+
+### Fixed
+
+- **System directories are now denied as subtrees** (issue #17 item 4): `/etc`, `/usr`, `/bin`, `/sbin`, `/private/etc` plus `c:/windows`, `c:/program files`, `c:/program files (x86)` moved from exact-equality to **boundary-aware subtree denial**, closing leaks such as `c:/windows/system32` and `/etc/anything`. Boundary-awareness keeps `c:/windows.old`, `/etcetera` and `/usrlocal` from being falsely matched; `/var`, `/tmp`, `/opt`, the home directory and friends stay exact-match (on macOS `os.tmpdir()` *is* `/var/folders/...`, so a subtree rule would sever the test base and legitimate workspaces).
+- **Project registration failures are no longer silent** (issue #17 item 3): `run_task` used to discard the `registerProject` return value (`void registered;`) and then re-read the same record via `projectByPath`; it now consumes the return value, drops the redundant read, and on failure logs `WARN` and returns a structured `isError` **without dispatching** (eliminating the "task created but project unregistered" half-state).
+- **Count-vs-reality wrap-up** (issue #17 item 1): the leftover "9 tools" header comment in `test/protocol/protocol.test.ts` is corrected and a `TOOL_DEFS` count assertion added; the lagging "6 scenarios" references in the `ci.yml` comment, `HANDOFF` (two places) and `CONTRIBUTING` (both languages) are synced to **8** (they lagged behind the two skill scenarios added in issue #16).
+
+### Documentation
+
+- **The `cmd` string-form pitfalls made explicit** (issue #17 item 5, zero behaviour change): `docs/acceptance-config.md` / `.en.md` gain a measured table (no escaping, an unclosed quote does not error, an empty quote yields an empty argument), and the `schema.ts` / `store.ts` comments, `SKILL.md` and `usage-examples.md` carry an "always prefer the array form" note.
+- Bilingual: README (`verify_task` capability row + M31 milestone), ARCHITECTURE (three-family tool table + `readOnlyHint` derivation rule + two new §15 gaps), SECURITY (§3 dangerous-directory matching semantics + §5 wording corrected), `docs/tianshu-integration`, `docs/acceptance-config`; single-language: HANDOFF, `SKILL.md`, `usage-examples.md`; new `docs/issue-17-small-fixes-record.md` (measured evidence).
+
+### Tests
+
+- Full suite **940 passed / 12 skipped** (Windows 10 x64, Node 24.18.0), a net **+42** over v0.6.0's 898: `project-dir-guard` gains `isDangerousProjectDir` table-driven cases for all three platform shapes (including the three key counter-examples `c:/windows.old`, `/etcetera`, `/private/var/folders/...`) and a win32 subtree integration case; `protocol` gains an 11-tool × capability × four-annotation **truth table** and a count assertion; `zcode-handler` gains registration-failure-does-not-dispatch and return-value-consumed cases (the latter asserts a `projectByPath` call count of 0); `core` gains `splitCmd` boundary-semantics locks.
+- The strict stdio gate passes **8/8** on both the dist and src entry points; `pack:check` passes (232 files).
+
 ## [0.6.0] - 2026-09-23
 
 ### Added

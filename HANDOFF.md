@@ -6,6 +6,17 @@
 
 ---
 
+### 0.6.1 开发交接（五项小项扫尾，issue #17）
+
+- **范围**：五项独立小项合并扫尾，无新工具/新适配器/数据模型变更。五项对应 issue 的第 1–5 点。
+- **① 计数对齐**：`tools.ts` / `server.ts` / `handlers.ts` 三处的「9 个工具」在 v0.5.8 已修好；本次修掉最后一处残留（`test/protocol/protocol.test.ts` 头注释），并新增 `TOOL_DEFS` **数量硬断言**（仅比对名字数组相等拦不住「注册表多一条无人注册的条目」）。同类病灶一并扫尾：`check-stdio` 场景数自 issue #16 起已是 8，但 `ci.yml` 注释 / `HANDOFF`（两处）/ `CONTRIBUTING` 双语仍写 6，本版同步。
+- **② capability 三族**（**唯一对外可见的元数据变更**）：`ToolDef.capability` 删除始终无人使用的 `"network"`；`verify_task` 由 `read` 改 **`execute`**（会跑项目命令、可产生构建产物）。连带 **`readOnlyHint` 由 `true` 变 `false`**、**`requireApproval` 不变（仍免审批）**——`server.ts` 的推导规则未改，且注释已写明「`readOnlyHint` 不是审批信号」。新增 11 工具 × capability × 四注解**真值表测试**锁死全部映射。
+- **③ 项目登记失败不静默**：`handlers.ts` 的 `runTaskHandler` 原先 `void registered;` 丢弃返回值、又用 `projectByPath` 二次读取同一条记录；现直接消费返回值、删冗余读取，登记失败记 `WARN` 并返回 `errorResult`（**不派单**，杜绝「任务已建、项目未登记」的半状态）。单测断言 `projectByPath` 调用计数为 0，证伪「二次读取仍在」。
+- **④ 系统目录子树拒绝**：`src/util/path.ts` 新增 `DANGEROUS_SUBTREES`（`/etc` `/usr` `/bin` `/sbin` `/private/etc` + `c:/windows` `c:/program files` `c:/program files (x86)`）与纯函数 `isDangerousProjectDir(norm, platform)`，**边界感知**（前缀后须为 `/`），故 `c:/windows.old` / `/etcetera` 不误伤。**`/var` `/tmp` `/opt` 家目录等维持精确匹配**——macOS 的 `os.tmpdir()` 就是 `/var/folders/...`，子树拒绝会切断测试基座。`isDriveRoot` 移入纯函数内部，不再对外暴露。
+- **⑤ `cmd` 字符串形态文档化**（零行为变更）：`acceptance-config` 双语加实测警示表，`schema.ts` / `store.ts` 注释、`SKILL.md`、`usage-examples.md` 补「推荐数组形态」；`core.test.ts` 加 5 条边界用例把既有分词语义钉死。
+- 测试：全量 **940 passed / 12 skipped**（86 文件，较 v0.6.0 的 898 净增 42）；`check:stdio` dist 与 src 均 **8/8**；`pack:check` 232 文件。实测证据（真值表原始输出、子树三平台表、分词行为）见 [issue #17 验证记录](docs/issue-17-small-fixes-record.md)；发布说明 [v0.6.1](docs/release-v0.6.1.md)；三族语义与 `readOnlyHint` 推导见 [ARCHITECTURE](ARCHITECTURE.md) §4 与 §15。
+- **残留边界**（有意为之）：`/var` `/tmp` `/opt` `/library` `/system` `/root` `c:/users` 的**子目录**仍不挡；UNC 形态缺口在安全渠道另行报告，不在本版范围。
+
 ### 0.6.0 开发交接（技能自装加固，issue #16）
 
 - **问题**（`src/util/skill-install.ts`）：① `resolveSkillSourceDir()` 的候选链含 `process.cwd()/skills/tianshu-mcp`（两处），非标准布局下会把**当前工作目录**里的同名目录内容装进 `~/.rivet/skills/` 并在新会话生效（在第三方仓库里调试起 server 即中招）；② 目标 hash 不一致时直接备份覆盖，**用户对 `SKILL.md` 的本地调优被静默替换**（有备份、有开关，但覆盖动作零提示、零授权）。根因是目标目录内**没有任何「我们装了什么」的记录**，原理上无法区分「旧版包」与「用户改过」。
@@ -119,11 +130,11 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build
 | 项 | 状态 |
 |---|---|
 | 分支 | `master`（**只在此分支提交**，不建其他分支） |
-| 版本 / 许可证 | `0.6.0`（**已发布**；上一版本 `0.5.10`；发布提交 `db85349`）/ Apache-2.0 |
-| 标签 | `v0.1.0` … `v0.6.0`（均已推双仓；`v0.6.0` → `db85349`） |
-| 工作树 | 干净；`github/master` 与 `gitee/master` 均已推到同一提交。本轮提交：`a370b20`（实现 + 双语文档，feat(skills)）、`db85349`（版本 `0.6.0` + 交接快照，即 `v0.6.0` 的发布提交）、以及其后的发布后回写提交 |
-| 测试 | **898 passed / 12 skipped**（83 个测试文件通过 + 3 个真实浏览器文件按设计 skip，共 86 文件；较 v0.5.10 净增 31 项：30 单元 + 1 配置） |
-| 门禁 | lint 0 warning、typecheck clean、全量测试 898 passed、build 成功、`check:stdio` **8/8** 通过（dist 与 src 两条入口，另在 tarball 消费者布局与 npm registry 实装两种上下文复跑同样 8/8）、`pack:check` 通过（232 文件） |
+| 版本 / 许可证 | `0.6.1`（**待发布**；上一版本 `0.6.0`）/ Apache-2.0 |
+| 标签 | `v0.1.0` … `v0.6.1`（`v0.6.1` 待推；`v0.6.0` → `db85349`） |
+| 工作树 | 干净；`github/master` 与 `gitee/master` 均已推到同一提交。本轮提交：实现 + 双语文档（issue #17）、版本 `0.6.1` + 交接快照（即 `v0.6.1` 的发布提交）、以及其后的发布后回写提交 |
+| 测试 | **940 passed / 12 skipped**（83 个测试文件通过 + 3 个真实浏览器文件按设计 skip，共 86 文件；较 v0.6.0 净增 42 项：33 路径闸门 + 2 登记 + 1 真值表 + 2 分词，另改写 1 条 readOnlyHint 用例） |
+| 门禁 | lint 0 warning、typecheck clean、全量测试 940 passed、build 成功、`check:stdio` **8/8** 通过（dist 与 src 两条入口）、`pack:check` 通过（232 文件） |
 | CI | `build-test`（ubuntu/windows/macos × Node 20/22/24）+ `pack-check`，另加 `visual-browser` 真实浏览器矩阵（ubuntu/windows + macos-15-intel/macos-15 × Node 20/22/24）。**v0.6.0 实测**：`db85349` 一次通过（[run 35861049131](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35861049131)）。历史：v0.5.10 的 `44e9180` 通过 22 作业全绿（[run 35794428926](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35794428926)） |
 | npm | `tianshu-mcp@0.6.0` 已发布（`latest`）——`npm view tianshu-mcp dist-tags` 为 `{latest: "0.6.0"}`，`dist.shasum` = `f655356c…`，232 文件；从 registry 实装消费者复验：版本 `0.6.0`、五个探针脚本齐备、`check:stdio` **8/8 通过**；新语义实测（全新 HOME 首次拉起写清单、改一行后重启 warn 保留）。注意 npm CDN 的 packument 有数分钟缓存，刚发布后 `npm install` 可能短暂报 `ETARGET`，用 `--prefer-online` 或稍候即可。发布步骤见 `docs/npm-publish-guide.md` |
 | GitHub Release | 推送 `v*` tag 触发 `.github/workflows/release.yml`：先跑完整门禁并校验「tag 版本 === package.json 版本」，正文由 `docs/release-v<ver>.md` + `.en.md` 双语合成（缺文档即报错），**要求同 SHA 的成功 CI**，并附 `tianshu-mcp-<ver>.tgz`。**v0.6.0 实测全绿**（[run 35861741097](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35861741097)），[GitHub 发行 v0.6.0](https://github.com/lanlan0811/tianshu-mcp/releases/tag/v0.6.0) 附件 `tianshu-mcp-0.6.0.tgz`（583888 字节），正文为双语发布说明 |
@@ -178,6 +189,10 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build
 | M25 | **Qoder CN GUI 适配（第五个 GUI agent，`agentId=qoder`）**：安装发现（显式 → D 盘 → 注册表/快捷方式 → 标准目录）、实例复用与 `needs_user` 保留现场、完整路径工作区绑定与原生「新建工作区」导入、`modelSource` 默认/自定义分组与模型管理全局思考等级保存回读、本轮消息绑定的运行判定、发送/答题检查点防重发、自动与手动返修先落计划再发原会话（详见 §4.2 与 §9.12） | `0.5.6` | **826** |
 | M26 | **编排技能文档按代码实况重写**：参数兼容矩阵（九维度 × 五 agent）、`needsUserKind` × agent × `continue_task` 行为矩阵、`agentEndReason` → 终态映射、Kimi Code 档位取值域修正、qoder 章节与 meta 新字段补齐；**无运行时行为变更**（详见 §0 的 0.5.7 交接与 `docs/release-v0.5.7.md`） | `0.5.7` | 826 |
 | M27 | **四份主文档按代码实况重写 + 打包一致性修复**：验收阶段顺序、`visual.enabled=false` 的真实边界、工具返回契约、五份 agent 表补 Qoder CN、profile 无效字段提示；补发 `probe-traework.mjs` 与三个 probe script；**无运行时行为变更**（详见 §0 的 0.5.8 交接与 `docs/release-v0.5.8.md`） | `0.5.8` | 826 |
+| M28 | **GUI 终态如实化（server 退出 / 重启归档，issue #14）**：`shutdownInterrupt()` 尽力停 + 有界等待、未确认如实标注、`guiResidualUnconfirmed` 与人工确认入口（详见 §0 的 0.5.9 交接与 `docs/release-v0.5.9.md`） | `0.5.9` | 841 |
+| M29 | **派单/验收幂等键（issue #15）**：`run_task` / `verify_task` 的 `idempotencyKey`、TTL 重放、执行中提示、同键异参 fail-closed、`idempotency.json` 落盘与 `idempotentHint` 注解（详见 §0 的 0.5.10 交接与 `docs/release-v0.5.10.md`） | `0.5.10` | 867 |
+| M30 | **技能自装加固（issue #16）**：源定位只认包自身、安装清单区分「旧版包」与「用户本地修改」、`autoInstall` 三态与 `--approve-skill-update`、原子安装与备份治理（详见 §0 的 0.6.0 交接与 `docs/release-v0.6.0.md`） | `0.6.0` | 898 |
+| M31 | **五项小项扫尾（issue #17）**：系统目录子树拒绝（判定抽为可注入平台的纯函数）、`capability` 收敛三族（`verify_task` → `execute`）、项目登记失败不派单、`cmd` 字符串形态文档化、注释与场景计数对齐；**唯一对外可见变更**是 `verify_task` 的 `readOnlyHint` 变 `false`（详见 §0 的 0.6.1 交接与 `docs/release-v0.6.1.md`） | `0.6.1` | **940** |
 
 ### 3.2 实现期修复记录（都是真机/CI 逼出来的，改相关代码前先读）
 
@@ -208,6 +223,9 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build
 | 23 | M25 | 模型菜单点选后**异步关闭**，立刻重开会读到旧值；「保存设置」也可能根本没生效 | 选中模型后先 `wait(model-menu-closed)` 确认菜单真的关闭，再做 `model-readback`；思考等级保存后**重新打开模型管理**核对已持久化的值（`persisted-reasoning`），未生效即响亮报错不发送（详见 §9.12 ④） | `test/unit/qoder-model-controls.test.ts`（延迟关闭 / 保存生效 / 保存未生效三分支） |
 | 24 | M25 | 单元测试 `isolate:false` 使安装探测的命令 mock 泄漏到 Git 基线测试（依赖文件执行顺序） | vitest unit project 恢复文件级隔离（`isolate:true`），mock 不再跨文件泄漏 → 全量回归稳定（详见 §7 门禁纪律 1 同源教训） | `vitest.config.ts` + 全量回归 |
 | 25 | M26 | 文档声称「技能/工具计数」与实际不符（如 §15 说 `tools.ts` 注释仍写 9 个工具、SKILL 说 `get_task_report` 是唯一不带 meta 块的工具） | 逐项核对代码更正：工具注释计数改为 11、MCP `instructions` 补 qoder/kimicode、`meta` 块例外改为「`get_task_report` + 两个视觉基准工具 + 任何错误结果」；同类偏差在 README/ARCHITECTURE/HANDOFF/SKILL 一并修正 | 本轮文档重写（`test/unit/skill-format.test.ts` 保住 frontmatter 与结构契约） |
+| 26 | M31 | 危险目录闸门只挡**精确相等**的根：`c:/windows/system32`、`/etc/anything` 这类系统目录子目录可被当作工作区（worker 对整个子树可写） | 新增 `DANGEROUS_SUBTREES` + 纯函数 `isDangerousProjectDir(norm, platform)`，系统目录改**边界感知子树拒绝**（前缀后须为 `/`）；`/var` `/tmp` 等维持精确（macOS `os.tmpdir()` 是 `/var/folders/...`，子树拒绝会切断测试基座）。判定可注入平台，故在 Windows 开发机上即验证三平台形态 | `test/unit/project-dir-guard.test.ts`（含 `c:/windows.old`、`/etcetera`、`/private/var/folders/...` 三个反例） |
+| 27 | M31 | `verify_task` 标 `read` 但实际执行项目命令（capability 死分类：`execute`/`network` 零使用）；连带 MCP `readOnlyHint` 失真为 `true` | `capability` 收敛三族、删 `network`；`verify_task` 改 `execute`，`readOnlyHint` 随之 `false`（仍免审批）；`server.ts` 补推导注释，宿主需知写进 tianshu-integration / release / CHANGELOG / ARCHITECTURE | `test/protocol/protocol.test.ts` 真值表（11 工具 × capability × 四注解） |
+| 28 | M31 | `run_task` 丢弃 `registerProject` 返回值（`void registered;`）又用 `projectByPath` 冗余二次读取；登记失败只冒原始 `Error`，易留下「任务已建、项目未登记」半状态 | 消费返回值取代二次读取；登记失败 `WARN` + 结构化 `errorResult`，**不派单** | `test/unit/zcode-handler.test.ts`（断言 `projectByPath` 调用计数为 0） |
 
 ---
 
@@ -410,7 +428,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 898 passed / 12 skipped（910 项，83 文件通过 + 3 真实浏览器文件按设计 skip）
+npm test             # 940 passed / 12 skipped（952 项，83 文件通过 + 3 真实浏览器文件按设计 skip）
 ```
 
 日常循环（改 `src/` 后）：
@@ -459,7 +477,7 @@ TIANSHU_VISUAL_BROWSER_TEST=1 npx vitest run visual --maxWorkers=1
 # 视觉验收：Windows 10 本机完整功能矩阵证据（9 项）
 npm run evidence:visual:windows -- --out .tmp-check/visual-windows-matrix/evidence.json
 
-# stdio 协议门禁（真实进程字节流校验，6 场景）
+# stdio 协议门禁（真实进程字节流校验，8 场景）
 npm run check:stdio
 ```
 
@@ -653,7 +671,8 @@ hwnd 贯穿传递（只操作探测到的那个窗口）、下拉未命中时先
 - `eslint.config.js`：`src/**/*.ts` 启用 `no-console`（仅允许 `error`），阻止再次直接写 stdout。
 - `scripts/check-stdio.mjs`：真实子进程捕获完整 stdout/stderr，逐行用官方 `JSONRPCMessageSchema`
   校验，空行 / 非 JSON / parser error / 退出残留片段即失败；覆盖首次启动、再次启动、`--no-skill-install`、
-  损坏 `config.json`、stub 任务运行期日志、EOF 关闭 6 场景。消费者安装 tarball 后复用同一脚本。
+  损坏 `config.json`、stub 任务运行期日志、EOF 关闭，以及技能自装加固的 `skill-locally-modified` /
+  `skill-approve-update`（issue #16），共 **8 场景**。消费者安装 tarball 后复用同一脚本。
 
 ### 9.4 Codex GUI 状态脱节与取消（M14 / v0.3.2，issue #5/#6）
 
@@ -1039,7 +1058,7 @@ node scripts/probe-qoder.mjs state --port 9777  # 只读：已有实例与页面
 
 ## 12. 接手人下一步建议
 
-1. 先跑 `npm ci && npm run typecheck && npm run lint && npm test && npm run build`，确认基线绿（898 passed / 12 skipped）。
+1. 先跑 `npm ci && npm run typecheck && npm run lint && npm test && npm run build`，确认基线绿（940 passed / 12 skipped）。
 2. 动代码前先读 [ARCHITECTURE.md](ARCHITECTURE.md) 建立整体心智模型（分层、依赖方向、唯一双路径接缝 `adapter.run`、状态机与验收流水线）；再按专题读本文章节：
    动 GUI adapter 相关代码前，先读对应文档与本文章节：
    TraeWork → `docs/traework-cdp.md` + §9.1 / §9.2；ZCode → `docs/zcode-cdp.md` + §9.5 / §9.6 / §9.9；Codex → `docs/codex-gui-cdp.md` + §9.4；Kimi Code → `docs/kimi-cdp.md` + §9.11。
@@ -1065,4 +1084,5 @@ node scripts/probe-qoder.mjs state --port 9777  # 只读：已有实例与页面
    issue #13（视觉验收第二阶段 AI 内容校验）已随 v0.5.4 完成，见 §4.3 与 §9.10；
    issue #14（GUI 终态如实化）已随 v0.5.9 完成；issue #15（派单/验收幂等键）已随 v0.5.10 完成；
    issue #16（技能自装加固：源定位 / 覆盖语义 / 三态与备份治理）已随 v0.6.0 完成，见 §3.4 与 `docs/issue-16-skill-install-hardening-record.md`；
+   issue #17（五项小项扫尾：系统目录子树拒绝 / capability 三族 / 登记失败不派单 / `cmd` 形态文档化 / 计数对齐）已随 v0.6.1 完成，见 §0 的 0.6.1 交接与 `docs/issue-17-small-fixes-record.md`；
    技能自装的后续方向（另开 issue）：多宿主技能目录投递、宿主级 `"prompt"` 交互确认 UI。
