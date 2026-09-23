@@ -22,8 +22,8 @@
   "checks": [
     {
       "name": "typecheck",               // 必填，报告中显示名
-      "cmd": ["npm", "run", "typecheck"], // 必填：argv 数组（推荐，非 shell）
-      // 也可以写字符串，会被安全分词（不经过 shell）：
+      "cmd": ["npm", "run", "typecheck"], // 必填：argv 数组（**推荐一律用这种形态**，非 shell）
+      // 兼容：也可以写字符串，会被极简分词（不经过 shell）。但这有几条**必须知道的坑**：
       // "cmd": "npm run typecheck"
       "timeoutMs": 120000,               // 选填，单条超时；缺省 server 级 5 分钟
       "optional": false                  // 选填；optional:true 失败只记 warning，不影响本轮 verdict
@@ -38,6 +38,21 @@
 
 - 每条命令在**项目根目录**、以结构化 argv 执行（`shell:false`，不拼接 shell 字符串），stdout/stderr 写入该轮 `verify-N.log`，报告附输出尾部。
 - **有界并行**：命令检查按 `verifyConcurrency` 并行执行（worker 池，上限 4）。报告中各 check 的展示顺序恒为声明顺序（与完成顺序无关）；并行时每条 check 先写独立临时日志，全部结束后按声明顺序拼成同一份 `verify-N.log`（文件名与格式和串行完全一致）。`verifyConcurrency:1` 退化为逐条串行。任一 check 原有 `timeoutMs`/取消语义不变。
+
+### ⚠ `cmd` 请一律用数组形态（字符串形态的坑）
+
+**推荐写法永远是数组**：`"cmd": ["npm", "run", "typecheck"]`——每个元素就是一个 argv，零歧义。
+
+字符串形态仅为**兼容保留**，它走的是极简分词（`src/config/store.ts` 的 `splitCmd()`），只识别整段引号包裹，**没有转义支持**。以下行为都是实测事实：
+
+| 你写的字符串 | 实际解析结果 | 说明 |
+|---|---|---|
+| `npm run "a b"` | `["npm","run","a b"]` | 引号包裹生效（正确用法） |
+| `node "a\"b"` | `["node","a\\","b\""]` | **转义无效**：`\` 是普通字符，`\"` 逃不出引号 |
+| `npm run "unclosed arg` | `["npm","run","\"unclosed","arg"]` | **引号不闭合不报错**，引号退化为普通字符 |
+| `cmd "" x` | `["cmd","","x"]` | 空引号产出空参数 |
+
+**后果**：含空格的路径（如 `C:\Program Files\...`）必须**手写整段引号**，写错（忘引号、引号不闭合、想用 `\"` 转义）**不会报错**，而是**静默拆成多个 argv**，命令可能以错误参数执行。凡是路径/参数可能含空格、或需要转义，请用数组形态。这些语义由 `test/unit/core.test.ts` 的边界用例锁定。
 
 ### ⚠ 并行的脚本干扰
 

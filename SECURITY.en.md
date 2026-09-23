@@ -86,6 +86,10 @@ Understanding these boundaries helps you judge whether a finding is intended beh
 ### 3. Processes and paths
 
 - Path parameters must be absolute and exist, and are normalized.
+- **Dangerous-directory gate (`assertSafeProjectDir`)** — the write-capable entry points (`run_task` / `verify_task`) refuse:
+  - **System directories and their subtrees**: `/etc`, `/usr`, `/bin`, `/sbin`, `/private/etc` (the macOS realpath shape) and `c:/windows`, `c:/program files`, `c:/program files (x86)`. Matching is **boundary-aware** (the prefix must be followed by `/`), so `c:/windows.old` and `/etcetera` are not falsely matched.
+  - **Exact roots only**: `/`, drive roots (`C:\`, `D:\`, …), `/var`, `/tmp`, `/opt`, the home directory, `c:/users`, and so on.
+- **Why `/var` and `/tmp` block only the exact root**: legitimate workspaces live underneath them — on macOS `os.tmpdir()` *is* `/var/folders/...`, so a subtree rule there would also refuse the test base and many temporary workspaces. This is a deliberate trade-off; residual edges are recorded in [ARCHITECTURE §15](ARCHITECTURE.en.md).
 - Child processes use `windowsHide` and stdio pipes; termination uses a process-tree kill
   (Windows `taskkill /T /F`, POSIX process-group SIGTERM→SIGKILL).
 - **Extra constraints for the GUI driver (TraeWork)**:
@@ -101,8 +105,11 @@ Native automation is allowed **only** for a folder picker newly opened by TraeWo
 
 ### 5. Permission approvals
 
-Write/execute tools (`run_task` / `cancel_task` / `rework_task` / `continue_task`) declare `requireApproval` by default and
-are gated by the host (Tianshu) UI; read/query/verify tools need no approval.
+Side-effecting write tools (`run_task` / `cancel_task` / `rework_task` / `continue_task` /
+`prepare_visual_baseline` / `approve_visual_baseline`) declare `requireApproval` by default and are gated by the host (Tianshu) UI.
+Read/query tools need no approval. **`verify_task` has capability `execute` (it runs project commands and may produce build
+artifacts, so its MCP `readOnlyHint` is false) but is still approval-free per R11** — this project does not
+require per-call authorisation merely because of the "execute" classification.
 
 ### 6. ZCode GUI boundary
 

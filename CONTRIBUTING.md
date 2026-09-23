@@ -49,7 +49,8 @@ npm run typecheck && npm run lint && npm test && npm run build && npm run check:
 `check:stdio` 用真实子进程捕获完整 stdout/stderr 字节流，逐个场景校验：
 stdout 只允许有换行分隔的合法 MCP JSON-RPC 消息（官方 schema 校验请求/响应 ID），
 空行、非 JSON 行、parser error、退出残留片段任意一条即失败。覆盖首次启动、已有技能再次启动、
-`--no-skill-install`、损坏 config.json、stub 任务运行期日志、正常 EOF 关闭六个场景。
+`--no-skill-install`、损坏 config.json、stub 任务运行期日志、正常 EOF 关闭，以及技能自装加固的
+`skill-locally-modified`、`skill-approve-update`（issue #16），共八个场景。
 
 CI 额外校验两条，请本地也注意：
 

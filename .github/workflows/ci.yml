@@ -108,7 +108,8 @@ jobs:
         run: npm run build
       - name: Strict stdio protocol check (stdout must carry only MCP messages)
         # 真实子进程捕获完整字节流：非协议行 / parser error / 空行 / 残留片段任意一条即失败。
-        # 覆盖 6 个必测场景（首次/再次启动、禁用技能安装、损坏 config、任务运行期日志、EOF 关闭）。
+        # 覆盖 8 个必测场景（首次/再次启动、禁用技能安装、损坏 config、任务运行期日志、EOF 关闭，
+        # 以及技能自装加固的 skill-locally-modified / skill-approve-update，见 issue #16）。
         run: npm run check:stdio
       - name: No unexpected tracked diff after build
         shell: bash

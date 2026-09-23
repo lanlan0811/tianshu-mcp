@@ -61,7 +61,7 @@ In Tianshu go to **Settings → MCP Servers → Add** and fill in (transport: `s
   "run_task":     { "capability": "write", "requireApproval": true },
   "cancel_task":  { "capability": "write", "requireApproval": true },
   "rework_task":  { "capability": "write", "requireApproval": true },
-  "verify_task":  { "capability": "read" },
+  "verify_task":  { "capability": "execute" },
   "query_task":   { "capability": "read" },
   "list_tasks":   { "capability": "read" },
   "get_task_report": { "capability": "read" },
@@ -70,6 +70,8 @@ In Tianshu go to **Settings → MCP Servers → Add** and fill in (transport: `s
   "approve_visual_baseline": { "capability": "write", "requireApproval": true }
 }}
 ```
+
+> **As of v0.6.1 the server already defaults `verify_task` to `execute`** (it runs project commands and may produce build artifacts), so the host no longer needs to raise it in policy. It **stays approval-free** (`requireApproval` is false, per R11's "verification does not modify sources" conclusion). **Host note**: the MCP `readOnlyHint` emitted for `verify_task` has changed from `true` to **`false`** — if your policy layer hard-codes that annotation (for example treating `readOnly=false` as "needs approval"), switch it to key off `_meta.requireApproval` instead, or you will mistake the approval-free verification for an operation that needs authorisation.
 
 ## 3. Tool surface (11)
 
@@ -81,7 +83,7 @@ In Tianshu go to **Settings → MCP Servers → Add** and fill in (transport: `s
 | `list_tasks` | read | filter history |
 | `get_task_report` | read | full acceptance report |
 | `cancel_task` | write + approval | cancel (CLI: kill tree; GUI agents: CDP stop click + bounded wait) |
-| `verify_task` | read | one acceptance round (no source edits) |
+| `verify_task` | **execute** (no source edits, no approval) | one acceptance round — runs project commands and may produce build artifacts, hence `readOnlyHint=false`; does not modify sources and stays approval-free |
 | `rework_task` | write + approval | manual rework (feed failure back to same agent) |
 | `get_profiles` | read | agent probe results |
 | `prepare_visual_baseline` | write + approval | prepare a visual baseline candidate (never adopts the official baseline) |

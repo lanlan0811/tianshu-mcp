@@ -340,7 +340,7 @@ run_task(projectPath=/path/to/项目, agentId=codex-cli,
 
 ## 6. 验收：verify_task 示例
 
-只读、不改源码、无需审批。三种典型用法：
+不改源码、无需审批（能力归 `execute`：会跑项目命令、可产生构建产物）。三种典型用法：
 
 ```text
 # 1) 复跑某任务的验收（用该任务动工前基线；round 缺省对最新状态）
@@ -365,7 +365,7 @@ verify_task(projectPath=D:/repo/app, checksMode=replace,
 - **幂等键用法**：`idempotencyKey` 由宿主按「本次逻辑意图」生成**一次**，之后所有重试复用同一条；参数一旦变化必须换 key。`run_task` 的键与 `verify_task` 的键互不影响（各自命名空间）。TTL 默认 24h（见 §9.7），过期后同键会重新真实执行。
 
 - `checksMode=replace` 时**只用** `extraChecks`，不跑项目基础集。
-- `extraChecks` 单条支持 `name` / `cmd`（argv 数组或字符串）/ `timeoutMs` / `optional`（`optional:true` 失败只记 warning）。
+- `extraChecks` 单条支持 `name` / `cmd`（argv 数组或字符串）/ `timeoutMs` / `optional`（`optional:true` 失败只记 warning）。**`cmd` 请用数组**；字符串形态不支持转义，引号不闭合不报错而是静默拆成多个 argv。
 - 命令优先级：`extraChecks` > 项目 `.tianshu-mcp/acceptance.json` > projects.json 管理员补录 > 按技术栈推导的默认集。
 - 传 `taskId`：只更新该任务的验收结论字段，**不改写原任务终态**；任务没有保存的动工前基线时会报错，改用 `projectPath` 或传 `baselineRef`。
 - 传 `projectPath`：`baselineRef` 只能是 **git ref**（如 `HEAD~1`）；写任务 ID 会报错。

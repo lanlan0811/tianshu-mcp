@@ -72,7 +72,7 @@
     "run_task":     { "capability": "write", "requireApproval": true },
     "cancel_task":  { "capability": "write", "requireApproval": true },
     "rework_task":  { "capability": "write", "requireApproval": true },
-    "verify_task":  { "capability": "read" },
+    "verify_task":  { "capability": "execute" },
     "query_task":   { "capability": "read" },
     "list_tasks":   { "capability": "read" },
     "get_task_report": { "capability": "read" },
@@ -83,7 +83,7 @@
 }
 ```
 
-> 若天枢实测要求"能跑构建命令"的工具必须具备 execute 能力，把 `verify_task` 上调为 `execute`（仍免审批）——配置调整即可，属联调确认项。
+> **`verify_task` 自 v0.6.1 起服务端已默认为 `execute`**（会跑项目命令、可产生构建产物），不再需要宿主在 policy 里手动上调。它**仍然免审批**（`requireApproval` 为 false，按 R11 的「验收不改源码」结论）。**宿主需知**：`verify_task` 下发的 MCP `readOnlyHint` 已由 `true` 变为 **`false`**——若你的策略层硬编码该注解（例如「readOnly=false 即视为需审批」），需改为以 `_meta.requireApproval` 为准，否则会把免审批的验收误当成需授权操作。
 
 ## 3. 工具面（11 个）
 
@@ -95,7 +95,7 @@
 | `list_tasks` | read | 历史任务过滤列表 |
 | `get_task_report` | read | 某轮验收报告全文 |
 | `cancel_task` | write + 审批 | 取消（CLI kill 进程树；GUI agent 经 CDP 点击停止并等待空闲） |
-| `verify_task` | read | 对任务/项目路径做一次验收（不改源码） |
+| `verify_task` | **execute**（不改源码，免审批） | 对任务/项目路径做一次验收（会跑项目命令、可产生构建产物，故 `readOnlyHint=false`；不改源码、仍免审批） |
 | `rework_task` | write + 审批 | 手动返修（失败报告喂回同一 agent） |
 | `get_profiles` | read | 查看 agent 探测结果 |
 | `prepare_visual_baseline` | write + 审批 | 视觉基准候选准备（截图或导入参考图，不采用正式基准） |

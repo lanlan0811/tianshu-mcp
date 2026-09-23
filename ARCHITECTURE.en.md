@@ -180,7 +180,7 @@ Module `src/util/skill-install.ts`, run **in the background** inside `buildServe
 
 ## 4. MCP tool surface and return contract
 
-Eleven tools (`src/mcp/tools.ts`), split into read and write families:
+Eleven tools (`src/mcp/tools.ts`), split into three families: `read` (queries, no side effects), `write` (side effects, all require approval), and `execute` (runs project-side commands without modifying sources; currently only `verify_task`, still approval-free per R11):
 
 | Tool | Capability | Approval | Purpose |
 |---|---|---|---|
@@ -190,11 +190,13 @@ Eleven tools (`src/mcp/tools.ts`), split into read and write families:
 | `list_tasks` | read | no | Historical task list (filterable by project/status) |
 | `get_task_report` | read | no | Full text of a given round's `report.md` |
 | `cancel_task` | write | yes | Cancel (CLI: kill the process tree; GUI: best-effort stop click + bounded wait) |
-| `verify_task` | read | no | Run one verification over a task or project path (does not modify sources) |
+| `verify_task` | **execute** | no | Run one verification over a task or project path: it runs project commands and may produce build artifacts, but **does not modify sources**, hence approval-free |
 | `rework_task` | write | yes | Manual rework; feeds the failure summary back to the same agent |
 | `get_profiles` | read | no | Agent support status and executable discovery results |
 | `prepare_visual_baseline` | write | yes | Produce a baseline candidate and digest (does not adopt a baseline) |
 | `approve_visual_baseline` | write | yes | After user review, check the digest and write the baseline |
+
+> **`readOnlyHint` derivation**: `server.ts` emits MCP `readOnlyHint` from `capability === "read"`, so `verify_task` reports **false** for it (as of v0.6.1; it was wrongly `true` before). **`readOnlyHint` is not an approval signal** — approval is carried separately by `_meta.requireApproval`, which stays `false` for `verify_task`.
 
 **Return contract** (`src/mcp/formatter.ts`): human-readable body plus a trailing meta block the host can extract with a regex.
 
@@ -811,6 +813,8 @@ Ordered by impact on a successor:
 9. **Execution children have no shared spawn-option helper** — `agents/spawn`, `verify/runner`, `visual/services` and `visual/content-command` each inline the same platform branch (`detached: process.platform !== "win32"`). Same semantics, four copies; an edit can easily miss one.
 10. **Some profile fields are declared but unused** — `gui.windowMode`, `gui.modelRequired`, and ZCode's `gui.stallTimeoutMs` / `gui.cancelWaitMs` (see the note in §10.3).
 11. **No automatic GUI stop on restart** — `initialize()` only labels GUI leftovers honestly and sets `guiResidualUnconfirmed`; it never reconnects over CDP to click stop, because there is no session anchor after a restart and the adapters are fail-closed for instances without proof of ownership. Confirmation is manual, through `cancel_task` (§5.5).
+12. **Subtree denial for dangerous directories has residual edges** — `/etc` `/usr` `/bin` `/sbin` `/private/etc` plus `c:/windows` and `c:/program files*` are denied as subtrees (v0.6.1), but `/var`, `/tmp`, `/opt`, `/library`, `/system`, `/root` and `c:/users` still only block the **exact root**; their subdirectories remain usable as workspaces. That is a deliberate trade-off: on macOS `os.tmpdir()` *is* `/var/folders/...`, so a blanket subtree rule would sever the test base and many legitimate workspaces (see the `DANGEROUS_SUBTREES` comment in `src/util/path.ts`). UNC-shaped gaps were reported through the security channel and are out of scope for this repository's public fixes.
+13. **`capability` is consumed on the Tianshu host side** — this repository only guarantees that the emitted `_meta.capability` and MCP `annotations` are self-consistent (the truth table is pinned by `test/protocol/protocol.test.ts`). Since v0.6.1 `verify_task` is `execute` with `readOnlyHint: false`; host policies that hard-code that annotation need to relax accordingly (`requireApproval` is unchanged, so the approval experience does not regress).
 
 ---
 

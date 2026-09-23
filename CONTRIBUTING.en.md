@@ -50,8 +50,9 @@ npm run typecheck && npm run lint && npm test && npm run build && npm run check:
 `check:stdio` spawns a real child process and validates the complete stdout/stderr byte stream per
 scenario: stdout may contain only newline-delimited, schema-valid MCP JSON-RPC messages (requests and
 response IDs checked); empty lines, non-JSON lines, parser errors, or trailing fragments at exit all
-fail the run. It covers six scenarios: first start, second start with matching skills,
-`--no-skill-install`, a corrupt `config.json`, logs while a stub task runs, and clean EOF shutdown.
+fail the run. It covers eight scenarios: first start, second start with matching skills,
+`--no-skill-install`, a corrupt `config.json`, logs while a stub task runs, clean EOF shutdown,
+and the two skill-install hardening scenarios `skill-locally-modified` / `skill-approve-update` (issue #16).
 
 CI enforces two extra checks — keep them in mind locally:
 

@@ -188,7 +188,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=qoder, planDoc=./plans/development.m
 | `list_tasks` | read | 历史任务过滤列表 |
 | `get_task_report` | read | 某轮验收报告全文（`report.md`） |
 | `cancel_task` | write + 审批 | 取消运行中任务：CLI agent kill 进程树；GUI agent 经 CDP 点击停止并在 `gui.cancelWaitMs`（默认 15s）内有界等待 GUI 空闲，未确认停止时终态明示。对已终态的 GUI 任务，本调用兼任人工确认入口——核实窗口无残留运行后调用可清除 `guiStopUnconfirmed` 待确认标记 |
-| `verify_task` | read | 对任务/项目路径做一次验收（不改源码）；可选 `idempotencyKey`：同键重试不重跑（执行中返回进行中提示，已完成返回既有报告） |
+| `verify_task` | execute（不改源码，免审批） | 对任务/项目路径做一次验收。能力归 `execute`：会跑项目配置命令、可能产生构建产物，故 MCP `readOnlyHint` 为 `false`——但**不改源码、仍免审批**。可选 `idempotencyKey`：同键重试不重跑（执行中返回进行中提示，已完成返回既有报告） |
 | `rework_task` | write + 审批 | 手动返修（把失败报告喂回同一 agent） |
 | `get_profiles` | read | 查看 agent 适配与可执行探测结果 |
 | `prepare_visual_baseline` | write + 审批 | 截图或导入参考图，生成待审阅候选和摘要 |
@@ -451,6 +451,13 @@ run_task(projectPath=D:/xxx/my-app, agentId=qoder, planDoc=./plans/development.m
   - **安装原子化与日志分级**：改为「tmp 目录 → 备份 → 换入」，失败回滚不留半成品；跳过=INFO、覆盖/保留/来源不明/失败=WARN；覆盖后按 `backupKeep` 收敛历史 `.bak-<时间戳>`
   - **门禁**：严格 stdio 检查新增 `skill-locally-modified` / `skill-approve-update` 两场景（6→8）；Windows 10 真机复验 R1–R7 留档 [issue-16 记录](docs/issue-16-skill-install-hardening-record.md)
   - 详见 [v0.6.0 发布说明](<docs/release-v0.6.0.md>)
+- **M31 — 五项小项扫尾（注释与计数对齐 / capability 三族 / 登记失败不派单 / 系统目录子树拒绝 / splitCmd 文档）+ v0.6.1**（2026-09-23）— 新增 42 项用例（issue #17）
+  - **系统目录改为子树拒绝**：`/etc` `/usr` `/bin` `/sbin` `/private/etc` 与 `c:/windows`、`c:/program files*` 由「仅精确相等」升级为**边界感知子树拒绝**（`c:/windows.old`、`/etcetera` 不误伤）；`/var`、`/tmp`、家目录维持精确匹配（macOS 的 `/var/folders/...` 正是 `os.tmpdir()`，一刀切会切断测试基座与大量合法工作区）。判定抽为可注入平台的纯函数 `isDangerousProjectDir`，任意平台都能验证三平台形态
+  - **`capability` 收敛为三族语义**：删除始终无人使用的 `"network"`；`verify_task` 由 `read` 改为 **`execute`**（会跑项目命令、可产生构建产物，本就不是只读）——连带 `readOnlyHint` 由 `true` 变 `false`，**但仍免审批**（`requireApproval` 维持 false，R11 结论不变）；新增 11 工具 × capability × 四注解的**真值表测试**锁死全部映射
+  - **项目登记失败即终止派单**：`run_task` 不再丢弃 `registerProject` 的返回值（原先 `void registered;` 后还冗余地 `projectByPath` 二次读取）；登记失败时记 WARN 并返回结构化 `isError`，杜绝「任务已建、项目未登记」的半状态
+  - **`cmd` 字符串形态文档化**：双语文档与 schema/代码注释明示「推荐数组形态；字符串形态**不支持转义**、引号不闭合不报错、写错会静默拆成多个 argv」；补 5 条边界用例锁定既有分词语义（零行为变更）
+  - **计数与场景数对齐**：`protocol.test.ts` 头注释「9 个工具」更正为 11 并新增 `TOOL_DEFS` 数量硬断言；`ci.yml` / `HANDOFF` / `CONTRIBUTING` 双语的「6 场景」同步为 8（issue #16 新增两技能场景后未同步）
+  - 详见 [v0.6.1 发布说明](<docs/release-v0.6.1.md>)；验证记录见 [issue-17 记录](docs/issue-17-small-fixes-record.md)
 
 ## Agent 适配现状
 

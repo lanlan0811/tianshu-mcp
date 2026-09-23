@@ -171,7 +171,7 @@ resolveDataHome → Logger → DataHome(BUILTIN_PROFILES) → init()
 
 ## 4. MCP 工具面与返回契约
 
-11 个工具（`src/mcp/tools.ts`），按能力分为读与写两族：
+11 个工具（`src/mcp/tools.ts`），按能力分为三族：`read`（读/查询，无副作用）、`write`（有副作用，全部需审批）、`execute`（执行项目侧命令但不改源码，当前仅 `verify_task`，按 R11 仍免审批）：
 
 | 工具 | 能力 | 审批 | 作用 |
 |---|---|---|---|
@@ -181,11 +181,13 @@ resolveDataHome → Logger → DataHome(BUILTIN_PROFILES) → init()
 | `list_tasks` | read | 否 | 历史任务列表（可按项目/状态过滤） |
 | `get_task_report` | read | 否 | 取某轮 `report.md` 全文 |
 | `cancel_task` | write | 是 | 取消（CLI 杀进程树；GUI 尽力点停止 + 有界等待） |
-| `verify_task` | read | 否 | 对任务或项目路径做一次验收（不改源码） |
+| `verify_task` | **execute** | 否 | 对任务或项目路径做一次验收：会跑项目命令、可产生构建产物，但**不改源码**，故免审批 |
 | `rework_task` | write | 是 | 手动返修，把失败摘要喂回同一 agent |
 | `get_profiles` | read | 否 | agent 适配与可执行探测结果 |
 | `prepare_visual_baseline` | write | 是 | 生成基准候选与摘要（不落正式基准） |
 | `approve_visual_baseline` | write | 是 | 用户审阅后核对摘要并写入基准 |
+
+> **`readOnlyHint` 推导规则**：`server.ts` 按 `capability === "read"` 下发 MCP `readOnlyHint`，因此 `verify_task` 的该注解为 **false**（v0.6.1 起；此前误为 true）。**`readOnlyHint` 不是审批信号**——审批与否由 `_meta.requireApproval` 单独承载，`verify_task` 该字段恒为 false。
 
 **返回契约**（`src/mcp/formatter.ts`）：人类可读正文 + 尾随元块，便于宿主正则抽取。
 
@@ -784,6 +786,8 @@ CLI 子命令族（`node dist/index.js visual ...`）：`init`（写入禁用的
 9. **执行型子进程的 spawn 选项没有共用 helper**——`agents/spawn`、`verify/runner`、`visual/services`、`visual/content-command` 各自内联同一段平台分支字面量（`detached: process.platform !== "win32"`）。语义一致但四处重复，改动时容易漏改其中一处。
 10. **若干 profile 字段声明了但无消费方**——`gui.windowMode`、`gui.modelRequired`，以及 ZCode 的 `gui.stallTimeoutMs` / `gui.cancelWaitMs`（详见 §10.3 的提示框）。
 11. **重启不做自动 GUI 停止**——`initialize()` 归档遗留 GUI 任务只如实标注 + 置 `guiResidualUnconfirmed`，不自动 CDP 重连去点停止：重启后无会话锚点，适配器对无归属证明的实例 fail-closed，自动动手风险高于收益。确认由人工经 `cancel_task` 完成（§5.5）。
+12. **危险目录的子树拒绝有边界残留**——`/etc` `/usr` `/bin` `/sbin` `/private/etc` 与 `c:/windows`、`c:/program files*` 已按子树拒绝（v0.6.1），但 `/var`、`/tmp`、`/opt`、`/library`、`/system`、`/root`、`c:/users` 仍只挡**精确相等的根**，其子目录可被当作工作区。这是有意取舍：macOS 的 `os.tmpdir()` 就是 `/var/folders/...`，一刀切会切断测试基座与大量合法工作区（详见 `src/util/path.ts` 的 `DANGEROUS_SUBTREES` 注释）。UNC 形态的缺口已在安全渠道另行报告，不在本仓公开修复范围。
+13. **`capability` 的消费方在天枢宿主侧**——本仓只保证下发的 `_meta.capability` 与 MCP `annotations` 自洽（真值表由 `test/protocol/protocol.test.ts` 锁定）。`verify_task` 自 v0.6.1 起为 `execute`、`readOnlyHint: false`；宿主策略若硬编码该注解需相应放宽（`requireApproval` 不变，审批体验不倒退）。
 
 ---
 

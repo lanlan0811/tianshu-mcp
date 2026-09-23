@@ -40,7 +40,7 @@ run_task（秒回 taskId，异步）
 | `query_task` | read | 轮询状态 + agent 日志尾（`tailLines` 缺省 40 行） | `taskId`、`tailLines?` |
 | `list_tasks` | read | 查历史任务（每行：taskId / status / agent / project / 摘要） | `projectPath?`、`status?`、`limit?`（缺省 50，上限 200） |
 | `get_task_report` | read | 读某轮验收报告 **Markdown 全文** | `taskId`、`round?`（0-based，缺省最新） |
-| `verify_task` | read | 对任务或任意项目**独立验收**（不改源码、无需审批） | `taskId` 或 `projectPath` 二选一、`extraChecks?`、`checksMode?`、`baselineRef?` |
+| `verify_task` | execute（不改源码、无需审批） | 对任务或任意项目**独立验收**（会跑项目命令、可产生构建产物，故 `readOnlyHint=false`；不改源码、无需审批） | `taskId` 或 `projectPath` 二选一、`extraChecks?`、`checksMode?`、`baselineRef?` |
 | `rework_task` | write + 审批 | 手动返修：终态任务重新入队续跑（同 agent/项目、同一轮次记账） | `taskId`、`feedback?` |
 | `continue_task` | write + 审批 | 恢复 `needs_user`（仅 codex/zcode/kimicode/qoder） | `taskId`、`message`（必填） |
 | `cancel_task` | write + 审批 | 取消运行中任务（GUI agent 尽力点停止并回读） | `taskId`、`reason?` |
@@ -225,6 +225,7 @@ meta 的 `needsUserKind` 给出等待类型，`pendingQuestion` 给出问题原�
 - 传 `taskId`：用该任务动工前基线复跑，只更新其验收结论字段（`latestVerificationVerdict`），**不改写原任务终态**。
 - 传 `projectPath`：独立健康检查，不设 `baselineRef` 时按当前基线；`baselineRef` 可填 git ref（如 `HEAD~1`），传 `task` 表示沿用任务基线。**独立路径验收不产生独立任务，遇配置/视觉阻塞时记录为 `needs_attention`。**
 - `extraChecks` 临时加验（`name`/`cmd`/`timeoutMs`/`optional`）；`checksMode` 缺省 `append`（项目/默认集 + 追加），`replace` 才只跑 extraChecks。
+- **`cmd` 用数组形态**：`"cmd": ["npm", "run", "typecheck"]`。字符串形态仅为兼容保留——只识别整段引号包裹、**不支持转义**，引号不闭合**不报错**而是静默按空白拆成多个 argv，含空格路径务必手写引号或改用数组。
 - 命令优先级：`extraChecks` > 项目 `.tianshu-mcp/acceptance.json` > projects.json 管理员补录 > 按技术栈推导的默认集。
 - 任务没有保存的动工前基线时会报错——改用 `projectPath` 或传 `baselineRef`。
 

@@ -77,6 +77,14 @@
 ### 3. 进程与路径
 
 - 路径参数要求绝对路径且目录存在，并做规范化。
+- **危险目录闸门（`assertSafeProjectDir`）**：写入类入口（`run_task` / `verify_task`）拒绝
+  - **系统目录及其子树**：`/etc`、`/usr`、`/bin`、`/sbin`、`/private/etc`（macOS realpath 形态）与
+    `c:/windows`、`c:/program files`、`c:/program files (x86)`——匹配为**边界感知**（要求前缀后为 `/`），
+    因此 `c:/windows.old`、`/etcetera` 不会被误伤。
+  - **精确相等的根**：`/`、盘符根（`C:\` / `D:\` 等）、`/var`、`/tmp`、`/opt`、用户主目录、`c:/users` 等。
+- **`/var`、`/tmp` 为何只挡精确根**：它们之下存在合法工作区——macOS 的 `os.tmpdir()` 就是
+  `/var/folders/...`，若按子树拒绝会连带拒掉测试基座与大量临时工作区。这是有意的取舍，
+  边界残留记录在 [ARCHITECTURE §15](ARCHITECTURE.md)。
 - 子进程使用 `windowsHide`、stdio 管道；终止使用进程树 kill（Windows `taskkill /T /F`，
   POSIX 进程组 SIGTERM→SIGKILL）。
 - **GUI 驱动（TraeWork）额外约束**：
@@ -91,8 +99,10 @@
 
 ### 5. 权限审批
 
-写/执行类工具（`run_task` / `cancel_task` / `rework_task` / `continue_task`）默认声明 `requireApproval`，
-由宿主（天枢）在 UI 侧把关；读/查询/验收类工具免审批。
+有副作用的写类工具（`run_task` / `cancel_task` / `rework_task` / `continue_task` /
+`prepare_visual_baseline` / `approve_visual_baseline`）默认声明 `requireApproval`，由宿主（天枢）在 UI 侧把关。
+读/查询类工具免审批。**`verify_task` 能力归 `execute`（会跑项目命令、可产生构建产物，故 MCP
+`readOnlyHint` 为 false），但仍按 R11 免审批**——本项目不因「执行」这一分类而要求用户逐次授权。
 
 ### 6. ZCode GUI 边界
 

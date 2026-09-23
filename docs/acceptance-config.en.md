@@ -19,8 +19,9 @@ Place this file at `<project>/.tianshu-mcp/acceptance.json` to define project-le
   "checks": [
     {
       "name": "typecheck",                 // required; shown in the report
-      "cmd": ["npm", "run", "typecheck"],   // required: argv array (recommended, no shell)
-      // a plain string is also accepted and safely tokenized (never executed through a shell):
+      "cmd": ["npm", "run", "typecheck"],   // required: argv array (**always prefer this form**, no shell)
+      // Compatibility only: a plain string is accepted and minimally tokenized (never executed
+      // through a shell) — see the caveats below before using it:
       // "cmd": "npm run typecheck"
       "timeoutMs": 120000,                 // optional, per-check timeout; default = server verify timeout
       "optional": false                    // optional:true failure is a warning and does NOT fail the round verdict
@@ -42,6 +43,21 @@ Place this file at `<project>/.tianshu-mcp/acceptance.json` to define project-le
 Each check runs in the project root as structured argv (`shell:false`), stdout/stderr are appended to the round's `verify-N.log` with an output tail in the report.
 
 **Any non-optional failed check ⇒ this acceptance round fails**; skips and timeouts are flagged separately.
+
+### ⚠ Always use the array form for `cmd` (the string form's pitfalls)
+
+**The recommended form is always the array**: `"cmd": ["npm", "run", "typecheck"]` — each element is one argv, with zero ambiguity.
+
+The string form is kept for **backwards compatibility only**. It goes through the minimal tokenizer (`splitCmd()` in `src/config/store.ts`) which recognises only fully quoted segments and **supports no escaping**. All of the following are measured facts:
+
+| What you write | What it parses to | Note |
+|---|---|---|
+| `npm run "a b"` | `["npm","run","a b"]` | Quoted segment works (the correct usage) |
+| `node "a\"b"` | `["node","a\\","b\""]` | **Escaping does not work**: `\` is an ordinary character, `\"` does not escape the quote |
+| `npm run "unclosed arg` | `["npm","run","\"unclosed","arg"]` | **An unclosed quote does not error**; the quote degrades to an ordinary character |
+| `cmd "" x` | `["cmd","","x"]` | An empty quoted segment yields an empty argument |
+
+**Consequence**: a path containing spaces (e.g. `C:\Program Files\...`) must be wrapped in quotes by hand, and a mistake (missing quotes, an unclosed quote, trying to use `\"`) **does not error** — it **silently splits into multiple argv**, so the command may run with wrong arguments. Whenever a path or argument may contain spaces, or needs escaping, use the array form. These semantics are pinned by the boundary cases in `test/unit/core.test.ts`.
 
 - **Zero-test fail-closed:** a mandatory test check is failed even with exit code 0 when its output explicitly reports that no tests ran.
 - **Zero-change fail-closed:** with `requireChanges:true` (the default), a Git project gets a failing `no-changes` check when tracked files, untracked files, and diffstat are all unchanged from the pre-work baseline. Pure question/analysis tasks may set `"requireChanges": false`; non-Git projects skip this gate with a report note.
