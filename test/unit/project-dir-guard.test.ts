@@ -6,7 +6,7 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { assertSafeProjectDir, resolveProjectDir, normPath, dangerKey } from "../../src/util/path.js";
+import { assertSafeProjectDir, resolveProjectDir, normPath, dangerKey, isDangerousProjectDir } from "../../src/util/path.js";
 import { makeTmpRoot, rmrf } from "../test-utils.js";
 
 describe("resolveProjectDir", () => {
@@ -78,12 +78,86 @@ describe("assertSafeProjectDir", () => {
     }
   });
 
-  it("系统根目录的子目录不受影响（/tmp/xxx、/Users/name/repo）", async () => {
+  it("系统根目录的子目录不受影响（/tmp/xxx、/var/folders/...、/Users/name/repo）", async () => {
     const root = await makeTmpRoot("dir-guard-nested");
-    const r = assertSafeProjectDir(root); // 位于 /tmp 或 /var/folders 下
+    const r = assertSafeProjectDir(root); // macOS 位于 /var/folders 下——子树拒绝绝不能误伤它
     expect(r.norm.length).toBeGreaterThan(0);
     await rmrf(root);
   });
+
+  it("拒绝系统目录的子树（真实存在目录，win32）", () => {
+    if (process.platform !== "win32") return;
+    expect(() => assertSafeProjectDir("C:/Windows/System32")).toThrow(/子树|拒绝/);
+  });
+});
+
+/**
+ * 子树拒绝的判定逻辑抽成了可注入 platform 的纯函数，因此能在任意开发机上
+ * 验证三平台形态（含 macOS 的 /private/... 与 win32 的大小写归一）。
+ * 关键反例（必须放行）：macOS 的 /private/var/folders/...（os.tmpdir()）、
+ * c:/windows.old、/etcetera —— 边界感知前缀不得把它们当成子树命中。
+ */
+describe("isDangerousProjectDir（精确根 / 盘符根 / 系统目录子树）", () => {
+  const dangerous: Array<[string, NodeJS.Platform]> = [
+    // win32：系统目录子树
+    ["c:/windows", "win32"],
+    ["c:/windows/system32", "win32"],
+    ["c:/Windows/System32", "win32"],
+    ["c:/program files", "win32"],
+    ["c:/program files/app", "win32"],
+    ["c:/Program Files (x86)/App", "win32"],
+    // win32：精确根与盘符根
+    ["c:/", "win32"],
+    ["c:/users", "win32"],
+    ["d:", "win32"],
+    ["d:/", "win32"],
+    // POSIX：系统目录子树
+    ["/etc", "linux"],
+    ["/etc/passwd", "linux"],
+    ["/usr", "linux"],
+    ["/usr/local/src", "linux"],
+    ["/bin", "linux"],
+    ["/bin/x", "linux"],
+    ["/sbin", "linux"],
+    ["/sbin/x", "linux"],
+    // macOS：realpath 后的 /private 形态
+    ["/private/etc", "darwin"],
+    ["/private/etc/foo", "darwin"],
+    // 精确相等的根
+    ["/", "linux"],
+    ["/var", "linux"],
+    ["/tmp", "linux"],
+    ["/private/var", "darwin"],
+  ];
+
+  const allowed: Array<[string, NodeJS.Platform]> = [
+    // 边界感知：同前缀但不是子树
+    ["c:/windows.old", "win32"],
+    ["/etcetera", "linux"],
+    ["/usrlocal", "linux"],
+    // 合法工作区（尤其是 macOS 的临时目录——测试基座）
+    ["c:/users/name/repo", "win32"],
+    ["d:/proj", "win32"],
+    ["/private/var/folders/x/y/T/tmp", "darwin"],
+    ["/var/folders/x/y/T/tmp", "darwin"],
+    ["/var/log", "linux"],
+    ["/tmp/xxx", "linux"],
+    ["/Users/name/repo", "darwin"],
+    ["/home/user/repo", "linux"],
+    ["/opt/app", "linux"],
+  ];
+
+  for (const [p, platform] of dangerous) {
+    it(`拒绝 ${p}（${platform}）`, () => {
+      expect(isDangerousProjectDir(p, platform), `${p} 应判为危险`).toBe(true);
+    });
+  }
+
+  for (const [p, platform] of allowed) {
+    it(`放行 ${p}（${platform}）`, () => {
+      expect(isDangerousProjectDir(p, platform), `${p} 不应判为危险`).toBe(false);
+    });
+  }
 });
 
 describe("dangerKey（win32 具名危险目录大小写不敏感）", () => {
@@ -97,9 +171,11 @@ describe("dangerKey（win32 具名危险目录大小写不敏感）", () => {
     expect(dangerKey("D:/", "win32")).toBe("d:/");
   });
 
-  it("win32 下普通项目路径小写化后不命中任何危险根（精确相等才命中）", () => {
+  it("win32 下普通项目路径小写化后仍不是危险目录（子树集也不命中）", () => {
     expect(dangerKey("c:/users/name/repo", "win32")).toBe("c:/users/name/repo");
     expect(dangerKey("d:/proj", "win32")).toBe("d:/proj");
+    expect(isDangerousProjectDir("c:/users/name/repo", "win32")).toBe(false);
+    expect(isDangerousProjectDir("d:/proj", "win32")).toBe(false);
   });
 
   it("POSIX：保留大小写（/ETC ≠ /etc），普通项目路径原样不命中", () => {

@@ -65,6 +65,8 @@ export function resolveProjectDir(p: string): ProjectDirResolution {
 /**
  * 禁止作为 projectPath 的根级目录（normPath 形态，精确相等才命中）：
  * worker（CLI 沙箱/GUI 绑定）可写其整个子树——传错一次就是全盘写入事故。
+ * 其**子目录**是否也危险见 DANGEROUS_SUBTREES（本集合内的 /etc、/usr、/bin、
+ * /sbin 因同时列入子树集而冗余，保留是为了集合语义的完整与可读）。
  */
 const DANGEROUS_ROOTS: ReadonlySet<string> = new Set([
   "/",
@@ -95,6 +97,27 @@ const DANGEROUS_ROOTS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * 系统目录**子树**拒绝前缀（边界感知：命中要求后随 "/" 或字符串结束）：
+ * 这些目录及其全部子目录都不可能是合法工作区，而 worker 对整个子树可写，
+ * 传错一次就是系统级事故。`/etc` 在 macOS 是符号链接，realpath 后落到
+ * `/private/etc`，故两形态都要覆盖。
+ *
+ * 注意 `/var`、`/tmp`、`/opt`、`/library`、`/system`、`/root`、家目录与
+ * `c:/users` **不在**此列——它们之下存在合法工作区（macOS 的 `/var/folders/…`
+ * 正是 `os.tmpdir()`，测试与大量临时工作区都建在那里），故维持精确相等。
+ */
+const DANGEROUS_SUBTREES: readonly string[] = [
+  "/etc",
+  "/usr",
+  "/bin",
+  "/sbin",
+  "/private/etc",
+  "c:/windows",
+  "c:/program files",
+  "c:/program files (x86)",
+];
+
+/**
  * DANGEROUS_ROOTS 查询 key：win32 下具名目录按大小写不敏感语义小写化
  * （否则 `C:\Windows` 归一为 `c:/Windows`，与 Set 内小写字面量永不命中）。
  * 仅用于危险根/主目录相等比较；不改 normPath 本身（它参与 projectHash 存储身份）。
@@ -103,25 +126,44 @@ export function dangerKey(norm: string, platform: NodeJS.Platform = process.plat
   return platform === "win32" ? norm.toLowerCase() : norm;
 }
 
-/**
- * 写入类入口（run_task / verify_task）的项目目录闸门：
- * resolveProjectDir 之上再拒「主目录本身」与「系统/根级目录」。
- * 注意只挡精确相等的根——/tmp/xxx、/Users/name/repo 等子目录不受影响。
- */
 /** 盘符根（Windows 的 C:\ / D:\ 等）：normPath 会剥掉尾斜杠得到 "d:"，需单独判定 */
 function isDriveRoot(norm: string): boolean {
   return /^[a-z]:$/.test(norm);
 }
 
+/**
+ * 危险目录判定：精确根 / 盘符根 / 系统目录子树三选一命中即危险。
+ * 纯函数且 platform 可注入——任何平台上都能验证三平台形态（含 macOS 的
+ * `/private/...` 与 win32 的大小写归一），无需等到对应平台的 CI 作业。
+ */
+export function isDangerousProjectDir(
+  norm: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  const key = dangerKey(norm, platform);
+  if (DANGEROUS_ROOTS.has(key) || isDriveRoot(key)) return true;
+  return DANGEROUS_SUBTREES.some((sub) => {
+    const s = dangerKey(sub, platform);
+    return key === s || key.startsWith(`${s}/`);
+  });
+}
+
+/**
+ * 写入类入口（run_task / verify_task）的项目目录闸门：
+ * resolveProjectDir 之上再拒「主目录本身」与「系统/根级目录及其子树」。
+ * `/tmp/xxx`、`/Users/name/repo`、`/var/folders/...` 等合法工作区不受影响。
+ */
 export function assertSafeProjectDir(p: string): ProjectDirResolution {
   const r = resolveProjectDir(p);
   if (dangerKey(r.norm) === dangerKey(normPath(os.homedir()))) {
     throw new Error(`projectPath 不能是用户主目录本身（worker 将可写整个主目录）: ${r.canonical}`);
   }
-  // 盘符根不在 DANGEROUS_ROOTS 里：normPath 把 "D:\" 归一为 "d:"（尾斜杠被剥掉），
-  // 与清单里的 "d:/" 永不相等，故单独判定，覆盖所有盘符而不依赖枚举。
-  if (DANGEROUS_ROOTS.has(dangerKey(r.norm)) || isDriveRoot(dangerKey(r.norm))) {
-    throw new Error(`projectPath 指向系统/根级目录，worker 写权限将覆盖整个子树，已拒绝: ${r.canonical}`);
+  // 盘符根也不在 DANGEROUS_ROOTS 里：normPath 把 "D:\" 归一为 "d:"（尾斜杠被剥掉），
+  // 与清单里的 "d:/" 永不相等；isDangerousProjectDir 内部单独判定，覆盖所有盘符。
+  if (isDangerousProjectDir(r.norm)) {
+    throw new Error(
+      `projectPath 指向系统/根级目录或其子树，worker 写权限将覆盖整个子树，已拒绝: ${r.canonical}`,
+    );
   }
   return r;
 }
