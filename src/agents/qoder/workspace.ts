@@ -17,8 +17,18 @@ export async function assertWorkspace(c:QoderCdpClient,project:string):Promise<v
 export async function bindWorkspace(c:QoderCdpClient,project:string,wait:WaitFor,native:{pids:number[];timeoutMs:number;signal?:AbortSignal;list?:typeof listOwnedDialogs;select?:typeof selectQoderFolder}):Promise<void> {
   const current=await boundWorkspace(c);
   if(current&&normalizeWorkspacePath(current)===normalizeWorkspacePath(project))return;
-  await c.click(c.selector('workspace'),undefined,0);
-  await wait(()=>c.exists(c.selector('workspaceSearch')),'workspace-menu');
+  // issue #23 真机重探修正：0.3.4 有 2 个 [data-workspace-picker-trigger]，旧代码点它即歧义失败；
+  // 现主选择器为唯一的 aria-label「切换或清空当前工作区…」。index=0 保留原索引语义（多候选时取首个可见）。
+  await c.clickKey('workspace', undefined, 0);
+  // 菜单打开判定：搜索框出现 **或** 任一浮层（menu/dialog 的 data-state=open）出现（多形态并列，避免误判）。
+  try {
+    await wait(async()=>await c.existsKey('workspaceSearch')||await c.existsKey('workspaceMenu'),'workspace-menu');
+  } catch (error) {
+    // 附页面可见候选，便于定位 UI 漂移
+    const labels = await c.visibleLabels();
+    const hint = labels.length ? `；页面可见候选=[${labels.join(' | ')}]` : '';
+    throw new Error(`${(error as Error).message}${hint}`);
+  }
   await c.fill(c.selector('workspaceSearch'),process.platform==='win32'?path.win32.normalize(project):project);
   // UI filters by name OR path; selection is always followed by full-path verification.
   await wait(async()=>await c.evaluate<boolean>(`document.querySelector(${JSON.stringify(c.selector('workspaceSearch'))})?.value===${JSON.stringify(process.platform==='win32'?path.win32.normalize(project):project)}`),'workspace-search');

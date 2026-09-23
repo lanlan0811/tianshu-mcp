@@ -1,6 +1,7 @@
 import { TraeworkCdpClient } from '../traework/cdp/client.js';
-import { QODER_SELECTORS, type QoderSelectorKey } from './selectors.js';
+import { QODER_SELECTORS, qoderCandidates, qoderPrimary, type QoderSelectorKey } from './selectors.js';
 import type { QoderPoll } from './liveness.js';
+import { visibleLabelsExpr, normalizeLabels } from '../gui-diagnostics.js';
 import {setTimeout as delay} from 'node:timers/promises';
 
 const VISIBLE = `(e)=>{
@@ -20,7 +21,9 @@ export class QoderCdpClient {
   constructor(port: number, private readonly timeout: number, private readonly overrides: Record<string,string> = {}) {
     this.client = new TraeworkCdpClient({port, sendTimeoutMs: timeout, targetRank: qoderTargetRank});
   }
-  selector(key: QoderSelectorKey): string { return this.overrides[key] ?? QODER_SELECTORS[key]; }
+  selector(key: QoderSelectorKey): string { return qoderPrimary(key, this.overrides); }
+  /** 该语义键的全部候选选择器（覆盖优先，其后 primary 与 fallbacks，去重保序） */
+  candidates(key: QoderSelectorKey): string[] { return qoderCandidates(key, this.overrides); }
   async connect(): Promise<void> {
     await this.client.connect();
     if (qoderTargetRank({url: await this.evaluate<string>('location.href')}) !== 0) {
@@ -32,8 +35,30 @@ export class QoderCdpClient {
   async sessionId():Promise<string|undefined> {
     return this.evaluate(`location.hash.startsWith('#/chat/')?location.hash.split('?')[0].slice(7):undefined`);
   }
+  /** 收集页面可见候选标签（issue #23 诊断机制）；失败安全返回空数组。 */
+  async visibleLabels(scopeCss?: string): Promise<string[]> {
+    try { return normalizeLabels(await this.evaluate<unknown>(visibleLabelsExpr({ scope: scopeCss }))); }
+    catch { return []; }
+  }
+  /** 按候选顺序探测某语义键是否存在（单次 evaluate，无等待循环，故多候选代价低） */
+  async existsKey(key: QoderSelectorKey): Promise<boolean> {
+    for (const css of this.candidates(key)) if (await this.exists(css)) return true;
+    return false;
+  }
+  /**
+   * 按候选顺序点击某语义键：先探测哪个候选存在（避免每个候选各自打满超时），
+   * 再对命中的那个执行坐标点击。全部候选都不存在则抛错并附诊断。
+   */
+  async clickKey(key: QoderSelectorKey, text?: string, index?: number): Promise<void> {
+    const cands = this.candidates(key);
+    for (const css of cands) {
+      if (await this.exists(css)) { await this.click(css, text, index); return; }
+    }
+    const labels = await this.visibleLabels();
+    throw new Error(`qoder_control_missing_or_ambiguous: ${key}; candidates=${cands.join(' , ')}${labels.length ? `; 页面可见候选=[${labels.join(' | ')}]` : ''}`);
+  }
   async poll():Promise<QoderPoll> {
-    const s=Object.fromEntries(Object.keys(QODER_SELECTORS).map(k=>[k,this.selector(k as QoderSelectorKey)]));
+    const s=Object.fromEntries(Object.keys(QODER_SELECTORS).map(k=>[k,this.candidates(k as QoderSelectorKey).join(',')]));
     return this.evaluate(`(()=>{
       const s=${JSON.stringify(s)},visible=e=>!!e&&!!e.getBoundingClientRect().width&&!e.hidden;
       const user=[...document.querySelectorAll(s.userMessage)].at(-1);
@@ -84,7 +109,10 @@ export class QoderCdpClient {
       if(point)break;
       if(Date.now()<deadline)await delay(Math.min(100,deadline-Date.now()));
     }while(Date.now()<deadline);
-    if (!point) throw new Error(`qoder_control_missing_or_ambiguous: ${css} ${text ?? ''}`);
+    if (!point) {
+      const labels = await this.visibleLabels();
+      throw new Error(`qoder_control_missing_or_ambiguous: ${css} ${text ?? ''}${labels.length ? `; 页面可见候选=[${labels.join(' | ')}]` : ''}`);
+    }
     await this.client.send('Input.dispatchMouseEvent',{type:'mousePressed',...point,button:'left',clickCount:1});
     await this.client.send('Input.dispatchMouseEvent',{type:'mouseReleased',...point,button:'left',clickCount:1});
   }
