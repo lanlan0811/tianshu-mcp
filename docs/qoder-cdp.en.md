@@ -33,6 +33,10 @@ A connectable primary workbench can be reused. An existing instance without usab
 
 Workspace identity is checked by full path. Names are candidates only, including when directories share a name or contain spaces or non-ASCII characters. Existing unregistered directories are added through New Task, the workspace picker, New Workspace, Add Folder, the native folder picker, and Create. Native dialogs must match ownership, a newly appeared window, and title; the selected source path is then read back.
 
+Selectors use the same layered structure as Codex (`primary`/`fallbacks`/`texts`/`ariaLabels`/`ariaPatterns`/`verifiedVersion`, 27 keys). `QoderCdpClient.selector()` still returns the string primary, and adds `candidates()`/`existsKey()`/`clickKey()` that probe candidates in order before clicking.
+
+**Workspace picker (corrected by the issue #23 hardware re-probe)**: on 0.3.4 the page contains **two** `[data-workspace-picker-trigger]` buttons, and the old single-match click rule failed as ambiguous — that, not a non-rendering menu, was the real cause of the "workspace menu never renders" symptom (the menu does appear, with its search box, once the composer picker is clicked). The primary selector is now the unique `button[aria-label^="切换或清空当前工作区"]` (with `aria-expanded`), with `[data-workspace-picker-trigger]` demoted to a fallback; the "menu is open" check is relaxed to "search box **or** overlay (`[role=menu][data-state=open]`)". The production `bindWorkspace` now passes on real Qoder 0.3.4; see the [issue #23 verification record](issue-23-selector-drift-record.md).
+
 Initial development starts a new conversation. Rework and continuation restore the saved conversation and recheck its project path. An unconfirmed conversation cannot receive work.
 
 ## Waiting and recovery

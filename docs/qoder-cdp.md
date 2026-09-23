@@ -33,6 +33,10 @@ Qoder 适配器通过桌面应用的 CDP 界面执行开发任务，并复用天
 
 工作区使用完整路径确认身份。名称只作为候选，不作为目录身份；中文、空格、同名目录均需核对实际路径。未登记的已有目录通过“新的任务 → 工作区入口 → 新建工作区 → 添加可读写文件夹 → 选择文件夹 → 创建”登记。原生对话框必须同时匹配进程归属、新出现的窗口和标题，随后回读源目录。
 
+选择器采用与 Codex 同构的分层结构（`primary`/`fallbacks`/`texts`/`ariaLabels`/`ariaPatterns`/`verifiedVersion`，共 27 键），`QoderCdpClient` 的 `selector()` 仍返回字符串首选，另增 `candidates()`/`existsKey()`/`clickKey()` 按候选顺序“先探测后点击”。
+
+**工作区入口（issue #23 真机重探更正）**：0.3.4 页面上存在**两个** `[data-workspace-picker-trigger]` 按钮，旧的唯一点击判定会判歧义而失败——这才是「工作区菜单不渲染」表象的真因（实测点中输入栏 picker 后菜单正常出现，搜索框亦出现）。现主选择器用唯一的 `button[aria-label^="切换或清空当前工作区"]`（带 `aria-expanded`），`[data-workspace-picker-trigger]` 仅作回退；“菜单已打开”判定放宽为“搜索框 **或** 浮层（`[role=menu][data-state=open]`）”。生产 `bindWorkspace` 已在真实 Qoder 0.3.4 上跑通，详见 [issue #23 验证记录](issue-23-selector-drift-record.md)。
+
 初次任务新建会话。返修和续答恢复持久化的原会话，并重新核对目录；不能确认原会话时停止派发。
 
 ## 等待与恢复

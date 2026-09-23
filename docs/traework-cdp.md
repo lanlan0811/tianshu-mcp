@@ -105,12 +105,15 @@ node scripts/probe-traework.mjs send "任务书"       # 端到端发一条并�
       "command": null,          // 留空则用 executableDiscovery 探测
       "executableDiscovery": {
         "dirs": [
-          "D:/TRAE Work CN",
-          "{PROGRAMFILES}/TRAE WORK CN",
-          "{LOCALAPPDATA}/Programs/TRAE WORK CN",
+          "{LOCALAPPDATA}/Programs/TRAE SOLO CN",
+          "{LOCALAPPDATA}/TRAE SOLO CN",
+          "{PROGRAMFILES}/TRAE SOLO CN",
+          "{PROGRAMFILES(X86)}/TRAE SOLO CN",
           "/Applications/TraeWork.app/Contents/MacOS"
         ],
-        "fileNames": ["TRAE SOLO CN.exe", "TraeWork", "TraeWork CN"]
+        "fileNames": ["TRAE SOLO CN.exe"],
+        "preferredDrives": ["D:"],
+        "relativePaths": ["TRAE Work CN/TRAE SOLO CN.exe"]
       },
       "gui": {
         "cdpPort": 9222,             // 调试端口
@@ -252,10 +255,11 @@ UI 升级导致选择器失效时，**无需改代码**——在 `gui.selectors`
 src/agents/traework/
 ├── adapter.ts            AgentAdapter 实现（run 执行面）
 ├── run.ts                单轮任务编排（探测→会话→项目→模型→发送→轮询）
-├── launcher.ts           端口探测/避让、复用判定、带端口启动、安全释放
+├── discovery.ts          安装发现（显式路径→固定盘相对路径→注册表→快捷键→标准目录→PATH）
+├── launcher.ts           端口探测/避让、复用判定、带端口启动、安全释放、端口未就绪诊断
 ├── cdp/
 │   ├── client.ts         CDP 连接与 DOM/输入操作（Node 内置能力，无第三方依赖）
-│   └── selectors.ts      选择器表（主选择器 + 回退 + profile 覆盖）
+│   └── selectors.ts      选择器表（主选择器 + 回退 + verifiedVersion + profile 覆盖）
 ├── ui/
 │   ├── session.ts        新建会话、模式切换、项目文件夹绑定
 │   ├── composer.ts       任务书输入、回读校验、发送
@@ -265,6 +269,16 @@ src/agents/traework/
     ├── guard.ts          白名单守卫（仅允许 TraeWork 文件夹对话框）
     └── dialog.ts         原生对话框驱动（Windows UI Automation）
 ```
+
+### 9.1 安装发现与目录修正（issue #23）
+
+TraeWork 早期**没有** `discovery.ts`，落到通用目录递归探测——只按已列目录递归、无盘符枚举/无相对路径/无注册表，且内置目录写成 `{APPDATA}/TRAE SOLO CN`（Roaming）。实测该目录是**用户数据目录**（含 `Cache`/`Crashpad`/`DevToolsActivePort`/嵌套工具 exe），**不是安装位置**，故永远找不到 `TRAE SOLO CN.exe`。
+
+本版新增 `src/agents/traework/discovery.ts`（`registry.ts` 增 `traework-gui` 专用分支），顺序为：显式 `gui.exePath`/`command` → `preferredDrives × relativePaths` → 注册表 `InstallLocation` → 快捷键(.lnk) → 固定盘枚举 × `relativePaths` → 标准目录（含 macOS `.app` bundle）→ PATH。**Windows 只认 `TRAE SOLO CN.exe`**（旧清单含 `Trae CN`，会误匹配另一产品 TraeCode CN）。真机结果与 `{APPDATA}` 反证见 [issue #23 验证记录](issue-23-selector-drift-record.md)。
+
+### 9.2 端口未就绪诊断
+
+`waitReady` 超时时调用 `diagnosePortFailure()`：输出启动子进程存活/退出码（`code=0` 提示 single-instance 交接）、命令行含该端口 `--remote-debugging-port=<port>` 的进程数、未带调试端口的既有实例数。**只诊断，不改启动策略、不终止既有实例**（沿用误杀事故后的安全红线）。
 
 ---
 

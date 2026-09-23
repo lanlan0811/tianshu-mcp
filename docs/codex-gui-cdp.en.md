@@ -76,7 +76,7 @@ A separate profile **loses no data**: projects, sessions and auth live in `~/.co
 | `sendButton` | `button[aria-label="发送"]` | **Conditionally rendered**: absent while the composer is empty; present means sendable |
 | `stopButton` | `button[aria-label*="停止"]` | Authoritative running signal (replaces send while generating) |
 | `newChat` | `button.sidebar-item` + text "新对话" | |
-| `projectPickerTrigger` | `button[aria-haspopup="dialog"][aria-label^="切换项目"]` | Measured label is "切换项目：<name>"; the sidebar's "添加新项目" must be excluded |
+| `projectPickerTrigger` | `button[aria-haspopup="dialog"][aria-label^="选择项目"]` (fallback includes "切换项目") | **Copy drifts across versions** (issue #23): 26.915 measured "切换项目：<name>", 26.917 "选择项目：<name>"; primary+fallback cover both. The sidebar's "添加新项目" must be excluded |
 | `sourceFolderArea` | `[role="dialog"] button[class*="drop" i]` | Click the "添加 Codex 可读取和编辑的文件夹" button; **"源文件夹" is a label and not clickable** |
 | `createProjectButton` | `[role="dialog"] form button:last-of-type` | The `<h2>` title shares the text; prefer interactive elements |
 | `projectItem` | `button[aria-label$="的项目操作"]` | Project name taken from the label prefix |
@@ -87,6 +87,8 @@ A separate profile **loses no data**: projects, sessions and auth live in `~/.co
 **Real-hardware pitfall (fixed)**: the top menu bar (File/Edit/View/Help) also carries `aria-haspopup="menu"`; without exclusion `modelTrigger` matched the menubar. Selectors therefore support `excludes` (`[role="menubar"]`, `header`), and the CDP layer additionally picks the bottom trigger by "text looks like a model". Verified on hardware: it resolves to `GPT-5.6 Sol 高`.
 
 Multilingual: every key ships bilingual candidates (`texts` / `ariaLabels`) plus a structural fallback; `gui.selectors` (semantic key → selector) hot-patches UI drift at runtime.
+
+**Version-drift audit (issue #23)**: the `projectPickerTrigger` copy drifts across versions (see table above); this release covers both via primary+fallback. Run `node scripts/probe-codex.mjs --launch audit` to print the primary hit count and matched labels for all 20 selector keys as a "script + evidence table" gate (sample in the [issue #23 verification record](issue-23-selector-drift-record.md)). On selector-resolution failure the error now appends "页面可见候选=[…]" (`src/agents/gui-diagnostics.ts`), so drift can be located without opening CDP by hand.
 
 ## 6. Model and reasoning level
 

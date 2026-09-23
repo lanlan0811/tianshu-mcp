@@ -552,9 +552,10 @@ DOM 完成标志出现（"由AI生成" 等）                      → 判定完
   - `unsupported` → 直接失败；
   - `research` → ZCode 走专用 `discoverZcode`，其他走通用探测；
   - `ready` → 顺序为「显式绝对路径 → 发现目录扫描 → PATH（`where` / `which`）」；占位符命令（`<...>`）被拒绝。
-- 特殊探测分支：`codex-gui` 走 `discoverCodex`（Appx 查询 + 扫盘），`kimicode-gui` 走 `discoverKimicode`（盘根相对路径 + 标准目录 + macOS bundle），`qoder-gui` 走 `discoverQoder` 并**额外要求 `process.platform === "win32"`**（非 Windows 直接 `ok:false`，即使探测到安装也不允许派发）。
+- 特殊探测分支：`codex-gui` 走 `discoverCodex`（Appx 查询 + 扫盘），`kimicode-gui` 走 `discoverKimicode`（盘根相对路径 + 标准目录 + macOS bundle），`qoder-gui` 走 `discoverQoder`，`traework-gui` 走 `discoverTraework`（二者均**额外要求 `process.platform === "win32"`**——非 Windows 直接 `ok:false`，即使探测到安装也不允许派发）。四个 `discovery.ts` 共用同一顺序骨架：显式路径 → 固定盘相对路径（`preferredDrives` 优先）→ 注册表 `InstallLocation` → 快捷键（qoder/traework）→ 标准目录（含 macOS bundle）→ PATH。
 - `profile.adapter` 显式判别优先于 `driver`：`driver:"spawn"` + `adapter:"codex-gui"` 仍会换装 GUI 实现。`ensureAdapterFor` 只在**实现类变化**时重建，因此 ad hoc 换装不会打断正在运行的任务。
-- 选择器覆盖机制按适配器而异：TraeWork / ZCode / Codex / Kimi Code 都是「**覆盖优先 → 主选择器 → 回退链**」（Kimi Code 的 overlay 选择器用 `overlay.<key>` 命名空间）；**Qoder CN 是单值覆盖**（`overrides[key] ?? 默认`，没有回退链）——给 qoder 配 `gui.selectors` 等于替换而非追加。
+- 选择器覆盖机制：TraeWork / ZCode / Codex / Kimi Code / **Qoder CN** 均为「**覆盖优先 → primary → 回退链**」（Kimi Code 的 overlay 选择器用 `overlay.<key>` 命名空间）。Qoder CN 自 v0.6.2 起由单值覆盖升级为与 Codex 同构的分层结构（`QoderSelectorSpec`：`primary/fallbacks/texts/ariaLabels/ariaPatterns/verifiedVersion`），`QoderCdpClient` 的 `selector()` 仍返回字符串首选以保持既有语义，另增 `candidates()/existsKey()/clickKey()` 按候选顺序「先探测后点击」。
+- 选择器漂移诊断（v0.6.2，issue #23）：`src/agents/gui-diagnostics.ts` 提供 `visibleLabelsExpr()`（页面内表达式，收集可见候选 aria-label / 短文本）与 `withDiagnostics()`（幂等追加「页面可见候选=[…]」后缀）。codex / qoder / traework 三者在选择器解析失败时统一附上该信息，便于一步定位漂移；各 agent 的 `selectors.ts` 以 `verifiedVersion` 记录实测版本。
 - 目录扫描按深度 6 内查找候选，跳过 `node_modules` 与点目录，**取 mtime 最新者**。
 - profile 热加载靠 sha256 内容指纹（不是 mtime），因此同一时间戳内的修改也能被感知。
 - `get_profiles` 列出所有已注册 adapter 键与 profile 键的并集（未解析成功的自定义 profile 也会出现），并逐条给出 `[PASS]/[FAIL]` 与探测来源。

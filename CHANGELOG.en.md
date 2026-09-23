@@ -8,6 +8,25 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.6.2] - 2026-09-23
+
+### Fixed
+
+- **Codex project-picker trigger copy drifts across versions** ([issue #23](https://github.com/lanlan0811/tianshu-mcp/issues/23), case 1): the trigger's `aria-label` is "选择项目：<name>" on some versions and "切换项目：<name>" on others (26.915, measured locally). `projectPickerTrigger` now covers both copies via primary/fallback/pattern (including the English `Select/Switch project`), and `boundProjectName` reads both back. **A full 20-key hardware audit was run** (`node scripts/probe-codex.mjs --launch audit`): on local 26.915 there is no drift beyond this trigger, and 9 verified keys were bumped to `verifiedVersion: 26.915.x`.
+- **Qoder workspace binding failed on 0.3.4** (issue #23, case 2): a fresh hardware probe **corrected the issue's conclusion** — the 0.3.4 workspace menu **does render**; the real cause is that the page has **two** `[data-workspace-picker-trigger]` elements, and the old single-match `click()` failed as ambiguous. The workspace trigger's primary selector is now the unique `button[aria-label^="切换或清空当前工作区"]` (with `[data-workspace-picker-trigger]` demoted to a fallback); the "menu is open" check is relaxed to "search box **or** overlay". The production `bindWorkspace` now passes on real Qoder 0.3.4.
+- **TraeWork install discovery failed** (issue #23, case 3): added `src/agents/traework/discovery.ts` (fixed-drive enumeration + registry `InstallLocation` + relative paths) with a dedicated `traework-gui` branch in `registry.ts`. Fixed the built-in profile — removed the wrong `{APPDATA}/TRAE SOLO CN` (measured to be the **user-data dir**: Cache/Crashpad/nested tool exes, not the install location) in favor of `{LOCALAPPDATA}/Programs/TRAE SOLO CN` etc., and added `preferredDrives`/`relativePaths`. **On Windows the executable name is narrowed to `TRAE SOLO CN.exe`** (the old list's `Trae CN` mismatched the unrelated TraeCode CN product). `waitReady` timeouts now emit on-site diagnostics (child exit code, port-listener enumeration, detection of existing instances without the debug port) — **diagnosis only: no launch-strategy change, no termination of existing instances**.
+
+### Added
+
+- **Unified selector diagnostics across the three GUI agents** (`src/agents/gui-diagnostics.ts`): on selector-resolution failure the nearest visible page candidates (aria-labels / short texts) are appended to the error and log, so drift can be located in one step without opening CDP by hand. Wired into codex / qoder / traework.
+- **Codex full-key audit mode** `scripts/probe-codex.mjs --launch audit`: prints the primary hit count and matched labels for all 20 selector keys as a "script + evidence table" gate.
+- **Qoder layered selector structure**: `src/agents/qoder/selectors.ts` upgraded from flat strings to `primary/fallbacks/texts/ariaLabels/ariaPatterns/verifiedVersion` (27 keys); `QoderCdpClient.selector()` keeps its string semantics and adds `candidates()/existsKey()/clickKey()`.
+- **TraeWork selector version field unified**: `verified: boolean` → `verifiedVersion: string` (matching codex/kimicode).
+
+### Docs
+
+- New [issue #23 verification record](docs/issue-23-selector-drift-record.md) (20-key audit table, Qoder 0.3.4 re-probe, TraeWork discovery hardware results); release notes [v0.6.2](docs/release-v0.6.2.en.md).
+
 ## [0.6.1] - 2026-09-23
 
 ### Added

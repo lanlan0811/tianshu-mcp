@@ -458,6 +458,12 @@ run_task(projectPath=D:/xxx/my-app, agentId=qoder, planDoc=./plans/development.m
   - **`cmd` 字符串形态文档化**：双语文档与 schema/代码注释明示「推荐数组形态；字符串形态**不支持转义**、引号不闭合不报错、写错会静默拆成多个 argv」；补 5 条边界用例锁定既有分词语义（零行为变更）
   - **计数与场景数对齐**：`protocol.test.ts` 头注释「9 个工具」更正为 11 并新增 `TOOL_DEFS` 数量硬断言；`ci.yml` / `HANDOFF` / `CONTRIBUTING` 双语的「6 场景」同步为 8（issue #16 新增两技能场景后未同步）
   - 详见 [v0.6.1 发布说明](<docs/release-v0.6.1.md>)；验证记录见 [issue-17 记录](docs/issue-17-small-fixes-record.md)
+- **M32 — GUI 选择器版本漂移修复（codex / qoder / traework 三例）+ v0.6.2**（2026-09-23）— 新增 26 项用例（issue #23）
+  - **Codex**：项目选择触发器文案跨版本漂移（26.915 本机实测为「切换项目」，26.917 为「选择项目」），主/回退并列覆盖两文案；`boundProjectName` 回读同步兼容；新增 `probe-codex.mjs audit` 对全部 20 键输出命中表，**本机 26.915 除该触发器外无其他漂移**
+  - **Qoder**：选择器由扁平字符串升级为与 Codex 同构的分层结构（27 键，含 `verifiedVersion`）；**真机重探更正 issue 结论**——0.3.4 工作区菜单**并非不渲染**，真因是页面有**两个** `[data-workspace-picker-trigger]` 致唯一点击判歧义失败；改用唯一的 `button[aria-label^="切换或清空当前工作区"]` 后，生产 `bindWorkspace` 已在真实 0.3.4 跑通
+  - **TraeWork**：新增 `discovery.ts`（固定盘枚举 + 注册表 + 相对路径），修正内置目录（`{APPDATA}/TRAE SOLO CN` 实为**用户数据目录**，非安装位置）；Windows 文件名收窄为只认 `TRAE SOLO CN.exe`（旧清单含 `Trae CN` 会误匹配另一产品 TraeCode CN）；端口未就绪时输出诊断（退出码 / 端口监听者 / 既有实例），**只诊断不改启动策略**
+  - **统一诊断**：新增 `src/agents/gui-diagnostics.ts`，三 GUI agent 在选择器解析失败时把「页面可见候选」写进错误，使用者一步定位漂移
+  - 详见 [v0.6.2 发布说明](<docs/release-v0.6.2.md>)；验证记录见 [issue-23 记录](docs/issue-23-selector-drift-record.md)
 
 ## Agent 适配现状
 

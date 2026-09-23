@@ -83,7 +83,7 @@ CDP 调试端口只有在**专属 user-data-dir** 下才会开启：
 | `sendButton` | `button[aria-label="发送"]` | **条件渲染**：输入框为空时不存在，出现即可发送 |
 | `stopButton` | `button[aria-label*="停止"]` | 权威运行信号（生成期间替代发送按钮） |
 | `newChat` | `button.sidebar-item` + 文案「新对话」 | |
-| `projectPickerTrigger` | `button[aria-haspopup="dialog"][aria-label^="切换项目"]` | 真机实测文案为「切换项目：<名>」；侧栏另有「添加新项目」需排除 |
+| `projectPickerTrigger` | `button[aria-haspopup="dialog"][aria-label^="选择项目"]`（回退含「切换项目」） | **文案跨版本漂移**（issue #23）：26.915 实测为「切换项目：<名>」，26.917 为「选择项目：<名>」；主/回退并列覆盖两文案。侧栏另有「添加新项目」需排除 |
 | `sourceFolderArea` | `[role="dialog"] button[class*="drop" i]` | 点是「添加 Codex 可读取和编辑的文件夹」按钮；**「源文件夹」是 label，不可点** |
 | `createProjectButton` | `[role="dialog"] form button:last-of-type` | 标题 `<h2>` 同名，须优先可交互元素 |
 | `projectItem` | `button[aria-label$="的项目操作"]` | 按前缀提取项目名 |
@@ -97,6 +97,13 @@ CDP 调试端口只有在**专属 user-data-dir** 下才会开启：
 
 多语言：每个键提供中英双语候选（`texts` / `ariaLabels`）+ 结构选择器兜底；
 运行期可用 `gui.selectors`（语义键 → 选择器）热修复 UI 漂移。
+
+**版本漂移审计（issue #23）**：`projectPickerTrigger` 的文案在版本间漂移（见上表），
+本版起主/回退并列兼容。对全部 20 个语义键可跑
+`node scripts/probe-codex.mjs --launch audit`，逐键输出 primary 命中数与命中标签，
+作为「脚本 + 证据表」门禁（结果示例见 [issue #23 验证记录](issue-23-selector-drift-record.md)）。
+选择器解析失败时，错误信息会自动附上「页面可见候选=[…]」（`src/agents/gui-diagnostics.ts`），
+无需人工开 CDP 即可定位漂移。
 
 ## 6. 模型与思考等级
 

@@ -110,12 +110,15 @@ Built-in defaults live in `src/agents/builtin.ts`; the user data directory
       "command": null,          // empty = use executableDiscovery
       "executableDiscovery": {
         "dirs": [
-          "D:/TRAE Work CN",
-          "{PROGRAMFILES}/TRAE WORK CN",
-          "{LOCALAPPDATA}/Programs/TRAE WORK CN",
+          "{LOCALAPPDATA}/Programs/TRAE SOLO CN",
+          "{LOCALAPPDATA}/TRAE SOLO CN",
+          "{PROGRAMFILES}/TRAE SOLO CN",
+          "{PROGRAMFILES(X86)}/TRAE SOLO CN",
           "/Applications/TraeWork.app/Contents/MacOS"
         ],
-        "fileNames": ["TRAE SOLO CN.exe", "TraeWork", "TraeWork CN"]
+        "fileNames": ["TRAE SOLO CN.exe"],
+        "preferredDrives": ["D:"],
+        "relativePaths": ["TRAE Work CN/TRAE SOLO CN.exe"]
       },
       "gui": {
         "cdpPort": 9222,             // debug port
@@ -267,10 +270,11 @@ user's own running TraeWork instance (data intact, restarted). They are now hard
 src/agents/traework/
 ├── adapter.ts            AgentAdapter implementation (run execution surface)
 ├── run.ts                Single-round orchestration (detect→session→project→model→send→poll)
-├── launcher.ts           Port detection/avoidance, reuse decision, launch, safe release
+├── discovery.ts          Install discovery (explicit → fixed-drive rel → registry → shortcut → standard → PATH)
+├── launcher.ts           Port detection/avoidance, reuse decision, launch, safe release, port-failure diagnostics
 ├── cdp/
 │   ├── client.ts         CDP connection and DOM/input ops (Node built-ins, no third-party deps)
-│   └── selectors.ts      Selector table (primary + fallbacks + profile overrides)
+│   └── selectors.ts      Selector table (primary + fallbacks + verifiedVersion + profile overrides)
 ├── ui/
 │   ├── session.ts        New session, mode switch, project folder binding
 │   ├── composer.ts       Task input, read-back verification, send
@@ -280,6 +284,16 @@ src/agents/traework/
     ├── guard.ts          Whitelist guard (TraeWork folder picker only)
     └── dialog.ts         Native dialog driver (Windows UI Automation)
 ```
+
+### 9.1 Install discovery and install-dir fix (issue #23)
+
+TraeWork originally had **no** `discovery.ts` and fell back to a generic directory walk — no drive enumeration, no relative paths, no registry — with the built-in dir written as `{APPDATA}/TRAE SOLO CN` (Roaming). That directory was measured to be the **user-data dir** (holding `Cache`/`Crashpad`/`DevToolsActivePort`/nested tool exes), **not the install location**, so `TRAE SOLO CN.exe` was never found.
+
+This release adds `src/agents/traework/discovery.ts` (with a dedicated `traework-gui` branch in `registry.ts`), ordered: explicit `gui.exePath`/`command` → `preferredDrives × relativePaths` → registry `InstallLocation` → shortcut (.lnk) → fixed-drive enumeration × `relativePaths` → standard dirs (incl. macOS `.app` bundle) → PATH. **On Windows only `TRAE SOLO CN.exe` is accepted** (the old list contained `Trae CN`, which mismatched the unrelated TraeCode CN product). Hardware results and the `{APPDATA}` counter-evidence are in the [issue #23 verification record](issue-23-selector-drift-record.md).
+
+### 9.2 Port-not-ready diagnostics
+
+On a `waitReady` timeout, `diagnosePortFailure()` reports: the launched child's liveness/exit code (`code=0` hints at a single-instance hand-off), the count of processes whose command line carries `--remote-debugging-port=<port>`, and the count of existing instances without the debug port. **Diagnosis only: no launch-strategy change, no termination of existing instances** (the safety rule kept since the mis-kill incident).
 
 ---
 
