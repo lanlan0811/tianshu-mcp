@@ -1,10 +1,24 @@
 # HANDOFF.md — 项目交接说明
 
-> **交接快照：2026-09-23 · 开发版本 `0.5.10`；`v0.5.10` 已发布（GitHub Release / Gitee 发行版 / npm `latest` 三者一致，发布提交 `44e9180`）。**
+> **交接快照：2026-09-23 · 开发版本 `0.6.0`（技能自装加固，issue #16）；发布状态以文末「本次发布实测」行为准。**
 > 本文写给**接手本仓库的人**：先说清「这是什么、现在到哪一步」，再给出「怎么跑、怎么改、哪里会踩坑」。
 > 工作区规则见 `AGENTS.md`（gitignore，仅本地）；安装与用法见 `README.md`，本文不重复，只做导览与状态记录。
 
 ---
+
+### 0.6.0 开发交接（技能自装加固，issue #16）
+
+- **问题**（`src/util/skill-install.ts`）：① `resolveSkillSourceDir()` 的候选链含 `process.cwd()/skills/tianshu-mcp`（两处），非标准布局下会把**当前工作目录**里的同名目录内容装进 `~/.rivet/skills/` 并在新会话生效（在第三方仓库里调试起 server 即中招）；② 目标 hash 不一致时直接备份覆盖，**用户对 `SKILL.md` 的本地调优被静默替换**（有备份、有开关，但覆盖动作零提示、零授权）。根因是目标目录内**没有任何「我们装了什么」的记录**，原理上无法区分「旧版包」与「用户改过」。
+- **源定位收敛**：`resolveSkillSourceDir()` 只由 `import.meta.url` 相对包自身定位（`<模块>/../../skills/tianshu-mcp`；src 与 dist 相对深度一致，单条候选即够）。**删除两处 cwd 引用**与一条永不命中的宽松候选；找不到源沿用既有「跳过 + 告警」。`fileURLToPath` 必须保留（`new URL().pathname` 在 Windows 中文/盘符路径下会转义，见 `docs/host-integration-record.md`）。
+- **安装清单**：目标内 `<目标>/.tianshu-mcp-install.json`（`schema`/`name`/`packageVersion`/`contentHash`/`installedAt`/`sourceDir`，保留时含 `pendingUpdate`）。`hashSkillTree()` **排除清单自身**（否则写清单即自证被改动）与平台噪声（`.DS_Store`/`Thumbs.db`/`desktop.ini`/`._*`/`.git*`）；`copySkillTree` 用**同一排除谓词**，保证「装完立即算 hash == 源 hash」（幂等的根因）。
+- **六态判定**（`decideInstall()` 纯函数，判定与 IO 分离）：不存在 → 安装；一致 → 跳过（按需补写/校准清单）；清单记录 == 内容 ≠ 包内 → **可信旧版**（`auto` 备份覆盖 / `prompt` 保留+记 `pendingUpdate` / 放行覆盖）；清单记录 ≠ 内容 → **用户本地修改**（**恒保留**，放行也不生效，D9 硬边界）；无有效清单且不一致 → **来源不明**（默认保留，放行可覆盖）；目标是文件/不可读 → 同来源不明。
+- **三态与入口**：`skills.autoInstall` = `true | "prompt" | false`（既有 boolean 兼容）；`"prompt"` = 首次安装照常、**需变更时不自动**（stdio 无交互通道，故「prompt」实为「不自动 + 留待确认」）；`--approve-skill-update` / `TIANSHU_MCP_APPROVE_SKILL_UPDATE=1` 放行；**优先级：`--no-skill-install` / `autoInstall:false` 否决权最高**；新增 `skills.backupKeep`（默认 3，`0` = 不清理）。
+- **原子安装**：`<目标>.incoming-<ts>-<hex>` 拷贝（含写清单）→ 旧目录备份为 `<目标>.bak-<ts>` → 换入；失败清 tmp 并回滚。启动时清理 mtime 早于 1 小时的 `.incoming-*`。**旧实现的崩溃窗口必须关掉**：半拷贝目录在新语义下会被误判为「用户修改」而永久阻塞升级。
+- **日志分级**：跳过/补写清单 = `INFO`；覆盖旧版/保留用户修改/来源不明/失败 = `WARN`。便于检索的稳定短句：`含本地修改`、`来源不明`、`未自动覆盖`。hash 只打印前 8 位。
+- **接线**：`src/index.ts` 解析 CLI/env；`src/server.ts` 的 `if (!opts.skipSkillInstall && skills?.autoInstall !== false)` 后调用 `skillSelfInstall(logger, {mode, approveUpdate, backupKeep})`，**后台执行不阻塞握手**；`buildServer` 新增可选 `approveSkillUpdate`。
+- **本版不改技能内容** → 未改过技能的用户升级无感（走「一致 → 跳过」）；改过的用户会看到一次 `WARN` 与两条处置指引，**改动不被覆盖**。
+- 测试：新增 30 单元（`test/unit/skill-install.test.ts`）+ `config-hotreload` 扩展；严格 stdio 新增 `skill-locally-modified` / `skill-approve-update` 两场景（6→8，dist 与 src 均 8/8）；dev-only 夹具 `scripts/seed-skill-state.mjs`（`npm run seed:skill-state`，**不进 npm 包**）。全量 **898 passed / 12 skipped**（86 文件）。
+- 真机复验 R1–R7（Windows 10）见 [issue #16 加固记录](docs/issue-16-skill-install-hardening-record.md)；发布说明 [v0.6.0](docs/release-v0.6.0.md)；判定矩阵与信任模型见 [ARCHITECTURE](ARCHITECTURE.md) §3.4。
 
 ### 0.5.10 开发交接（派单/验收幂等键，issue #15）
 
@@ -105,16 +119,16 @@ npm ci && npm run typecheck && npm run lint && npm test && npm run build
 | 项 | 状态 |
 |---|---|
 | 分支 | `master`（**只在此分支提交**，不建其他分支） |
-| 版本 / 许可证 | `0.5.10`（**已发布**；上一版本 `0.5.9`）/ Apache-2.0 |
-| 标签 | `v0.1.0` … `v0.5.10`（均已推双仓；`v0.5.10` 指向发布提交 `44e9180`） |
-| 工作树 | 干净；`github/master` 与 `gitee/master` 均已推到同一提交。本轮提交：`abe0430`（实现，feat(tasks)）、`a25e34f`（双语文档与技能）、`44e9180`（版本 `0.5.10` + 发布说明 + 交接快照，即 `v0.5.10` 的发布提交）、以及其后的发布后回写提交 |
-| 测试 | **867 passed / 12 skipped**（82 个测试文件通过 + 3 个真实浏览器文件按设计 skip，共 85 文件；较 v0.5.9 净增 26 项：16 单元 + 8 集成 + 1 协议 + 1 配置） |
-| 门禁 | lint 0 warning、typecheck clean、全量测试 867 passed、build 成功、`check:stdio` 6/6 通过、`pack:check` 通过 |
-| CI | `build-test`（ubuntu/windows/macos × Node 20/22/24）+ `pack-check`，另加 `visual-browser` 真实浏览器矩阵（ubuntu/windows + macos-15-intel/macos-15 × Node 20/22/24）。**本轮实测**：`44e9180` 一次通过 **22 作业全绿**（[run 35794428926](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35794428926)）。历史：`531810d`（[run 35787678716](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35787678716)）；`03194e3` 曾因新集成用例在无 Codex 的 Linux/macOS runner 上探测失败而 9 个 build-test 作业全挂（[run 35781422397](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35781422397)），修正提交 `ce92b61` 后全绿（[run 35783321053](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35783321053)） |
-| npm | `tianshu-mcp@0.5.10` 已发布（`latest`）——`npm view tianshu-mcp dist-tags` 为 `{latest: "0.5.10"}`，`dist.shasum` = `674294f8…`，232 文件；从 registry 实装消费者复验：版本 `0.5.10`、五个探针脚本齐备、`check:stdio` **6/6 通过**。注意 npm CDN 的 packument 有数分钟缓存，刚发布后 `npm install` 可能短暂报 `ETARGET`，用 `--prefer-online` 或稍候即可（本次实测 **5 轮轮询后 `latest` 变为 `0.5.10`**）。发布步骤见 `docs/npm-publish-guide.md` |
-| GitHub Release | 推送 `v*` tag 触发 `.github/workflows/release.yml`：先跑完整门禁并校验「tag 版本 === package.json 版本」，正文由 `docs/release-v<ver>.md` + `.en.md` 双语合成（缺文档即报错），**要求同 SHA 的成功 CI**，并附 `tianshu-mcp-<ver>.tgz`。**v0.5.10 实测全绿**（[run 35795314054](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35795314054)），[GitHub 发行 v0.5.10](https://github.com/lanlan0811/tianshu-mcp/releases/tag/v0.5.10) 附件 `tianshu-mcp-0.5.10.tgz`（570884 字节），正文为双语发布说明 |
-| Gitee 发行版 | 由 `scripts/gitee-release.mjs` 用仓库 Secret `GITEE_TOKEN` 幂等补齐；缺少凭据时工作流阻塞。**v0.5.10 已确认**（Gitee `releases/tags/v0.5.10`，标题 `tianshu-mcp v0.5.10`，正文取 `docs/release-v0.5.10.md`） |
-| 本次发布实测 | v0.5.10：CI `44e9180` 一次通过 22 作业全绿（[run 35794428926](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35794428926)）；`Release` 全绿（[run 35795314054](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35795314054)，附 `tianshu-mcp-0.5.10.tgz`，570884 字节）；[GitHub 发行 v0.5.10](https://github.com/lanlan0811/tianshu-mcp/releases/tag/v0.5.10) 与 Gitee 发行版 `v0.5.10` 均确认；npm `tianshu-mcp@0.5.10`（`latest`，`dist.shasum` = `674294f8…`，232 文件），从 registry 实装消费者复验：**五个探针脚本齐备**、`check:stdio` 6/6 通过；双仓 `v0.5.10` 与 `master` 同指 `44e9180`。v0.5.9：发布提交 `fa926af`，CI 22 作业全绿（[run 35785451233](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35785451233)），`Release` 全绿（[run 35786198143](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35786198143)，14 步全 success），npm `tianshu-mcp@0.5.9`（`dist.shasum` = `48778ca3…`，231 文件） |
+| 版本 / 许可证 | `0.6.0`（**本轮发布**；上一版本 `0.5.10`；发布结果以「本次发布实测」行回写为准）/ Apache-2.0 |
+| 标签 | `v0.1.0` … `v0.6.0`（推 `v0.6.0` tag 后均已推双仓） |
+| 工作树 | 干净；`github/master` 与 `gitee/master` 均已推到同一提交。本轮提交：`feat(skills)`（实现）、`chore(release)`（版本 `0.6.0` + 发布说明 + 交接快照，即 `v0.6.0` 的发布提交）、以及其后的发布后回写提交 |
+| 测试 | **898 passed / 12 skipped**（83 个测试文件通过 + 3 个真实浏览器文件按设计 skip，共 86 文件；较 v0.5.10 净增 31 项：30 单元 + 1 配置） |
+| 门禁 | lint 0 warning、typecheck clean、全量测试 898 passed、build 成功、`check:stdio` **8/8** 通过（dist 与 src 两条入口）、`pack:check` 通过 |
+| CI | `build-test`（ubuntu/windows/macos × Node 20/22/24）+ `pack-check`，另加 `visual-browser` 真实浏览器矩阵（ubuntu/windows + macos-15-intel/macos-15 × Node 20/22/24）。历史：v0.5.10 的 `44e9180` 一次通过 22 作业全绿（[run 35794428926](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35794428926)）；`03194e3` 曾因新集成用例在无 Codex 的 Linux/macOS runner 上探测失败而 9 个 build-test 作业全挂（[run 35781422397](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35781422397)），修正提交 `ce92b61` 后全绿（[run 35783321053](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35783321053)）。v0.6.0 的 CI/Release 结果见「本次发布实测」行 |
+| npm | 发布步骤见 `docs/npm-publish-guide.md`。注意 npm CDN 的 packument 有数分钟缓存，刚发布后 `npm install` 可能短暂报 `ETARGET`，用 `--prefer-online` 或稍候即可。v0.5.10：`npm view tianshu-mcp dist-tags` = `{latest: "0.5.10"}`，`dist.shasum` = `674294f8…`，232 文件 |
+| GitHub Release | 推送 `v*` tag 触发 `.github/workflows/release.yml`：先跑完整门禁并校验「tag 版本 === package.json 版本」，正文由 `docs/release-v<ver>.md` + `.en.md` 双语合成（缺文档即报错），**要求同 SHA 的成功 CI**，并附 `tianshu-mcp-<ver>.tgz` |
+| Gitee 发行版 | 由 `scripts/gitee-release.mjs` 用仓库 Secret `GITEE_TOKEN` 幂等补齐；缺少凭据时工作流阻塞 |
+| 本次发布实测 | v0.6.0：见本行末尾回写（CI / Release / Gitee / npm 消费者复验）。v0.5.10：CI `44e9180` 一次通过 22 作业全绿（[run 35794428926](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35794428926)）；`Release` 全绿（[run 35795314054](https://github.com/lanlan0811/tianshu-mcp/actions/runs/35795314054)，附 `tianshu-mcp-0.5.10.tgz`，570884 字节）；[GitHub 发行 v0.5.10](https://github.com/lanlan0811/tianshu-mcp/releases/tag/v0.5.10) 与 Gitee 发行版 `v0.5.10` 均确认；npm `tianshu-mcp@0.5.10`（`latest`，`dist.shasum` = `674294f8…`，232 文件），从 registry 实装消费者复验：**五个探针脚本齐备**、`check:stdio` 6/6 通过；双仓 `v0.5.10` 与 `master` 同指 `44e9180` |
 
 ### 2.1 Agent 适配现状
 
@@ -396,7 +410,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 826 passed / 12 skipped（838 项，78 文件通过 + 3 真实浏览器文件按设计 skip）
+npm test             # 898 passed / 12 skipped（910 项，83 文件通过 + 3 真实浏览器文件按设计 skip）
 ```
 
 日常循环（改 `src/` 后）：
@@ -1010,10 +1024,13 @@ node scripts/probe-qoder.mjs state --port 9777  # 只读：已有实例与页面
 | `docs/release-v0.5.1.md` / `.en.md` | v0.5.1 发布说明（文档/证据补齐 + 锁文件修复，无运行时变更） |
 | `docs/release-v0.5.0.md` / `.en.md` | v0.5.0 发布说明（可选视觉验收模块） |
 | `docs/release-v0.4.1.md` / `.en.md`、`docs/release-v0.4.0.md` / `.en.md` 等 | 历史版本发布说明（按需查 `docs/release-v*.md`） |
+| `docs/issue-16-skill-install-hardening-record.md` | issue #16 技能自装加固的 Windows 10 真机验收记录（R1–R7 原始输出、配套门禁、未覆盖项；中文单语，无英文版） |
+| `docs/release-v0.6.0.md` / `.en.md` | v0.6.0 发布说明（技能自装加固：源定位收敛、安装清单与六态判定、`autoInstall` 三态与 `--approve-skill-update`、原子安装与备份治理；含升级影响说明） |
 | `docs/issue-1-host-reconnect-record.md` | issue #1 桌面宿主重连验收（v3.16.1：10 tools + 真实工具调用） |
 | `docs/npm-publish-guide.md` | npm 发布步骤与凭证；另含 Gitee 发行版手动补建 |
 | `docs/m2-*.md`、`docs/host-integration-record.md`、`docs/dod7-release-record.md`、`docs/dod8-session-record.md`、`docs/s7-session-recheck.md` | 历史里程碑物证（中文，无英文版） |
 | `skills/tianshu-mcp/SKILL.md` + `skills/tianshu-mcp/usage-examples.md` | 教天枢编排本 MCP 的技能与使用示例（随包分发、启动自检安装） |
+| `scripts/seed-skill-state.mjs` | dev-only 测试夹具：把隔离 home 的技能目录播种为 `absent`/`pristine-old`/`customized`/`unknown`（供 stdio 场景与真机复验；**不进 npm 包**） |
 
 > **本地 only（gitignore，不在仓库）**：`.zcode/plans/*`（开发计划，含视觉验收计划）、`.codex/review/*`（验收报告）、
 > `docs/zcode-issue-8-10-evidence/`、`docs/m2-evidence/`、`docs/dod8-evidence/`（脱敏后的真机物证副本）、`.tmp-check/*`（临时证据）。
@@ -1022,7 +1039,7 @@ node scripts/probe-qoder.mjs state --port 9777  # 只读：已有实例与页面
 
 ## 12. 接手人下一步建议
 
-1. 先跑 `npm ci && npm run typecheck && npm run lint && npm test && npm run build`，确认基线绿（826 passed / 12 skipped）。
+1. 先跑 `npm ci && npm run typecheck && npm run lint && npm test && npm run build`，确认基线绿（898 passed / 12 skipped）。
 2. 动代码前先读 [ARCHITECTURE.md](ARCHITECTURE.md) 建立整体心智模型（分层、依赖方向、唯一双路径接缝 `adapter.run`、状态机与验收流水线）；再按专题读本文章节：
    动 GUI adapter 相关代码前，先读对应文档与本文章节：
    TraeWork → `docs/traework-cdp.md` + §9.1 / §9.2；ZCode → `docs/zcode-cdp.md` + §9.5 / §9.6 / §9.9；Codex → `docs/codex-gui-cdp.md` + §9.4；Kimi Code → `docs/kimi-cdp.md` + §9.11。
@@ -1045,4 +1062,7 @@ node scripts/probe-qoder.mjs state --port 9777  # 只读：已有实例与页面
    以及 AI 内容校验的后续扩展（跨轮判定翻转熔断、跨任务缓存共享、参考图/设计稿差异比对）。
    注：issue #3 第一阶段（像素级对比 + 图片规格 + 报告 + 返修闭环 + 基准批准/冻结）已随 v0.5.0 完成，issue #3 已关闭；
    issue #12（无项目派发 + `allowCreateProject`）已随 v0.5.2 完成，其真机回访修复随 v0.5.3 完成；
-   issue #13（视觉验收第二阶段 AI 内容校验）已随 v0.5.4 完成，见 §4.3 与 §9.10。
+   issue #13（视觉验收第二阶段 AI 内容校验）已随 v0.5.4 完成，见 §4.3 与 §9.10；
+   issue #14（GUI 终态如实化）已随 v0.5.9 完成；issue #15（派单/验收幂等键）已随 v0.5.10 完成；
+   issue #16（技能自装加固：源定位 / 覆盖语义 / 三态与备份治理）已随 v0.6.0 完成，见 §3.4 与 `docs/issue-16-skill-install-hardening-record.md`；
+   技能自装的后续方向（另开 issue）：多宿主技能目录投递、宿主级 `"prompt"` 交互确认 UI。
