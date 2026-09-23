@@ -61,14 +61,14 @@ export const CODEX_SELECTORS: Record<CodexSelectorKey, CodexSelectorSpec> = {
     primary: 'div.ProseMirror[contenteditable="true"]',
     fallbacks: ['[contenteditable="true"][role="textbox"]', 'textarea[placeholder]'],
     ariaLabels: ["随心输入", "Type a message", "Message", "输入消息"],
-    verifiedVersion: "26.903.x",
+    verifiedVersion: "26.915.x",
     note: "ProseMirror 富文本输入框；必须走 CDP 输入，不能设 value",
   },
   sendButton: {
     primary: 'button[aria-label="发送"]',
     fallbacks: ['button[aria-label*="Send" i]', 'button[type="submit"]'],
     ariaLabels: ["发送", "Send"],
-    verifiedVersion: "26.903.x",
+    verifiedVersion: "26.915.x",
     note: "条件渲染：输入框为空时不存在，出现即代表可发送",
   },
   stopButton: {
@@ -97,40 +97,52 @@ export const CODEX_SELECTORS: Record<CodexSelectorKey, CodexSelectorSpec> = {
     primary: 'button.sidebar-item',
     fallbacks: ['nav button', 'aside button'],
     texts: ["新对话", "New chat"],
-    verifiedVersion: "26.903.x",
+    verifiedVersion: "26.915.x",
     note: "侧边栏新建会话",
   },
   projectSection: {
     primary: 'button[class*="section-toggle"]',
     fallbacks: ['nav button', 'aside button'],
     texts: ["项目", "Projects"],
-    verifiedVersion: "26.903.x",
+    verifiedVersion: "26.915.x",
     note: "侧边栏项目分组开关",
   },
   addProject: {
     primary: 'button[aria-label="添加新项目"]',
     fallbacks: ["button[aria-label*='添加' i]", "button[aria-label*='Add project' i]"],
     ariaLabels: ["添加新项目", "Add new project", "Add project"],
-    verifiedVersion: "26.903.x",
+    verifiedVersion: "26.915.x",
     note: "打开新建项目入口",
   },
   projectPickerTrigger: {
-    // 真机实测：触发器 = aria-label「切换项目：<名>」(aria-haspopup="dialog")。
-    // 注意两点：
+    // issue #23：触发器 aria-label 存在版本间文案漂移。
+    //   - 26.915（本机实测）：仍为「切换项目：<名>」
+    //   - 26.917（issue #23 报告）：已漂移为「选择项目：<名>」
+    // 两者均为 aria-haspopup="dialog"，故主/回退并列覆盖，兼容 26.903 及更早的「切换项目」。
+    // 注意两点（沿用旧结论，不得回归）：
     //  1) 它**不在** ComposerLayout 作用域内；
     //  2) 侧边栏有 aria-label="添加新项目"、输入框另有独立按钮 aria-label="不在项目中工作"
     //     （那是「离开项目」动作，不是触发器）——都不能混入本键，否则会误点。
-    primary: 'button[aria-haspopup="dialog"][aria-label^="切换项目"]',
-    fallbacks: ["button[aria-haspopup='dialog'][aria-label^='Switch project']"],
-    ariaPatterns: ["^切换项目[：:]", "^Switch project[：:]"],
-    verifiedVersion: "26.903.x",
-    note: "输入框内的项目选择触发器（已绑定/未绑定均为「切换项目…」语义）",
+    primary: 'button[aria-haspopup="dialog"][aria-label^="选择项目"]',
+    fallbacks: [
+      'button[aria-haspopup="dialog"][aria-label^="切换项目"]',
+      "button[aria-haspopup='dialog'][aria-label^='Select project']",
+      "button[aria-haspopup='dialog'][aria-label^='Switch project']",
+    ],
+    ariaPatterns: [
+      "^选择项目[：:]",
+      "^切换项目[：:]",
+      "^Select project[：:]",
+      "^Switch project[：:]",
+    ],
+    verifiedVersion: "26.915–26.917",
+    note: "输入框内的项目选择触发器；26.915 实测文案为「切换项目」，issue #23 报告 26.917 为「选择项目」，两者并列命中（含 26.903 及更早）",
   },
   projectItem: {
     primary: 'button[aria-label$="的项目操作"]',
     fallbacks: ["button[aria-label*='project actions' i]"],
     ariaPatterns: ["的项目操作$", "project actions$"],
-    verifiedVersion: "26.903.x",
+    verifiedVersion: "26.915.x",
     note: "项目项（按 aria-label 前缀提取项目名）",
   },
   newProjectMenuItem: {
@@ -192,7 +204,7 @@ export const CODEX_SELECTORS: Record<CodexSelectorKey, CodexSelectorSpec> = {
     // 作用域：输入框容器（CSS Module 基名 ComposerLayout 稳定，哈希后缀会变）。
     // 兼容性优先，同时列出 ProseMirror 元素本身。
     scope: '[class*="ComposerLayout"],div.ProseMirror[contenteditable="true"]',
-    verifiedVersion: "26.903.x",
+    verifiedVersion: "26.915.x",
     note: "模型+思考等级菜单触发器；限定在输入框作用域内，排除顶部菜单栏与模式切换器",
   },
   reasoningSlider: {
@@ -226,7 +238,7 @@ export const CODEX_SELECTORS: Record<CodexSelectorKey, CodexSelectorSpec> = {
     primary: 'button[aria-label="更改权限"]',
     fallbacks: ["button[aria-label*='权限' i]", "button[aria-label*='permission' i]"],
     ariaLabels: ["更改权限", "Change permission", "Permissions"],
-    verifiedVersion: "26.903.x",
+    verifiedVersion: "26.915.x",
     note: "权限模式触发器（文本如「完全访问」）",
   },
   permissionOption: {
@@ -253,7 +265,7 @@ export const CODEX_SELECTORS: Record<CodexSelectorKey, CodexSelectorSpec> = {
       '[class*="MessageList" i]',
       '[class*="message-list" i]',
     ],
-    verifiedVersion: "26.903.x",
+    verifiedVersion: "26.915.x",
     note: "对话正文区域；用于文本稳定兜底判定（勿用裸 main/#root，会混入导航壳）",
   },
 };

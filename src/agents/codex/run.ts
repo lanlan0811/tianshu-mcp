@@ -34,6 +34,7 @@ import { focusCodexApp } from "./launcher.js";
 import { ensureProjectRegistered } from "./registry.js";
 import { buildInitialPrompt } from "./input.js";
 import { validateTaskReferences } from "../zcode/references.js";
+import { withDiagnostics } from "../gui-diagnostics.js";
 
 export interface RunCodexArgs {
   ctx: TaskContext;
@@ -564,15 +565,27 @@ async function createProject(
   logger: AgentRunLogger,
 ): Promise<{ ok: boolean; error?: string }> {
   // 新建会话后输入框会重渲染，触发器可能短暂缺席 —— 先等它出现再点。
-  if (!(await waitFor(cdp, "projectPickerTrigger", deps, 12_000)))
+  if (!(await waitFor(cdp, "projectPickerTrigger", deps, 12_000))) {
+    // issue #23 诊断机制：解析失败时把页面可见候选一并给出，使用者一步定位文案漂移。
+    const labels = await cdp.visibleLabels();
     return {
       ok: false,
-      error: "新建会话后未出现项目选择触发器（可用 gui.selectors.projectPickerTrigger 热修复）",
+      error: withDiagnostics(
+        "新建会话后未出现项目选择触发器（可用 gui.selectors.projectPickerTrigger 热修复）",
+        labels,
+      ),
     };
+  }
   if (!(await cdp.click("projectPickerTrigger")))
-    return { ok: false, error: "项目选择触发器点击失败" };
+    return {
+      ok: false,
+      error: withDiagnostics("项目选择触发器点击失败", await cdp.visibleLabels()),
+    };
   if (!(await waitFor(cdp, "newProjectMenuItem", deps, 8_000)))
-    return { ok: false, error: "项目选择弹层未出现（找不到「新建项目」项）" };
+    return {
+      ok: false,
+      error: withDiagnostics("项目选择弹层未出现（找不到「新建项目」项）", await cdp.visibleLabels()),
+    };
 
   const menu = await cdp.clickExact("newProjectMenuItem", "新建项目");
   if (!menu.clicked)

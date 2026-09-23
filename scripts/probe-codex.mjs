@@ -24,6 +24,7 @@ import os from "node:os";
 
 const args = process.argv.slice(2);
 const LAUNCH = args.includes("--launch");
+const AUDIT = args.includes("audit");
 const portArgIdx = args.indexOf("--port");
 const PORT = portArgIdx >= 0 ? Number(args[portArgIdx + 1]) : 9333;
 const AUMID = "OpenAI.Codex_2p2nqsd0c76g0!App";
@@ -163,7 +164,7 @@ public static class ProbeAct {
 }
 
 /* ---------- 步骤 4/5：CDP 与选择器 ---------- */
-async function cdpProbe() {
+async function cdpProbe(audit = false) {
   line("\n== 步骤 4：CDP 就绪与页面 ==");
   let targets = null;
   for (let i = 0; i < 30; i++) {
@@ -249,8 +250,57 @@ async function cdpProbe() {
       bad(`${label} 求值失败：${e.message}`);
     }
   }
+  if (audit) await auditSelectors(ev);
   ws.close();
   return true;
+}
+
+/**
+ * 步骤 6（audit）：对全部 Codex 语义键逐个跑生产解析器（dist 的 __codexResolve +
+ * specArgs），输出「primary 命中数 / 可见命中数 / 页面候选标签」。
+ *
+ * 这是 issue #23 选择的「脚本 + 证据表门禁」：业务关键键若 primary 命中为 0 且
+ * 无回退命中，说明该键已随 UI 版本漂移，必须补候选后重测。
+ */
+async function auditSelectors(ev) {
+  line("\n== 步骤 6：全部语义键审计（生产解析器）==");
+  const { CODEX_SELECTORS, resolveFnSource, specArgs } = await import(
+    "../dist/agents/codex/selectors.js"
+  );
+  const visibleFilter = `const vis=(e)=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth};`;
+  const rows = [];
+  for (const key of Object.keys(CODEX_SELECTORS)) {
+    const spec = CODEX_SELECTORS[key];
+    const expr = `(function(){${resolveFnSource()}${visibleFilter}
+      const spec=${specArgs(key)};
+      const els=__codexResolve(spec);
+      const visible=els.filter(vis);
+      const labels=[];const seen={};
+      for(const e of els){if(labels.length>=20)break;const a=(e.getAttribute&&e.getAttribute('aria-label')||'').trim();
+        const t=(e.innerText||e.textContent||'').trim().replace(/\\s+/g,' ').slice(0,50);const l=a||t;
+        if(!l||seen[l])continue;seen[l]=1;labels.push(l)}
+      // 页面最接近候选：所有 aria-label 含本键主关键词的元素（用于人工比对）
+      const primary=${JSON.stringify(spec.primary)};
+      const kw=(primary.match(/[\\u4e00-\\u9fa5]{2,}|[A-Za-z]{4,}/g)||[])[0]||'';
+      const near=kw?[...new Set([...document.querySelectorAll('[aria-label]')].map(e=>e.getAttribute('aria-label')).filter(a=>a&&a.includes(kw)))].slice(0,8):[];
+      return {total:els.length,visible:visible.length,labels,near,kw};})()`;
+    try {
+      const r = await ev(expr);
+      const v = r.result?.value ?? {};
+      rows.push({ key, verifiedVersion: spec.verifiedVersion, ...v });
+      const mark = (v.visible ?? 0) > 0 ? "OK  " : "MISS";
+      line(
+        `  ${mark} ${key.padEnd(22)} v=${String(spec.verifiedVersion).padEnd(10)} primary/可见=${v.total ?? "?"}/${v.visible ?? "?"}` +
+          (v.visible ? `  命中=${JSON.stringify((v.labels ?? []).slice(0, 3))}` : `  最接近=${JSON.stringify(v.near ?? [])}`),
+      );
+    } catch (e) {
+      rows.push({ key, error: e.message });
+      bad(`${key} 求值失败：${e.message}`);
+    }
+  }
+  line("\n  [JSON] " + JSON.stringify(rows));
+  line("\n  审计表已输出（复制 [JSON] 行到 docs/issue-23-selector-drift-record.md）");
+  return rows;
 }
 
 async function main() {
@@ -267,7 +317,7 @@ async function main() {
   }
   processes();
   const launched = activate(aumid);
-  if (launched || LAUNCH) await cdpProbe();
+  if (launched || LAUNCH) await cdpProbe(AUDIT);
   else {
     line("\n提示：加 --launch 可启动受管实例并连 CDP 实测选择器。");
   }

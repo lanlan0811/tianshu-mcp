@@ -6,6 +6,7 @@
  */
 import { TraeworkCdpClient, CdpDisconnectedError, CdpUnavailableError } from "../traework/cdp/client.js";
 import { type CodexSelectorKey, resolveFnSource, specArgs } from "./selectors.js";
+import { visibleLabelsExpr, normalizeLabels } from "../gui-diagnostics.js";
 
 export { CdpDisconnectedError, CdpUnavailableError };
 
@@ -118,6 +119,20 @@ export class CodexCdpClient {
         `${this.visibleFilter}const els=__codexResolve(${specArgs(key, this.selectors)});return els.some(vis);`,
       ),
     );
+  }
+
+  /**
+   * 收集页面可见候选标签（issue #23 诊断机制）：选择器解析失败时，
+   * 把「页面实际有什么」写进错误信息，使用者一步定位漂移（无需人工开 CDP）。
+   * 永不抛错——诊断失败返回空数组，不影响主流程。
+   */
+  async visibleLabels(scopeCss?: string): Promise<string[]> {
+    try {
+      const raw = await this.evaluate<unknown>(visibleLabelsExpr({ scope: scopeCss }));
+      return normalizeLabels(raw);
+    } catch {
+      return [];
+    }
   }
 
   /** 第一个可见元素文本 */
@@ -395,7 +410,8 @@ export class CodexCdpClient {
   }
   /**
    * 读取当前会话已绑定的项目名。
-   * 权威信号：输入框内的项目 chip 带 `aria-label="切换项目：<名>"`（未绑定时为「不在项目中工作」）。
+   * 权威信号：输入框内的项目 chip 带 `aria-label="选择项目：<名>"`（26.917 起；
+   * 26.903 及更早为「切换项目：<名>」；未绑定时为「不在项目中工作」）。
    * 真机教训：早期实现把所有非 chip 按钮文本拼起来，会返回整页文案并意外“通过”匹配。
    */
   async boundProjectName(): Promise<string> {
@@ -407,7 +423,7 @@ export class CodexCdpClient {
           for(const e of document.querySelectorAll('[aria-label]')){
             if(!vis(e))continue;
             const aria=norm(e.getAttribute('aria-label'));
-            const m=/^(?:切换项目|Switch project)[：:]\\s*(.+)$/i.exec(aria);
+            const m=/^(?:选择项目|切换项目|Select project|Switch project)[：:]\\s*(.+)$/i.exec(aria);
             if(m&&m[1])return m[1].trim();
           }
           return '';
