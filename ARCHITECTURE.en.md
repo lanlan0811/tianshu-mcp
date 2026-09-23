@@ -96,7 +96,7 @@ node dist/index.js visual <cmd>   → visual acceptance CLI subcommands
 
 - The data home is resolved by `resolveDataHome()`: env `TIANSHU_MCP_HOME` wins, otherwise `~/.tianshu-mcp`.
 - The logger initializes to `<data home>/logs/`.
-- Skill self-install can be disabled with `--no-skill-install` or `TIANSHU_MCP_NO_SKILL_INSTALL=1`.
+- Skill self-install can be disabled with `--no-skill-install` or `TIANSHU_MCP_NO_SKILL_INSTALL=1`; a "needs change but not auto-overwritable" directory (`autoInstall:"prompt"` or unknown source) can be approved with `--approve-skill-update` or `TIANSHU_MCP_APPROVE_SKILL_UPDATE=1` (see §3.4).
 - Shutdown path: `SIGINT` / `SIGTERM` / stdin EOF / stdin close → archive active tasks and terminate child processes → `exit(0)`.
 
 ### 3.2 Assembly order (`src/server.ts`)
@@ -148,6 +148,33 @@ Per-task directory (`src/tasks/task-store.ts`):
 | `visual-snapshot.json` | Visual rules snapshot frozen for the task's duration |
 
 Project-side artifacts: `<project>/.tianshu-mcp/acceptance.json` (project-level acceptance config), `<project>/tests/visual/baselines/...` (visual baselines), and for the Codex path `<project>/.zcode/plans/codex-fix-r<N>.md` (repair plan).
+
+### 3.4 Trust and decision model of skill self-install (issue #16)
+
+Module `src/util/skill-install.ts`, run **in the background** inside `buildServer()` (`void`, never blocking the handshake); failures only warn and never block the server.
+
+**Source location**: resolved relative to the package via `import.meta.url` only (`<module>/../../skills/tianshu-mcp`) — a source run and a dist run have the same relative depth, so one candidate suffices. It **deliberately does not fall back to `process.cwd()`**: any cwd-based content discovery turns "debugging the server inside some third-party repository" into a poisoning surface. When no source is found, install is skipped with a warning.
+
+**Install manifest**: kept inside the target at `<dest>/.tianshu-mcp-install.json` (`schema`/`name`/`packageVersion`/`contentHash`/`installedAt`/`sourceDir`, plus `pendingUpdate` when a `"prompt"` hold is recorded). `contentHash` comes from `hashSkillTree()`, which **excludes the manifest itself** (otherwise writing the manifest would prove the target changed) and platform noise (`.DS_Store`/`Thumbs.db`/`desktop.ini`/`._*`/`.git*`). Copying uses the same exclusion predicate, so "hash right after install" equals the source hash exactly (the root of idempotency).
+
+**Decision matrix** (`decideInstall()`, a pure function separating decision from IO):
+
+| Target state | Criterion | `auto` (default) | `"prompt"` | plus `--approve-skill-update` |
+|---|---|---|---|---|
+| Absent | — | install | install | install |
+| Present, content == package | — | skip (repair/calibrate manifest if needed) | skip | skip |
+| Manifest ok, content == manifest record ≠ package | untouched stale package copy (trusted) | **backup + overwrite** (warn) | keep + warn + `pendingUpdate` in manifest | **backup + overwrite** (warn) |
+| Manifest ok, content ≠ manifest record | local edits (confirmed) | **keep + loud warn** | same | **same (approval has no effect)** |
+| No valid manifest (missing/corrupt/not a dir) and content ≠ package | unknown source | **keep + warn** | same | **backup + overwrite** (warn) |
+
+- With `skills.autoInstall: false`, `server.ts` short-circuits and never calls this module; `--no-skill-install` and `false` outrank the approval flag.
+- An overwrite happens **only** in the "trusted stale copy" and "explicitly approved" cells; `--approve-skill-update` has **no effect** on confirmed local edits (your skill-document tuning is never silently clobbered).
+
+**Atomic install**: `installFromSource()` follows "copy into `<dest>.incoming-<ts>-<hex>` (manifest included) → rename the old directory to `<dest>.bak-<ts>` → rename into place"; on failure it removes the tmp tree and rolls the backup back (a failed rollback only warns and the backup remains). Stale `.incoming-*` directories older than one hour are cleaned on startup.
+
+**Log levels**: skip / manifest repair = `INFO`; stale-copy upgrade, local edits kept, unknown source, install failure = `WARN`. Searchable stable markers: `含本地修改`, `来源不明`, `未自动覆盖`.
+
+**Backup governance**: after a successful overwrite, `skills.backupKeep` (default 3, `0` = never prune) prunes — matching only directories named exactly `<SKILL_NAME>.bak-<digits>`, keeping the newest N by timestamp and logging deletions at `INFO`; a failed delete only warns. The first-install and skip/keep paths never prune.
 
 ---
 
@@ -639,7 +666,7 @@ CLI subcommands (`node dist/index.js visual ...`): `init` (writes a disabled tem
 
 | Config | Location | Notes |
 |---|---|---|
-| Server config | `<data home>/config.json` | `concurrency.maxRunning` (2), `defaultTaskTimeoutMs` (30 min), `verifyCommandTimeoutMs` (5 min), `verifyConcurrency` (2, 1..4), `shutdown.guiStopWaitMs` (15 s, global upper bound for the GUI stop wait on shutdown), `idempotency.ttlMs` (24 h), `idempotency.maxEntries` (2000), `skills.autoInstall` (true) |
+| Server config | `<data home>/config.json` | `concurrency.maxRunning` (2), `defaultTaskTimeoutMs` (30 min), `verifyCommandTimeoutMs` (5 min), `verifyConcurrency` (2, 1..4), `shutdown.guiStopWaitMs` (15 s, global upper bound for the GUI stop wait on shutdown), `idempotency.ttlMs` (24 h), `idempotency.maxEntries` (2000), `skills.autoInstall` (true \| "prompt" \| false), `skills.backupKeep` (3, 0..50, 0 = never prune) |
 | Idempotency mapping | `<data home>/idempotency.json` | key→taskId/digest mapping (not a hand-written config file; atomic writes, lazy loading, TTL and capacity pruning — see §5.6) |
 | Agent profiles | `<data home>/agent-profiles.json` | **Whole-key override** of built-in profiles |
 | Project registry | `<data home>/projects.json` | Includes each project's `verify[]` records |
@@ -701,6 +728,7 @@ Violating any of these causes runtime corruption or an incident:
 6. **Never auto commit / stash / roll back**: capture a git baseline before work and compute reports relative to it.
 7. **No hard-coded paths**: machine paths, user names, and ports come from profiles or placeholders.
 8. **stdout carries JSON-RPC only**: all diagnostic logs go to stderr (and append to the same `logs/server.log`). Any noise on stdout breaks the MCP stream and fails the handshake with strict clients.
+9. **Skill content comes from the package only**: the skill to be installed is located relative to the package via `import.meta.url`; **there is no cwd-based content discovery**, and a target whose content cannot be proven untouched is never overwritten silently (see §3.4).
 
 **Path safety gate**: `projectPath` is validated at submit time — it must be absolute, the directory must exist, symlinks are realpath-normalized (the receipt states the resolved source), and **the home directory itself and system/root-level directories are rejected outright**, preventing a worker's write permissions from covering an entire system subtree.
 

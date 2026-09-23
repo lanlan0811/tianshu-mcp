@@ -87,7 +87,7 @@ node dist/index.js visual <cmd>   → 视觉验收 CLI 子命令族
 
 - 数据目录由 `resolveDataHome()` 解析：环境变量 `TIANSHU_MCP_HOME` 优先，否则 `~/.tianshu-mcp`。
 - 日志器初始化到 `<数据目录>/logs/`。
-- 技能自检安装可经 `--no-skill-install` 或 `TIANSHU_MCP_NO_SKILL_INSTALL=1` 关闭。
+- 技能自检安装可经 `--no-skill-install` 或 `TIANSHU_MCP_NO_SKILL_INSTALL=1` 关闭；「需变更但不自动覆盖」（`autoInstall:"prompt"` 或来源不明）可经 `--approve-skill-update` 或 `TIANSHU_MCP_APPROVE_SKILL_UPDATE=1` 放行（见 §3.4）。
 - 退出路径：`SIGINT` / `SIGTERM` / stdin EOF / stdin close → 归档活动任务并终止子进程 → `exit(0)`。
 
 ### 3.2 组装顺序（`src/server.ts`）
@@ -139,6 +139,33 @@ resolveDataHome → Logger → DataHome(BUILTIN_PROFILES) → init()
 | `visual-snapshot.json` | 任务期冻结的视觉规则快照 |
 
 项目侧产物：`<项目>/.tianshu-mcp/acceptance.json`（项目级验收配置）、`<项目>/tests/visual/baselines/...`（视觉基准）、codex 路径的 `<项目>/.zcode/plans/codex-fix-r<N>.md`（修复计划）。
+
+### 3.4 技能自检安装的信任与判定模型（issue #16）
+
+模块 `src/util/skill-install.ts`；在 `buildServer()` 内**后台**执行（`void`，不阻塞握手），失败仅告警不阻断。
+
+**源定位**：只由 `import.meta.url` 相对包自身定位（`<模块>/../../skills/tianshu-mcp`）——dev 直跑与 dist 运行相对深度一致，因此单条候选即够。**刻意不回退 `process.cwd()`**：任何基于 cwd 的内容发现都会让「在某个第三方仓库里调试起 server」变成投毒面。找不到源时跳过安装并告警。
+
+**安装清单**：目标目录内维护 `<目标>/.tianshu-mcp-install.json`（`schema`/`name`/`packageVersion`/`contentHash`/`installedAt`/`sourceDir`，`"prompt"` 保留时另有 `pendingUpdate`）。`contentHash` 由 `hashSkillTree()` 计算，**排除清单自身**（否则写清单即自证被改动）与平台噪声（`.DS_Store`/`Thumbs.db`/`desktop.ini`/`._*`/`.git*`）；拷贝用同一排除谓词，保证「装完立即算 hash」与源 hash 严格相等（幂等的根因）。
+
+**判定矩阵**（`decideInstall()`，纯函数，判定与 IO 分离）：
+
+| 目标状态 | 判据 | `auto`（默认） | `"prompt"` | 追加 `--approve-skill-update` |
+|---|---|---|---|---|
+| 不存在 | — | 安装 | 安装 | 安装 |
+| 存在，内容 == 包内 | — | 跳过（按需补写/校准清单） | 跳过 | 跳过 |
+| 清单 ok，内容 == 清单记录 ≠ 包内 | 未改动的旧版包副本（可信） | **备份 + 覆盖**（warn） | 保留 + warn + 清单记 `pendingUpdate` | **备份 + 覆盖**（warn） |
+| 清单 ok，内容 ≠ 清单记录 | 用户本地修改（确证） | **保留 + 强 warn** | 同左 | **同左（放行不生效）** |
+| 无有效清单（缺失/损坏/非目录）且内容 ≠ 包内 | 来源不明 | **保留 + warn** | 同左 | **备份 + 覆盖**（warn） |
+
+- `skills.autoInstall: false` 时 `server.ts` 直接短路，不调用本模块；`--no-skill-install` 与 `false` 的否决权高于放行参数。
+- 覆盖**只**发生在「可信旧版」与「显式放行」两格，`--approve-skill-update` 对已确证的用户本地修改**不生效**（保护用户对技能文档的调优不被静默冲掉）。
+
+**安装原子性**：`installFromSource()` 走「`<目标>.incoming-<ts>-<hex>` 拷贝（含写清单）→ 旧目录 `rename` 为 `<目标>.bak-<ts>` → `rename` 换入」；失败清 tmp 并回滚 bak（回滚失败仅告警，bak 仍在）。启动时另清理 mtime 早于 1 小时的 `.incoming-*` 崩溃残留。
+
+**日志分级**：跳过/补写清单 = `INFO`；覆盖旧版、保留用户修改、来源不明、安装失败 = `WARN`。便于检索的稳定短句：`含本地修改`、`来源不明`、`未自动覆盖`。
+
+**备份治理**：覆盖成功后按 `skills.backupKeep`（默认 3，`0` = 不清理）收敛 —— 只匹配精确模式 `<SKILL_NAME>.bak-<数字>` 的**目录**，按时间戳保留最新 N 个，删除前 `INFO` 记录，删除失败仅 `WARN`。首个安装与跳过/保留路径都不清理。
 
 ---
 
@@ -612,7 +639,7 @@ CLI 子命令族（`node dist/index.js visual ...`）：`init`（写入禁用的
 
 | 配置 | 位置 | 说明 |
 |---|---|---|
-| server 配置 | `<数据目录>/config.json` | `concurrency.maxRunning`(2)、`defaultTaskTimeoutMs`(30min)、`verifyCommandTimeoutMs`(5min)、`verifyConcurrency`(2, 1..4)、`shutdown.guiStopWaitMs`(15s，关停时 GUI 停止等待的全局上限)、`idempotency.ttlMs`(24h)、`idempotency.maxEntries`(2000)、`skills.autoInstall`(true) |
+| server 配置 | `<数据目录>/config.json` | `concurrency.maxRunning`(2)、`defaultTaskTimeoutMs`(30min)、`verifyCommandTimeoutMs`(5min)、`verifyConcurrency`(2, 1..4)、`shutdown.guiStopWaitMs`(15s，关停时 GUI 停止等待的全局上限)、`idempotency.ttlMs`(24h)、`idempotency.maxEntries`(2000)、`skills.autoInstall`(true \| "prompt" \| false)、`skills.backupKeep`(3, 0..50, 0=不清理) |
 | 幂等映射 | `<数据目录>/idempotency.json` | 键→taskId/digest 映射（非手写配置；原子写、惰性加载、TTL 与容量裁剪，见 §4.5） |
 | agent profile | `<数据目录>/agent-profiles.json` | 按 key **整键覆盖**内置 profile |
 | 项目登记 | `<数据目录>/projects.json` | 含每项目 `verify[]` 验收记录 |
@@ -674,6 +701,7 @@ CLI 子命令族（`node dist/index.js visual ...`）：`init`（写入禁用的
 6. **不自动 commit / stash / 回滚**：动工前采集 git 基线，报告相对基线计算。
 7. **路径不硬编码**：机器路径 / 用户名 / 端口走 profile 或占位符。
 8. **stdout 只承载 JSON-RPC**：所有诊断日志走 stderr（并同源追加到 `logs/server.log`）。任何写入 stdout 的杂音都会破坏 MCP 流，导致严格客户端握手失败。
+9. **技能内容只来自包自身**：待安装技能经 `import.meta.url` 相对包定位，**不从 `process.cwd()` 发现内容**；内容无法证明未被改动的目标目录绝不静默覆盖（见 §3.4）。
 
 **路径安全闸门**：`projectPath` 提交时校验——必须绝对路径、目录必须存在、符号链接经 realpath 归一（回执明示解析来源）；**主目录本身与系统/根级目录直接拒绝**，防止 worker 的写权限覆盖整棵系统子树。
 

@@ -32,6 +32,8 @@ export async function buildServer(
     home?: string;
     logger?: Logger;
     skipSkillInstall?: boolean;
+    /** issue #16：放行「需变更但按策略未自动覆盖」的技能目录 */
+    approveSkillUpdate?: boolean;
     maxRunningOverride?: number;
   } = {},
 ): Promise<ServerAssembly> {
@@ -58,11 +60,14 @@ export async function buildServer(
   );
   await manager.initialize({ maxRunning, guiStopWaitMs });
 
-  // 技能自检安装（失败仅告警不阻断，§17.5）；后台执行，不阻塞握手
-  if (!opts.skipSkillInstall && (cfg.skills?.autoInstall ?? true)) {
-    void skillSelfInstall(logger).then((r) => {
-      if (r.installed) logger.info(r.message);
-      if (r.failed) logger.warn(r.message);
+  // 技能自检安装（失败仅告警不阻断，§17.5；issue #16：autoInstall 三态 + 覆盖语义 + 放行参数）。
+  // 后台执行，不阻塞握手；模块内部按事件分级自行记日志（跳过=info，覆盖/保留/失败=warn），此处只接线。
+  const skills = cfg.skills;
+  if (!opts.skipSkillInstall && skills?.autoInstall !== false) {
+    void skillSelfInstall(logger, {
+      mode: skills?.autoInstall === "prompt" ? "prompt" : "auto",
+      approveUpdate: opts.approveSkillUpdate === true,
+      backupKeep: skills?.backupKeep ?? 3,
     });
   }
 

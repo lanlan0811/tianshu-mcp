@@ -8,6 +8,35 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.6.0] - 2026-09-23
+
+### Added
+
+- **Tri-state and approval entry point for skill self-install** ([issue #16](https://github.com/lanlan0811/tianshu-mcp/issues/16)):
+  - `skills.autoInstall` is upgraded from a boolean to `true | "prompt" | false` (existing `true`/`false` stay valid, no migration needed). `"prompt"` means **install as usual on first run, but do not auto-overwrite when a change is needed** (warn and record `pendingUpdate` in the manifest) — a stdio server has no synchronous interaction channel, so "prompt" effectively means "do not act automatically, leave it for confirmation".
+  - New startup flag `--approve-skill-update` (equivalent env var `TIANSHU_MCP_APPROVE_SKILL_UPDATE=1`): for this run, permit a "needs change" skill directory to be overwritten with the in-package version (after backup). **It has no effect on directories confirmed to carry local edits**; `--no-skill-install` / `autoInstall:false` outrank it.
+  - New `skills.backupKeep` (default 3, range 0..50, `0` = never prune): after a successful overwrite, keep the newest N `.bak-<timestamp>` directories by timestamp and log the deletions.
+- Install manifest `<dest>/.tianshu-mcp-install.json` (`schema`/`name`/`packageVersion`/`contentHash`/`installedAt`/`sourceDir`, plus `pendingUpdate` when held), which distinguishes "an untouched stale package copy" from "your local edits" — previously indistinguishable in principle.
+
+### Fixed
+
+- **Skill content is no longer discovered from the current working directory** (issue #16 problem 1): `resolveSkillSourceDir()` now locates the source relative to the package via `import.meta.url` only, and **both `process.cwd()` candidates were removed** along with a loose candidate that could never match; when no source is found, the existing "skip with a warning" path is kept. Previously, debugging the server inside a third-party repository that carried its own `skills/tianshu-mcp/` would install that repository's content into `~/.rivet/skills/` for the next session.
+- **An overwrite no longer silently replaces your local edits** (issue #16 problem 2): when the target content differs from the manifest record (i.e. you edited it) or the source is unknown (no valid manifest), the existing content is **kept with a warning** (plus two remediation paths: rename/delete and restart, or merge manually); an overwrite happens only when the content is provably untouched or explicitly approved.
+- **Install can no longer leave a half-copied tree**: it now follows an atomic "copy into `<dest>.incoming-<ts>-<hex>` (manifest included) → back the old directory up as `<dest>.bak-<ts>` → swap in" path, rolling back and cleaning the tmp tree on failure; stale `.incoming-*` directories older than one hour are cleaned on startup. The previous "rename the old directory away, then copy straight into the target" had a crash window that could leave a half-copied directory, which the new semantics would misread as local edits and block upgrades on permanently.
+- **Log levels for overwrites corrected**: stale-copy upgrade / local edits kept / unknown source / install failure are now all `WARN` (previously backup and install were `INFO`, easily drowned out); skip and manifest repair stay `INFO`. Hashes are printed as the first 8 characters only, with the full value in the manifest.
+
+### Tests
+
+- New unit file `test/unit/skill-install.test.ts` (30 cases): three source-location checks (a "decoy with the same name under cwd does not change the source" regression plus a "the source no longer contains `process.cwd()`" textual assertion), hash exclusion rules (the manifest itself and `.DS_Store`/`Thumbs.db`/`desktop.ini`/`._*`/`.git*`), manifest parsing (missing / malformed JSON / invalid schema·name·hash → corrupt), a table-driven sweep of the 6-state decision matrix across modes and approval, real-filesystem end-to-end (first install / idempotency / manifest self-heal / trusted-stale overwrite / local edits kept with no backup / `prompt` hold and `pendingUpdate` / approved overwrite / failure rollback / backup pruning / non-matching entries untouched / stale tmp cleanup / log levels / missing source), and a smoke test using the real `skills/tianshu-mcp`.
+- `test/unit/config-hotreload.test.ts` gains default/override/invalid-value last-known-good cases for `skills.autoInstall` (tri-state) and `skills.backupKeep`.
+- The strict stdio gate gains two independent scenarios (6→8): `skill-locally-modified` (seed a "locally modified" directory → assert no overwrite, no backup, no install log) and `skill-approve-update` (seed an "unknown source" directory plus the flag → assert an overwrite to the in-package version, a backup created, and a manifest written); new dev-only fixture `scripts/seed-skill-state.mjs` (registered as `npm run seed:skill-state`, excluded from the npm package).
+- Full run **898 passed / 12 skipped** (Windows 10 x64, Node 24.18.0), 33 more cases than v0.5.10.
+
+### Docs
+
+- New `docs/release-v0.6.0.md` / `.en.md` and `docs/issue-16-skill-install-hardening-record.md` (the raw Windows 10 real-machine verification R1–R7 and uncovered items).
+- The bilingual README gains a "Skill self-install" section (source location, manifest and the three verdict classes, the `autoInstall` tri-state table, approval/disable flags) plus the M30 milestone; the bilingual ARCHITECTURE gains §3.4 "Trust and decision model of skill self-install" (decision matrix, atomicity, log levels, backup governance) and lists the skill boundary among the hard red lines; the bilingual SECURITY gains "Supply-chain boundary of skill self-install"; `docs/agent-profiles.md` / `.en.md` update the `skills` config notes; HANDOFF carries the new version snapshot and file table.
+
 ## [0.5.10] - 2026-09-23
 
 ### Added

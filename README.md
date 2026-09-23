@@ -45,6 +45,7 @@
 - **执行面**：`driver: "gui"` 由显式 adapter 驱动桌面 UI（Codex / TraeWork / ZCode / Kimi Code 各自使用隔离的 CDP 流程）；`driver: "spawn"` 走外部 CLI 子进程。
 - **无项目派发（ZCode，issue #12）**：`run_task` 的 `projectPath` 可省略——ZCode 在 `default` 工作区承接任务，不登记/导入项目、不采集 Git 基线、不执行项目验收（结果以 `verificationNotApplicable: "no_project"` 结构化标注，`verify_task`/`get_task_report` 返回不适用说明）。配套 `allowCreateProject: false` 可在目标目录未登记时于任何导入副作用之前停止派发。详见 [ZCode CDP 适配器](docs/zcode-cdp.md)。
 - **幂等重试（issue #15）**：`run_task` / `verify_task` 接受可选 `idempotencyKey`——同一 key 在 TTL（默认 24h）内的重试**不会**重复派单（恒返回原 `taskId` 与当前状态）或重复跑验收（执行中返回进行中提示，已完成直接返回既有报告）；同键异参 fail-closed 报错。映射落盘于 `<数据目录>/idempotency.json`，跨 server 重启仍生效。详见 [v0.5.10 发布说明](<docs/release-v0.5.10.md>)。
+- **技能自检安装（issue #16）**：启动时把**包内** `skills/tianshu-mcp/` 幂等同步到 `~/.rivet/skills/tianshu-mcp/`。源只由 `import.meta.url` 相对包自身定位（无 cwd 内容发现）；目标内含安装清单，据此仅在**可证未被改动**时自动升级，**检出你的本地修改或来源不明一律保留 + 告警**；覆盖走「临时目录 → 备份 → 换入」的原子路径，并按 `skills.autoInstall`（`true`/`"prompt"`/`false`）与 `skills.backupKeep` 治理。详见 [README §技能自检安装](#技能自检安装)。
 - **调度纪律**：每项目串行队列 + 全局并发上限（默认 2，可配）；未传幂等键时，`run_task` 仍会点名同工作区未结束的任务，避免误判为重试。
 - **可选 AI 内容校验（v0.5.4，默认关闭）**：校验图片或页面截图**内容**是否符合你显式声明的期望描述。判定完全**委托给你自备的本地命令**（MCP 不读取、不存储、不转发任何密钥，也不内置模型客户端），默认**仅告警**、逐规则可升级为致败；采样多数票 + 任务级缓存防抖，票不集中或低于置信度阈值判 `uncertain`（永不阻塞、不触发返修）。配置与命令契约见 [视觉验收](docs/visual-acceptance.md)。
 - **不碰密钥**：各 agent 用自己的登录态；本 server 不保存/转发任何 API key。可选 AI 内容校验同样不引入凭证管理——判定命令自己管密钥（见 [SECURITY.md](SECURITY.md)）。
@@ -212,6 +213,37 @@ run_task(projectPath=D:/xxx/my-app, agentId=qoder, planDoc=./plans/development.m
 数据目录默认 `~/.tianshu-mcp`（可用 `TIANSHU_MCP_HOME` 覆盖），日志文件位于 `<数据目录>/logs/server.log`。
 
 排查连接问题时以 `server.log` 为准；不要因为 stderr 有输出就判定 server 异常。
+
+## 技能自检安装
+
+启动时把**包内** `skills/tianshu-mcp/` 幂等同步到 `~/.rivet/skills/tianshu-mcp/`，让宿主（天枢）在新会话里读到编排技能。三个要点：
+
+- **技能内容只来自包自身**：源目录由 `import.meta.url` 相对定位（dev 直跑与 dist 运行都指向包内 `skills/`），**不**从当前工作目录发现内容。找不到源时跳过安装并告警。
+- **不一致时不静默覆盖**：安装目录内维护清单 `<目标>/.tianshu-mcp-install.json`（版本 + 内容 hash）。据此分三类——内容一致 → 跳过；清单可证是本包装过、未被改动的旧版副本 → 按 `skills.autoInstall` 处理；**清单记录与目标内容不符（= 检出你改过文件）或没有有效清单（来源不明）→ 默认保留你的版本并告警**，不会覆盖。
+- **覆盖是原子的**：先装到 `<目标>.incoming-*`，再备份旧目录为 `.bak-<时间戳>`，最后换入；失败回滚，不留半成品。覆盖后按 `skills.backupKeep`（默认 3）收敛历史备份。
+
+```jsonc
+// <数据目录>/config.json
+{
+  "skills": {
+    "autoInstall": true,   // true（默认）| "prompt" | false
+    "backupKeep": 3        // 覆盖后保留的历史备份个数；0 = 不清理
+  }
+}
+```
+
+| `autoInstall` | 行为 |
+|---|---|
+| `true`（默认） | 首次安装；内容一致跳过；可证未被改动的旧版副本**自动备份并升级**；用户本地修改与来源不明目录**仍保留不覆盖** |
+| `"prompt"` | 首次安装照常；其余同上，但**需变更时不自动覆盖**，只告警并在清单记 `pendingUpdate` |
+| `false` | 完全不自动安装 |
+
+放行与关闭（命令行参数或等价环境变量；`--no-skill-install` / `autoInstall:false` 的否决权最高）：
+
+- `--approve-skill-update`（或 `TIANSHU_MCP_APPROVE_SKILL_UPDATE=1`）：本次启动允许「需变更」的技能目录由包内版本覆盖（先备份）。**对已确证含用户本地修改的目录不生效**——那类只能人工改名/删除后重启，或手工合并改动。
+- `--no-skill-install`（或 `TIANSHU_MCP_NO_SKILL_INSTALL=1`）：本次启动不做任何技能安装与检查。
+
+日志里 `INFO` 表示跳过/已安装，`WARN` 表示覆盖了旧版、保留了你的修改或检出问题（`含本地修改` / `来源不明` / `未自动覆盖` 等短句便于检索）。安装失败只告警，不阻断 server。
 
 ## 文档
 
@@ -412,6 +444,13 @@ run_task(projectPath=D:/xxx/my-app, agentId=qoder, planDoc=./plans/development.m
   - **落盘与可观测**：`<数据目录>/idempotency.json`（原子写 + TTL/容量裁剪，跨重启生效）、`idempotency.ttlMs` / `maxEntries` 可配、meta 新增 `idempotencyKey`/`idempotencyReplay`/`projectActiveTask`、命中写事件流（只用键摘要）
   - **协议层补齐**：`tools/list` 的 `idempotentHint` 对两个工具置 true（前提是调用方传键）；未传键时仍点名同工作区未结束任务
   - 详见 [v0.5.10 发布说明](<docs/release-v0.5.10.md>)
+- **M30 — 技能自装加固（源定位 / 覆盖语义 / 三态与备份治理）+ v0.6.0**（2026-09-23）— 新增 30 单元用例（issue #16）
+  - **源定位收敛**：技能源只由 `import.meta.url` 相对包自身定位，**删除两处 `process.cwd()` 候选**（不再从当前工作目录发现内容，消除「在第三方仓库里调试即被投毒」的供应链面）；找不到源时沿用跳过安装 + 告警
+  - **区分「旧版包」与「用户本地修改」**：安装目录内新增清单 `<目标>/.tianshu-mcp-install.json`（版本 + 内容 hash，hash 排除清单自身与 `.DS_Store` 等平台噪声）；据此仅在**可证未被改动**时自动升级，检出本地修改或来源不明一律**保留 + 强告警**（附两条处置指引）
+  - **三态与新入口**：`skills.autoInstall` 升级为 `true | "prompt" | false`（向后兼容既有 boolean）；新增 `--approve-skill-update` / `TIANSHU_MCP_APPROVE_SKILL_UPDATE=1` 作为非交互放行通道（对已确证的用户修改不生效）；新增 `skills.backupKeep`（默认 3）
+  - **安装原子化与日志分级**：改为「tmp 目录 → 备份 → 换入」，失败回滚不留半成品；跳过=INFO、覆盖/保留/来源不明/失败=WARN；覆盖后按 `backupKeep` 收敛历史 `.bak-<时间戳>`
+  - **门禁**：严格 stdio 检查新增 `skill-locally-modified` / `skill-approve-update` 两场景（6→8）；Windows 10 真机复验 R1–R7 留档 [issue-16 记录](docs/issue-16-skill-install-hardening-record.md)
+  - 详见 [v0.6.0 发布说明](<docs/release-v0.6.0.md>)
 
 ## Agent 适配现状
 

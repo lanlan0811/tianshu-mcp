@@ -35,6 +35,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { JSONRPCMessageSchema, LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js";
+import { seedSkillState } from "./seed-skill-state.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_REPO = path.resolve(HERE, "..");
@@ -497,7 +498,25 @@ function baseScenarios() {
     "corrupt-config-warn",
     "task-runtime-logs",
     "eof-close",
+    // issue #16：技能自装加固的两个端到端场景（用户修改默认不覆盖 / 显式放行才覆盖）
+    "skill-locally-modified",
+    "skill-approve-update",
   ];
+}
+
+/** 技能安装目标目录（与 src/util/skill-install.ts:resolveSkillDestDir 同构） */
+function skillDestDir(home) {
+  return path.join(home, ".rivet", "skills", "tianshu-mcp");
+}
+
+/** 历史备份目录名（`<name>.bak-<数字>`）是否至少有一个 */
+function hasSkillBackup(home) {
+  const parent = path.dirname(skillDestDir(home));
+  try {
+    return fs.readdirSync(parent).some((n) => /^tianshu-mcp\.bak-\d+$/.test(n));
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -515,10 +534,18 @@ async function runScenario(name, opts, ctx) {
 
   const extraArgs = [];
   if (name === "no-skill-install") extraArgs.push("--no-skill-install");
+  if (name === "skill-approve-update") extraArgs.push("--approve-skill-update");
 
   if (name === "corrupt-config-warn") {
     await fsp.mkdir(home, { recursive: true });
     await fsp.writeFile(path.join(home, "config.json"), "{ 这不是合法 JSON ", "utf8");
+  }
+
+  // issue #16：技能状态种子（必须在 server 启动前落盘）
+  if (name === "skill-locally-modified") {
+    seedSkillState(home, opts.repo, "customized");
+  } else if (name === "skill-approve-update") {
+    seedSkillState(home, opts.repo, "unknown");
   }
 
   try {
@@ -559,6 +586,34 @@ async function runScenario(name, opts, ctx) {
           projectToClean = r.project;
           await client.waitStderr("run_task 已提交", 5_000);
           await client.waitStderr("任务", 5_000);
+        } else if (name === "skill-locally-modified") {
+          // 种子：清单可证未改动的副本被用户追加了一行 → 应保留、不覆盖、无备份
+          await client.waitStderr("含本地修改", 30_000);
+          const dest = skillDestDir(home);
+          const patch = path.join(dest, "SKILL.md");
+          assert(fs.existsSync(patch), "技能目录应存在（种子未生效）");
+          assert(
+            fs.readFileSync(patch, "utf8").includes("用户本地调优"),
+            "用户本地修改被覆盖了（应保留原内容）",
+          );
+          assert(!hasSkillBackup(home), "用户本地修改场景不应生成 .bak 备份");
+          // 不应出现任何"已安装/已覆盖"的正向日志
+          assert(!client.stderrText.includes("技能已安装到"), "用户本地修改场景不应安装");
+          assert(!client.stderrText.includes("技能旧版副本已升级"), "用户本地修改场景不应覆盖");
+        } else if (name === "skill-approve-update") {
+          // 种子：无清单且内容≠包内（来源不明）→ 传 --approve-skill-update 应备份并覆盖
+          await client.waitStderr("授权覆盖", 30_000);
+          const dest = skillDestDir(home);
+          const skill = fs.readFileSync(path.join(dest, "SKILL.md"), "utf8");
+          const pkg = fs.readFileSync(path.join(opts.repo, "skills", "tianshu-mcp", "SKILL.md"), "utf8");
+          assert(!skill.includes("来源不明的技能内容（种子）"), "放行后应已覆盖为包内版本");
+          assert(skill === pkg, "放行后 SKILL.md 应与包内逐字符一致");
+          assert(hasSkillBackup(home), "放行覆盖应生成 .bak 备份");
+          // 清单已落盘（下次启动走"内容一致 → 跳过"）
+          assert(
+            fs.existsSync(path.join(dest, ".tianshu-mcp-install.json")),
+            "覆盖后应写入安装清单",
+          );
         }
 
         // 正常 EOF 关闭

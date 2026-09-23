@@ -7,7 +7,9 @@ Full Chinese spec: [agent-profiles.md](agent-profiles.md). External AI-Agents pl
 built-in (`src/agents/builtin.ts`) → user `agent-profiles.json` overrides by `id`.
 
 > Beyond profiles, server-level switches live in `<data home>/config.json`: `concurrency.maxRunning` (2),
-> `defaultTaskTimeoutMs`, `verifyCommandTimeoutMs`, `verifyConcurrency`, `skills.autoInstall`, and
+> `defaultTaskTimeoutMs`, `verifyCommandTimeoutMs`, `verifyConcurrency`, `skills.autoInstall`
+> (`true` \| `"prompt"` \| `false`), `skills.backupKeep` (default 3; historical skill backups kept after an
+> overwrite, `0` = never prune), and
 > **`shutdown.guiStopWaitMs` (15000)** — the **globally shared** bound for a GUI task's "best-effort stop click plus
 > bounded idle wait" when the server shuts down (issue #14). If it expires without a confirmation, the terminal message
 > states the stop is unconfirmed and sets `guiStopUnconfirmed`; it never claims the stop happened. Raising it improves

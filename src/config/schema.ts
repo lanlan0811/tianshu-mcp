@@ -215,9 +215,19 @@ export const ServerConfigSchema = z.object({
    * 项目级 .tianshu-mcp/acceptance.json 的 verifyConcurrency 可覆盖。
    */
   verifyConcurrency: z.number().int().min(1).max(4).default(2),
+  /**
+   * 技能自检安装（issue #16 加固）。
+   * `autoInstall`：
+   * - `true`（默认）：包内技能与目标不一致且可证目标未被改动时，自动备份并覆盖为新版；
+   * - `"prompt"`：首次安装照常，**需变更时**不自动覆盖，只告警并在清单记 `pendingUpdate`，
+   *   待用户带 `--approve-skill-update` 重启放行（stdio server 无同步交互通道）；
+   * - `false`：完全不自动安装。
+   * `backupKeep`：覆盖后保留的历史 `.bak-<时间戳>` 个数，`0` = 不清理（默认 3）。
+   */
   skills: z
     .object({
-      autoInstall: z.boolean().default(true),
+      autoInstall: z.union([z.boolean(), z.literal("prompt")]).default(true),
+      backupKeep: z.number().int().min(0).max(50).default(3),
     })
     .default({}),
   /**

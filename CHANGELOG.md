@@ -7,6 +7,35 @@
 
 ---
 
+## [0.6.0] - 2026-09-23
+
+### 新增
+
+- **技能自检安装的三态与放行入口**（[issue #16](https://github.com/lanlan0811/tianshu-mcp/issues/16)）：
+  - `skills.autoInstall` 由布尔升级为 `true | "prompt" | false`（既有 `true`/`false` 继续合法，无需迁移）。`"prompt"` 语义为**首次安装照常、需变更时不自动覆盖**（只告警并在清单记 `pendingUpdate`）——stdio server 无同步交互通道，故「prompt」实为「不自动 + 留待确认」。
+  - 新增启动参数 `--approve-skill-update`（等价环境变量 `TIANSHU_MCP_APPROVE_SKILL_UPDATE=1`）：本次启动允许把「需变更」的技能目录覆盖为包内版本（先备份）。**对已确证含用户本地修改的目录不生效**；`--no-skill-install` / `autoInstall:false` 的否决权高于本参数。
+  - 新增 `skills.backupKeep`（默认 3，范围 0..50，`0` = 不清理）：覆盖成功后按时间戳保留最新 N 个 `.bak-<时间戳>` 目录，删除项记日志。
+- 安装清单 `<目标>/.tianshu-mcp-install.json`（`schema`/`name`/`packageVersion`/`contentHash`/`installedAt`/`sourceDir`，保留时含 `pendingUpdate`），用于区分「未改动的旧版包副本」与「用户本地修改」——此前两者在原理上不可区分。
+
+### 修复
+
+- **技能源不再从当前工作目录发现内容**（issue #16 问题 1）：`resolveSkillSourceDir()` 只由 `import.meta.url` 相对包自身定位，**删除两处 `process.cwd()` 候选**及一条永不命中的宽松候选；找不到源时沿用既有「跳过安装 + 告警」路径。此前在某个自带 `skills/tianshu-mcp/` 的第三方仓库目录里调试起 server，会把该仓库内容安装进 `~/.rivet/skills/` 并在新会话生效。
+- **技能覆盖不再静默替换用户本地修改**（issue #16 问题 2）：检测到目标内容与清单记录不符（= 用户改过）或来源不明（无有效清单）时**保留现有内容并告警**（附「改名/删除后重启」与「手工合并」两条处置指引），仅在内容可证未被改动或显式放行时才覆盖。
+- **安装不再可能留下半成品**：改为「拷贝到 `<目标>.incoming-<ts>-<hex>`（含写清单）→ 旧目录备份为 `<目标>.bak-<ts>` → 换入」的原子路径，失败回滚并清理临时目录；启动时清理 mtime 早于 1 小时的 `.incoming-*` 崩溃残留。此前「先 rename 旧目录、再直接往目标拷贝」的崩溃窗口会留下半拷贝目录，在新语义下会被误判为「用户修改」而永久阻塞升级。
+- **覆盖相关日志分级修正**：旧版覆盖 / 保留用户修改 / 来源不明 / 安装失败一律 `WARN`（此前备份与安装均为 `INFO`，容易被日志淹没）；跳过与清单补写保持 `INFO`。hash 只打印前 8 位，完整值落在清单文件。
+
+### 测试
+
+- 新增单元用例 `test/unit/skill-install.test.ts`（30 项）：源定位三态（含「cwd 下同名诱饵不影响源」回归与「源码不再出现 `process.cwd()`」文本断言）、hash 排除规则（清单自身与 `.DS_Store`/`Thumbs.db`/`desktop.ini`/`._*`/`.git*`）、清单解析（缺失/非法 JSON/schema·name·hash 不合法 → corrupt）、判定矩阵 6 态 × 模式 × 放行的表驱动覆盖、真实文件系统端到端（首次/幂等/清单自愈/可信旧版覆盖/用户修改保留且无备份/`prompt` 保留与 `pendingUpdate`/放行覆盖/失败回滚/备份收敛/非匹配项不删/残留临时目录清理/日志分级/源缺失）、以真实 `skills/tianshu-mcp` 为源的冒烟。
+- `test/unit/config-hotreload.test.ts` 补 `skills.autoInstall` 三态与 `skills.backupKeep` 的默认值/覆盖/非法值 last-known-good 用例。
+- 严格 stdio 门禁新增两个独立场景（6→8）：`skill-locally-modified`（种子预置「含本地修改」目录 → 断言不覆盖、无备份、无安装日志）、`skill-approve-update`（种子预置「来源不明」目录 + 传参 → 断言覆盖为包内版本、生成备份、写入清单）；新增 dev-only 夹具 `scripts/seed-skill-state.mjs`（登记为 `npm run seed:skill-state`，不进 npm 包）。
+- 全量 **898 passed / 12 skipped**（Windows 10 x64，Node 24.18.0），较 v0.5.10 净增 33 项用例。
+
+### 文档
+
+- 新增 `docs/release-v0.6.0.md` / `.en.md`、`docs/issue-16-skill-install-hardening-record.md`（Windows 10 真机复验 R1–R7 原始证据与未覆盖项）。
+- README 双语新增「技能自检安装」小节（源定位、清单与三类判定、`autoInstall` 三态表、放行/关闭参数）并补 M30 里程碑；ARCHITECTURE 双语新增 §3.4「技能自检安装的信任与判定模型」（判定矩阵、原子性、日志分级、备份治理）并把技能边界列入安全红线；SECURITY 双语新增「技能自检安装的供应链边界」；`docs/agent-profiles.md` / `.en.md` 更新 `skills` 配置说明；HANDOFF 同步版本快照与文件表。
+
 ## [0.5.10] - 2026-09-23
 
 ### 新增

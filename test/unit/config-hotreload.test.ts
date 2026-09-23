@@ -154,4 +154,43 @@ describe("S5 projects Zod schema + last-known-good", () => {
     expect(overridden.idempotency?.ttlMs).toBe(60_000);
     expect(overridden.idempotency?.maxEntries).toBe(10);
   });
+
+  // issue #16：技能自装三态与备份保留必须可配置、默认值稳定、非法值走 last-known-good
+  it("skills.autoInstall 三态（true/\"prompt\"/false）与 backupKeep 默认 3 且可覆盖", async () => {
+    const home = await mkHome();
+    const dh = new DataHome(home, silentLogger, { stub: STUB });
+    const p = path.join(home, "config.json");
+
+    // 未配置 → 默认 true / 3
+    await fsp.writeFile(p, JSON.stringify({}));
+    const defaults = await dh.loadConfig();
+    expect(defaults.skills?.autoInstall).toBe(true);
+    expect(defaults.skills?.backupKeep).toBe(3);
+
+    // "prompt" 合法
+    await fsp.writeFile(p, JSON.stringify({ skills: { autoInstall: "prompt" } }));
+    expect((await dh.loadConfig()).skills?.autoInstall).toBe("prompt");
+
+    // false / true 继续合法（boolean 兼容）
+    await fsp.writeFile(p, JSON.stringify({ skills: { autoInstall: false, backupKeep: 0 } }));
+    const off = await dh.loadConfig();
+    expect(off.skills?.autoInstall).toBe(false);
+    expect(off.skills?.backupKeep).toBe(0);
+
+    // 边界：backupKeep 上限 50 合法
+    await fsp.writeFile(p, JSON.stringify({ skills: { autoInstall: true, backupKeep: 50 } }));
+    expect((await dh.loadConfig()).skills?.backupKeep).toBe(50);
+
+    // 非法：autoInstall 大小写不符 / backupKeep 越界或非整数 → 保留上一有效值 + warn
+    await fsp.writeFile(p, JSON.stringify({ skills: { autoInstall: true, backupKeep: 7 } }));
+    expect((await dh.loadConfig()).skills?.backupKeep).toBe(7);
+    await fsp.writeFile(p, JSON.stringify({ skills: { autoInstall: "Prompt" } }));
+    expect((await dh.loadConfig()).skills?.backupKeep).toBe(7); // 上一有效值
+    await fsp.writeFile(p, JSON.stringify({ skills: { autoInstall: true, backupKeep: -1 } }));
+    expect((await dh.loadConfig()).skills?.backupKeep).toBe(7);
+    await fsp.writeFile(p, JSON.stringify({ skills: { autoInstall: true, backupKeep: 51 } }));
+    expect((await dh.loadConfig()).skills?.backupKeep).toBe(7);
+    await fsp.writeFile(p, JSON.stringify({ skills: { autoInstall: true, backupKeep: "3" } }));
+    expect((await dh.loadConfig()).skills?.backupKeep).toBe(7);
+  });
 });

@@ -45,6 +45,7 @@ Tianshu plays the role of the overall commander; this MCP server is the **schedu
 - **Execution surfaces**: `driver: "gui"` selects an explicit, isolated Codex/TraeWork/ZCode/Kimi Code/Qoder CN CDP adapter; `driver: "spawn"` runs an external CLI child process.
 - **Project-less dispatch (ZCode, issue #12)**: `run_task`'s `projectPath` may be omitted — ZCode runs the task in its `default` workspace without registering/importing a project, collecting a Git baseline, or running project acceptance (the result is marked structurally as `verificationNotApplicable: "no_project"` and `verify_task`/`get_task_report` return a not-applicable explanation). The companion `allowCreateProject: false` stops dispatch before any import side effect when the target directory is unregistered. See the [ZCode CDP adapter](docs/zcode-cdp.en.md).
 - **Idempotent retries (issue #15)**: `run_task` / `verify_task` accept an optional `idempotencyKey` — a retry with the same key within the TTL (24 h default) never duplicates a dispatch (the original `taskId` and its current status are returned) or re-runs verification (a running pass answers "in progress", a finished one returns the existing report); the same key with different arguments fails closed. The mapping is persisted in `<data-dir>/idempotency.json` and survives a server restart. See the [v0.5.10 release notes](<docs/release-v0.5.10.en.md>).
+- **Skill self-install (issue #16)**: on startup the **in-package** `skills/tianshu-mcp/` is synced idempotently to `~/.rivet/skills/tianshu-mcp/`. The source is located relative to the package via `import.meta.url` (no cwd content discovery); an install manifest inside the target lets it auto-upgrade **only when the copy is provably untouched**, while **detected local edits or an unknown source are kept with a warning**; overwrites go through an atomic "tmp dir → backup → swap in" path and are governed by `skills.autoInstall` (`true`/`"prompt"`/`false`) and `skills.backupKeep`. See [README §Skill self-install](#skill-self-install).
 - **Scheduling discipline**: per-project serial queue + global concurrency cap (default 2, configurable); even without an idempotency key, `run_task` names the unfinished task in the same workspace so a retry is not mistaken for a fresh dispatch.
 - **Optional AI content validation (v0.5.4, off by default)**: validates whether the **content** of an image or page screenshot matches an expectation you declare explicitly. Judgement is fully **delegated to a local command you supply** (the MCP reads, stores, and forwards no keys and ships no model client), it **warns only** by default and can be upgraded to failing per rule, and it debounces with majority sampling plus a task-level cache; split votes or confidence below the threshold yield `uncertain`, which never gates and never triggers rework. Configuration and the command contract are in [visual acceptance](docs/visual-acceptance.en.md).
 - **No key handling**: each agent uses its own login state; this server never stores or forwards any API key. Optional AI content validation adds no credential management either — the judge command manages its own key (see [SECURITY.en.md](SECURITY.en.md)).
@@ -214,6 +215,37 @@ This server is a standard MCP **stdio server** and follows the transport contrac
 The data directory defaults to `~/.tianshu-mcp` (override with `TIANSHU_MCP_HOME`); the log file lives at `<data dir>/logs/server.log`.
 
 Use `server.log` when troubleshooting connections; do not treat stderr output itself as a server fault.
+
+## Skill self-install
+
+On startup, the **in-package** `skills/tianshu-mcp/` is synced idempotently to `~/.rivet/skills/tianshu-mcp/` so the host (Tianshu) picks up the orchestration skill in a new session. Three points:
+
+- **Skill content comes from the package only**: the source directory is located relative to the module via `import.meta.url` (both source and dist runs resolve to the in-package `skills/`); content is **never** discovered from the current working directory. When no source is found, install is skipped with a warning.
+- **No silent overwrite on mismatch**: an install manifest `<dest>/.tianshu-mcp-install.json` (version + content hash) is kept inside the target. Three cases follow from it — content identical → skip; a stale copy this package provably installed and left untouched → handled per `skills.autoInstall`; **manifest hash ≠ target content (i.e. you edited files) or no valid manifest (unknown source) → your version is kept and a warning is logged**, never overwritten.
+- **Overwrite is atomic**: content is staged into `<dest>.incoming-*`, the old directory is backed up as `.bak-<timestamp>`, then swapped in; failures roll back, leaving no half-copied tree. After an overwrite, historical backups are pruned to `skills.backupKeep` (default 3).
+
+```jsonc
+// <data dir>/config.json
+{
+  "skills": {
+    "autoInstall": true,   // true (default) | "prompt" | false
+    "backupKeep": 3        // backups kept after an overwrite; 0 = never prune
+  }
+}
+```
+
+| `autoInstall` | Behaviour |
+|---|---|
+| `true` (default) | First install; skip when identical; a provably untouched stale copy is **backed up and upgraded automatically**; your local edits and unknown-source directories are **still kept as-is** |
+| `"prompt"` | First install as usual; otherwise the same, but **no automatic overwrite when a change is needed** — only a warning plus a `pendingUpdate` note in the manifest |
+| `false` | No automatic install at all |
+
+Opt-in and opt-out (CLI flag or equivalent env var; `--no-skill-install` / `autoInstall:false` vetoes everything else):
+
+- `--approve-skill-update` (or `TIANSHU_MCP_APPROVE_SKILL_UPDATE=1`): for this run, permit a "needs change" skill directory to be overwritten with the in-package version (after backup). **It does not apply to directories confirmed to carry your local edits** — those require renaming/deleting the directory and restarting, or merging your edits manually.
+- `--no-skill-install` (or `TIANSHU_MCP_NO_SKILL_INSTALL=1`): no skill install or check for this run.
+
+On stderr, `INFO` means skipped/installed; `WARN` means a stale copy was upgraded, your edits were kept, or an issue was detected (short markers such as `含本地修改` / `来源不明` / `未自动覆盖` are searchable). A failed install only warns — it never blocks the server.
 
 ## Documentation
 
@@ -411,6 +443,13 @@ Use `server.log` when troubleshooting connections; do not treat stderr output it
   - **Persistence and observability**: `<data-dir>/idempotency.json` (atomic writes + TTL/capacity pruning, effective across restarts), configurable `idempotency.ttlMs` / `maxEntries`, new meta fields `idempotencyKey`/`idempotencyReplay`/`projectActiveTask`, and an event-stream note keyed by digest only
   - **Protocol-level completion**: `tools/list` reports `idempotentHint: true` for the two tools (only meaningful when the caller supplies a key); without a key `run_task` still names the unfinished task in the same workspace
   - See the [v0.5.10 release notes](<docs/release-v0.5.10.en.md>)
+- **M30 — Skill self-install hardening (source location / overwrite semantics / tri-state & backup governance) + v0.6.0** (2026-09-23) — 30 new unit cases (issue #16)
+  - **Source location tightened**: the skill source is located relative to the package via `import.meta.url` only; **both `process.cwd()` candidates were removed** (content is never discovered from the current working directory, closing the "poisoned while debugging inside a third-party repo" supply-chain surface). When no source is found, the existing skip-with-warning path is kept
+  - **Distinguishing a "stale package copy" from "your local edits"**: the target now carries a manifest `<dest>/.tianshu-mcp-install.json` (version + content hash, with the manifest itself and platform noise such as `.DS_Store` excluded from the hash). Auto-upgrade happens **only when the copy is provably untouched**; detected local edits or an unknown source are **kept with a loud warning** (plus two remediation paths)
+  - **Tri-state and a new entry point**: `skills.autoInstall` becomes `true | "prompt" | false` (backwards compatible with the existing boolean); `--approve-skill-update` / `TIANSHU_MCP_APPROVE_SKILL_UPDATE=1` is a non-interactive approval channel (it does not apply to confirmed local edits); new `skills.backupKeep` (default 3)
+  - **Atomic install and log levels**: "tmp dir → backup → swap in", with rollback on failure so no half-copied tree remains; skip = INFO, overwrite/keep/unknown-source/failure = WARN; after an overwrite, historical `.bak-<timestamp>` directories are pruned to `backupKeep`
+  - **Gates**: the strict stdio check gains `skill-locally-modified` / `skill-approve-update` scenarios (6→8); Windows 10 real-machine verification R1–R7 recorded in the [issue-16 record](docs/issue-16-skill-install-hardening-record.md)
+  - See the [v0.6.0 release notes](<docs/release-v0.6.0.en.md>)
 
 ## Agent support status
 

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * tianshu-mcp 入口：stdio 启动 MCP server。
- * 用法：node dist/index.js   （env TIANSHU_MCP_HOME 可选覆盖数据目录）
+ * 用法：node dist/index.js [--no-skill-install] [--approve-skill-update]
+ *   （env TIANSHU_MCP_HOME 可选覆盖数据目录；env TIANSHU_MCP_NO_SKILL_INSTALL / TIANSHU_MCP_APPROVE_SKILL_UPDATE 等价）
  * 退出：SIGINT/SIGTERM / stdin EOF → 归档任务 → 杀子进程 → 退出。
  */
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -21,8 +22,12 @@ async function main(): Promise<void> {
   const logger = await Logger.create(path.join(home, "logs"));
   const skipSkillInstall =
     process.argv.includes("--no-skill-install") || process.env.TIANSHU_MCP_NO_SKILL_INSTALL === "1";
+  // issue #16：放行「需变更但按策略未自动覆盖」的技能目录（prompt 保留 / 来源不明）。
+  // 对已确证含用户本地修改的目标不生效；--no-skill-install 的否决权高于本参数。
+  const approveSkillUpdate =
+    process.argv.includes("--approve-skill-update") || process.env.TIANSHU_MCP_APPROVE_SKILL_UPDATE === "1";
 
-  const assembly = await buildServer({ logger, skipSkillInstall });
+  const assembly = await buildServer({ logger, skipSkillInstall, approveSkillUpdate });
   const transport = new StdioServerTransport();
   await assembly.server.connect(transport);
   logger.info(`tianshu-mcp 已连接（stdio）。数据目录: ${home}，工具数: ${TOOL_DEFS.length}`);

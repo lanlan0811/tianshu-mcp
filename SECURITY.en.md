@@ -67,6 +67,22 @@ Understanding these boundaries helps you judge whether a finding is intended beh
 - Task artifacts (logs, reports, repair plans) are written only to the task data directory and the
   project's `.tianshu-mcp/`.
 
+### 2.1 Supply-chain boundary of skill self-install (issue #16)
+
+- **Single content source**: the shipped skill is located **relative to the package only**
+  (`skills/tianshu-mcp/` via `import.meta.url`); content is **never discovered from the current working
+  directory** — closing the case where "debugging the server inside a third-party repository that happens
+  to carry the same path" installs that repository's content into `~/.rivet/skills/` for the next session.
+- **No silent overwrite**: the target keeps a content-hash manifest; on **local edits** (manifest record
+  ≠ target content) or an **unknown source** (no valid manifest) the existing content is **kept with a
+  warning** by default and never silently replaced. Automatic upgrade only happens when content is provably
+  untouched, or when the user explicitly passes `--approve-skill-update` /
+  `TIANSHU_MCP_APPROVE_SKILL_UPDATE=1`.
+- **Reversible**: before an overwrite the old directory is backed up as `<dest>.bak-<timestamp>`, and
+  retained backups are governed by `skills.backupKeep` (default 3, `0` = never prune).
+- This module writes only under `~/.rivet/skills/` (`os.homedir()` resolved dynamically) and its
+  backup/temporary directories; it never touches project directories and reads no credentials.
+
 ### 3. Processes and paths
 
 - Path parameters must be absolute and exist, and are normalized.
