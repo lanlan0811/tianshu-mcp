@@ -8,12 +8,23 @@ const logger = new Logger(null, "error");
 let projectPath = "";
 const submissions: Record<string, unknown>[] = [];
 const registerCalls: string[] = [];
+/** projectByPath 调用计数：用于证明 run_task 不再做冗余的二次读取（issue #17） */
+let projectByPathCalls = 0;
 
 afterAll(async () => {
   if (projectPath) await rmrf(projectPath);
 });
 
-function handlers(metaOverride?: Record<string, unknown>) {
+interface HandlerOpts {
+  /** registerProject 抛错（模拟 projects.json 写盘失败） */
+  registerThrows?: string;
+  /** registerProject 返回值里 record.defaultAgentId */
+  registerDefaultAgentId?: string;
+  /** 若仍有人调用 projectByPath，返回与之**不同**的 defaultAgentId 以便暴露误用 */
+  projectByPathDefaultAgentId?: string;
+}
+
+function handlers(metaOverride?: Record<string, unknown>, opts: HandlerOpts = {}) {
   const manager = {
     submit: async (input: Record<string, unknown>) => {
       submissions.push(input);
@@ -35,11 +46,29 @@ function handlers(metaOverride?: Record<string, unknown>) {
       metaOverride ? ({ taskId: "tsk_default", ...metaOverride } as never) : null,
   };
   const dataHome = {
-    registerProject: async (p: string) => {
+    // 形状与真实 DataHome.registerProject 一致：{ hash, record }
+    registerProject: async (p: string, defaultAgentId?: string) => {
       registerCalls.push(p);
-      return { created: false };
+      if (opts.registerThrows) throw new Error(opts.registerThrows);
+      return {
+        hash: "deadbeefdeadbeef",
+        record: {
+          path: p,
+          displayPath: p,
+          firstSeenAt: new Date().toISOString(),
+          lastSeenAt: new Date().toISOString(),
+          defaultAgentId: opts.registerDefaultAgentId ?? defaultAgentId,
+        },
+      };
     },
-    projectByPath: async () => ({ record: undefined }),
+    projectByPath: async () => {
+      projectByPathCalls += 1;
+      return {
+        record: opts.projectByPathDefaultAgentId
+          ? { defaultAgentId: opts.projectByPathDefaultAgentId }
+          : undefined,
+      };
+    },
     loadConfig: async () => ({}),
   };
   const registry = {
@@ -155,6 +184,50 @@ describe("ZCode run_task 参数与 profile 默认值", () => {
       model: "DeepSeek/deepseek-flash",
     });
     expect(submissions[0]?.allowCreateProject).toBeUndefined();
+  });
+});
+
+describe("run_task 的项目登记（issue #17：消费返回值 + 失败不派单）", () => {
+  it("登记失败即返回 isError 且不提交任务，不走半状态", async () => {
+    projectPath ||= await makeTmpRoot("zcode-handler");
+    submissions.length = 0;
+    registerCalls.length = 0;
+    const result = await handlers(undefined, {
+      registerThrows: "EPERM: 写 projects.json 失败",
+    }).run_task({
+      projectPath,
+      task: "开发",
+      model: "DeepSeek/deepseek-flash",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toMatch(/项目登记失败/);
+    expect(result.content[0]?.text).toMatch(/EPERM/);
+    expect(result.content[0]?.text).toMatch(/未派单/);
+    expect(submissions).toHaveLength(0);
+    // 登记确实被尝试过（证明失败发生在登记这一步，而非更早被别的校验挡下）
+    expect(registerCalls).toHaveLength(1);
+  });
+
+  it("登记返回值被真正消费：finalAgentId 取自 registerProject，且不再二次读取 projectByPath", async () => {
+    projectPath ||= await makeTmpRoot("zcode-handler");
+    submissions.length = 0;
+    registerCalls.length = 0;
+    projectByPathCalls = 0;
+    // registerProject 说该项目默认 agent 是 zcode；若代码仍走 projectByPath 二次读取，
+    // 它会拿到 codex（不同值）——因此断言提交的 agentId 就能证伪「二次读取仍在」。
+    const result = await handlers(undefined, {
+      registerDefaultAgentId: "zcode",
+      projectByPathDefaultAgentId: "codex",
+    }).run_task({
+      projectPath,
+      task: "开发",
+      model: "DeepSeek/deepseek-flash",
+    });
+    expect(result.isError).toBeFalsy();
+    expect(submissions).toHaveLength(1);
+    expect(submissions[0]?.agentId).toBe("zcode");
+    // 关键断言：冗余的二次读取必须已移除
+    expect(projectByPathCalls).toBe(0);
   });
 });
 

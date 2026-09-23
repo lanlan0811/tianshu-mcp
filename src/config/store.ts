@@ -27,9 +27,19 @@ export function resolveDataHome(): string {
   return path.join(os.homedir(), ".tianshu-mcp");
 }
 
-/** 把 task.jsonl 等事件里的字符串命令转成规范化 argv */
+/**
+ * 把 task.jsonl 等事件里的字符串命令转成规范化 argv。
+ *
+ * 极简分词，**只识别整段引号包裹**（`"..."` / `'...'`），不执行 shell：
+ * - **不支持转义**：`\"` 只是普通字符，无法在双引号内转义引号；
+ * - 引号不闭合**不报错**，引号退化为普通字符按空白切分；
+ * - 空引号产出空字符串参数。
+ *
+ * 因此含空格的路径/参数必须手写引号，写错会静默拆成多个 argv。验收配置的
+ * `cmd` **推荐一律用数组形态**（见 docs/acceptance-config.md），字符串形态仅为兼容保留。
+ */
 export function splitCmd(cmd: string): string[] {
-  // 极简 argv 分词：支持引号包裹（"..." 与 '...'），不执行 shell
+  // 极简 argv 分词：支持引号包裹（"..." 与 '...'），不执行 shell、不做转义
   const out: string[] = [];
   const re = /"([^"]*)"|'([^']*)'|(\S+)/g;
   let m: RegExpExecArray | null;

@@ -23,6 +23,7 @@ import {
   type ReworkTaskParams,
   type ContinueTaskParams,
   type ServerConfig,
+  type ProjectRecord,
 } from "../config/schema.js";
 import { toAcceptanceDef, type DataHome } from "../config/store.js";
 import type { TaskManager } from "../tasks/task-manager.js";
@@ -350,11 +351,18 @@ function runTaskHandler(
       projectPath: norm,
     });
 
-    // 项目自动登记（首次出现即登记，R10）
+    // 项目自动登记（首次出现即登记，R10）。登记失败即终止派单：否则会留下
+    // 「任务已建、项目未登记」的半状态，projectByPath / list_tasks 等按项目维度的
+    // 查询全部失真。registerProject 已返回记录，此处直接消费，不再二次读取。
     const agentId = args.agentId ?? defaults.defaultAgentId;
-    const registered = await dataHome.registerProject(norm, agentId);
-    void registered;
-    const record = (await dataHome.projectByPath(norm)).record;
+    let record: ProjectRecord | undefined;
+    try {
+      ({ record } = await dataHome.registerProject(norm, agentId));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      ctx.logger.warn(`项目登记失败，未派单：${norm}（${msg}）`);
+      return errorResult(`项目登记失败，未派单：${msg}`);
+    }
     const finalAgentId = record?.defaultAgentId ?? agentId;
 
     // 校验 agent 可解析（立即失败返回，不给天枢排队假象）

@@ -143,7 +143,11 @@ export const CancelTaskParamsSchema = z.object({
 });
 export type CancelTaskParams = z.infer<typeof CancelTaskParamsSchema>;
 
-/** 验收命令：结构化 argv 或字符串（字符串会被分词为 argv，非 shell 执行） */
+/**
+ * 验收命令：**推荐数组形态**（结构化 argv，无歧义）。
+ * 字符串形态为兼容保留：经极简分词（不经过 shell），**不支持转义**，引号不闭合
+ * 不报错，含空格参数必须手写整段引号，写错会静默拆成多个 argv——详见 docs/acceptance-config.md。
+ */
 const CheckCmd = z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]);
 export const AcceptanceCheckSchema = z.object({
   name: z.string().min(1),
