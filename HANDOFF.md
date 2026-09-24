@@ -39,7 +39,7 @@
 - **一次 CI 事故与修复**：v0.6.5 首轮 **九作业全挂** —— 新增用例依赖本机装了 ZCode。**通用教训：新增用例不得依赖本机安装的 GUI agent**；需要某个内置 agent 可解析时，用数据目录 `agent-profiles.json` 覆盖它（并记得把 `stub` 一起写回）。
 - **真机记录的实际结果**（2026-09-24 实跑，详见 [issue #18/#19/#21 真机记录](docs/issue-18-21-real-machine-record.md)）：
   - **#18 ✅ 已取得**：真实 Codex GUI（COM 激活 + CDP，非假 CDP）跑通任务 `tsk_20260924225851_8d2575`（model `5.6 Terra`），终态 `succeeded` 且 Codex 真的写出了 `marker.txt`；`query_task` 回传 `task_dispatched` 与 `file_modification_started`（`evidence=stop_button`）两条事件，并验证了「事件时间线先于进度回报」。
-  - **#19 ⚠️ 未取得**：同套脚本 4 次尝试**均在派发前**因 GUI 界面状态失败（前两次型号/等级回读串混入展开的等级菜单 → `model_mismatch`；清掉残留实例后转为冷启动输入框超时 → `Codex 输入框尚未恢复`），未消耗额度。属真机 GUI 自动化固有抖动（与 issue #23 记录同类），复现脚本要点与预期产物已写入上述记录文件，**保留为交付后待办**。
+  - **#19 ⚠️ 未取得**：同套脚本 5 次尝试**均在派发前**失败，未消耗额度。**根因已查明是本机网络中断**（该时段 `chatgpt.com` / `api.openai.com` / `api.github.com` / `baidu.com` 全部 000，仅 gitee 通）—— Codex 连不上后端就不渲染输入框，故 `Codex 输入框尚未恢复`；第 5 次已先关闭残留实例并**重置受管 profile** 后仍失败，反证不是 GUI/profile 问题（仅第 1~2 次确属等级菜单残留导致的 `model_mismatch`）。**与「推 GitHub / 补发评论」同一根因**，网络恢复后可直接重跑。
   - **#21 不需要**：其验收标准原文是「有对应测试**或**真机证据」，已由集成测试满足。
 - **顺带修正一处文档漂移**：`model: "GPT-5.6 Sol"` 在本机 **26.917 上已不可用**（适配器 fail-closed 回显候选 `6 Luna / 5.6 Terra / 5.6 Luna`）。`docs/codex-gui-cdp` 与 `docs/agent-profiles` 双语的 `model` 示例已改为「以面板/错误回显为准」并说明型号随版本漂移；**历史记录类文档刻意保持原样**（记录的是当时事实）。
 - **五项均已回复并关闭**（2026-09-24，各一条回复 + `state_reason=completed`）。回复文案见 `.claude/plans/issue-close-comments.md`（gitignore，含逐条验收标准对照）；#18/#19 的真机记录补充评论正文与重发脚本见 `.claude/plans/issue-18-followup.md` / `issue-19-followup.md` / `post-issue-followups.mjs`。

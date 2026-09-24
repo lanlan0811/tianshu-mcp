@@ -62,24 +62,34 @@ scratch 项目里 `marker.txt` 内容为 `tianshu-ok`（8 字节，创建于 23:
 - 预期：第 0 轮验收失败 → 生成 `rework-<taskId>-r0.md` 的 2.5 节（由上述两条 tsc 格式报错提取）
   → agent 收到含指令摘要的返修消息 → 新建 `fixed.txt` → 第 1 轮通过，形成前后对比。
 
-**4 次尝试的实际失败点**（**均发生在任务派发之前，未消耗 agent 额度**）：
+**5 次尝试的实际失败点**（**均发生在任务派发之前，未消耗 agent 额度**）：
 
 | # | 时刻 | 失败点 | message |
 |---|---|---|---|
 | 1 | 15:05:31 | `ensureModelAndLevel` 型号/等级回读 | `model_mismatch`：`期望 5.6 Terra，实际 5.6 Terra 中 无 极低 轻度 中 高 极高 最高 Ultra 持续` |
 | 2 | 15:07:37 | 同上 | 同上 |
-| 3 | 15:12:10 | 首次启动等待输入框 | `Codex 输入框尚未恢复`（connectStableCodex，3.5 分钟后超时） |
+| 3 | 15:12:10 | 等待输入框就绪 | `Codex 输入框尚未恢复`（connectStableCodex 约 3.5 分钟后超时） |
 | 4 | 15:16:09 | 同上 | 同上 |
+| 5 | 15:37:52 | 同上 | 同上（已先关闭残留实例**并重置受管 profile**，仍失败） |
 
-**判断（如实）**：失败原因是 **GUI 界面状态**，不是本特性缺陷 ——
+**根因（已查明，与首次记录不同，此处更正）**：第 3~5 次**不是 GUI 状态，而是本机网络中断** ——
 
-- 第 1/2 次的回读串里混入了「中 无 极低 轻度 中 高 极高 最高 Ultra 持续」整串**等级菜单文本**，
-  说明型号触发器上叠加了展开的等级菜单（前一次成功运行切换型号后残留的界面状态）；
-- 清掉残留实例后改为「输入框尚未恢复」，属**强制关闭后应用冷启动**未在超时内渲染出输入框。
+- 该时段实测：`api.github.com` / `chatgpt.com` / `api.openai.com` / `www.baidu.com` 全部 `000`
+  （TLS 握手失败），仅 `gitee.com` 200；即**整机对外网络不可用，只有 Gitee 那条路通**；
+- Codex 桌面端在无法连到其后端时**不会渲染出聊天输入框**，于是 `connectStableCodex` 必然超时。
+  时间线吻合：14:55–15:01（§1 成功那次）网络尚正常；约 15:00 起网络中断，之后所有尝试都卡在同一处。
+- 第 5 次我先关闭全部残留实例、并**重置受管 profile**（`%LOCALAPPDATA%\tianshu-mcp\codex-gui\profile`，
+  206MB，消除冷启动/残留状态这两个嫌疑）后仍失败 —— 反证了「不是 GUI 状态、不是 profile 损坏」。
+- 仅**第 1/2 次**确属 GUI 状态问题：回读串里混入了「中 无 极低 轻度 中 高 极高 最高 Ultra 持续」
+  整串等级菜单文本，即型号触发器上叠加了展开的等级菜单（上一次切换型号后的残留界面状态）。
 
-**为什么没继续硬试**：这正是真机 GUI 自动化的固有抖动（v0.6.2 的 issue #23 记录里也有同类现象），
-继续重试只会反复打断用户的桌面。**#19 的真机记录保留为交付后待办**，复现脚本与预期产物已写明在
-本节，具备条件时可直接重跑。
+**结论**：**#19 的真机记录与「推送到 GitHub / 补发 issue 评论」卡在同一个根因上 —— 整机网络中断。**
+网络恢复后可直接重跑本节脚本（它不依赖 GitHub，只依赖 Codex 能连上其后端）。
+
+**复现要点**（网络正常时可直接重跑）：scratch 项目 + 一条 `name` 命中 typecheck 启发式、
+输出**真实 tsc 格式**报错的检查（缺 `fixed.txt` 即失败）+ `autoFixRounds=1`；
+预期产物：第 0 轮 `rework-<taskId>-r0.md` 的 2.5 节给出 `src/app.ts:12` / `:13` 两条指令，
+agent 新建 `fixed.txt` 后第 1 轮 `report-1.json` 的 `passed=true`。
 
 **注意**：#19 的**功能本身**已由 35 个单测/集成用例覆盖（含 tsc pretty/plain 两式解析、
 diffstat 五类指令、回退语义、`repairHint` 贯通到下一轮任务书、2.5 节在计划文档中的位置），
@@ -117,6 +127,7 @@ diffstat 五类指令、回退语义、`repairHint` 贯通到下一轮任务书�
 | 副作用 | 位置 | 清理方式 |
 |---|---|---|
 | 受管 Codex 实例（窗口/进程） | `%LOCALAPPDATA%\tianshu-mcp\codex-gui\profile` | **已全部关闭**（`Get-Process ChatGPT` 计数为 0；用户原本未运行 Codex，故无自身会话受影响） |
-| 登记的 scratch 项目（3 个） | Codex 项目列表 | 需在 Codex 里手动删除；**改动前已自动备份** `~/.codex/.codex-global-state.json.tianshu-mcp-backup.json` |
-| scratch 项目与临时数据目录 | `%TEMP%\tianshu-rm*` / `tianshu-rmb-*` | 已删除 |
-| ChatGPT 额度 | —— | 仅 §1 的成功任务消耗了一次轻量任务（新建一个 8 字节文件）；§2 的 4 次尝试均在派发前失败，**未消耗** |
+| 受管 profile **被重置**（排查第 5 次失败时删除，206MB） | 同上 | 这是 tianshu-mcp 自建的**专用隔离 profile**（非用户自己的 Codex 数据），应用下次启动会自动重建；**其中原有的 Codex 登录态一并丢失**，下次真机运行可能需要重新登录一次。如实记录以备核对 |
+| 登记的 scratch 项目（4 个） | Codex 项目列表 | 需在 Codex 里手动删除；**改动前已自动备份** `~/.codex/.codex-global-state.json.tianshu-mcp-backup.json` |
+| scratch 项目与临时数据目录 | `%TEMP%\tianshu-rm*` / `tianshu-rmb-*` / `tianshu-rm19-*` | 已删除 |
+| ChatGPT 额度 | —— | 仅 §1 的成功任务消耗了一次轻量任务（新建一个 8 字节文件）；§2 的 5 次尝试均在派发前失败，**未消耗** |
