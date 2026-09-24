@@ -42,6 +42,7 @@
 - **长任务可观测（issue #18）**：适配器在关键节点上报细粒度事件（`task_dispatched` / `confirmation_dialog_detected` / `awaiting_user_authorization` / `file_modification_started` / `rework_triggered`），`query_task` 经 `eventLimit`（默认 10）回传最近 N 条——**能区分「agent 正在干活」与「卡在弹窗等人工介入」**。事件上报是可选能力：未实现的适配器行为不变。本版 codex 与 traework 已落地上报。详见 [事件流](docs/event-stream.md)。
 - **客观验收**：自动命令检查（typecheck/lint/test/build，缺则跳过 + 技术栈推导）+ 程序化代码分析（变更清单/diffstat/TODO·debugger·密钥形态等可疑标记），全部相对 **git 基线**，不自动 commit/stash。验收引擎 **fail-closed**：测试命令退出码为 0 但输出显示零用例时判失败；git 项目默认要求相对动工前基线产生变更（纯分析任务可在 `.tianshu-mcp/acceptance.json` 设 `"requireChanges": false` 显式关闭）。
 - **验收并行度**：命令检查默认**有界并行**（`verifyConcurrency`，默认 2、范围 1–4）。检查项之间有顺序依赖时（后续检查读取 build 产物、带 `--fix`、共享缓存目录）请设 `1` 完全退化为串行；项目级 `.tianshu-mcp/acceptance.json` 可覆盖，server 级在 `config.json`。报告与日志格式不变（结果按声明顺序返回）。
+- **验收配置三级继承（issue #20）**：`<数据目录>/acceptance.default.json`（全局兜底）→ `<project>/.tianshu-mcp/acceptance.json`（项目覆盖）→ `run_task`/`verify_task` 的 `acceptanceOverride` 参数（任务级临时覆盖，仅当次生效、不落盘为配置）。同名字段高优先级取胜、数组整体覆盖不拼接。用 `tianshu-mcp config acceptance <projectPath> [--task <id>]` 查看最终生效配置。详见 [验收配置规范](docs/acceptance-config.md)。
 - **失败返修闭环**：自动返修（`autoFixRounds`）+ 手动 `rework_task`；验收失败时自动生成修复计划文件并回填给 agent；轮次用尽 → `needs_attention` 等天枢裁决。
 - **结构化修复指令（issue #19）**：失败轮次会把原因解析为**可直接执行的动作**（`文件:行 / 问题 / 做什么`），随返修计划与返修消息一起喂给 agent，省去它从整篇报告里定位的开销；提取不到时**显式回退**到完整报告（不静默留空）。`rework_task` 另可选 `repairHint` 自带提示。详见 [结构化修复指令](docs/repair-directives.md)。
 - **执行面**：`driver: "gui"` 由显式 adapter 驱动桌面 UI（Codex / TraeWork / ZCode / Kimi Code 各自使用隔离的 CDP 流程）；`driver: "spawn"` 走外部 CLI 子进程。
@@ -184,7 +185,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=qoder, planDoc=./plans/development.m
 
 | 工具 | 能力 / 审批 | 作用 |
 |---|---|---|
-| `run_task` | write + 审批 | 派活（可带自动验收/自动返修），异步返回 `taskId`；可选 `idempotencyKey`：同键重试恒返回原 `taskId`，不新建任务 |
+| `run_task` | write + 审批 | 派活（可带自动验收/自动返修），异步返回 `taskId`；可选 `idempotencyKey`（同键重试恒返回原 `taskId`，不新建任务）与 `acceptanceOverride`（任务级临时验收配置覆盖，仅本任务生效） |
 | `continue_task` | write + 审批 | 恢复 `needs_user` 的原会话（ZCode 恢复原会话；Codex 按 `user_confirmation` 重新观察 / `login_required` 重派；Kimi Code 恢复原会话并区分提问续答 / 重新观察 / 补发任务书） |
 | `query_task` | read | 轮询状态 / 进度 / 日志尾 / 最近细粒度事件。可选 `eventLimit`（1..50，默认 10）控制 meta 的 `recentEvents` 条数，长任务下可区分「正常执行」与「卡在弹窗等人」 |
 | `list_tasks` | read | 历史任务过滤列表 |

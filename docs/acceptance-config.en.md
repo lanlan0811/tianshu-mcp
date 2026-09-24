@@ -1,15 +1,65 @@
 # `.tianshu-mcp/acceptance.json` Specification
 
-Place this file at `<project>/.tianshu-mcp/acceptance.json` to define project-level acceptance checks. tianshu-mcp reads it for auto-verify (run_task) and manual `verify_task` on that project.
+Acceptance configuration uses **three-level inheritance** (issue #20): global fallback → project
+override → transient task-level override. With several similar projects mounted under one Tianshu
+host, put the shared policy in the global layer instead of creating a file per project.
 
-## Configuration precedence (high → low)
+## Precedence
 
-1. `extraChecks` passed to `verify_task` — **appended** after the base set (`checksMode:"replace"` swaps them in instead)
-2. Project-level `<project>/.tianshu-mcp/acceptance.json`
-3. Server data-dir `projects.json[pathHash].verify` (admin-curated)
-4. Default set (derived from the project's detected tech stack, see below)
+### Stage 1 — the three-level chain (same field: a later layer overrides an earlier one)
+
+| Order | Layer | File / source | When absent |
+|---|---|---|---|
+| 1 (lowest) | **Global fallback** | `<data home>/acceptance.default.json` (data home defaults to `~/.tianshu-mcp`; override with `TIANSHU_MCP_HOME`) | Treated as empty, **no error** |
+| 2 | **Project override** | `<project>/.tianshu-mcp/acceptance.json` | Treated as empty |
+| 3 (highest) | **Transient task override** | The `acceptanceOverride` argument of `run_task` / `verify_task` | No such layer when omitted |
+
+The merged result then feeds Stage 2 below. Key points:
+
+- **Merging is per field**: whichever higher-priority layer **explicitly writes** a field wins
+  outright; fields it does not write fall through from lower layers.
+- **Arrays replace wholesale, never concatenate**: if a higher layer writes `checks`, it replaces the
+  whole array. Concatenating would turn "the project adds one check" into "the project can never
+  remove a global check" — ambiguous and unpredictable.
+- **`visual` also replaces wholesale and is never deep-merged across layers.** Reason: nearly every
+  field of the `visual` schema carries a default, so with deep merging a lower layer's **explicit**
+  value would be silently clobbered by a higher layer's "not written, present only as a default"
+  field — the same `.default(true)` pollution `requireChanges` once suffered. To reuse visual config
+  across layers, write the full `visual` block in the project layer.
+- **A broken layer fails closed**: a layer that exists but is unreadable / contains invalid JSON /
+  fails validation is **not** silently skipped as empty; it pushes that round to `needs_attention`
+  with a message naming the layer and file (matching the existing project-level semantics).
+
+### Stage 2 — where the base check set comes from (within the merged result)
+
+1. The merged `checks` (if no layer wrote it, continue below)
+2. Server data-dir `projects.json[pathHash].verify` (admin-curated)
+3. Default set (derived from the project's detected tech stack, see below)
+
+### Stage 3 — `extraChecks` (highest, independent of the chain)
+
+`extraChecks` passed to `verify_task` are **appended** after the base set; `checksMode:"replace"`
+swaps them in instead of loading the base set.
+
+## Inspecting the effective configuration
+
+```bash
+# Project path only: shows the global and project layers
+tianshu-mcp config acceptance <projectPath>
+
+# Also fold in one task's transient override (read from that task's snapshot)
+tianshu-mcp config acceptance <projectPath> --task <taskId>
+```
+
+The JSON output contains `layers` (which layers exist), `appliedOrder` (low → high), the final
+`effective` values and a one-line human-readable `summary`. Each acceptance round also writes a
+same-source summary line to `server.log`. The command returns **before** the MCP server is created
+and writes only human-facing stdout — it never touches the protocol stream.
 
 ## File format
+
+All three layers use **the same format** (the global layer's file is `acceptance.default.json`, the
+project layer's is `acceptance.json`):
 
 ```jsonc
 {
@@ -36,6 +86,7 @@ Place this file at `<project>/.tianshu-mcp/acceptance.json` to define project-le
 
 - **optional:true** — a failing optional check is recorded as a warning ("optional 检查未通过") and does **not** affect the round verdict. Mandatory (default) failures make the round fail.
 - **extraChecks append** — by default (`checksMode:"append"`) the project/default checks run first, then `extraChecks` are **appended**; base gates are never weakened. `checksMode:"replace"` runs only `extraChecks`.
+- **`acceptanceOverride` (transient task override)** — an optional argument of `run_task` / `verify_task` using the same format as `acceptance.json`. It applies **only to that task / that verification** and is saved with the task snapshot — that is **task data**, not configuration: it writes no `acceptance*.json`, affects no other task on the same project and no other project. A later `rework_task` / `continue_task` on the same task reuses that snapshot, so the override keeps applying. Project-less mode (omitted `projectPath`) **explicitly rejects** the argument (there is no project acceptance to override, and silently ignoring it would mislead the caller). Note it is included in the `idempotencyKey` argument digest — replaying the same key with a different acceptance policy is rejected fail-closed rather than returning an old task built on a different policy.
 - **Rounds are 0-based** — `report-N.*` starts at N=0; `get_task_report(round=0)` is valid; omitting `round` returns the latest.
 - **Manual `verify_task(taskId)`** allocates the next free round and never overwrites an existing `report-0.*`.
 - **baselineRef** — `verify_task` accepts a Git ref, or for taskId mode defaults to that task's pre-work baseline; an invalid ref returns a structured error (no silent fallback to current HEAD).

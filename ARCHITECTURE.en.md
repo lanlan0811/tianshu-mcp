@@ -445,6 +445,24 @@ A repair report is a full narrative, so the agent has to locate by itself "which
 
 **Known limitation**: `CheckResult.outputTail` is truncated to the last 4000 characters (`runner.ts`), and a large project's total error count can far exceed that, so **only tail errors are extractable** — the rest is covered by the fallback. This trade-off is accepted deliberately (report size is not inflated for extraction). See [structured repair directives](docs/repair-directives.en.md).
 
+### 7.4 Three-level acceptance config inheritance (`src/config/acceptance-merge.ts`, issue #20)
+
+With several similar projects mounted under one Tianshu host, creating a `.tianshu-mcp/acceptance.json` per project is costly and easy to forget. Hence an inheritance chain (low → high priority): `<data home>/acceptance.default.json` → `<project>/.tianshu-mcp/acceptance.json` → the `acceptanceOverride` argument of `run_task`/`verify_task`. The resolution point remains `resolveChecks()`.
+
+| Decision | Implementation and rationale |
+|---|---|
+| **Layer schemas carry no defaults** | New `PartialAcceptanceConfigSchema` (every field optional, **no `.default()`**). This is the hazard fixed in this version: parsing a project file that only sets `verifyConcurrency` with the `.default(true)`-bearing `AcceptanceConfigSchema` materializes `requireChanges: true`, which would **in turn override the global layer's `false`**. Defaults are applied by consumers only when the final effective value is absent |
+| Merge granularity = field | A field a higher layer **explicitly writes** wins outright; `undefined` means "not written by this layer" and does not participate |
+| Arrays replace wholesale | If `checks` is written it replaces the whole array. Concatenating would turn "the project adds one check" into "the project can never remove a global check" |
+| **`visual` replaces wholesale, never deep-merged** | Nearly every `VisualConfigSchema` field carries a default, so with deep merging a lower layer's **explicit** value would be silently clobbered by a higher layer's "not written, present only as a default" field (the same `.default()` pollution class as `requireChanges`). Doing it correctly requires merging raw JSON and validating only the result — a larger change for limited benefit, so wholesale replacement is the deliberate choice |
+| Broken layer fails closed | A layer that exists but is unreadable / invalid JSON / fails validation is not skipped as empty; it pushes the round to `needs_attention` naming the layer and file (`readAcceptanceLayer`, matching existing project-level semantics). Only `ENOENT` counts as "layer absent" |
+| visual comes from the merged result | `executeVerify` no longer re-reads the project file (otherwise the visual from override/global layers would change meaning based on whether a project file happens to exist) |
+| Task override stored on `TaskMeta` | It is **task snapshot data**, not configuration: it writes no `acceptance*.json` and affects no other task or project; rework/continue reuse the same snapshot, so it keeps applying |
+| Included in idempotency digests | Both `runTaskKeyedFields()` and `verifyIdempotencyDigest()` include `acceptanceOverride` — otherwise a same-key replay would return an old task built on a **different** policy |
+| One summary line per round | `resolveChecks()` emits `生效层=… checks=… requireChanges=… verifyConcurrency=…`, sharing its source with the `config acceptance` command so troubleshooting needs no extra tooling |
+
+**Debug command**: `tianshu-mcp config acceptance [projectPath] [--task <taskId>]` (`src/config/cli.ts`, dispatched by `src/index.ts` before the server is created). It is not nested under the `visual` namespace — `acceptance.json` is the acceptance engine's config and merely shares a file with visual acceptance. See the [acceptance config spec](docs/acceptance-config.en.md).
+
 ---
 
 ## 8. The agent driver layer

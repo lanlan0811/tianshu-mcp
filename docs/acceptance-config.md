@@ -1,15 +1,57 @@
 # .tianshu-mcp/acceptance.json 规范
 
-项目级验收配置：把该文件放在项目根目录的 `.tianshu-mcp/acceptance.json`，tianshu-mcp 对该项目做验收（run_task 自动验收 / verify_task）时优先读取它。
+验收配置分**三级继承**（issue #20）：全局兜底 → 项目级覆盖 → 任务级临时覆盖。
+一个天枢宿主下挂载多个同类项目时，把公共策略写进全局层即可，不必逐项目建文件。
 
-## 配置优先级（高 → 低）
+## 配置优先级
 
-1. `verify_task` 调用时的 `extraChecks`（**追加**到基础集之后；`checksMode:"replace"` 才替换）
-2. 项目内 `<project>/.tianshu-mcp/acceptance.json`
-3. server 数据目录 `projects.json[pathHash].verify`（管理员补录）
-4. 默认集（按项目技术栈自动推导，见下）
+### 第一段：三级继承（同名字段，后一层覆盖前一层）
+
+| 顺序 | 层 | 文件 / 来源 | 缺失时 |
+|---|---|---|---|
+| 1（最低） | **全局兜底** | `<数据目录>/acceptance.default.json`（数据目录默认 `~/.tianshu-mcp`，可用环境变量 `TIANSHU_MCP_HOME` 覆盖） | 视为空配置，**不报错** |
+| 2 | **项目级覆盖** | `<project>/.tianshu-mcp/acceptance.json` | 视为空配置 |
+| 3（最高） | **任务级临时覆盖** | `run_task` / `verify_task` 的 `acceptanceOverride` 参数 | 不传即无此层 |
+
+三层的合并结果再落到下面第二段（检查集来源）。要点：
+
+- **合并粒度是「字段」**：高优先级层**显式书写**了某字段就整体取胜，未书写的字段沿用下层。
+- **数组整体覆盖，不拼接**：`checks` 是高优先级层写了就整段替换。拼接会让「项目追加一项检查」
+  变成「项目无法移除全局检查」，歧义大且不可预测。
+- **`visual` 同样整体覆盖，不做跨层深合并**。理由：`visual` 的 schema 几乎每个字段都带默认值，
+  一旦深合并，低优先级层的**显式**取值会被高优先级层「未书写、仅因默认值而出现」的字段静默覆盖 ——
+  这正是 `requireChanges` 曾经踩过的 `.default(true)` 污染。需要跨层复用视觉配置时，请在项目层
+  写完整段 `visual`。
+- **坏文件 fail-closed**：某一层「存在但读不了 / JSON 写坏 / 字段不合法」**不会**被当成空配置静默跳过，
+  而是让该轮验收进 `needs_attention`，消息里指明是哪一层、哪个文件（与项目级既有语义一致）。
+
+### 第二段：基础检查集的来源（上一段合并结果内）
+
+1. 合并结果的 `checks`（若三层都没写，则往下）
+2. server 数据目录 `projects.json[pathHash].verify`（管理员补录）
+3. 默认集（按项目技术栈自动推导，见下）
+
+### 第三段：`extraChecks`（最高，独立于三级继承）
+
+`verify_task` 调用时的 `extraChecks` **追加**到基础集之后；`checksMode:"replace"` 才替换为基础集不加载。
+
+## 查看最终生效配置
+
+```bash
+# 只给项目路径：看全局层 + 项目层
+tianshu-mcp config acceptance <projectPath>
+
+# 再叠加某任务的临时覆盖（读该任务快照里的 acceptanceOverride）
+tianshu-mcp config acceptance <projectPath> --task <taskId>
+```
+
+输出 JSON 含：各层是否存在的 `layers`、实际参与合并的 `appliedOrder`（低 → 高）、
+最终取值 `effective` 与一行可读摘要 `summary`。每轮验收也会往 `server.log` 写一行同源摘要。
+该命令在创建 MCP server **之前**返回，只写 stdout 面向人，不触碰协议流。
 
 ## 文件格式
+
+三层用的是**同一份格式**（全局层文件名为 `acceptance.default.json`，项目层为 `acceptance.json`）：
 
 ```jsonc
 {
@@ -86,6 +128,13 @@
 
 - **optional:true**：该检查失败只记为 warning（`report.message` 标注 "optional 检查未通过"），**不影响本轮 verdict**；必选（默认）失败才使 verdict=failed。
 - **extraChecks 追加**：默认 `checksMode:"append"`——先解析项目/默认检查，再**追加** extraChecks（不削弱基础门禁）。`checksMode:"replace"` 才完全替换为只跑 extraChecks。
+- **`acceptanceOverride`（任务级临时覆盖）**：`run_task` / `verify_task` 的可选参数，格式与 `acceptance.json` 相同。
+  它**只对当次任务/当次验收生效**，并随任务快照保存 —— 这是**任务数据**而非配置文件：
+  不写入任何 `acceptance*.json`、不影响同项目的其他任务、也不影响其他项目。
+  同一任务的后续 `rework_task` / `continue_task` 沿用该快照，因此覆盖继续生效。
+  无项目模式（`projectPath` 省略）**显式拒绝**该参数（没有项目验收可覆盖，静默忽略会误导调用方）。
+  注意：该参数计入 `idempotencyKey` 的入参摘要——同键换一套验收策略会被 fail-closed 拒绝，而不是
+  返回一个策略不同的旧任务。
 - **报告轮次 0-based**：`report-N.*` 从 0 起；`get_task_report(round=0)` 合法，缺省返回最新。
 - **手动 `verify_task(taskId)`**：自动分配下一可用轮次写入任务目录，不覆盖已有 `report-0.*`。
 - **baselineRef**：`verify_task` 可传 Git ref 或任务 ID（taskId 场景默认读取该任务动工前基线）；无效 ref 返回结构化错误，不静默退回当前 HEAD。

@@ -433,6 +433,24 @@ GUI agent 的取消是**尽力而为且诚实回报**，但各适配器能力不
 
 **已知限制**：`CheckResult.outputTail` 被截断到最后 4000 字符（`runner.ts`），大型项目的类型错误总量可能远超此数，**只能提取到尾部错误**，其余靠回退兜底 —— 这是有意接受的取舍（不为提取放大报告体积）。详见 [结构化修复指令](docs/repair-directives.md)。
 
+### 7.4 验收配置三级继承（`src/config/acceptance-merge.ts`，issue #20）
+
+一个天枢宿主下挂载多个同类项目时，逐项目建 `.tianshu-mcp/acceptance.json` 成本高、易遗漏。故引入继承链（优先级低 → 高）：`<数据目录>/acceptance.default.json` → `<project>/.tianshu-mcp/acceptance.json` → `run_task`/`verify_task` 的 `acceptanceOverride` 参数。解析点仍是 `resolveChecks()`。
+
+| 决策 | 实现与理由 |
+|---|---|
+| **分层 schema 不带默认值** | 新增 `PartialAcceptanceConfigSchema`（所有字段可选、**无 `.default()`**）。这是本版要修的隐患：用带 `.default(true)` 的 `AcceptanceConfigSchema` 解析「只写了 verifyConcurrency」的项目文件会 materialize 出 `requireChanges: true`，**反过来覆盖全局层的 `false`**。默认值只在最终生效值缺省时由消费方兜底 |
+| 合并粒度 = 字段 | 高优先级层**显式书写**的字段整体取胜；`undefined` 视为「本层未书写」，不参与覆盖 |
+| 数组整体覆盖 | `checks` 写了就整段替换。拼接会让「项目追加一项检查」变成「项目无法移除全局检查」 |
+| **`visual` 整体覆盖、不深合并** | `VisualConfigSchema` 几乎每个字段都带默认值：深合并时低优先级层的**显式**取值会被高优先级层「未书写、仅因默认值而出现」的字段静默覆盖（与 `requireChanges` 同类的 `.default()` 污染）。要做对必须改成「在原始 JSON 上合并、只对结果校验一次」，改动面大而收益有限，故明确选择整体覆盖 |
+| 坏层 fail-closed | 某层「存在但读不了 / JSON 坏 / 字段不合法」不被当空配置跳过，而是进 `needs_attention` 并指明层与文件（`readAcceptanceLayer`，与项目级既有语义一致）；仅 `ENOENT` 才算「该层不存在」 |
+| visual 取自合并结果 | `executeVerify` 不再二次读项目文件（否则 override/全局层的 visual 会随项目文件是否存在而改变语义） |
+| 任务级覆盖落 `TaskMeta` | 属**任务快照数据**而非配置：不写任何 `acceptance*.json`、不影响其他任务/项目；rework/continue 沿用同一快照故继续生效 |
+| 计入幂等入参摘要 | `runTaskKeyedFields()` / `verifyIdempotencyDigest()` 均纳入 `acceptanceOverride` —— 否则同键重放会返回一个「策略不同」的旧任务 |
+| 每轮一行摘要 | `resolveChecks()` 输出 `生效层=… checks=… requireChanges=… verifyConcurrency=…`，日志与 `config acceptance` 命令同源，排障无需额外工具 |
+
+**调试命令**：`tianshu-mcp config acceptance [projectPath] [--task <taskId>]`（`src/config/cli.ts`，`src/index.ts` 在创建 server 前分发）。不挂在 `visual` 命名空间下 —— `acceptance.json` 是验收引擎的配置，视觉验收只是共用一个文件。详见 [验收配置规范](docs/acceptance-config.md)。
+
 ---
 
 ## 8. Agent 驱动层
