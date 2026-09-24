@@ -463,6 +463,33 @@ With several similar projects mounted under one Tianshu host, creating a `.tians
 
 **Debug command**: `tianshu-mcp config acceptance [projectPath] [--task <taskId>]` (`src/config/cli.ts`, dispatched by `src/index.ts` before the server is created). It is not nested under the `visual` namespace — `acceptance.json` is the acceptance engine's config and merely shares a file with visual acceptance. See the [acceptance config spec](docs/acceptance-config.en.md).
 
+### 7.5 dryRun mode (`src/verify/dry-run.ts`, issue #21)
+
+`run_task` normally drives the agent straight into editing source, and a misunderstanding can produce a
+large diff needing rollback. `dryRun` provides the intermediate "see the plan, then decide" state.
+
+| Decision | Implementation and rationale |
+|---|---|
+| Where the read-only constraint is injected | `makeBuildCtx()` (`src/mcp/context.ts`) merges `DRY_RUN_CONSTRAINT` into `ctx.context`. **One change covers all five adapters** (they all append `ctx.context`), and since dryRun is a round-0 first dispatch, the zcode/kimicode guard that only appends context on `initialDispatch` does not swallow it |
+| A dedicated engine method rather than a branch in `executeVerify` | `AcceptanceEngine.runDryRun()` returns a `DryRunReport` (different meaning from `VerifyReport`). Folding it into the same return value would require a union type or a fake `VerifyReport`, polluting the types and complicating round accounting |
+| Consumes no acceptance round | Its report is `dry-run-report-<round>.*`, which does not match `^report-(\d+)\.(md\|json)$`, so `nextReportRound()`'s scan ignores it naturally |
+| **The zero-change gate is the core evidence** | `analyzeChanges()` diffs against the pre-work baseline; if changes remain after excluding MCP-owned artifacts (the plan file and any `planDoc` named in the task book) → `dry_run_violation` (error). It **does not depend on the plan being correct**: it still works when the agent produces no plan at all |
+| Missing plan degrades but stays visible | `planExtracted: false` plus a `fallbackReason` stating why, with checks degrading to the zero-change gate only; both the report and the message state "plan extraction: failed" honestly |
+| Verdict is `needs_attention`, not `failed` | A bad plan needs a **human decision**; it is not a code defect that can be auto-reworked |
+| Never enters the rework loop | Same reason: there is no "broken code" to fix in a dry run |
+| Ignores `autoVerify` | dryRun's semantics are "review first", not "verify" |
+| Requires `projectPath` | Project-less mode has no file tree or baseline to analyse statically; `runTaskWithoutProject` rejects it explicitly rather than degrading into an ordinary task |
+| The plan document lives **inside the project** | `.tianshu-mcp/dry-run-plan-<taskId>.md`: `planDoc` can only read project files, so putting it in the task data dir would make it unreachable for the agent. `meta.dryRunPlanDoc` reports the **project-relative** path |
+
+**Disclosed honestly**: a rehearsal is still a real agent invocation (consuming quota and time); the
+read-only constraint relies on task-book instructions plus the post-hoc gate, so **violations are caught
+and reported honestly but changes that already happened are not rolled back** (the MCP never auto-commits,
+auto-stashes or auto-checks-out); the static checks can only verify "the file exists, the location matches,
+no obvious contradiction" and **cannot judge whether the plan itself is sensible** — which is exactly what
+the human review step is for. Also note `planDoc` is currently consumed only by **Codex and Qoder CN**;
+CLI agents and ZCode/Kimi Code/TraeWork do not read it, so for those the plan path must go into the `task`
+text. See [dryRun mode](docs/dry-run.en.md).
+
 ---
 
 ## 8. The agent driver layer

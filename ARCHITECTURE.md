@@ -451,6 +451,25 @@ GUI agent 的取消是**尽力而为且诚实回报**，但各适配器能力不
 
 **调试命令**：`tianshu-mcp config acceptance [projectPath] [--task <taskId>]`（`src/config/cli.ts`，`src/index.ts` 在创建 server 前分发）。不挂在 `visual` 命名空间下 —— `acceptance.json` 是验收引擎的配置，视觉验收只是共用一个文件。详见 [验收配置规范](docs/acceptance-config.md)。
 
+### 7.5 dryRun 干跑模式（`src/verify/dry-run.ts`，issue #21）
+
+`run_task` 默认直接驱动 agent 改源码，理解偏差可能产生大量需回滚的改动。`dryRun` 提供「先看方案再决定是否真干」的中间态。
+
+| 决策 | 实现与理由 |
+|---|---|
+| 只读约束的注入点 | `makeBuildCtx()`（`src/mcp/context.ts`）把 `DRY_RUN_CONSTRAINT` 并入 `ctx.context`。**一次改动覆盖全部 5 个适配器**（它们都拼 `ctx.context`），且 dryRun 是 round 0 首次派发，zcode/kimicode 仅在 `initialDispatch` 附加 context 的守卫不会吞掉它 |
+| 独立引擎方法而非在 `executeVerify` 分支 | `AcceptanceEngine.runDryRun()` 返回 `DryRunReport`（与 `VerifyReport` 口径不同）。并进同一条返回值就得引入联合类型或伪造一个 `VerifyReport`，既污染类型也让轮次账目变复杂 |
+| 不消耗验收轮次 | 报告落 `dry-run-report-<round>.*`，文件名不匹配 `^report-(\d+)\.(md\|json)$`，故 `nextReportRound()` 的扫描天然忽略它 |
+| **零改动门禁是核心证据** | `analyzeChanges()` 相对动工前基线求差，排除 MCP 自有产物（计划文件、任务书点名的 planDoc）后仍有变更 → `dry_run_violation`（error）。**不依赖计划写对**：agent 完全不产出计划时这条仍然有效 |
+| 计划缺失时降级但可见 | `planExtracted: false` + `fallbackReason` 写明原因，检查降级为仅零改动门禁；报告与文案都如实标注「计划提取: 失败」 |
+| 判定为 `needs_attention` 而非 `failed` | 方案有问题属**人工裁决**，不是可以自动返修的代码缺陷 |
+| 不进入返修循环 | 同上：dryRun 没有「失败的代码」可修 |
+| 忽略 `autoVerify` | dryRun 的语义是「先审」而不是「验收」 |
+| 需要 `projectPath` | 无项目模式没有可静态分析的文件树与基线，`runTasksWithoutProject` 显式拒绝而不是退化成普通任务 |
+| 方案文档落在**项目内** | `.tianshu-mcp/dry-run-plan-<taskId>.md`：`planDoc` 只能读项目文件，放任务数据目录会让 agent 够不到。`meta.dryRunPlanDoc` 报**项目相对路径** |
+
+**如实披露**：预演仍是一次真实的 agent 调用（消耗额度与时间）；只读约束靠任务书指令 + 事后门禁，**违反会被拦下并如实报告，但已发生的改动不会自动回滚**（MCP 从不自动 commit/stash/checkout）；静态检查只能验证「文件存在、位置对得上、无明显矛盾」，**无法判断方案本身是否合理** —— 那正是「先审」要人工做的事。另：`planDoc` 目前只由 **Codex 与 Qoder CN** 消费，CLI 类与 ZCode/Kimi Code/TraeWork 不读取，对这些 agent 需把方案路径写进 `task` 文本。详见 [dryRun 干跑模式](docs/dry-run.md)。
+
 ---
 
 ## 8. Agent 驱动层

@@ -45,6 +45,7 @@
 - **验收配置三级继承（issue #20）**：`<数据目录>/acceptance.default.json`（全局兜底）→ `<project>/.tianshu-mcp/acceptance.json`（项目覆盖）→ `run_task`/`verify_task` 的 `acceptanceOverride` 参数（任务级临时覆盖，仅当次生效、不落盘为配置）。同名字段高优先级取胜、数组整体覆盖不拼接。用 `tianshu-mcp config acceptance <projectPath> [--task <id>]` 查看最终生效配置。详见 [验收配置规范](docs/acceptance-config.md)。
 - **失败返修闭环**：自动返修（`autoFixRounds`）+ 手动 `rework_task`；验收失败时自动生成修复计划文件并回填给 agent；轮次用尽 → `needs_attention` 等天枢裁决。
 - **结构化修复指令（issue #19）**：失败轮次会把原因解析为**可直接执行的动作**（`文件:行 / 问题 / 做什么`），随返修计划与返修消息一起喂给 agent，省去它从整篇报告里定位的开销；提取不到时**显式回退**到完整报告（不静默留空）。`rework_task` 另可选 `repairHint` 自带提示。详见 [结构化修复指令](docs/repair-directives.md)。
+- **干跑模式 dryRun（issue #21）**：`run_task(dryRun=true)` 让 agent **只分析规划、输出将要修改的文件清单与方案、不动源码**；验收引擎只做静态分析（引用文件是否存在、拟改位置是否存在、明显逻辑冲突），跳过 typecheck/test/build。方案有问题 → `needs_attention`（人工裁决），不进入自动返修、**不消耗验收轮次**。产物分两份：静态分析报告 + 项目内的方案文档（`meta.dryRunPlanDoc`，可直接作为后续正式任务的 `planDoc`），构成「先审后做」闭环。详见 [dryRun 干跑模式](docs/dry-run.md)。
 - **执行面**：`driver: "gui"` 由显式 adapter 驱动桌面 UI（Codex / TraeWork / ZCode / Kimi Code 各自使用隔离的 CDP 流程）；`driver: "spawn"` 走外部 CLI 子进程。
 - **无项目派发（ZCode，issue #12）**：`run_task` 的 `projectPath` 可省略——ZCode 在 `default` 工作区承接任务，不登记/导入项目、不采集 Git 基线、不执行项目验收（结果以 `verificationNotApplicable: "no_project"` 结构化标注，`verify_task`/`get_task_report` 返回不适用说明）。配套 `allowCreateProject: false` 可在目标目录未登记时于任何导入副作用之前停止派发。详见 [ZCode CDP 适配器](docs/zcode-cdp.md)。
 - **幂等重试（issue #15）**：`run_task` / `verify_task` 接受可选 `idempotencyKey`——同一 key 在 TTL（默认 24h）内的重试**不会**重复派单（恒返回原 `taskId` 与当前状态）或重复跑验收（执行中返回进行中提示，已完成直接返回既有报告）；同键异参 fail-closed 报错。映射落盘于 `<数据目录>/idempotency.json`，跨 server 重启仍生效。详见 [v0.5.10 发布说明](<docs/release-v0.5.10.md>)。
@@ -185,7 +186,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=qoder, planDoc=./plans/development.m
 
 | 工具 | 能力 / 审批 | 作用 |
 |---|---|---|
-| `run_task` | write + 审批 | 派活（可带自动验收/自动返修），异步返回 `taskId`；可选 `idempotencyKey`（同键重试恒返回原 `taskId`，不新建任务）与 `acceptanceOverride`（任务级临时验收配置覆盖，仅本任务生效） |
+| `run_task` | write + 审批 | 派活（可带自动验收/自动返修），异步返回 `taskId`；可选 `idempotencyKey`（同键重试恒返回原 `taskId`，不新建任务）、`acceptanceOverride`（任务级临时验收配置覆盖，仅本任务生效）与 `dryRun`（干跑模式：只分析规划不改源码，产物可作后续 `planDoc`） |
 | `continue_task` | write + 审批 | 恢复 `needs_user` 的原会话（ZCode 恢复原会话；Codex 按 `user_confirmation` 重新观察 / `login_required` 重派；Kimi Code 恢复原会话并区分提问续答 / 重新观察 / 补发任务书） |
 | `query_task` | read | 轮询状态 / 进度 / 日志尾 / 最近细粒度事件。可选 `eventLimit`（1..50，默认 10）控制 meta 的 `recentEvents` 条数，长任务下可区分「正常执行」与「卡在弹窗等人」 |
 | `list_tasks` | read | 历史任务过滤列表 |
