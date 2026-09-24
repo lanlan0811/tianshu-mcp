@@ -7,6 +7,33 @@
 
 ---
 
+## [0.6.6] - 2026-09-24
+
+### 新增
+
+- **`run_task` 干跑模式 `dryRun`**（[issue #21](https://github.com/lanlan0811/tianshu-mcp/issues/21)）：agent 只分析规划、输出将要修改的文件清单与方案、**不动源码**；验收引擎只做静态分析（引用文件是否存在、拟改位置是否存在、明显逻辑冲突），跳过 typecheck/test/build。详见 [dryRun 干跑模式](docs/dry-run.md)。
+- **`src/verify/dry-run.ts`**：计划 schema（`path` / `action` / `reason` / `edits`）、静态检查、报告与方案文档渲染。
+- **「先审后做」闭环**：dryRun 产出的方案文档落在**项目内** `.tianshu-mcp/dry-run-plan-<taskId>.md`，`meta.dryRunPlanDoc` 给出项目相对路径，可直接作为后续正式 `run_task` 的 `planDoc`。
+
+### 变更
+
+- **`TaskMeta` 新增 `dryRun` / `dryRunReportMd` / `dryRunReportJson` / `dryRunPlanMd`**；`metaFromTask` 暴露 `dryRun` / `dryRunReportFiles` / `dryRunPlanDoc`。
+- 报告产物**严格分离**：dryRun 写 `dry-run-report-<round>.md` / `.json`（json 带 `kind: "dry-run"`），**不碰** `report-<round>.*`，因此不消耗验收轮次、也不污染常规报告列表。
+
+### 兼容性
+
+- **`dryRun` 是新增可选参数，默认关闭**：不传时 `run_task` 行为与 v0.6.5 完全一致。
+- 无工具契约、数据模型破坏性变更；MCP 注解不变。
+
+### 说明（如实披露）
+
+- **判定为 `needs_attention` 而非 `failed`**：方案有问题属人工裁决，不是可以自动返修的代码缺陷；dryRun **不进入返修循环**、**忽略 `autoVerify`**、**需要 `projectPath`**（无项目模式显式拒绝）。
+- **计划缺失时降级但可见**：`planExtracted: false` + `fallbackReason` 写明原因，检查降级为仅零改动门禁；报告与文案都如实标注「计划提取: 失败」，不静默通过。
+- **零改动门禁是核心证据**：相对动工前基线求差，排除 MCP 自有产物（计划文件、任务书点名的 planDoc）后仍有变更 → `dry_run_violation`（阻断）。它**不依赖计划写对** —— agent 完全不产出计划时这条仍然有效。
+- **不保证 agent 遵守只读约束**：靠任务书里的明确指令 + 事后门禁。**违反会被拦下并如实报告，但已发生的改动不会自动回滚**（MCP 从不自动 commit / stash / checkout）。
+- **静态检查无法判断方案是否合理**：只能验证「文件存在、位置对得上、无明显矛盾」——那正是「先审」要人工做的事。
+- **`planDoc` 的适配器差异**：目前只由 **Codex 与 Qoder CN** 的提示词构造消费；CLI 类 agent 与 ZCode / Kimi Code / TraeWork 不读取它，对这些 agent 需把方案路径写进 `task` 文本（文件在项目内，它们能读）。这一点已写入 `docs/dry-run` 双语与 README。
+
 ## [0.6.5] - 2026-09-24
 
 ### 新增

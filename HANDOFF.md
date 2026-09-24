@@ -1,10 +1,31 @@
 # HANDOFF.md — 项目交接说明
 
-> **交接快照：2026-09-24 · 开发版本 `0.6.5`；`v0.6.5` 已发布（GitHub Release / Gitee 发行版 / npm `latest` 三者一致，发布提交 `6a150f5`）。**
+> **交接快照：2026-09-24 · 开发版本 `0.6.6`；`v0.6.6` 发布实测见下方「0.6.6 开发交接」末行。**
 > 本文写给**接手本仓库的人**：先说清「这是什么、现在到哪一步」，再给出「怎么跑、怎么改、哪里会踩坑」。
 > 工作区规则见 `AGENTS.md`（gitignore，仅本地）；安装与用法见 `README.md`，本文不重复，只做导览与状态记录。
 
 ---
+
+### 0.6.6 开发交接（dryRun 干跑模式，issue #21）
+
+- **范围**：`run_task` 新增干跑模式（只分析规划、不改源码）+ 静态分析报告 + 「先审后做」闭环。无新 MCP 工具、无 MCP 注解变更。
+- **问题**：`run_task` 直接驱动 agent 改源码，理解偏差可能产生大量需回滚的改动；调用方希望「先看方案再决定是否真干」。
+- **开关**：`RunTaskParamsSchema.dryRun`（默认关闭）；`TaskMeta.dryRun` 随快照保存；计入 `runTaskKeyedFields()` 幂等摘要（它改变 agent 行为约束与验收口径）。
+- **只读约束注入点（关键）**：`src/mcp/context.ts` 的 `makeBuildCtx()` 把 `DRY_RUN_CONSTRAINT` 并入 `ctx.context`。**一次改动覆盖全部 5 个适配器**（它们都拼 `ctx.context`），且 dryRun 是 round 0 首次派发，zcode/kimicode 仅在 `initialDispatch` 附加 context 的守卫不会吞掉它。**不要**改成逐个适配器的 prompt builder 注入。
+- **引擎侧**：**独立方法** `AcceptanceEngine.runDryRun()`（返回 `DryRunReport`），**不在 `executeVerify` 里分支** —— `DryRunReport` 与 `VerifyReport` 口径不同（静态分析 vs 真实命令验收），并进同一条返回值就得引入联合类型或伪造 `VerifyReport`，既污染类型又让轮次账目变复杂。
+- **不消耗验收轮次**：报告落 `dry-run-report-<round>.md/.json`（json 带 `kind: "dry-run"`），文件名不匹配 `^report-(\d+)\.(md|json)$`，`nextReportRound()` 的扫描天然忽略。**不碰** `report-<round>.*`。
+- **编排分支**：`fix-loop.ts` 在 agent 返回后、正常验收之前插分支。`passed` → `succeeded`，否则 → **`needs_attention`**（方案有问题属人工裁决，不是可自动返修的代码缺陷）；**不进返修循环**、**忽略 `autoVerify`**。
+- **静态检查**（`src/verify/dry-run.ts`）：error 级 `path_outside_project` / `path_forbidden` / `conflicting_actions` / `dry_run_violation`；warning 级 `file_already_exists` / `file_not_found` / `edit_line_out_of_range` / `edit_location_missing` / `file_unreadable` / `dry_run_artifacts_only`。
+- **零改动门禁是核心证据**：`analyzeChanges()` 相对动工前基线求差，排除 MCP 自有产物（`.tianshu-mcp/dry-run-plan.json` 与任务书点名的 planDoc）后仍有变更 → `dry_run_violation` 阻断。**不依赖计划写对** —— agent 完全不产出计划时这条仍然有效。
+- **计划缺失时降级但可见**：`planExtracted: false` + `fallbackReason`（未找到 / 不可用 + 解析错误），检查降级为仅零改动门禁；报告与文案都标注「计划提取: 失败」，不静默通过。
+- **计划契约**：agent 写 `<project>/.tianshu-mcp/dry-run-plan.json`（`{summary, files:[{path, action, reason?, edits?:[{line?, symbol?, action?}]}]}`）；`path` 必须项目相对（拒绝绝对路径 / `..` / `.git` / `node_modules`）。
+- **先审后做闭环**：方案文档渲染到**项目内** `.tianshu-mcp/dry-run-plan-<taskId>.md`（`meta.dryRunPlanDoc` 报项目相对路径），可直接作为后续正式 `run_task` 的 `planDoc`。**放项目内而非任务数据目录**是因为 `planDoc` 只能读项目文件。
+- **如实披露**：预演仍是一次真实 agent 调用；只读约束靠任务书指令 + 事后门禁，**违反会被拦下但已发生的改动不会自动回滚**（MCP 从不自动 commit/stash/checkout）；静态检查只能验证「文件存在、位置对得上、无明显矛盾」，**无法判断方案是否合理**。另：`planDoc` 目前只由 **Codex 与 Qoder CN** 消费，CLI 类与 ZCode/Kimi Code/TraeWork 不读取，对这些 agent 需把方案路径写进 `task` 文本。
+- **无项目模式显式拒绝 `dryRun`**（`runTaskWithoutProject`）：没有可静态分析的文件树与基线，静默忽略会让调用方误以为在干跑。
+- 测试：新增 **37** 用例 / 2 文件（`dry-run` 单测 29、`dry-run` 集成 8）+ stub 新增 `dry-run-plan` / `dry-run-edit` 两个剧本；全量 **1110 passed / 12 skipped**（101 文件，较 v0.6.5 的 1073 净增 37）；`check:stdio` dist 与 src 均 **8/8**。文档：[dryRun 干跑模式](docs/dry-run.md) 双语 + [发布说明 v0.6.6](docs/release-v0.6.6.md) 双语；ARCHITECTURE 双语新增 §7.5。
+- **本版**按 v0.6.5 的 CI 教训处理：新增用例**不依赖本机安装任何 GUI agent**（无项目模式用例自行桩化 profile，且重写 `agent-profiles.json` 时**必须把 stub 一起写回**，否则同文件后续用例会连 stub 都解析不到）。
+- **真机记录（待补，交付后执行）**：用 `scripts/probe-codex.mjs` 或 traework 探针跑真实 GUI 任务并加 `dryRun=true`，确认 agent 遵守只读约束（`git status` 无源码改动）、计划被正确解析、方案文档可作后续 `planDoc`。本版以单测 + 集成测试为门禁（issue #21 允许「测试**或**真机证据」）。
+- **发布实测**：待回写（CI 四平台 / `release.yml` / GitHub Release / Gitee 发行版 / npm `latest` / issue #21 关闭状态）。
 
 ### 0.6.5 开发交接（验收配置三级继承，issue #20）
 

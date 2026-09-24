@@ -8,6 +8,33 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.6.6] - 2026-09-24
+
+### Added
+
+- **Dry-run mode `dryRun` for `run_task`** ([issue #21](https://github.com/lanlan0811/tianshu-mcp/issues/21)): the agent analyses and plans only — outputting the file list and approach **without touching source** — and the acceptance engine performs static analysis only (do the referenced files exist, do the proposed edit locations exist, any obvious logical conflicts), skipping typecheck/test/build. See [dryRun mode](docs/dry-run.en.md).
+- **`src/verify/dry-run.ts`**: plan schema (`path` / `action` / `reason` / `edits`), the static checks, and the report / plan-document renderers.
+- **A review-then-do loop**: the plan document produced by a dry run lands **inside the project** at `.tianshu-mcp/dry-run-plan-<taskId>.md`, with `meta.dryRunPlanDoc` giving the project-relative path, directly usable as a later real `run_task`'s `planDoc`.
+
+### Changed
+
+- **`TaskMeta` gained `dryRun` / `dryRunReportMd` / `dryRunReportJson` / `dryRunPlanMd`**; `metaFromTask` exposes `dryRun` / `dryRunReportFiles` / `dryRunPlanDoc`.
+- Report artifacts are **strictly separated**: a dry run writes `dry-run-report-<round>.md` / `.json` (the JSON carries `kind: "dry-run"`) and **never touches** `report-<round>.*`, so it consumes no acceptance round and does not pollute the regular report list.
+
+### Compatibility
+
+- **`dryRun` is a new optional argument, off by default**: when omitted, `run_task` behaves exactly as in v0.6.5.
+- No tool contract or breaking data-model changes; MCP annotations unchanged.
+
+### Notes (disclosed honestly)
+
+- **The verdict is `needs_attention`, not `failed`**: a bad plan needs a human decision, not automatic rework; a dry run **never enters the rework loop**, **ignores `autoVerify`** and **requires `projectPath`** (project-less mode rejects it explicitly).
+- **A missing plan degrades but stays visible**: `planExtracted: false` plus a `fallbackReason` stating why, with checks degrading to the zero-change gate only; both the report and the message state "plan extraction: failed" honestly instead of passing silently.
+- **The zero-change gate is the core evidence**: diffing against the pre-work baseline, changes remaining after excluding MCP-owned artifacts (the plan file and any `planDoc` named in the task book) yield `dry_run_violation` (blocking). It **does not depend on the plan being correct** — it still works when the agent produces no plan at all.
+- **The agent is not guaranteed to obey the read-only constraint**: that relies on explicit task-book instructions plus the post-hoc gate. **Violations are caught and reported honestly, but changes that already happened are not rolled back** (the MCP never auto-commits, auto-stashes or auto-checks-out).
+- **Static checks cannot judge whether a plan is sensible**: they only verify "the file exists, the location matches, no obvious contradiction" — which is exactly what the human review step is for.
+- **Adapter differences around `planDoc`**: it is currently consumed only by the **Codex and Qoder CN** prompt builders; CLI agents and ZCode / Kimi Code / TraeWork do not read it, so for those the plan path must go into the `task` text (the file is inside the project, so they can read it). This is documented in both `docs/dry-run` files and the README.
+
 ## [0.6.5] - 2026-09-24
 
 ### Added
