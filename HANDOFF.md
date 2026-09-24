@@ -1,7 +1,8 @@
 # HANDOFF.md — 项目交接说明
 
 > **交接快照：2026-09-24 · 开发版本 `0.6.7`；`v0.6.7` 已发布（GitHub Release / Gitee 发行版 / npm `latest` 三者一致，发布提交 `ca98797`）。**
-> **issue #18~#22 五项增强已全部交付**（v0.6.3~v0.6.7，每版各自完整发布）。**五个 issue 均待维护者回复并关闭** —— 本机无 GitHub 写权限令牌。
+> **issue #18~#22 五项增强已全部交付**（v0.6.3~v0.6.7，每版各自完整发布），**五个 issue 均已回复并关闭**（2026-09-24）。
+> 仅剩 #18 / #19 / #21 的**真机记录**为交付后待办（各版发布说明已写明探针步骤；本机已确认装有 Codex 26.917，可随时补跑）。
 > 本文写给**接手本仓库的人**：先说清「这是什么、现在到哪一步」，再给出「怎么跑、怎么改、哪里会踩坑」。
 > 工作区规则见 `AGENTS.md`（gitignore，仅本地）；安装与用法见 `README.md`，本文不重复，只做导览与状态记录。
 
@@ -21,7 +22,7 @@
 - **如实披露**：尽力投递、不保证送达；跨 server 重启或接收端重试仍可能重复送达（建议接收端按同一键幂等）；请求体含 `projectPath` 与报告文件绝对路径，转发到公网前确认接收端可信；飞书/钉钉需自行适配报文格式（文档给了自建转发服务与网关改写两种接法 + 签名校验示例）。
 - 测试：新增 **29** 用例 / 2 文件（`notifier` 单测 20、`webhook-notify` 集成 9）+ 测试基建（`startMockWebhook` / `closedPortUrl` / `waitForCondition`）；全量 **1139 passed / 12 skipped**（103 文件，较 v0.6.6 的 1110 净增 29）；`check:stdio` dist 与 src 均 **8/8**。文档：[任务终态通知](docs/notifications.md) 双语 + [发布说明 v0.6.7](docs/release-v0.6.7.md) 双语；ARCHITECTURE 双语新增 §5.7（原「细粒度事件流」顺延为 §5.8，文内交叉引用已同步）。
 - **本版无真机依赖**（通知触发只依赖状态机跃迁，stub agent 即可完整驱动），故不需要真机记录；测试也不依赖外网（mock 只监听 127.0.0.1 随机端口）。
-- **发布实测**：CI 四平台 **22/22 全绿**（`ca98797`）；`release.yml` 成功并生成 GitHub Release（`v0.6.7`，正文 11548 字符）；Gitee 发行版经 `scripts/gitee-release.mjs 0.6.7 0.6.6` 更新成功；npm `latest` 已为 **v0.6.7**（248 文件）。**issue #22 尚未关闭**：同 #18/#19/#20/#21，本机无 GitHub 写权限令牌，需维护者回复并关闭。
+- **发布实测**：CI 四平台 **22/22 全绿**（`ca98797`）；`release.yml` 成功并生成 GitHub Release（`v0.6.7`，正文 11548 字符）；Gitee 发行版经 `scripts/gitee-release.mjs 0.6.7 0.6.6` 更新成功；npm `latest` 已为 **v0.6.7**（248 文件，已 `npm view` 复验）。**issue #22 已回复并关闭**（`state_reason=completed`）。
 
 ### 0.6.3~0.6.7 五项增强交付小结（issue #18~#22）
 
@@ -37,7 +38,8 @@
 
 - **一次 CI 事故与修复**：v0.6.5 首轮 **九作业全挂** —— 新增用例依赖本机装了 ZCode。**通用教训：新增用例不得依赖本机安装的 GUI agent**；需要某个内置 agent 可解析时，用数据目录 `agent-profiles.json` 覆盖它（并记得把 `stub` 一起写回）。
 - **如实披露的真机记录待办**：#18（事件流）、#19（前后对比返修记录）、#21（dryRun 零改动）三项的 issue 验收标准提到真机记录，均已在各版发布说明与本文对应小节列明「交付后执行」的探针步骤；#20 与 #22 无真机依赖。
-- **五项均未关闭**：本机无 GitHub 写权限令牌（`GH_TOKEN` / `GITHUB_TOKEN` 均未设置，`gh` 未安装），需维护者回复并关闭各 issue。
+- **五项均已回复并关闭**（2026-09-24，各一条回复 + `state_reason=completed`）。回复文案见 `.claude/plans/issue-close-comments.md`（gitignore，含逐条验收标准对照）。
+- **GitHub API 写权限的来源（备忘，别再误判）**：本机 `~/.git-credentials` 存有 `github.com` 的凭据（用户 `lanlan0811`，经典 PAT，`X-OAuth-Scopes: gist, repo, workflow`），`git push` 正是用它。需要用 API 写操作时可用 `git credential fill` 取出（**只经环境变量传递，不落日志/不回显**）。**注意 `GH_TOKEN` / `GITHUB_TOKEN` 环境变量与 `gh` CLI 均不可用**，别据此判定「没有权限」。
 
 ### 0.6.6 开发交接（dryRun 干跑模式，issue #21）
 
