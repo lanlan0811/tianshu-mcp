@@ -1,6 +1,6 @@
 # HANDOFF.md — 项目交接说明
 
-> **交接快照：2026-09-24 · 开发版本 `0.6.4`；`v0.6.4` 发布实测见下方「0.6.4 开发交接」末行。**
+> **交接快照：2026-09-24 · 开发版本 `0.6.4`；`v0.6.4` 已发布（GitHub Release / Gitee 发行版 / npm `latest` 三者一致，发布提交 `a977a66`）。**
 > 本文写给**接手本仓库的人**：先说清「这是什么、现在到哪一步」，再给出「怎么跑、怎么改、哪里会踩坑」。
 > 工作区规则见 `AGENTS.md`（gitignore，仅本地）；安装与用法见 `README.md`，本文不重复，只做导览与状态记录。
 
@@ -24,7 +24,7 @@
 - **已知限制（有意接受）**：`CheckResult.outputTail` 被截断到最后 4000 字符（`runner.ts`），大型项目只能提取到尾部类型错误，其余靠回退兜底 —— 不为提取放大报告体积。
 - 测试：新增 **35** 用例 / 3 文件（`repair-directives` 15、`repair-plan-directives` 16、`rework-repair-hint` 4）；全量 **1037 passed / 12 skipped**（96 文件，较 v0.6.3 的 1002 净增 35）；`check:stdio` dist 与 src 均 **8/8**。文档：[结构化修复指令](docs/repair-directives.md) 双语 + [发布说明 v0.6.4](docs/release-v0.6.4.md) 双语；`docs/acceptance-config` 双语补 `report.json.repairDirectives` 字段说明；ARCHITECTURE 双语新增 §7.3。
 - **真机记录（待补，交付后执行）**：用 `scripts/probe-codex.mjs` 构造必然 typecheck 失败的真实任务，确认 2.5 节给出正确的 `文件:行` 与动作，并留存 issue #19 要求的**前后对比**返修记录。本版以单测 + 集成测试为门禁。
-- **发布实测**：待回写（CI 四平台 / `release.yml` / GitHub Release / Gitee 发行版 / npm `latest` / issue #19 关闭状态）。
+- **发布实测**：CI 四平台 **22/22 全绿**（`a977a66`）；`release.yml` 成功并生成 GitHub Release（`v0.6.4`，正文 9786 字符）；Gitee 发行版经 `scripts/gitee-release.mjs 0.6.4 0.6.3` 更新成功；npm `latest` 已为 **v0.6.4**（240 文件）。**issue #19 尚未关闭**：同 #18，本机无 GitHub 写权限令牌，需维护者回复并关闭。
 
 ### 0.6.3 开发交接（细粒度事件流，issue #18）
 
