@@ -200,7 +200,7 @@ resolveDataHome → Logger → DataHome(BUILTIN_PROFILES) → init()
 
 **参数校验是两段式的**：`server.ts` 先用 `inputSchema.safeParse()` 做协议级校验（失败回 `Error: 参数不合法 — <path>: <message>`）；handler 内再做语义闸门，例如 `projectPath` 安全校验（绝对路径 + 存在 + realpath 归一 + 拒绝主目录与根级/系统目录）、`mode` 仅 TraeWork 可用的拒绝、`allowCreateProject` 仅 ZCode 可用等。
 
-进度**只落盘、不推送**：GUI adapter 按 `gui.progressIntervalMs`（默认 30s）回报进度，`TaskOrchestrator` 写成 `task.jsonl` 的 `note` 事件并刷新快照的 `progressSummary` / `lastRunSignal`；`query_task` 每次读取最新快照与事件流，因此轮询者看到的是「最后一次落盘的进度」。除自由文本进度外还有**语义化**的细粒度事件流（`onEvent`，issue #18），见 §5.7——两者同写 `task.jsonl`：`note` 承载自由文本，细粒度事件承载节点语义。
+进度**只落盘、不推送**：GUI adapter 按 `gui.progressIntervalMs`（默认 30s）回报进度，`TaskOrchestrator` 写成 `task.jsonl` 的 `note` 事件并刷新快照的 `progressSummary` / `lastRunSignal`；`query_task` 每次读取最新快照与事件流，因此轮询者看到的是「最后一次落盘的进度」。除自由文本进度外还有**语义化**的细粒度事件流（`onEvent`，issue #18），见 §5.8——两者同写 `task.jsonl`：`note` 承载自由文本，细粒度事件承载节点语义。
 
 ---
 
@@ -300,7 +300,25 @@ GUI agent 的取消是**尽力而为且诚实回报**，但各适配器能力不
 
 **边界**：`verify_task(taskId=…)` 的键**不写入任务快照**（该字段承载任务的派单键，避免覆盖），这一种组合的重建覆盖依赖 `idempotency.json`；不给 `rework_task` / `continue_task` / `cancel_task` / 视觉基准工具加键；不做跨进程分布式幂等（与 visual lock 同一假定）。
 
-### 5.7 细粒度事件流：长任务可观测性（issue #18）
+### 5.7 终态通知：webhook 钩子（issue #22）
+
+长任务下调用方原先必须挂屏轮询。本能力在状态跃迁时向配置的 URL 异步 POST 一条 JSON。
+
+| 决策 | 实现与理由 |
+|---|---|
+| 钩子点是 `TaskStore.updateStatus()` | 它是状态跃迁的**唯一咽喉**。`TaskOrchestrator.finish()` 只覆盖编排器主导的结束 —— `cancel()` 的 queued 分支、`initialize()` 的重启归档、`shutdownInterrupt()` / `persistInterrupted()` 全都绕过它 |
+| 配置放全局 `config.json`（`notifications.webhook`） | 通知路由是宿主/传输层关注点，不是项目验收策略；且 `updateStatus` 处只有数据目录 / taskId / logger，无法每次跃迁都廉价读项目配置 |
+| 「恰好一次」按 `taskId + status + finishedAt` 去重 | **不能**用 `prev !== status` 作门条件：多条路径（cancel 的 queued 分支、shutdownInterrupt）会**先直接改写 `meta.status`** 再调用 `updateStatus`，那时 `prev` 已等于目标状态。`finishedAt` 由 `updateStatus` 在写终态时刷新、并被 `rework`/`continueTask` 清空 —— 故同回合重复写入被抑制，而**返修后的新回合同样状态会再次通知** |
+| 在 `appendEvent` + `writeSnapshot` **之后**才发 | 先保证本地事实落盘，再对外通知 |
+| `notify()` 返回 void（fire-and-forget） | 发送与重试全在后台；端点慢或挂掉**不阻塞状态机写入链**，任何异常只记 `warn` |
+| 只订阅**真终态**为默认 | `needs_attention`（终态）→ `needs_human`；`needs_user`（**非终态**，可被 continue 恢复、之后可能再次进入）单独成类且默认关闭 —— 混为一类会让「默认只推真终态」失效 |
+| 用全局 `fetch` + `AbortSignal.timeout` + `redirect:"manual"` | 与 `src/visual/services.ts` 同一约定，Node ≥ 20 自带，不引入依赖 |
+| 可选 HMAC-SHA256 签名 | 对**原始请求体字符串**签名（`X-Tianshu-Signature: sha256=<hex>`）；接收端可用同一 secret 复算校验 |
+| notifier 是 `TaskStore` 的**可选**第三参 | 大量测试直接 `new TaskStore(home, logger)`，必须保持向后兼容 |
+
+**如实披露**：尽力投递、**不保证送达**，失败只记日志；跨 server 重启或接收端重试仍可能重复送达（建议接收端幂等）；请求体含 `projectPath` 与报告文件的本地绝对路径，转发到公网服务前需确认可信。详见 [任务终态通知](docs/notifications.md)。
+
+### 5.8 细粒度事件流：长任务可观测性（issue #18）
 
 `query_task` 原先只能返回粗粒度状态：长任务（尤其 GUI agent 卡在确认弹窗 / 文件选择对话框 / 授权提示）下，调用方无法区分「agent 正在正常工作」与「已卡死等待人工干预」。本能力让适配器在关键节点上报语义事件。
 

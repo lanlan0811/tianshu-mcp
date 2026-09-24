@@ -209,7 +209,7 @@ Eleven tools (`src/mcp/tools.ts`), split into three families: `read` (queries, n
 
 **Validation happens in two stages**: `server.ts` first runs `inputSchema.safeParse()` for protocol-level validation (failures return `Error: 参数不合法 — <path>: <message>`); handlers then apply semantic gates, such as the `projectPath` safety check (absolute, exists, realpath-normalized, rejecting the home directory and root-level/system directories), rejecting `mode` for anything but TraeWork, and allowing `allowCreateProject` only for ZCode.
 
-Progress is **persisted, never pushed**: GUI adapters report on the `gui.progressIntervalMs` cadence (default 30 s), `TaskOrchestrator` writes a `note` event into `task.jsonl` and refreshes the snapshot's `progressSummary` / `lastRunSignal`, and `query_task` reads the latest snapshot plus event stream on each call. A poller therefore sees the *last persisted* progress. Besides that free-text progress there is a **semantic** fine-grained event stream (`onEvent`, issue #18), see §5.7 — both are written into the same `task.jsonl`: `note` carries free text, fine-grained events carry node semantics.
+Progress is **persisted, never pushed**: GUI adapters report on the `gui.progressIntervalMs` cadence (default 30 s), `TaskOrchestrator` writes a `note` event into `task.jsonl` and refreshes the snapshot's `progressSummary` / `lastRunSignal`, and `query_task` reads the latest snapshot plus event stream on each call. A poller therefore sees the *last persisted* progress. Besides that free-text progress there is a **semantic** fine-grained event stream (`onEvent`, issue #18), see §5.8 — both are written into the same `task.jsonl`: `note` carries free text, fine-grained events carry node semantics.
 
 ---
 
@@ -309,7 +309,29 @@ The window name is derived from `profile.displayName` (`guiAppNameOf()`, strippi
 
 **Boundaries**: a `verify_task(taskId=…)` key is **not** written into the task snapshot (that field carries the task's dispatch key, so it is never overwritten), and rebuild coverage for that one combination relies on `idempotency.json`; no keys for `rework_task` / `continue_task` / `cancel_task` / the visual baseline tools; no cross-process distributed idempotency (the same assumption the visual lock makes).
 
-### 5.7 Fine-grained event stream: long-task observability (issue #18)
+### 5.7 Terminal-state notifications: webhook hook (issue #22)
+
+For long tasks the caller previously had to babysit the UI. This capability asynchronously POSTs a JSON
+body to a configured URL on state transitions.
+
+| Decision | Implementation and rationale |
+|---|---|
+| The hook point is `TaskStore.updateStatus()` | It is the **single choke point** for state transitions. `TaskOrchestrator.finish()` only covers orchestrator-driven ends — `cancel()`'s queued branch, `initialize()`'s restart archiving, and `shutdownInterrupt()` / `persistInterrupted()` all bypass it |
+| Config lives in the global `config.json` (`notifications.webhook`) | Notification routing is a host/transport concern, not project acceptance policy; and `updateStatus` only has the data home, taskId and logger, so it cannot cheaply read project config on every transition |
+| "Exactly once" dedupes on `taskId + status + finishedAt` | `prev !== status` **cannot** be the gate: several paths (cancel's queued branch, `shutdownInterrupt`) **write `meta.status` directly first** and only then call `updateStatus`, at which point `prev` already equals the target state. `finishedAt` is refreshed by `updateStatus` on a terminal write and cleared by `rework`/`continueTask`, so repeated writes for one episode are suppressed while a **new episode after rework notifies again for the same status** |
+| Sending happens **after** `appendEvent` + `writeSnapshot` | Persist the local fact first, then notify outward |
+| `notify()` returns void (fire-and-forget) | Sending and retries run entirely in the background; a slow or dead endpoint **does not block the status-write chain**, and any exception only logs a `warn` |
+| Only **true terminal states** are subscribed by default | `needs_attention` (terminal) → `needs_human`; `needs_user` (**non-terminal**, restorable via continue, possibly re-entered later) is a separate class that is off by default — merging them would defeat "only push true terminal states by default" |
+| Global `fetch` + `AbortSignal.timeout` + `redirect:"manual"` | The same convention as `src/visual/services.ts`, built into Node ≥ 20, no new dependency |
+| Optional HMAC-SHA256 signature | Signs the **raw request body string** (`X-Tianshu-Signature: sha256=<hex>`); a receiver can recompute it with the same secret |
+| The notifier is an **optional** third constructor argument of `TaskStore` | Many tests construct `new TaskStore(home, logger)` directly, so backward compatibility is required |
+
+**Disclosed honestly**: best-effort delivery, **not guaranteed** — failures only log; delivery can still
+repeat across a server restart or a receiver retry (receivers should be idempotent); the body contains
+`projectPath` and local absolute paths to report files, so confirm the receiver is trusted before
+forwarding to a public service. See [task notifications](docs/notifications.en.md).
+
+### 5.8 Fine-grained event stream: long-task observability (issue #18)
 
 `query_task` used to return only coarse status: for long tasks — especially GUI agents stuck on confirmation dialogs, file pickers or authorization prompts — callers could not tell "the agent is working normally" apart from "it is stuck waiting for a human". This capability lets adapters report semantic events at key nodes.
 

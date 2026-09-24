@@ -51,6 +51,7 @@
 - **幂等重试（issue #15）**：`run_task` / `verify_task` 接受可选 `idempotencyKey`——同一 key 在 TTL（默认 24h）内的重试**不会**重复派单（恒返回原 `taskId` 与当前状态）或重复跑验收（执行中返回进行中提示，已完成直接返回既有报告）；同键异参 fail-closed 报错。映射落盘于 `<数据目录>/idempotency.json`，跨 server 重启仍生效。详见 [v0.5.10 发布说明](<docs/release-v0.5.10.md>)。
 - **技能自检安装（issue #16）**：启动时把**包内** `skills/tianshu-mcp/` 幂等同步到 `~/.rivet/skills/tianshu-mcp/`。源只由 `import.meta.url` 相对包自身定位（无 cwd 内容发现）；目标内含安装清单，据此仅在**可证未被改动**时自动升级，**检出你的本地修改或来源不明一律保留 + 告警**；覆盖走「临时目录 → 备份 → 换入」的原子路径，并按 `skills.autoInstall`（`true`/`"prompt"`/`false`）与 `skills.backupKeep` 治理。详见 [README §技能自检安装](#技能自检安装)。
 - **调度纪律**：每项目串行队列 + 全局并发上限（默认 2，可配）；未传幂等键时，`run_task` 仍会点名同工作区未结束的任务，避免误判为重试。
+- **终态通知（issue #22）**：可选 `notifications.webhook`（全局 `config.json`）—— 任务完成 / 失败 / 进入 `needs_attention` 时向指定 URL **异步 POST** 一条 JSON（含 `taskId` / `event` / `status` / 时间戳 / 报告路径），可选 HMAC-SHA256 签名。**默认关闭**，且发送失败只记日志、**绝不影响状态机**。默认只推真终态；`needs_user`（非终态，可能反复触发）需显式订阅。详见 [任务终态通知](docs/notifications.md)。
 - **可选 AI 内容校验（v0.5.4，默认关闭）**：校验图片或页面截图**内容**是否符合你显式声明的期望描述。判定完全**委托给你自备的本地命令**（MCP 不读取、不存储、不转发任何密钥，也不内置模型客户端），默认**仅告警**、逐规则可升级为致败；采样多数票 + 任务级缓存防抖，票不集中或低于置信度阈值判 `uncertain`（永不阻塞、不触发返修）。配置与命令契约见 [视觉验收](docs/visual-acceptance.md)。
 - **不碰密钥**：各 agent 用自己的登录态；本 server 不保存/转发任何 API key。可选 AI 内容校验同样不引入凭证管理——判定命令自己管密钥（见 [SECURITY.md](SECURITY.md)）。
 - **可扩展**：新 agent = 一个 profile（数据）+（如需）一个 adapter 文件，零改编排核心。
