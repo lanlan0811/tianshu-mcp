@@ -8,6 +8,7 @@ import { resolveDataHome, DataHome } from "./config/store.js";
 import { BUILTIN_PROFILES } from "./agents/builtin.js";
 import { AgentAdapterRegistry } from "./agents/registry.js";
 import { TaskStore } from "./tasks/task-store.js";
+import { TaskNotifier } from "./tasks/notifier.js";
 import { AcceptanceEngine } from "./verify/acceptance.js";
 import { TaskManager } from "./tasks/task-manager.js";
 import { makeBuildCtx } from "./mcp/context.js";
@@ -47,7 +48,10 @@ export async function buildServer(
   // shutdownInterrupt() 使用；与 profile 的 gui.cancelWaitMs（取消路径）解耦。
   const guiStopWaitMs = cfg.shutdown?.guiStopWaitMs ?? 15_000;
 
-  const store = new TaskStore(home, logger);
+  // 任务终态通知（issue #22）：配置读同一份 config.json（支持热加载），故用 getter 惰性取，
+  // 运行中改配置也能生效。默认关闭 —— 未配置 webhook 时 notify 是空操作。
+  const notifier = new TaskNotifier(() => dataHome.loadConfig(), logger);
+  const store = new TaskStore(home, logger, notifier);
   const registry = new AgentAdapterRegistry(() => dataHome.loadProfiles(), logger);
   const engine = new AcceptanceEngine(store, logger);
   const manager = new TaskManager(

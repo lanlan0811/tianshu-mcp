@@ -259,6 +259,49 @@ export type ContinueTaskParams = z.infer<typeof ContinueTaskParamsSchema>;
 
 /* ---------------- server 配置 config.json ---------------- */
 
+/**
+ * webhook 通知可订阅的事件类别（按任务**状态语义**归类，而非原始 status 字符串）。
+ *
+ * `needs_human` 与 `needs_user` 刻意分开：前者对应 `needs_attention`（**真终态**，等人工裁决后
+ * 任务就结束了），后者对应 `needs_user`（**非终态** —— 它可被 `continue_task` 恢复到 `queued`，
+ * 之后可能**再次**进入 `needs_user`）。混为一类会让「默认只推真终态」这条约定失效。
+ */
+export const NotificationEventSchema = z.enum([
+  "done",
+  "failed",
+  "needs_human",
+  "needs_user",
+  "cancelled",
+]);
+export type NotificationEvent = z.infer<typeof NotificationEventSchema>;
+
+/**
+ * 默认订阅集：**只含真终态**。
+ * `needs_user` 不是终态，默认关闭；需要它的调用方显式加进 `events`（已知会反复推送）。
+ * `cancelled` 同样默认关闭（多数场景无需被取消任务打扰）。
+ */
+export const NOTIFICATION_EVENTS_DEFAULT: NotificationEvent[] = ["done", "failed", "needs_human"];
+
+export const WebhookConfigSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    url: z.string().url().optional(),
+    /** 单次请求超时（不阻塞状态机 —— 发送全程异步） */
+    timeoutMs: z.number().int().positive().default(5_000),
+    /** 失败重试次数上限（0 = 不重试）；总尝试次数 = 1 + maxRetries */
+    maxRetries: z.number().int().min(0).max(5).default(2),
+    /** 重试退避基数：第 n 次重试前等待 backoffMs × n（0 = 不退避） */
+    backoffMs: z.number().int().min(0).default(500),
+    /** 配置后对请求体做 HMAC-SHA256 签名，附 `X-Tianshu-Signature: sha256=<hex>` */
+    secret: z.string().optional(),
+    events: z.array(NotificationEventSchema).default(NOTIFICATION_EVENTS_DEFAULT),
+  })
+  .refine((v) => !v.enabled || (v.url !== undefined && v.url.length > 0), {
+    message: "notifications.webhook.enabled=true 时必须提供 url",
+    path: ["url"],
+  });
+export type WebhookConfig = z.infer<typeof WebhookConfigSchema>;
+
 export const ServerConfigSchema = z.object({
   concurrency: z
     .object({
@@ -321,6 +364,20 @@ export const ServerConfigSchema = z.object({
         .min(1)
         .max(100_000)
         .default(IDEMPOTENCY_MAX_ENTRIES_DEFAULT),
+    })
+    .default({}),
+  /**
+   * 任务状态跃迁的通知钩子（issue #22）。
+   *
+   * 放在**全局** `config.json` 而非项目 `acceptance.json`：通知路由是宿主/传输层关注点，
+   * 不是项目验收策略；一个端点通常按 `taskId` 自行分流即可。且状态跃迁的咽喉
+   * （`TaskStore.updateStatus`）只有 `home` / `taskId` / `logger`，无法在每次跃迁时廉价读项目配置。
+   *
+   * **默认关闭**：不配置或 `enabled:false` 时**完全不发起任何请求**。
+   */
+  notifications: z
+    .object({
+      webhook: WebhookConfigSchema.optional(),
     })
     .default({}),
 });

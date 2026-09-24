@@ -25,6 +25,7 @@ import {
   writeTextAtomic,
 } from "../util/fs.js";
 import { isAgentEventName } from "../agents/agent-events.js";
+import { statusToEvent, type Notifier } from "./notifier.js";
 import { nowIso } from "../util/id.js";
 import { Logger } from "../util/log.js";
 import { reportToJsonable, reportToMd } from "../verify/report.js";
@@ -54,6 +55,11 @@ export class TaskStore {
   constructor(
     private readonly home: string,
     private readonly logger: Logger,
+    /**
+     * 任务终态通知器（issue #22，**可选**）。默认不传 = 与引入本能力前完全一致（测试大量
+     * 直接 `new TaskStore(home, logger)`，故必须保持可选）。
+     */
+    private readonly notifier?: Notifier,
   ) {}
 
   dir(taskId: string): string {
@@ -200,6 +206,9 @@ export class TaskStore {
       await this.appendEvent(taskId, name, status, detail);
       await this.writeSnapshot(meta);
       this.logger.debug(`任务 ${taskId}: ${prev} → ${status}${detail ? ` (${detail})` : ""}`);
+      // issue #22：终态通知。**在 appendEvent + writeSnapshot 成功之后**才发——先保证
+      // 本地事实已落盘，再对外通知；notify 是 fire-and-forget，不阻塞状态机写入链。
+      this.notifyTerminal(meta, status);
     })();
     this.statusWriteTails.set(taskId, write);
     try {
@@ -207,6 +216,27 @@ export class TaskStore {
     } finally {
       if (this.statusWriteTails.get(taskId) === write) this.statusWriteTails.delete(taskId);
     }
+  }
+
+  /** 终态跃迁的通知派发（issue #22）；未传 notifier 或非通知状态时是空操作 */
+  private notifyTerminal(meta: TaskMeta, status: TaskStatus): void {
+    if (!this.notifier) return;
+    const event = statusToEvent(status);
+    if (!event) return;
+    this.notifier.notify({
+      taskId: meta.taskId,
+      event,
+      status,
+      ts: nowIso(),
+      finishedAt: meta.finishedAt,
+      agentId: meta.agentId,
+      projectPath: meta.projectPath,
+      round: meta.roundsUsed,
+      reportRound: meta.reportRound,
+      message: meta.lastMessage,
+      reportMd: meta.reportMd,
+      reportJson: meta.reportJson,
+    });
   }
 
   async addNote(meta: TaskMeta, detail: string): Promise<void> {

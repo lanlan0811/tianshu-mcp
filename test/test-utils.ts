@@ -190,6 +190,92 @@ export async function rmrf(p: string): Promise<void> {
   await fsp.rm(p, { recursive: true, force: true });
 }
 
+/** 轮询等待条件成立（issue #22 的通知是异步发送的，测试需要等它到达） */
+export async function waitForCondition(
+  fn: () => boolean,
+  timeoutMs = 10_000,
+  intervalMs = 50,
+): Promise<boolean> {
+  const start = Date.now();
+  for (;;) {
+    if (fn()) return true;
+    if (Date.now() - start > timeoutMs) return false;
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+}
+
+export interface MockWebhook {
+  url: string;
+  /** 已收到的请求（body 已解析 + 原始 headers + **本次返回的状态码**） */
+  received: {
+    body: unknown;
+    headers: Record<string, string | string[] | undefined>;
+    status: number;
+  }[];
+  /** 到目前为止服务端处理过的请求次数（含被拒的） */
+  attempts: () => number;
+  close: () => Promise<void>;
+}
+
+/**
+ * 起一个本地 mock webhook 服务（issue #22）。
+ *
+ * 用真实 `node:http` 而不是打桩 `fetch`：本能力的关键语义（超时、重试、非 2xx、
+ * 端口不可达）都发生在真实网络层，打桩会把它们一起抹掉。监听 127.0.0.1 随机端口，
+ * 绝不外发。
+ */
+export async function startMockWebhook(
+  opts: { status?: number; failFirst?: number } = {},
+): Promise<MockWebhook> {
+  const http = await import("node:http");
+  const received: MockWebhook["received"] = [];
+  let attempts = 0;
+  const server = http.createServer((req, res) => {
+    attempts++;
+    let raw = "";
+    req.on("data", (c: Buffer) => {
+      raw += c.toString("utf8");
+    });
+    req.on("end", () => {
+      let body: unknown;
+      try {
+        body = JSON.parse(raw);
+      } catch {
+        body = raw;
+      }
+      const failUntil = opts.failFirst ?? 0;
+      const status = attempts <= failUntil ? 500 : (opts.status ?? 200);
+      // 记录本次返回的状态码：测试要能区分「收到了请求」与「送达成功」
+      received.push({ body, headers: req.headers, status });
+      res.writeHead(status, { "content-type": "text/plain" });
+      res.end("ok");
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const addr = server.address();
+  const port = typeof addr === "object" && addr ? addr.port : 0;
+  return {
+    url: `http://127.0.0.1:${port}/hook`,
+    received,
+    attempts: () => attempts,
+    close: () =>
+      new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      }),
+  };
+}
+
+/** 取一个「已关闭、必然连不上」的本地端口（用于测发送失败不阻塞任务） */
+export async function closedPortUrl(): Promise<string> {
+  const http = await import("node:http");
+  const server = http.createServer(() => {});
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const addr = server.address();
+  const port = typeof addr === "object" && addr ? addr.port : 0;
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  return `http://127.0.0.1:${port}/hook`;
+}
+
 export function gitFileExists(projectPath: string, file: string): boolean {
   return fs.existsSync(path.join(projectPath, file));
 }
