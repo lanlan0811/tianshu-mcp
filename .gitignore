@@ -1,8 +1,10 @@
 AGENTS.md
+CLAUDE.md
 
 .zcode/*
 .codex/*
 .trae/*
+.claude/*
 .codebuddy/*
 .workbuddy/*
 .dsh/*
