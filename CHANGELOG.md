@@ -7,6 +7,30 @@
 
 ---
 
+## [0.6.3] - 2026-09-24
+
+### 新增
+
+- **细粒度事件流**（[issue #18](https://github.com/lanlan0811/tianshu-mcp/issues/18)）：适配器可在关键节点主动上报语义事件，`query_task` 回传最近 N 条，长任务下可区分「正常执行」与「卡在弹窗等人」。词表 5 类：`task_dispatched` / `confirmation_dialog_detected` / `awaiting_user_authorization` / `file_modification_started` / `rework_triggered`。详见 [事件流文档](docs/event-stream.md)。
+- **`query_task` 新增可选入参 `eventLimit`**（整数 1..50，**缺省 10**）：事件同时出现在 meta 块的 `recentEvents` 数组与文本区的「最近事件」段落。
+- **两个内置 GUI 适配器落地上报**：codex 与 traework（各 4 个发射点）；`rework_triggered` 由引擎侧统一上报（自动返修 `mode:"auto"`、手动 `rework_task` `mode:"manual"`）。
+
+### 变更
+
+- **手动 `rework_task` 的事件由匿名 `note` 改为类型化 `rework_triggered`**（`task.jsonl` 可见）。既有 `note` 事件的语义与用途不变，`progressSummary` / `lastRunSignal` 仍由 `note` 承载。
+- **`TaskEventName` 联合类型新增 5 个成员**，与 `AGENT_EVENT_NAMES` 同源（避免两处词表漂移）。
+
+### 兼容性
+
+- **无工具契约、数据模型或 MCP 注解变更**。`recentEvents` 是新增可选字段：未实现事件上报的适配器（含全部 CLI 适配器）返回空数组、文本区不出现事件段落，**其余字段与 v0.6.2 完全一致**。
+- 事件写入既有的 `task.jsonl`（**不新建并行事件文件**）；读取侧只读尾部 64 KiB 窗口，内存占用与文件总大小解耦。
+
+### 说明（如实披露）
+
+- **`file_modification_started` 是启发式推断**：codex / traework 适配器并不直接观测文件系统，只能从界面「运行中」信号（停止按钮）推断执行已开始。其 detail 一律写「停止按钮出现，开始执行（可能开始改动文件）」，**不声称文件确已改动**；确切的文件改动证据请看验收报告的 `changedFiles` / `diffstat`。
+- **事件上报是可选能力**：钩子挂在 `AgentRunOptions.onEvent` 而非 agent profile（`agent-profiles.json` 是纯 JSON，装不下函数）；未实现的适配器一个字节都不用改。适配器侧统一经 `makeEmitter` 上报 —— 未提供钩子时空操作，且吞掉上报异常，**上报失败绝不影响任务本体**。
+- **事件不保证送达**：属观测能力而非交付保证；`query_task` 只反映「最后一次落盘的事件」。
+
 ## [0.6.2] - 2026-09-23
 
 ### 修复

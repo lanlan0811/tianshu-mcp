@@ -8,6 +8,30 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.6.3] - 2026-09-24
+
+### Added
+
+- **Fine-grained event stream** ([issue #18](https://github.com/lanlan0811/tianshu-mcp/issues/18)): adapters can proactively report semantic events at key nodes, and `query_task` returns the most recent N of them, so long tasks can be told apart as "working normally" versus "stuck on a dialog waiting for a human". Five event kinds: `task_dispatched` / `confirmation_dialog_detected` / `awaiting_user_authorization` / `file_modification_started` / `rework_triggered`. See the [event stream doc](docs/event-stream.en.md).
+- **New optional `query_task` input `eventLimit`** (integer 1..50, **default 10**): events appear both in the meta block's `recentEvents` array and in a "recent events" section of the text area.
+- **Two built-in GUI adapters actually report events**: codex and traework (four emission points each); `rework_triggered` is emitted engine-side (automatic rework `mode:"auto"`, manual `rework_task` `mode:"manual"`).
+
+### Changed
+
+- **Manual `rework_task` now emits a typed `rework_triggered` event instead of an anonymous `note`** (visible in `task.jsonl`). The semantics and purpose of the existing `note` event are unchanged; `progressSummary` / `lastRunSignal` are still carried by `note`.
+- **The `TaskEventName` union gained five members**, sourced from `AGENT_EVENT_NAMES` so the vocabulary cannot drift between two places.
+
+### Compatibility
+
+- **No tool contract, data model or MCP annotation changes.** `recentEvents` is a new optional field: adapters that do not implement event reporting (including all CLI adapters) return an empty array with no event section in the text area, and **every other field is exactly as in v0.6.2**.
+- Events are written into the existing `task.jsonl` (**no parallel event file is created**); the read side only reads a 64 KiB tail window, so memory use is decoupled from total file size.
+
+### Notes (disclosed honestly)
+
+- **`file_modification_started` is a heuristic.** The codex / traework adapters do not observe the filesystem directly; they can only infer that execution started from the UI's "running" signal (stop button). Its detail always reads "stop button appeared, execution started (files may be modified)" and **does not claim files were actually changed**. For hard evidence of file changes, read `changedFiles` / `diffstat` from the acceptance report.
+- **Event reporting is an optional capability.** The hook lives on `AgentRunOptions.onEvent`, not the agent profile (`agent-profiles.json` is plain JSON and cannot hold a function); adapters that don't implement it need not change a single byte. Adapters report through `makeEmitter` — a no-op when no hook is provided, swallowing reporting exceptions so that **a failed report never affects the task itself**.
+- **Events are not delivery-guaranteed.** This is an observability capability, not a delivery guarantee; `query_task` reflects only "the last event that was persisted".
+
 ## [0.6.2] - 2026-09-23
 
 ### Fixed

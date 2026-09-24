@@ -1,10 +1,28 @@
 # HANDOFF.md — 项目交接说明
 
-> **交接快照：2026-09-23 · 开发版本 `0.6.2`；`v0.6.2` 已发布（GitHub Release / Gitee 发行版 / npm `latest` 三者一致，发布提交 `ecf5aad`）。**
+> **交接快照：2026-09-24 · 开发版本 `0.6.3`；`v0.6.3` 发布实测见下方「0.6.3 开发交接」末行。**
 > 本文写给**接手本仓库的人**：先说清「这是什么、现在到哪一步」，再给出「怎么跑、怎么改、哪里会踩坑」。
 > 工作区规则见 `AGENTS.md`（gitignore，仅本地）；安装与用法见 `README.md`，本文不重复，只做导览与状态记录。
 
 ---
+
+### 0.6.3 开发交接（细粒度事件流，issue #18）
+
+- **范围**：新增可选的事件上报能力 + `query_task` 回传最近 N 条事件。无新工具、无数据模型变更、无 MCP 注解变更。
+- **问题**：长任务（尤其 GUI agent 卡在确认弹窗 / 文件选择对话框 / 授权提示）下 `query_task` 只能返回 `running`，调用方无法区分「正常工作」与「卡死等人」，只能盲等或超时强杀。
+- **新增词表**（`src/agents/agent-events.ts`，**零依赖**，避免 `adapter.ts` / `tasks/task.ts` / `tasks/task-store.ts` 循环引用）：`task_dispatched` / `confirmation_dialog_detected` / `awaiting_user_authorization` / `file_modification_started` / `rework_triggered`。`TaskEventName` 经 `| AgentEventName` 引用同一词表，**杜绝两处漂移**。
+- **钩子归属**：`AgentRunOptions.onEvent`（`src/agents/adapter.ts`）——**不是** agent profile。issue 原文建议「在 agent profile 新增 onEvent」，但 `agent-profiles.json` 是纯 JSON、装不下函数，硬塞会破坏 `AgentProfilesFileSchema` 解析与热重载。「可选」由 `opts.onEvent?.()` + `makeEmitter` 表达，**未实现的适配器一个字节都不用改**。
+- **存储决定**：事件写**既有** `task.jsonl`，**不建内存环形缓冲**。理由：GUI 长任务中宿主可能重启，纯内存队列会丢掉最需要的现场；并行流会产生第二个事实来源与排序不一致。「内存膨胀」在**读取侧**解决——新增 `readTextTail(p, maxBytes)`（`src/util/fs.ts`，`fsp.open`+`fstat`+ 从 `size-maxBytes` 读，**截断点落在换行符上时不丢整行**），`TaskStore.readRecentAgentEvents(taskId, limit, maxBytes=64KiB)` 只读尾部窗口。
+- **读取与暴露**：`QueryTaskParamsSchema.eventLimit`（1..50，**缺省 10**，常量 `QUERY_TASK_EVENT_LIMIT_DEFAULT`）；`MetaBlockFields.recentEvents`（经 `metaFromTask(meta, extra)` 的 `...extra` 透传，无需改函数体）；`queryTaskHandler` 同时渲染文本区 `--- 最近事件（N 条，旧 → 新）---` 段落。未上报的适配器返回**空数组**且文本区无该段落。
+- **发射点（各 4 个）**：
+  - **codex**（`src/agents/codex/run.ts`）：派发确认后；`createProject()` 中清理残留弹窗（`closeDialogs>0`）与唤起原生文件夹对话框；`loginIndicator` / `needs_login` / `needs_user` 三处授权等待；轮询循环里**判定前先捕获 `wasRunning`**，`running` 首次出现时发一次。
+  - **traework**（`src/agents/traework/run.ts`）：`typeAndSend` 后；`bindProject` 返回且 `method==="native-dialog"`（含失败）；`verdict.kind==="ask_user"`；轮询循环 `live.running && runningSince===0` 首次跃迁。
+  - **引擎侧 `rework_triggered`**：`fix-loop.ts` 自动返修分支（`mode:"auto"` + 轮次 + 失败检查项名）；`task-manager.rework()` 手动返修（`mode:"manual"`）——**替换了原来的匿名 `note`**（`note` 的既有语义/用途不变）。
+- **健壮性**：适配器一律经 `makeEmitter` 上报 —— 未提供钩子时空操作，**并吞掉上报异常**。事件上报属观测能力，**绝不允许影响任务本体**（有专门用例：落盘异常时任务仍 `succeeded`）。
+- **如实披露**：`file_modification_started` 是**启发式**推断 —— 适配器并不直接观测文件系统，只能从界面运行信号（停止按钮）推断执行已开始，detail 一律写「停止按钮出现，开始执行（可能开始改动文件）」，**不声称已改动**。确切改动证据看验收报告的 `changedFiles` / `diffstat`。本版只在 **codex + traework** 真正上报；zcode / kimicode / qoder 与全部 CLI 适配器保留接口、暂不上报。
+- 测试：新增 **36** 用例 / 4 文件（`agent-events` 15、`fix-loop-events` 4、`codex-flow` +5、`traework-events` 5、`query-events` 7）；全量 **1002 passed / 12 skipped**（93 文件，较 v0.6.2 的 966 净增 36）；`check:stdio` dist 与 src 均 **8/8**。文档：[事件流](docs/event-stream.md) 双语 + [发布说明 v0.6.3](docs/release-v0.6.3.md) 双语。
+- **真机记录（待补，交付后执行）**：用 `scripts/probe-codex.mjs` / `scripts/probe-traework.mjs` 各跑一次真实 GUI 任务，确认 5 类事件在 `query_task` 输出中按预期出现（尤其卡在原生弹窗时的 `confirmation_dialog_detected` / `awaiting_user_authorization`），输出落 `docs/` 证据文件。本版以单测 + 假 CDP 集成测试为门禁。
+- **发布实测**：待回写（CI 四平台 / `release.yml` / GitHub Release / Gitee 发行版 / npm `latest` / issue 关闭状态）。
 
 ### 0.6.2 开发交接（GUI 选择器版本漂移，issue #23）
 
