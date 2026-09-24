@@ -2,7 +2,12 @@
  * Task 类型 / 状态枚举 / 状态机迁移表。
  * 状态机见开发计划 §6：queued → running → … → succeeded/failed/cancelled/interrupted。
  */
-import type { TraeworkMode, ReasoningLevel, IdempotencyScope } from "../config/schema.js";
+import type {
+  TraeworkMode,
+  ReasoningLevel,
+  IdempotencyScope,
+  PartialAcceptanceConfig,
+} from "../config/schema.js";
 import type { VisualReport } from "../visual/types.js";
 import type { AgentEventName } from "../agents/agent-events.js";
 import type { RepairDirectives } from "../verify/directives.js";
@@ -195,6 +200,12 @@ export interface TaskMeta {
    * 与 reworkFeedback 同批消费与清空；渲染时置于 feedback 之前。
    */
   reworkHint?: string;
+  /**
+   * 任务级临时验收配置覆盖（issue #20，三级继承最高优先级）。随任务快照保存 ——
+   * 这是**任务数据**而非配置文件：不写入任何 `acceptance*.json`，不影响其他任务或项目；
+   * rework/continue 沿用同一任务时继续生效。
+   */
+  acceptanceOverride?: PartialAcceptanceConfig;
   /**
    * 结构化「本轮不适用项目验收」的原因。无项目模式（default 工作区）执行成功后置为
    * "no_project"——用结构化字段表达跳过，而不是生成虚假的验收通过报告。

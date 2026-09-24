@@ -7,14 +7,24 @@
  */
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { readAcceptanceConfig } from "../visual/config.js";
+import { readAcceptanceLayer } from "../visual/config.js";
+import {
+  resolveAcceptanceLayers,
+  summarizeResolved,
+  type AcceptanceLayer,
+  type ResolvedAcceptance,
+} from "../config/acceptance-merge.js";
 import { visualError } from "../visual/errors.js";
 import { runVisual } from "../visual/engine.js";
 import { checkVisualSnapshot, freezeVisualSnapshot } from "../visual/snapshot.js";
 import { withVisualLock } from "../visual/lock.js";
 import fsp from "node:fs/promises";
 import { exists, mkdirp, readJsonSafe, readTextSafe } from "../util/fs.js";
-import { type AcceptanceCheckDef, type ServerConfig } from "../config/schema.js";
+import {
+  type AcceptanceCheckDef,
+  type PartialAcceptanceConfig,
+  type ServerConfig,
+} from "../config/schema.js";
 import { toAcceptanceDef } from "../config/store.js";
 import { runVerifyCommand, makeSkipResult } from "./runner.js";
 import { analyzeChanges } from "./code-analysis.js";
@@ -36,6 +46,11 @@ export interface VerifyRequest {
   /** append（默认）/ replace */
   checksMode?: "append" | "replace";
   projectVerify?: AcceptanceCheckDef[]; // projects.json 补录
+  /**
+   * 任务级临时验收配置覆盖（issue #20，三级继承的最高优先级）。
+   * 仅当次任务生效，**不落盘为配置**（只随任务快照保存，见 TaskMeta.acceptanceOverride）。
+   */
+  acceptanceOverride?: PartialAcceptanceConfig;
   baseline?: Awaited<ReturnType<typeof captureBaseline>>;
   /** 任务取消信号：中断在途 check（杀进程树），未启动的 check 标记跳过不再 spawn */
   signal?: AbortSignal;
@@ -142,21 +157,40 @@ export class AcceptanceEngine {
     notes: string[];
     requireChanges: boolean;
     verifyConcurrency?: number;
+    /** 合并后的 visual 配置（issue #20：三层合并结果，供 executeVerify 直接使用，避免二次读取项目文件） */
+    visual?: PartialAcceptanceConfig["visual"];
+    /** 三层继承的生效情况（供日志与调试命令） */
+    layers: ResolvedAcceptance;
   }> {
     const notes: string[] = [];
     const out: AcceptanceCheckDef[] = [];
     const mode = req.checksMode ?? "append";
     const hasExtra = !!req.extraChecks?.length;
-    const inProject = await this.readProjectAcceptance(req.projectPath);
-    const requireChanges = inProject?.requireChanges ?? true;
 
-    // 先取基础集（项目/默认），除非 replace 模式只用 extraChecks
+    // ---- issue #20：三级继承（低 → 高）----
+    // 全局层落在数据目录（不在项目内），故此处自行推导 home，而不依赖 DataHome 实例。
+    const home = path.dirname(path.dirname(req.store.dir(req.taskId)));
+    const globalPath = path.join(home, "acceptance.default.json");
+    const projectPath = path.join(req.projectPath, ".tianshu-mcp", "acceptance.json");
+    const layers: AcceptanceLayer[] = [
+      { source: "global", path: globalPath, config: (await readAcceptanceLayer(globalPath, "global")) ?? undefined },
+      { source: "project", path: projectPath, config: (await readAcceptanceLayer(projectPath, "project")) ?? undefined },
+      { source: "override", path: "（调用参数）", config: req.acceptanceOverride },
+    ];
+    const resolved = resolveAcceptanceLayers(layers);
+    const merged = resolved.config;
+    // 每轮一行摘要：调用方与排障者无需额外命令即可看到「哪几层生效、最终取值」
+    this.logger.info(`验收配置层 task=${req.taskId} ${summarizeResolved(resolved)}`);
+
+    const requireChanges = merged.requireChanges ?? true;
+    const inProjectChecks = merged.checks?.map((c) => toAcceptanceDef(c));
+
+    // 先取基础集（合并后配置/默认），除非 replace 模式只用 extraChecks
     if (!(mode === "replace" && hasExtra)) {
-      if (inProject?.checks !== undefined) {
-        notes.push(
-          `使用项目内验收配置 <project>/.tianshu-mcp/acceptance.json（${inProject.checks.length} 项）。`,
-        );
-        out.push(...inProject.checks);
+      if (inProjectChecks !== undefined) {
+        const from = resolved.applied.map((a) => a.source).join("+");
+        notes.push(`使用验收配置层的 checks（生效层 ${from}，共 ${inProjectChecks.length} 项）。`);
+        out.push(...inProjectChecks);
       } else if (req.projectVerify?.length) {
         notes.push(
           `使用 server 数据目录 projects.json 补录的验收配置（${req.projectVerify.length} 项）。`,
@@ -179,20 +213,13 @@ export class AcceptanceEngine {
       }
       out.push(...(req.extraChecks ?? []));
     }
-    return { checks: out, notes, requireChanges, verifyConcurrency: inProject?.verifyConcurrency };
-  }
-
-  private async readProjectAcceptance(projectPath: string): Promise<{
-    checks: AcceptanceCheckDef[] | undefined;
-    requireChanges: boolean;
-    verifyConcurrency?: number;
-  } | null> {
-    const config = await readAcceptanceConfig(projectPath);
-    if (!config) return null;
     return {
-      checks: config.checks?.map((c) => toAcceptanceDef(c)),
-      requireChanges: config.requireChanges,
-      verifyConcurrency: config.verifyConcurrency,
+      checks: out,
+      notes,
+      requireChanges,
+      verifyConcurrency: merged.verifyConcurrency,
+      visual: merged.visual,
+      layers: resolved,
     };
   }
 
@@ -240,17 +267,19 @@ export class AcceptanceEngine {
       this.logger.debug(`使用 run_task 动工前基线（HEAD=${baseline.head ?? "n/a"}）`);
 
     let configurationError: { code: string; message: string } | undefined;
-    const resolved = await this.resolveChecks(req).catch((e: unknown) => {
-      const error = visualError(e);
-      configurationError = { code: error.code, message: error.message };
-      return {
-        checks: [] as AcceptanceCheckDef[],
-        notes: [error.message],
-        requireChanges: false,
-        verifyConcurrency: undefined,
-      };
-    });
-    const { checks: rawChecks, notes, requireChanges, verifyConcurrency } = resolved;
+      const resolved = await this.resolveChecks(req).catch((e: unknown) => {
+        const error = visualError(e);
+        configurationError = { code: error.code, message: error.message };
+        return {
+          checks: [] as AcceptanceCheckDef[],
+          notes: [error.message],
+          requireChanges: false,
+          verifyConcurrency: undefined,
+          visual: undefined,
+          layers: { config: {}, applied: [] } as ResolvedAcceptance,
+        };
+      });
+    const { checks: rawChecks, notes, requireChanges, verifyConcurrency, layers } = resolved;
     let visual: VerifyReport["visual"];
     if (!configurationError) {
       try {
@@ -320,7 +349,9 @@ export class AcceptanceEngine {
       try {
         const frozen = await freezeVisualSnapshot(req.projectPath, req.store.dir(req.taskId));
         await checkVisualSnapshot(req.projectPath, frozen);
-        const visualConfig = (await readAcceptanceConfig(req.projectPath))?.visual;
+        // issue #20：visual 取三级合并结果，不再二次读取项目文件（否则 override/全局层的
+        // visual 会被项目文件的存在与否悄悄改变语义）。
+        const visualConfig = layers.config.visual;
         if (visualConfig?.enabled)
           visual = await runVisual(
             visualConfig,

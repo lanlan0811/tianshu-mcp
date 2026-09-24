@@ -17,7 +17,12 @@ import {
   guiAppNameOf,
   guiStopDisclosure,
 } from "./task.js";
-import type { TraeworkMode, ReasoningLevel, IdempotencyScope } from "../config/schema.js";
+import type {
+  TraeworkMode,
+  ReasoningLevel,
+  IdempotencyScope,
+  PartialAcceptanceConfig,
+} from "../config/schema.js";
 import { TaskOrchestrator } from "../loop/fix-loop.js";
 import { genTaskId, nowIso } from "../util/id.js";
 import type { DataHome } from "../config/store.js";
@@ -51,6 +56,8 @@ export interface NewTaskInput {
   autoVerify: boolean;
   autoFixRounds: number;
   taskTimeoutMs: number;
+  /** 任务级临时验收配置覆盖（issue #20）；随快照保存，仅本任务生效。 */
+  acceptanceOverride?: PartialAcceptanceConfig;
   /**
    * 幂等路径预生成的任务 id（issue #15）：让调用方能在 `submit()` **之前**把
    * 「幂等键 → taskId」落盘，从而消除「映射已写、任务尚未建」这一崩溃窗口；
@@ -250,6 +257,7 @@ export class TaskManager {
       autoVerify: input.autoVerify,
       autoFixRounds: input.autoFixRounds,
       taskTimeoutMs: input.taskTimeoutMs,
+      acceptanceOverride: input.acceptanceOverride,
       idempotencyKey: input.idempotencyKey,
       idempotencyScope: input.idempotencyScope,
       idempotencyDigest: input.idempotencyDigest,

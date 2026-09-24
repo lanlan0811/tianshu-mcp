@@ -62,6 +62,56 @@ export type IdempotencyScope = z.infer<typeof IdempotencyScopeSchema>;
 export const IDEMPOTENCY_TTL_DEFAULT_MS = 24 * 60 * 60_000;
 export const IDEMPOTENCY_MAX_ENTRIES_DEFAULT = 2000;
 
+/**
+ * 验收命令：**推荐数组形态**（结构化 argv，无歧义）。
+ * 字符串形态为兼容保留：经极简分词（不经过 shell），**不支持转义**，引号不闭合
+ * 不报错，含空格参数必须手写整段引号，写错会静默拆成多个 argv——详见 docs/acceptance-config.md。
+ */
+const CheckCmd = z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]);
+export const AcceptanceCheckSchema = z.object({
+  name: z.string().min(1),
+  cmd: CheckCmd,
+  timeoutMs: z.number().int().positive().optional(),
+  optional: z.boolean().optional(),
+});
+export type AcceptanceCheck = z.infer<typeof AcceptanceCheckSchema>;
+export type AcceptanceCheckDef = {
+  name: string;
+  cmd: string[];
+  displayCmd: string;
+  timeoutMs?: number;
+  optional?: boolean;
+};
+
+/**
+ * **分层**验收配置（issue #20）：每个字段都可选、**任何字段都不带 `.default()`**。
+ *
+ * 为什么必须与 `AcceptanceConfigSchema` 分开：`requireChanges` 在后者上有 `.default(true)`。
+ * 若用带默认值的 schema 去解析「只写了 verifyConcurrency」的项目文件，会 materialize 出
+ * `requireChanges: true`，在三级继承里**反过来把全局层的 `false` 覆盖掉** —— 这正是本次要修的隐患。
+ * 分层解析一律用本 schema，默认值只在最终生效值缺省时由消费方兜底。
+ */
+export const PartialAcceptanceConfigSchema = z.object({
+  checks: z.array(AcceptanceCheckSchema).optional(),
+  /** 注意：`visual` **不做跨层深合并**，最高优先级的层整段生效（理由见 docs/acceptance-config.md） */
+  visual: VisualConfigSchema.optional(),
+  requireChanges: z.boolean().optional(),
+  verifyConcurrency: z
+    .number()
+    .transform((n) => (Number.isFinite(n) ? Math.min(4, Math.max(1, Math.round(n))) : 1))
+    .optional(),
+});
+export type PartialAcceptanceConfig = z.infer<typeof PartialAcceptanceConfigSchema>;
+
+/** 单层 accept.json 的对外形态（供 CLI 调试命令与测试使用） */
+export type AcceptanceLayerSource = "global" | "project" | "override";
+
+/** 兼容形态：在分层 schema 之上补回 `requireChanges` 的历史默认值（供既有 visual/legacy 调用方） */
+export const AcceptanceConfigSchema = PartialAcceptanceConfigSchema.extend({
+  requireChanges: z.boolean().default(true),
+});
+export type AcceptanceConfig = z.infer<typeof AcceptanceConfigSchema>;
+
 export const RunTaskParamsSchema = z.object({
   /**
    * 项目绝对路径。**省略** = 无项目模式（issue #12）：目前仅 ZCode 支持——任务在其 `default`
@@ -114,6 +164,12 @@ export const RunTaskParamsSchema = z.object({
    * 不新建任务；同一键携带不同参数会被 fail-closed 拒绝。不传 = 保持既有行为。
    */
   idempotencyKey: IdempotencyKeySchema.optional(),
+  /**
+   * 任务级临时验收配置覆盖（issue #20）：三级继承的最高优先级，**仅当次任务生效**。
+   * 会随任务快照保存（属任务数据，不是配置文件），rework/continue 沿用同一任务时继续生效，
+   * 不影响其他任务或项目。不传则完全沿用全局/项目层配置。
+   */
+  acceptanceOverride: PartialAcceptanceConfigSchema.optional(),
 });
 export type RunTaskParams = z.infer<typeof RunTaskParamsSchema>;
 
@@ -152,27 +208,6 @@ export const CancelTaskParamsSchema = z.object({
 });
 export type CancelTaskParams = z.infer<typeof CancelTaskParamsSchema>;
 
-/**
- * 验收命令：**推荐数组形态**（结构化 argv，无歧义）。
- * 字符串形态为兼容保留：经极简分词（不经过 shell），**不支持转义**，引号不闭合
- * 不报错，含空格参数必须手写整段引号，写错会静默拆成多个 argv——详见 docs/acceptance-config.md。
- */
-const CheckCmd = z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]);
-export const AcceptanceCheckSchema = z.object({
-  name: z.string().min(1),
-  cmd: CheckCmd,
-  timeoutMs: z.number().int().positive().optional(),
-  optional: z.boolean().optional(),
-});
-export type AcceptanceCheck = z.infer<typeof AcceptanceCheckSchema>;
-export type AcceptanceCheckDef = {
-  name: string;
-  cmd: string[];
-  displayCmd: string;
-  timeoutMs?: number;
-  optional?: boolean;
-};
-
 export const VerifyTaskParamsSchema = z.object({
   taskId: z.string().optional(),
   projectPath: AbsPath.optional(),
@@ -190,6 +225,8 @@ export const VerifyTaskParamsSchema = z.object({
    * 已完成直接返回已有报告与轮次；同一键携带不同参数会被 fail-closed 拒绝。
    */
   idempotencyKey: IdempotencyKeySchema.optional(),
+  /** 任务级临时验收配置覆盖（issue #20）：三级继承的最高优先级，仅本次验收生效。 */
+  acceptanceOverride: PartialAcceptanceConfigSchema.optional(),
 });
 export type VerifyTaskParams = z.infer<typeof VerifyTaskParamsSchema>;
 
@@ -484,16 +521,5 @@ export type ProjectRecord = z.infer<typeof ProjectRecordSchema>;
 export const ProjectsFileSchema = z.record(z.string().min(1), ProjectRecordSchema);
 export type ProjectsFile = z.infer<typeof ProjectsFileSchema>;
 
-/* ---------------- 项目内 .tianshu-mcp/acceptance.json ---------------- */
-
-export const AcceptanceConfigSchema = z.object({
-  checks: z.array(AcceptanceCheckSchema).optional(),
-  visual: VisualConfigSchema.optional(),
-  requireChanges: z.boolean().default(true),
-  /** 命令检查并行度：1=串行（与历史行为一致）；缺省继承 server config.json 的 verifyConcurrency（默认 2）。越界值 clamp 到 1..4（不再株连整份 acceptance.json 失效） */
-  verifyConcurrency: z
-    .number()
-    .transform((n) => (Number.isFinite(n) ? Math.min(4, Math.max(1, Math.round(n))) : 1))
-    .optional(),
-});
-export type AcceptanceConfig = z.infer<typeof AcceptanceConfigSchema>;
+/* 项目内 .tianshu-mcp/acceptance.json 的 schema 定义见文件上方（须早于 RunTaskParamsSchema，
+   因为 run_task/verify_task 的 acceptanceOverride 参数引用它）。 */

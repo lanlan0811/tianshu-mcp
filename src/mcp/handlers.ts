@@ -138,6 +138,9 @@ function runTaskKeyedFields(args: RunTaskParams): Record<string, unknown> {
     autoVerify: args.autoVerify,
     autoFixRounds: args.autoFixRounds,
     taskTimeoutMs: args.taskTimeoutMs,
+    // issue #20：验收策略覆盖会改变这一轮的门禁，必须计入摘要 —— 否则同键重放
+    // 会返回一个「策略不同」的旧任务，调用方以为重试成功、实际拿到的是另一套验收口径。
+    acceptanceOverride: args.acceptanceOverride,
   };
 }
 
@@ -452,6 +455,8 @@ function runTaskHandler(
           resolved.profile.gui?.defaultAutoFixRounds ??
           defaults.defaultAutoFixRounds,
         taskTimeoutMs,
+        // issue #20：任务级临时验收配置覆盖，随快照保存、仅本任务生效
+        acceptanceOverride: args.acceptanceOverride,
         idempotencyKey: args.idempotencyKey,
         idempotencyScope: args.idempotencyKey === undefined ? undefined : "run_task",
         idempotencyDigest: args.idempotencyKey === undefined ? undefined : digest,
@@ -549,6 +554,12 @@ async function runTaskWithoutProject(
     );
   }
   if (args.mode !== undefined) return errorResult("ZCode 不支持 mode 参数；请移除 mode 后重试");
+  if (args.acceptanceOverride !== undefined) {
+    // 无项目模式没有项目验收，覆盖无的放矢；显式拒绝而非静默忽略，避免调用方误以为已生效
+    return errorResult(
+      "无项目模式不支持 acceptanceOverride：没有项目验收可覆盖。请提供 projectPath，或移除该参数。",
+    );
+  }
   try {
     parseZcodeModel(args.model);
     // 无项目模式不做项目引用解析：识别到本地引用就在发送前说明需要 projectPath。
@@ -775,6 +786,8 @@ async function verifyIdempotencyDigest(args: VerifyTaskParams): Promise<string> 
     checksMode: args.checksMode,
     extraChecks: args.extraChecks,
     baselineRef: args.baselineRef,
+    // issue #20：同键重放不得换一套验收策略，故计入摘要
+    acceptanceOverride: args.acceptanceOverride,
   });
 }
 
@@ -1075,6 +1088,8 @@ async function executeVerify(
     extraChecks: input.extraChecks,
     checksMode: args.checksMode ?? "append",
     projectVerify: input.projectVerify,
+    // issue #20：verify_task 的临时覆盖（三级继承最高优先级），仅本次验收生效
+    acceptanceOverride: args.acceptanceOverride,
     baseline,
     store,
     logger,

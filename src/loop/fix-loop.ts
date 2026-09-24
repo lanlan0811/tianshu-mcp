@@ -579,6 +579,8 @@ export class TaskOrchestrator {
       round,
       config: await this.deps.dataHome.loadConfig(),
       projectVerify,
+      // issue #20：任务级临时覆盖（三级继承最高优先级），随任务快照持久化
+      acceptanceOverride: meta.acceptanceOverride,
       baseline,
       signal: this.signal,
       store,

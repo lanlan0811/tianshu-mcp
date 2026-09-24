@@ -34,7 +34,9 @@ export default [
     },
   },
   {
-    files: ["src/visual/cli.ts"],
+    // pre-server CLI 子命令：在创建 MCP server 之前返回，stdout 未被 transport 占用，
+    // 面向人的输出正是 console.log 的正当用途（与「运行时代码禁写 stdout」的红线不冲突）。
+    files: ["src/visual/cli.ts", "src/config/cli.ts"],
     rules: { "no-console": "off" },
   },
   prettier,

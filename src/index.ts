@@ -18,6 +18,12 @@ async function main(): Promise<void> {
     await runVisualCli(process.argv.slice(3));
     return;
   }
+  // issue #20：验收配置三级继承的调试命令（在创建 server 之前返回，不触碰协议 stdout）
+  if (process.argv[2] === "config") {
+    const { runConfigCli } = await import("./config/cli.js");
+    await runConfigCli(process.argv.slice(3));
+    return;
+  }
   const home = resolveDataHome();
   const logger = await Logger.create(path.join(home, "logs"));
   const skipSkillInstall =
