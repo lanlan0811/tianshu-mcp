@@ -200,7 +200,7 @@ resolveDataHome → Logger → DataHome(BUILTIN_PROFILES) → init()
 
 **参数校验是两段式的**：`server.ts` 先用 `inputSchema.safeParse()` 做协议级校验（失败回 `Error: 参数不合法 — <path>: <message>`）；handler 内再做语义闸门，例如 `projectPath` 安全校验（绝对路径 + 存在 + realpath 归一 + 拒绝主目录与根级/系统目录）、`mode` 仅 TraeWork 可用的拒绝、`allowCreateProject` 仅 ZCode 可用等。
 
-进度**只落盘、不推送**：GUI adapter 按 `gui.progressIntervalMs`（默认 30s）回报进度，`TaskOrchestrator` 写成 `task.jsonl` 的 `note` 事件并刷新快照的 `progressSummary` / `lastRunSignal`；`query_task` 每次读取最新快照与事件流，因此轮询者看到的是「最后一次落盘的进度」。
+进度**只落盘、不推送**：GUI adapter 按 `gui.progressIntervalMs`（默认 30s）回报进度，`TaskOrchestrator` 写成 `task.jsonl` 的 `note` 事件并刷新快照的 `progressSummary` / `lastRunSignal`；`query_task` 每次读取最新快照与事件流，因此轮询者看到的是「最后一次落盘的进度」。除自由文本进度外还有**语义化**的细粒度事件流（`onEvent`，issue #18），见 §5.7——两者同写 `task.jsonl`：`note` 承载自由文本，细粒度事件承载节点语义。
 
 ---
 
@@ -299,6 +299,32 @@ GUI agent 的取消是**尽力而为且诚实回报**，但各适配器能力不
 **「执行中」标记是进程内的**（`reserveInFlight` / `releaseInFlight`）：重启后未完成的验收不会被缓存（没有报告可返回，重试即重新执行，如实），也避免映射挂着 `in_progress` 而引擎已死。
 
 **边界**：`verify_task(taskId=…)` 的键**不写入任务快照**（该字段承载任务的派单键，避免覆盖），这一种组合的重建覆盖依赖 `idempotency.json`；不给 `rework_task` / `continue_task` / `cancel_task` / 视觉基准工具加键；不做跨进程分布式幂等（与 visual lock 同一假定）。
+
+### 5.7 细粒度事件流：长任务可观测性（issue #18）
+
+`query_task` 原先只能返回粗粒度状态：长任务（尤其 GUI agent 卡在确认弹窗 / 文件选择对话框 / 授权提示）下，调用方无法区分「agent 正在正常工作」与「已卡死等待人工干预」。本能力让适配器在关键节点上报语义事件。
+
+词表定义在 `src/agents/agent-events.ts`（**零依赖**，避免 `adapter.ts` / `tasks/task.ts` / `tasks/task-store.ts` 之间的循环引用）：
+
+| 事件 | 语义 |
+|---|---|
+| `task_dispatched` | 指令已确认送达 agent |
+| `confirmation_dialog_detected` | 检测到确认类对话框（含残留弹窗清理、原生「选择文件夹」） |
+| `awaiting_user_authorization` | 等待用户授权 / 登录 / 确认 |
+| `file_modification_started` | agent 开始执行（**启发式**：界面运行信号首次出现，不声称文件已改动） |
+| `rework_triggered` | 验收失败后进入返修（引擎侧统一上报，`mode` 区分 auto/manual） |
+
+| 决策 | 实现与理由 |
+|---|---|
+| 钩子归属 | `AgentRunOptions.onEvent`（`src/agents/adapter.ts`），**不是** agent profile——`agent-profiles.json` 是纯 JSON，装不下函数，硬塞会破坏 `AgentProfilesFileSchema` 解析与热重载。「可选」由 `opts.onEvent?.()` + `makeEmitter` 表达 |
+| 存储 | 写**既有** `task.jsonl`（复用 `TaskStore.appendEvent`），**不建内存环形缓冲**：GUI 长任务中宿主可能重启，纯内存队列会丢掉最需要的现场；并行流会产生第二个事实来源与排序不一致 |
+| 内存有界 | 在**读取侧**：新增 `readTextTail(p, maxBytes)`（`src/util/fs.ts`）+ `TaskStore.readRecentAgentEvents(taskId, limit, maxBytes=64KiB)`，只读尾部窗口，内存占用与文件总大小解耦。`readTextTail` 保证从完整行开始（截断点落在换行符上时不丢整行） |
+| 上报健壮性 | 适配器一律经 `makeEmitter`：未提供钩子时空操作，且**吞掉上报异常**——事件上报属观测能力，绝不允许影响任务本体 |
+| 暴露 | `query_task` 的 `eventLimit`（1..50，缺省 10）；`MetaBlockFields.recentEvents`（经 `metaFromTask(meta, extra)` 的 `...extra` 透传）+ 文本区「最近事件」段落。未上报的适配器返回空数组，其余字段与 v0.6.2 一致 |
+| 本版范围 | 只有 **codex** 与 **traework** 真正上报（各 4 个发射点）；zcode / kimicode / qoder 与全部 CLI 适配器保留接口、暂不上报 |
+| 与 `note` 的关系 | `note` 语义不变，仍是进度 / 审计通道（承载 `progressSummary` / `lastRunSignal`）；`recentEvents` 只过滤词表内 5 类，不混入 `note` |
+
+**如实披露**：事件属观测能力而非交付保证——不保证送达，`query_task` 只反映「最后一次落盘的事件」；`file_modification_started` 是启发式推断，确切改动证据请看验收报告的 `changedFiles` / `diffstat`。详见 [事件流](docs/event-stream.md)。
 
 ---
 

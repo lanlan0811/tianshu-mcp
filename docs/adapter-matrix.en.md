@@ -14,6 +14,26 @@ headless CLI/API **or a verified programmatic GUI driver**; agents without eithe
 | **Kimi Code** (Moonshot AI desktop) | plain Electron install (measured 1.0.2) + dedicated `kimicode-gui` CDP adapter | **Windows machine-verified** (success path, unregistered-workspace import + auto-acceptance, failure → rework → re-acceptance same-session loop); macOS marked `research` and fail-closed | standard directories such as `{PROGRAMFILES}/Kimi Code` plus D-drive-first and relative-path templates (`Kimi-Code/Kimi Code/Kimi Code.exe` and friends); on macOS it probes the `Kimi Code.app` bundle | reuses the local Kimi Code login; an existing instance **without CDP** yields `needs_user(close_existing_instance)` — never killed blindly | DOM read-back of the workspace (**full path**), model and thinking tier (pill), execution mode, session id and reply | Injecting `--remote-debugging-port` is enough — **no MSIX COM activation**. **Two renderer processes**: the model / thinking-tier / execution-mode menus render in the `Kimi Browser Overlay` window while the workspace menu and the "switch model" dialog stay in the main window. Tasks are organised by **workspace** (task folder) and **project-less dispatch is not supported**; an unregistered workspace is imported through the native "add workspace" dialog. Three-stage model selection (pill read-back → overlay shortcut menu → "more models…" dialog); thinking tiers are validated against **the tier set the UI actually renders** (official `Low/High/Max`, unofficial `On/Off`); the execution mode is forced to "fully automatic". Run detection: `button.stop` (`aria-label="中断"`) / `send.is-starting`. Cancellation follows the Codex M14 semantics (best-effort stop click plus a bounded `cancelWaitMs` wait, stated plainly when unconfirmed); all six `needs_user` kinds are recoverable via `continue_task`. Details: [kimi-cdp.en.md](kimi-cdp.en.md) |
 | **Qoder CN** (Qoder desktop, CN only) | desktop app + dedicated `qoder-gui` CDP adapter | ✅ **Windows machine-verified** (default-model development in an existing workspace, custom-model development in a newly registered workspace, controlled failure → plan → same-session repair → re-acceptance, 2026-09-22); macOS marked `research` and fail-closed | explicit `gui.exePath` → D-drive-first candidates → relative-path templates (`Qoder CN/Qoder CN.exe`) → standard directories such as `{LOCALAPPDATA}/Programs/Qoder CN`; on macOS it probes the `Qoder CN.app` bundle | reuses the local Qoder CN login; an existing instance without usable CDP is **preserved in place** and turned into `needs_user` — never closed or restarted | DOM read-back of the workspace (**full path**), default/custom model groups, thinking tier (saved in Model Management then read back), the current turn's reply and the session id | `modelSource=default/custom` disambiguates cross-group name clashes; the thinking tier is a **global preference** (never restored automatically) and the permission mode is retained (full access is never enabled automatically). An unregistered directory is imported through New Task → Workspace → New Workspace → Add Read/Write Folder via the native dialog; a checkpoint is written before sending or submitting answers, and an unconfirmed receipt is **never** resent automatically. Details: [qoder-cdp.en.md](qoder-cdp.en.md) |
 
+## E1 — Fine-grained event reporting status (issue #18)
+
+Adapters can report semantic events at key nodes, and `query_task` returns the most recent N
+(see the [event stream doc](event-stream.en.md)). Reporting is an **optional capability**: adapters
+that do not implement it behave exactly as before.
+
+| Agent | Reporting | Events emitted |
+|---|---|---|
+| **Codex** | ✅ implemented | `task_dispatched` / `confirmation_dialog_detected` (stale-dialog cleanup, native "select folder") / `awaiting_user_authorization` (`loginIndicator`, `needs_login`, `needs_user`) / `file_modification_started` (first running signal) |
+| **TraeWork** | ✅ implemented | `task_dispatched` / `confirmation_dialog_detected` (`bindProject` via the native "select folder" dialog) / `awaiting_user_authorization` (`ask_user` suspension) / `file_modification_started` (first running signal) |
+| **ZCode** | ⬜ interface kept, not reporting yet | — |
+| **Kimi Code** | ⬜ interface kept, not reporting yet | — |
+| **Qoder CN** | ⬜ interface kept, not reporting yet | — |
+| **CLI agents** (incl. stub) | ⬜ not applicable (no GUI interaction nodes) | — |
+| Engine side (adapter-independent) | ✅ | `rework_triggered` (automatic rework `mode:"auto"`, manual `rework_task` `mode:"manual"`) |
+
+> `file_modification_started` is a **heuristic**: adapters do not observe the filesystem directly and
+> can only infer that execution started from the UI running signal (stop button). Its detail always
+> says "files may be modified" and **does not claim they were**.
+
 ## Extending
 
 1. Add a profile in `agent-profiles.json` (usually zero code).

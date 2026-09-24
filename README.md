@@ -39,6 +39,7 @@
 
 - **11 个 MCP 工具**：`run_task / continue_task / query_task / list_tasks / get_task_report / cancel_task / verify_task / rework_task / get_profiles`，外加视觉验收的 `prepare_visual_baseline / approve_visual_baseline`
 - **异步契约**：`run_task` 秒回 `taskId`，长任务用 `query_task` 轮询（长任务不卡 `tools/call`）。
+- **长任务可观测（issue #18）**：适配器在关键节点上报细粒度事件（`task_dispatched` / `confirmation_dialog_detected` / `awaiting_user_authorization` / `file_modification_started` / `rework_triggered`），`query_task` 经 `eventLimit`（默认 10）回传最近 N 条——**能区分「agent 正在干活」与「卡在弹窗等人工介入」**。事件上报是可选能力：未实现的适配器行为不变。本版 codex 与 traework 已落地上报。详见 [事件流](docs/event-stream.md)。
 - **客观验收**：自动命令检查（typecheck/lint/test/build，缺则跳过 + 技术栈推导）+ 程序化代码分析（变更清单/diffstat/TODO·debugger·密钥形态等可疑标记），全部相对 **git 基线**，不自动 commit/stash。验收引擎 **fail-closed**：测试命令退出码为 0 但输出显示零用例时判失败；git 项目默认要求相对动工前基线产生变更（纯分析任务可在 `.tianshu-mcp/acceptance.json` 设 `"requireChanges": false` 显式关闭）。
 - **验收并行度**：命令检查默认**有界并行**（`verifyConcurrency`，默认 2、范围 1–4）。检查项之间有顺序依赖时（后续检查读取 build 产物、带 `--fix`、共享缓存目录）请设 `1` 完全退化为串行；项目级 `.tianshu-mcp/acceptance.json` 可覆盖，server 级在 `config.json`。报告与日志格式不变（结果按声明顺序返回）。
 - **失败返修闭环**：自动返修（`autoFixRounds`）+ 手动 `rework_task`；验收失败时自动生成修复计划文件并回填给 agent；轮次用尽 → `needs_attention` 等天枢裁决。
@@ -184,7 +185,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=qoder, planDoc=./plans/development.m
 |---|---|---|
 | `run_task` | write + 审批 | 派活（可带自动验收/自动返修），异步返回 `taskId`；可选 `idempotencyKey`：同键重试恒返回原 `taskId`，不新建任务 |
 | `continue_task` | write + 审批 | 恢复 `needs_user` 的原会话（ZCode 恢复原会话；Codex 按 `user_confirmation` 重新观察 / `login_required` 重派；Kimi Code 恢复原会话并区分提问续答 / 重新观察 / 补发任务书） |
-| `query_task` | read | 轮询状态 / 进度 / 日志尾 |
+| `query_task` | read | 轮询状态 / 进度 / 日志尾 / 最近细粒度事件。可选 `eventLimit`（1..50，默认 10）控制 meta 的 `recentEvents` 条数，长任务下可区分「正常执行」与「卡在弹窗等人」 |
 | `list_tasks` | read | 历史任务过滤列表 |
 | `get_task_report` | read | 某轮验收报告全文（`report.md`） |
 | `cancel_task` | write + 审批 | 取消运行中任务：CLI agent kill 进程树；GUI agent 经 CDP 点击停止并在 `gui.cancelWaitMs`（默认 15s）内有界等待 GUI 空闲，未确认停止时终态明示。对已终态的 GUI 任务，本调用兼任人工确认入口——核实窗口无残留运行后调用可清除 `guiStopUnconfirmed` 待确认标记 |

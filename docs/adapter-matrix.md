@@ -17,6 +17,24 @@
 
 状态图例：✅ 可接入（已实现/已冒烟）｜🔍 调研中｜⬜ 规划/占位｜❌ 已证伪不支持
 
+## E1 — 细粒度事件上报现状（issue #18）
+
+适配器可在关键节点上报语义事件，由 `query_task` 回传最近 N 条（详见 [事件流](event-stream.md)）。
+上报是**可选能力**：未实现的适配器行为完全不变。
+
+| Agent | 是否上报 | 发射的事件 |
+|---|---|---|
+| **Codex** | ✅ 已实现 | `task_dispatched` / `confirmation_dialog_detected`（残留弹窗清理、原生「选择文件夹」）/ `awaiting_user_authorization`（`loginIndicator`、`needs_login`、`needs_user`）/ `file_modification_started`（运行信号首次出现） |
+| **TraeWork** | ✅ 已实现 | `task_dispatched` / `confirmation_dialog_detected`（`bindProject` 经原生「选择文件夹」）/ `awaiting_user_authorization`（`ask_user` 挂起）/ `file_modification_started`（运行信号首次出现） |
+| **ZCode** | ⬜ 保留接口、暂不上报 | — |
+| **Kimi Code** | ⬜ 保留接口、暂不上报 | — |
+| **Qoder CN** | ⬜ 保留接口、暂不上报 | — |
+| **CLI 类 agent**（含 stub） | ⬜ 不适用（无 GUI 交互节点） | — |
+| 引擎侧（与适配器无关） | ✅ | `rework_triggered`（自动返修 `mode:"auto"`、手动 `rework_task` `mode:"manual"`） |
+
+> `file_modification_started` 是**启发式**推断：适配器并不直接观测文件系统，只能从界面运行信号
+> （停止按钮）推断执行已开始，其 detail 一律写「可能开始改动文件」，**不声称已改动**。
+
 ## 扩展新 agent（三步）
 
 1. 数据目录 `agent-profiles.json` 新增 profile（见 agent-profiles.md）；默认能力够用则**零代码**。

@@ -209,7 +209,7 @@ Eleven tools (`src/mcp/tools.ts`), split into three families: `read` (queries, n
 
 **Validation happens in two stages**: `server.ts` first runs `inputSchema.safeParse()` for protocol-level validation (failures return `Error: 参数不合法 — <path>: <message>`); handlers then apply semantic gates, such as the `projectPath` safety check (absolute, exists, realpath-normalized, rejecting the home directory and root-level/system directories), rejecting `mode` for anything but TraeWork, and allowing `allowCreateProject` only for ZCode.
 
-Progress is **persisted, never pushed**: GUI adapters report on the `gui.progressIntervalMs` cadence (default 30 s), `TaskOrchestrator` writes a `note` event into `task.jsonl` and refreshes the snapshot's `progressSummary` / `lastRunSignal`, and `query_task` reads the latest snapshot plus event stream on each call. A poller therefore sees the *last persisted* progress.
+Progress is **persisted, never pushed**: GUI adapters report on the `gui.progressIntervalMs` cadence (default 30 s), `TaskOrchestrator` writes a `note` event into `task.jsonl` and refreshes the snapshot's `progressSummary` / `lastRunSignal`, and `query_task` reads the latest snapshot plus event stream on each call. A poller therefore sees the *last persisted* progress. Besides that free-text progress there is a **semantic** fine-grained event stream (`onEvent`, issue #18), see §5.7 — both are written into the same `task.jsonl`: `note` carries free text, fine-grained events carry node semantics.
 
 ---
 
@@ -308,6 +308,32 @@ The window name is derived from `profile.displayName` (`guiAppNameOf()`, strippi
 **The "in progress" marker is process-local** (`reserveInFlight` / `releaseInFlight`): an unfinished verification is not cached across a restart (there is no report to return, so a retry honestly re-runs), which also prevents a mapping stuck at `in_progress` while the engine is long dead.
 
 **Boundaries**: a `verify_task(taskId=…)` key is **not** written into the task snapshot (that field carries the task's dispatch key, so it is never overwritten), and rebuild coverage for that one combination relies on `idempotency.json`; no keys for `rework_task` / `continue_task` / `cancel_task` / the visual baseline tools; no cross-process distributed idempotency (the same assumption the visual lock makes).
+
+### 5.7 Fine-grained event stream: long-task observability (issue #18)
+
+`query_task` used to return only coarse status: for long tasks — especially GUI agents stuck on confirmation dialogs, file pickers or authorization prompts — callers could not tell "the agent is working normally" apart from "it is stuck waiting for a human". This capability lets adapters report semantic events at key nodes.
+
+The vocabulary lives in `src/agents/agent-events.ts` (**zero dependencies**, to avoid a cycle between `adapter.ts` / `tasks/task.ts` / `tasks/task-store.ts`):
+
+| Event | Meaning |
+|---|---|
+| `task_dispatched` | Instruction confirmed delivered to the agent |
+| `confirmation_dialog_detected` | A confirmation dialog was detected (including stale-dialog cleanup and the native "select folder" dialog) |
+| `awaiting_user_authorization` | Waiting for the user to authorize / log in / confirm |
+| `file_modification_started` | The agent started executing (**heuristic**: the first UI running signal; does not claim files were changed) |
+| `rework_triggered` | Entering rework after acceptance failed (emitted engine-side; `mode` distinguishes auto/manual) |
+
+| Decision | Implementation and rationale |
+|---|---|
+| Hook location | `AgentRunOptions.onEvent` (`src/agents/adapter.ts`), **not** the agent profile — `agent-profiles.json` is plain JSON and cannot hold a function; forcing one in would break `AgentProfilesFileSchema` parsing and hot reload. "Optional" is expressed by `opts.onEvent?.()` + `makeEmitter` |
+| Storage | Written into the **existing** `task.jsonl` (reusing `TaskStore.appendEvent`), **not** an in-memory ring buffer: during long GUI tasks the host may restart and a purely in-memory queue would lose exactly the scene you most need; a parallel stream would create a second source of truth with no shared ordering |
+| Bounded memory | Handled on the **read** side: new `readTextTail(p, maxBytes)` (`src/util/fs.ts`) + `TaskStore.readRecentAgentEvents(taskId, limit, maxBytes=64KiB)` read only a tail window, so memory use is decoupled from total file size. `readTextTail` guarantees the result starts at a whole line (it does not drop a whole line when the cut lands on a newline) |
+| Reporting robustness | Adapters always report through `makeEmitter`: a no-op when no hook is provided, and it **swallows reporting exceptions** — event reporting is an observability concern and must never affect the task itself |
+| Exposure | `query_task`'s `eventLimit` (1..50, default 10); `MetaBlockFields.recentEvents` (passed through `metaFromTask(meta, extra)`'s `...extra`) plus a "recent events" section in the text area. Non-reporting adapters return an empty array and every other field matches v0.6.2 |
+| Scope in this version | Only **codex** and **traework** actually report (four emission points each); zcode / kimicode / qoder and all CLI adapters keep the interface but do not report yet |
+| Relationship to `note` | `note` is unchanged and remains the progress / audit channel (carrying `progressSummary` / `lastRunSignal`); `recentEvents` filters only the five vocabulary kinds and never mixes `note` in |
+
+**Disclosed honestly**: events are an observability capability, not a delivery guarantee — delivery is not guaranteed, and `query_task` reflects only the last persisted event; `file_modification_started` is a heuristic, so read `changedFiles` / `diffstat` from the acceptance report for hard evidence of changes. See [event stream](docs/event-stream.en.md).
 
 ---
 
