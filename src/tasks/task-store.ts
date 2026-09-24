@@ -20,9 +20,11 @@ import {
   readDirSafe,
   readJsonSafe,
   readTextSafe,
+  readTextTail,
   writeJsonAtomic,
   writeTextAtomic,
 } from "../util/fs.js";
+import { isAgentEventName } from "../agents/agent-events.js";
 import { nowIso } from "../util/id.js";
 import { Logger } from "../util/log.js";
 import { reportToJsonable, reportToMd } from "../verify/report.js";
@@ -106,6 +108,33 @@ export class TaskStore {
       }
     }
     return out;
+  }
+
+  /**
+   * 读取最近的细粒度 agent 事件（issue #18）。
+   *
+   * 长任务的 task.jsonl 会无限增长，因此**只读尾部窗口**（默认 64KiB）而不是全文：
+   * 内存占用与文件总大小解耦，这是 issue 提到的「避免长时间运行任务内存膨胀」的落点。
+   * 返回最后 `limit` 条属于 AGENT_EVENT_NAMES 的事件（按写入顺序，即时间正序）。
+   */
+  async readRecentAgentEvents(
+    taskId: string,
+    limit: number,
+    maxBytes = 64 * 1024,
+  ): Promise<TaskEvent[]> {
+    const text = await readTextTail(this.jsonlPath(taskId), maxBytes);
+    if (!text) return [];
+    const matched: TaskEvent[] = [];
+    for (const line of text.split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        const ev = JSON.parse(line) as TaskEvent;
+        if (isAgentEventName(ev.event)) matched.push(ev);
+      } catch {
+        // 跳过坏行
+      }
+    }
+    return matched.slice(-limit);
   }
 
   /* ---------- 快照 ---------- */

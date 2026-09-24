@@ -22,6 +22,7 @@ import type {
   TaskContext,
 } from "../adapter.js";
 import type { GuiProfile } from "../../config/schema.js";
+import { makeEmitter, type AgentEventEmitter } from "../agent-events.js";
 import { mkdirp } from "../../util/fs.js";
 import { parseCodexModel, exactUiName, parseTriggerValue, type NormalizedLevel } from "./model.js";
 import { matchCodexProject, projectBasename } from "./project.js";
@@ -185,6 +186,8 @@ export async function runCodexTask(args: RunCodexArgs): Promise<AgentRunResult> 
   const deps = { ...DEFAULT_DEPS, ...args.deps };
   const gui = codexGuiOf(resolved);
   const { logger, close } = fileLogger(logFile, opts.logger);
+  // 细粒度事件上报（issue #18）：未提供钩子时为空操作，失败不影响任务本体。
+  const emit = makeEmitter(opts.onEvent);
   let cdp: CodexCdpClient | undefined;
   const result = (extra: Partial<AgentRunResult>): AgentRunResult => ({
     ok: false,
@@ -244,13 +247,17 @@ export async function runCodexTask(args: RunCodexArgs): Promise<AgentRunResult> 
       cdp?.disconnect();
       cdp = next;
     };
-    if (await cdp.exists("loginIndicator"))
+    if (await cdp.exists("loginIndicator")) {
+      await emit("awaiting_user_authorization", "Codex 登录指示可见，等待用户完成登录或引导", {
+        needsUserKind: "login_required",
+      });
       return result({
         endReason: "needs_user",
         needsUserKind: "login_required",
         pendingQuestion: "请在 Codex 窗口中完成登录或引导，然后调用 continue_task 确认。",
         session: { boundProjectPath: ctx.projectPath, model: spec.model, permissionMode: gui.defaultPermissionMode },
       });
+    }
 
     await cdp.dismissMenus();
 
@@ -305,7 +312,7 @@ export async function runCodexTask(args: RunCodexArgs): Promise<AgentRunResult> 
         }
         logger.info(`[codex] 已选择既有项目：${matched.item.name}`);
       } else {
-        const created = await createProject(cdp, ctx.projectPath, aumid, gui, deps, logger);
+        const created = await createProject(cdp, ctx.projectPath, aumid, gui, deps, logger, emit);
         if (!created.ok)
           return result({
             hardFailure: true,
@@ -411,6 +418,12 @@ export async function runCodexTask(args: RunCodexArgs): Promise<AgentRunResult> 
       logger.info(
         `[codex] 指令已确认发送（对话区=${seenMessage}，输入清空=${seenCleared}，运行信号=${seenRunning}）`,
       );
+      await emit("task_dispatched", `第 ${ctx.round} 轮指令已确认送达 Codex`, {
+        round: ctx.round,
+        seenMessage,
+        seenCleared,
+        seenRunning,
+      });
     }
 
     // ---- 步骤 6：运行检测 ----
@@ -423,6 +436,8 @@ export async function runCodexTask(args: RunCodexArgs): Promise<AgentRunResult> 
     }
     let cdpFailures = 0;
     let lastProgress = 0;
+    // file_modification_started 每次进程运行只发一次（首次观测到运行信号时）
+    let emittedRunning = false;
     for (;;) {
       // 取消（issue #6）：不止退出 MCP 等待循环，还要尽力点击 GUI 停止按钮并等待空闲，
       // 结果经 guiStop 上报，由编排方在终态文案中如实反映。
@@ -459,22 +474,41 @@ export async function runCodexTask(args: RunCodexArgs): Promise<AgentRunResult> 
         }
         continue;
       }
+      // 判定前先记下上一轮的运行信号：判定的输出含本轮状态，二者比较才能识别「首次开始运行」
+      const wasRunning = state.sawRunning;
       const verdict = judgeCodexPoll(poll, state, gui.stableRounds, gui.idleTimeoutMs, Date.now(), gui.stallTimeoutMs);
       state = verdict.state;
+      if (!wasRunning && state.sawRunning && !emittedRunning) {
+        emittedRunning = true;
+        // 文案如实保留：Codex 适配器并不直接观测文件系统，无法声称文件确已改动。
+        await emit("file_modification_started", "停止按钮出现，Codex 开始执行（可能开始改动文件）", {
+          round: ctx.round,
+          evidence: verdict.evidence,
+        });
+      }
       if (Date.now() - lastProgress >= gui.progressIntervalMs) {
         const note = `Codex 进度：${verdict.kind}；运行证据=${verdict.evidence}；对话哈希=${state.hash}；稳定轮=${state.stable}`;
         await Promise.resolve(opts.onProgress?.(note)).catch(() => {});
         logger.info(note);
         lastProgress = Date.now();
       }
-      if (verdict.kind === "needs_login")
+      if (verdict.kind === "needs_login") {
+        await emit("awaiting_user_authorization", "Codex 需要登录，等待用户完成登录", {
+          needsUserKind: "login_required",
+        });
         return result({
           endReason: "needs_user",
           needsUserKind: "login_required",
           pendingQuestion: "Codex 需要登录，请在窗口中完成登录后调用 continue_task 确认。",
           session: { boundProjectPath: ctx.projectPath, model: spec.model, permissionMode: gui.defaultPermissionMode },
         });
-      if (verdict.kind === "needs_user")
+      }
+      if (verdict.kind === "needs_user") {
+        await emit(
+          "awaiting_user_authorization",
+          "停止按钮持续可见且对话长时间未变化，疑似等待用户确认（方案确认/订阅确认等）",
+          { needsUserKind: "user_confirmation" },
+        );
         return result({
           endReason: "needs_user",
           needsUserKind: "user_confirmation",
@@ -482,6 +516,7 @@ export async function runCodexTask(args: RunCodexArgs): Promise<AgentRunResult> 
             "Codex 停止按钮持续可见且对话内容长时间未变化，疑似在等待用户确认（方案确认/订阅确认等）。请在 Codex 窗口完成处理后调用 continue_task(taskId, message=已处理说明) 恢复；恢复后仅重新接入观察，不会发送消息。",
           session: { boundProjectPath: ctx.projectPath, model: spec.model, permissionMode: gui.defaultPermissionMode },
         });
+      }
       if (verdict.kind === "idle_timeout")
         return result({ endReason: "idle_timeout", error: "Codex 空闲超时；已停止 MCP 等待并保留现场" });
       if (verdict.kind === "finished")
@@ -563,6 +598,7 @@ async function createProject(
   gui: GuiProfile,
   deps: CodexRunDeps,
   logger: AgentRunLogger,
+  emit: AgentEventEmitter,
 ): Promise<{ ok: boolean; error?: string }> {
   // 新建会话后输入框会重渲染，触发器可能短暂缺席 —— 先等它出现再点。
   if (!(await waitFor(cdp, "projectPickerTrigger", deps, 12_000))) {
@@ -602,7 +638,12 @@ async function createProject(
     .map((p) => p.pid);
   // 先清理残留原生对话框（上一轮失败可能留下，遮挡界面且会让本轮误判「无新对话框」）
   const closed = await deps.closeDialogs(pids);
-  if (closed) logger.warn(`[codex] 已清理 ${closed} 个残留原生对话框`);
+  if (closed) {
+    logger.warn(`[codex] 已清理 ${closed} 个残留原生对话框`);
+    await emit("confirmation_dialog_detected", `清理残留原生对话框 ${closed} 个`, {
+      nativeDialogsClosed: closed,
+    });
+  }
   // 原生文件夹选择器只在应用窗口处于前台时弹出；无人值守下先用 COM 激活把窗口带到前台
   // （SetForegroundWindow 会被前台锁拒绝，应用模型激活不会）。
   const focused = aumid ? await deps.focusApp(aumid) : false;
@@ -614,6 +655,9 @@ async function createProject(
   const baseline = await deps.listDialogs(pids);
   if (!(await cdp.clickTrusted("sourceFolderArea")))
     return { ok: false, error: "无法触发「源文件夹」点击（元素不可见或落点被遮挡）" };
+  await emit("confirmation_dialog_detected", "已唤起原生「选择文件夹」对话框", {
+    dialog: "source_folder",
+  });
   await deps.sleep(1500);
 
   const selected = await deps.selectFolder(projectPath, pids, baseline);

@@ -59,6 +59,16 @@ export interface MetaBlockFields {
   idempotencyReplay?: "hit" | "in_progress";
   /** 未传幂等键时，同工作区已有的未结束任务（issue #15 的重复派单提示，仅供人工判断） */
   projectActiveTask?: { taskId: string; status: string };
+  /**
+   * 最近的细粒度 agent 事件（issue #18），时间正序、最多 `eventLimit` 条。
+   * 仅 `query_task` 填充；未实现事件上报的适配器为空数组。旧的调用方忽略本字段即可。
+   */
+  recentEvents?: {
+    ts: string;
+    event: string;
+    detail?: string;
+    data?: Record<string, unknown>;
+  }[];
 }
 
 export type ToolResult = {

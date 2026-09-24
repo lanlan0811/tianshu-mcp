@@ -58,6 +58,47 @@ export async function readTextSafe(p: string): Promise<string | null> {
   }
 }
 
+/**
+ * 读取文件**尾部最多 maxBytes 字节**（issue #18）。
+ *
+ * 用途：`task.jsonl` 会随长任务无限增长，`readTextSafe` 全文读入会在长任务上膨胀内存。
+ * 本函数只读尾部窗口，把内存占用与文件总大小解耦。
+ *
+ * 语义：返回的文本保证**从完整行开始**——若截断点落在行中间，首个残行被丢弃，
+ * 避免把半个 JSON 行交给调用方。文件不存在或读失败返回 null（与 readTextSafe 一致）。
+ * 文件总长不超过 maxBytes 时返回全文（不做任何丢弃）。
+ */
+export async function readTextTail(p: string, maxBytes: number): Promise<string | null> {
+  let handle: fsp.FileHandle;
+  try {
+    handle = await fsp.open(p, "r");
+  } catch {
+    return null;
+  }
+  try {
+    const stat = await handle.stat();
+    if (stat.size <= maxBytes) return await handle.readFile({ encoding: "utf8" });
+    // 多读 1 字节：用于判断截断点是否恰好落在行首
+    const readFrom = stat.size - maxBytes - 1;
+    const len = stat.size - readFrom;
+    const buf = Buffer.allocUnsafe(len);
+    const { bytesRead } = await handle.read(buf, 0, len, readFrom);
+    let text = buf.subarray(0, bytesRead).toString("utf8");
+    if (text[0] === "\n") {
+      // readFrom 处正是换行符 → 其后的内容天然从行首开始，无需丢弃
+      text = text.slice(1);
+    } else {
+      const nl = text.indexOf("\n");
+      text = nl === -1 ? "" : text.slice(nl + 1);
+    }
+    return text;
+  } catch {
+    return null;
+  } finally {
+    await handle.close();
+  }
+}
+
 export async function readJsonSafe<T>(p: string): Promise<T | null> {
   const text = await readTextSafe(p);
   if (text == null) return null;

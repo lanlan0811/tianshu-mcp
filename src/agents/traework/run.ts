@@ -19,6 +19,7 @@ import type {
   TaskContext,
 } from "../adapter.js";
 import type { GuiProfile } from "../../config/schema.js";
+import { makeEmitter } from "../agent-events.js";
 import {
   CdpDisconnectedError,
   CdpUnavailableError,
@@ -249,6 +250,8 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
   const deps: TraeworkRunDeps = { ...DEFAULT_DEPS, ...args.deps };
   const gui = guiOf(resolved);
   const { logger, close: closeLog } = makeFileLogger(logFile, args.logger);
+  // 细粒度事件上报（issue #18）：未提供钩子时为空操作，失败不影响任务本体。
+  const emit = makeEmitter(opts.onEvent);
   let endReason: string | undefined;
   let keptInstance = false;
   const fail = (error: string, extra: Partial<AgentRunResult> = {}): AgentRunResult => ({
@@ -351,6 +354,16 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
       sleep: deps.sleep,
       dialogWaitTimeoutMs: deps.dialogWaitTimeoutMs,
     });
+    if (bound.method === "native-dialog") {
+      // 走原生「选择文件夹」对话框绑定：这正是无人值守下最容易卡住的确认类交互
+      await emit(
+        "confirmation_dialog_detected",
+        bound.bound
+          ? `项目绑定经原生「选择文件夹」对话框完成：${bound.message}`
+          : `原生「选择文件夹」对话框驱动失败：${bound.message}`,
+        { dialog: "source_folder", bound: bound.bound },
+      );
+    }
     if (!bound.bound) {
       return stop("setup_failed", `项目文件夹绑定失败（${bound.method}）：${bound.message}`, {
         hardFailure: true,
@@ -396,6 +409,10 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
     const promptText = buildPromptText(ctx.task, ctx.context, ctx.feedback);
     const marker = makeMarker();
     await typeAndSend(cdp, marker + promptText, { selectors: gui.selectors, logger, sleep: deps.sleep });
+    await emit("task_dispatched", `第 ${ctx.round} 轮任务书已发送至 TraeWork`, {
+      round: ctx.round,
+      chars: promptText.length,
+    });
 
     // ---- 7. 轮询到完成 ----
     const base = await cdp.text("messageContainer", gui.selectors);
@@ -452,7 +469,16 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
       const live = interpretLiveness(liveness);
       const now = Date.now();
       if (live.running) {
-        if (runningSince === 0) runningSince = now;
+        if (runningSince === 0) {
+          runningSince = now;
+          // 首次由静止转为运行：会话确实开始干活了。文案如实保留 —— 适配器并不直接
+          // 观测文件系统，无法声称文件确已改动。
+          // eslint-disable-next-line no-await-in-loop
+          await emit("file_modification_started", "运行信号首次出现，TraeWork 开始执行（可能开始改动文件）", {
+            round: ctx.round,
+            evidence: live.evidence,
+          });
+        }
         if (!runningWarned && now - runningSince >= gui.idleTimeoutMs) {
           logger.warn(
             `[traework] 运行信号已持续 ${Math.round((now - runningSince) / 1000)}s（${live.evidence}），仅记录诊断，继续等待`,
@@ -491,6 +517,11 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
         endReason = "ask_user";
         logger.warn("[traework] 模型发起原生提问（ask_user），会话被阻塞，按本轮结束处理");
         replyText = verdict.added;
+        // 这是「卡在人工介入」的典型形态，必须让调用方能从事件流直接看出来
+        // eslint-disable-next-line no-await-in-loop
+        await emit("awaiting_user_authorization", "模型发起原生提问（ask_user），会话被阻塞等待用户回答", {
+          endReason: "ask_user",
+        });
         await cdp.pressEscape().catch(() => undefined);
         break;
       }

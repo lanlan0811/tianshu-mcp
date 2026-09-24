@@ -294,16 +294,17 @@ export class TaskManager {
     meta.updatedAt = nowIso();
     meta.finishedAt = undefined;
     meta.reworkFeedback = feedback?.trim() || undefined;
-    if (meta.reworkFeedback) {
-      await this.store.appendEvent(
-        meta.taskId,
-        "note",
-        "queued",
-        `rework 请求，追加指示: ${meta.reworkFeedback.slice(0, 200)}`,
-      );
-    } else {
-      await this.store.appendEvent(meta.taskId, "note", "queued", "rework 请求（无追加指示）");
-    }
+    // 类型化事件（issue #18）：手动返修是引擎侧节点，事件名与自动返修统一为 rework_triggered，
+    // 便于调用方用同一条规则观察「返修是否被触发」；mode 区分人工 / 自动。
+    await this.store.appendEvent(
+      meta.taskId,
+      "rework_triggered",
+      "queued",
+      meta.reworkFeedback
+        ? `rework 请求，追加指示: ${meta.reworkFeedback.slice(0, 200)}`
+        : "rework 请求（无追加指示）",
+      { mode: "manual" },
+    );
     await this.store.writeSnapshot(meta);
     this.tasks.set(taskId, meta);
     this.enqueue(meta);

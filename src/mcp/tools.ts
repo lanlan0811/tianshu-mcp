@@ -63,7 +63,11 @@ export const TOOL_DEFS: ToolDef[] = [
   {
     name: "query_task",
     description:
-      "查询任务状态 / 进度 / 最近日志尾部（默认 agent.log 末 40 行）。返回任务 meta 与日志片段。",
+      "查询任务状态 / 进度 / 最近日志尾部（默认 agent.log 末 40 行）/ 最近细粒度事件。返回任务 meta 与日志片段。" +
+      "meta.recentEvents 为最近 N 条 agent 事件（eventLimit 缺省 10、上限 50），" +
+      "取值 task_dispatched / confirmation_dialog_detected / awaiting_user_authorization / " +
+      "file_modification_started / rework_triggered —— 长任务下可据此区分「正常执行」与「卡在弹窗等人」。" +
+      "未实现事件上报的适配器该数组为空，其余字段不变。",
     inputSchema: QueryTaskParamsSchema,
     capability: "read",
     requireApproval: false,

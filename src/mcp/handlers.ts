@@ -25,6 +25,7 @@ import {
   type ServerConfig,
   type ProjectRecord,
 } from "../config/schema.js";
+import { QUERY_TASK_EVENT_LIMIT_DEFAULT } from "../config/schema.js";
 import { toAcceptanceDef, type DataHome } from "../config/store.js";
 import type { TaskManager } from "../tasks/task-manager.js";
 import type { AcceptanceEngine } from "../verify/acceptance.js";
@@ -638,14 +639,22 @@ function queryTaskHandler(ctx: AppContext): Handler {
       if (await existsFile(logFile)) logTail = await readLogTail(logFile, tailLines);
     }
     const statusLine = describeStatus(meta);
+    const eventLimit = args.eventLimit ?? QUERY_TASK_EVENT_LIMIT_DEFAULT;
+    const recentEvents = await store.readRecentAgentEvents(meta.taskId, eventLimit);
     const lines = [
       statusLine,
       meta.lastMessage ? `最近消息: ${meta.lastMessage}` : "",
       logTail
         ? `--- agent 日志尾部（${logTail.split("\n").length} 行）---\n${logTail}`
         : "（暂无 agent 日志）",
+      // 细粒度事件（issue #18）：时间正序，便于直接看出「卡在哪个节点」
+      recentEvents.length
+        ? `--- 最近事件（${recentEvents.length} 条，旧 → 新）---\n${recentEvents
+            .map((e) => `[${e.ts}] ${e.event}${e.detail ? ` — ${e.detail}` : ""}`)
+            .join("\n")}`
+        : "",
     ].filter((s) => s !== "");
-    return formatToolResult(lines.join("\n"), metaFromTask(meta));
+    return formatToolResult(lines.join("\n"), metaFromTask(meta, { recentEvents }));
   };
 }
 

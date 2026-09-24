@@ -117,9 +117,18 @@ export const RunTaskParamsSchema = z.object({
 });
 export type RunTaskParams = z.infer<typeof RunTaskParamsSchema>;
 
+/** query_task 返回的细粒度事件条数默认值（issue #18） */
+export const QUERY_TASK_EVENT_LIMIT_DEFAULT = 10;
+
 export const QueryTaskParamsSchema = z.object({
   taskId: z.string().min(1),
   tailLines: z.number().int().positive().optional(),
+  /**
+   * 返回最近 N 条细粒度 agent 事件（issue #18）：task_dispatched /
+   * confirmation_dialog_detected / awaiting_user_authorization / file_modification_started /
+   * rework_triggered。缺省 10，上限 50。未实现事件上报的适配器返回空数组。
+   */
+  eventLimit: z.number().int().min(1).max(50).optional(),
 });
 export type QueryTaskParams = z.infer<typeof QueryTaskParamsSchema>;
 

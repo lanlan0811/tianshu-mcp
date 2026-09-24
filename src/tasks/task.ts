@@ -4,6 +4,7 @@
  */
 import type { TraeworkMode, ReasoningLevel, IdempotencyScope } from "../config/schema.js";
 import type { VisualReport } from "../visual/types.js";
+import type { AgentEventName } from "../agents/agent-events.js";
 
 /**
  * 任务工作区模式（issue #12）：
@@ -59,7 +60,9 @@ export type TaskEventName =
   | "interrupted"
   | "timeout_killed"
   | "gui_residual_acknowledged"
-  | "note";
+  | "note"
+  // 细粒度 agent 事件（issue #18）：与 AGENT_EVENT_NAMES 同源，避免两处词表漂移。
+  | AgentEventName;
 
 export interface TaskEvent {
   ts: string;

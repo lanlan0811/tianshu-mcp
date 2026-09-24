@@ -933,3 +933,132 @@ describe("Codex TaskManager 恢复与取消", () => {
     await waitStatus(manager, m2.taskId, ["succeeded", "failed", "needs_attention", "cancelled", "interrupted"], 30_000);
   }, 60_000);
 });
+
+/* ---------------- issue #18：细粒度事件上报 ---------------- */
+
+/** 收集事件的 opts（复用既有 opts() 的 logger / onProgress 约定） */
+function optsWithEvents(sink: string[]): AgentRunOptions {
+  return {
+    logger,
+    onProgress: () => {},
+    onEvent: (ev) => {
+      sink.push(ev.kind);
+    },
+  };
+}
+
+/** 登录指示可见：直接命中 connectStableCodex 之后的 loginIndicator 分支 */
+class LoginIndicatorCodex extends FakeCodex {
+  override async exists(key: string) {
+    if (key === "loginIndicator") return true;
+    return super.exists(key);
+  }
+}
+
+describe("Codex 适配器的细粒度事件（issue #18）", () => {
+  it("既有项目：派发与开始执行各上报一次，且 file_modification_started 不重复", async () => {
+    const project = await makeTmpRoot("codex-events-existing");
+    cleanup.push(project);
+    const fake = new FakeCodex(project, true);
+    const kinds: string[] = [];
+
+    const result = await runCodexTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: optsWithEvents(kinds),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+
+    expect(result.ok).toBe(true);
+    expect(kinds.filter((k) => k === "task_dispatched")).toHaveLength(1);
+    // generatingRounds=3，轮询多轮但只在首次运行信号出现时上报一次
+    expect(kinds.filter((k) => k === "file_modification_started")).toHaveLength(1);
+    // 既有项目走下拉/aria 绑定，不经过原生对话框
+    expect(kinds).not.toContain("confirmation_dialog_detected");
+    expect(kinds).not.toContain("awaiting_user_authorization");
+  });
+
+  it("新建项目：清理残留弹窗与唤起原生「选择文件夹」各上报一次 confirmation_dialog_detected", async () => {
+    const project = await makeTmpRoot("codex-events-newproject");
+    cleanup.push(project);
+    const fake = new FakeCodex(project, false);
+    const kinds: string[] = [];
+
+    const result = await runCodexTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: optsWithEvents(kinds),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake, {
+        listDialogs: async () => ["existing-dialog"],
+        selectFolder: async () => ({ ok: true, message: "selected" }),
+        // 模拟上一轮残留了 2 个未关闭的原生对话框
+        closeDialogs: async () => 2,
+      }),
+    });
+
+    expect(result.ok).toBe(true);
+    expect(kinds.filter((k) => k === "confirmation_dialog_detected")).toHaveLength(2);
+    expect(kinds).toContain("task_dispatched");
+  });
+
+  it("登录指示可见：上报 awaiting_user_authorization 且不上报 task_dispatched", async () => {
+    const project = await makeTmpRoot("codex-events-login");
+    cleanup.push(project);
+    const fake = new LoginIndicatorCodex(project, true);
+    const kinds: string[] = [];
+
+    const result = await runCodexTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: optsWithEvents(kinds),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+
+    expect(result.endReason).toBe("needs_user");
+    expect(result.needsUserKind).toBe("login_required");
+    expect(kinds).toEqual(["awaiting_user_authorization"]);
+    expect(fake.sent).toBe(0);
+  });
+
+  it("未提供 onEvent 时全程正常且不抛错（可选能力）", async () => {
+    const project = await makeTmpRoot("codex-events-none");
+    cleanup.push(project);
+    const fake = new FakeCodex(project, true);
+
+    const result = await runCodexTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: { logger, onProgress: () => {} },
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+
+    expect(result.ok).toBe(true);
+  });
+
+  it("上报钩子抛错不影响任务结果", async () => {
+    const project = await makeTmpRoot("codex-events-throw");
+    cleanup.push(project);
+    const fake = new FakeCodex(project, true);
+
+    const result = await runCodexTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: {
+        logger,
+        onProgress: () => {},
+        onEvent: () => {
+          throw new Error("模拟上报失败");
+        },
+      },
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.endReason).toBe("reply_stable");
+  });
+});

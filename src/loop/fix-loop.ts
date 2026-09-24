@@ -307,6 +307,18 @@ export class TaskOrchestrator {
             `第 ${round} 轮验收失败，进入第 ${round + 1} 轮返修`,
           );
           round += 1;
+          // 事件流（issue #18）：返修是与适配器无关的引擎侧节点，由编排器直接上报。
+          await store.appendEvent(
+            meta.taskId,
+            "rework_triggered",
+            "fixing",
+            `第 ${round - 1} 轮验收失败，进入第 ${round} 轮自动返修`,
+            {
+              round,
+              mode: "auto",
+              failedChecks: verdict.report.checks.filter((c) => !c.passed && !c.skipped).map((c) => c.name),
+            },
+          );
 
           if (meta.agentId === "codex") {
             // 决策 11/12：Codex 的修复计划由 MCP 自动生成，落在**项目内** .zcode/plans/
@@ -514,6 +526,18 @@ export class TaskOrchestrator {
           this.meta.lastRunSignal = /运行证据=([^；]+)/.exec(note)?.[1] ?? this.meta.lastRunSignal;
           this.meta.updatedAt = new Date().toISOString();
           await this.deps.store.appendEvent(ctx.taskId, "note", this.meta.status, note);
+          await this.deps.store.writeSnapshot(this.meta);
+        },
+        // 细粒度事件（issue #18）：适配器主动上报，编排器只负责落盘，不做任何解释或推断。
+        onEvent: async (ev) => {
+          this.meta.updatedAt = new Date().toISOString();
+          await this.deps.store.appendEvent(
+            ctx.taskId,
+            ev.kind,
+            this.meta.status,
+            ev.detail,
+            ev.data,
+          );
           await this.deps.store.writeSnapshot(this.meta);
         },
       });

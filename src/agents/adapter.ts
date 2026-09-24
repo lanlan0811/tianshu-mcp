@@ -7,6 +7,7 @@ import type { SpawnSpec } from "./spawn.js";
 import type { AgentProfile, TraeworkMode } from "../config/schema.js";
 import type { ReasoningLevel } from "../config/schema.js";
 import type { WorkspaceMode } from "../tasks/task.js";
+import type { OnAgentEvent } from "./agent-events.js";
 
 export interface ResolvedAgent {
   id: string;
@@ -135,6 +136,15 @@ export interface AgentRunOptions {
   logger: AgentRunLogger;
   /** 进度回报（写入任务事件流，供 query_task 观察） */
   onProgress?: (note: string) => void | Promise<void>;
+  /**
+   * 细粒度事件上报（issue #18）：适配器在关键节点主动上报语义事件
+   * （task_dispatched / confirmation_dialog_detected / awaiting_user_authorization /
+   * file_modification_started），由编排器写入任务事件流，`query_task` 回传最近 N 条。
+   *
+   * **可选能力**：未实现的适配器不调用即可，行为与未引入本能力时完全一致。
+   * 钩子归属 `AgentRunOptions` 而非 agent profile —— profile 是纯 JSON 数据，装不下函数。
+   */
+  onEvent?: OnAgentEvent;
 }
 
 /** 只依赖用到的最小日志接口，避免 adapter 层与 Logger 实现耦合 */
