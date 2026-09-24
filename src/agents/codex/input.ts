@@ -4,6 +4,7 @@
  */
 import path from "node:path";
 import type { ValidatedReference } from "../zcode/references.js";
+import { renderDirectiveLines, type RepairDirectives } from "../../verify/directives.js";
 
 export interface InitialPromptInput {
   task: string;
@@ -58,6 +59,11 @@ export interface FixPromptInput {
   reportPath?: string;
   /** 失败命令的原始输出摘要（可选，进一步保证可复现） */
   evidence?: string;
+  /**
+   * 结构化修复指令（issue #19，可选）：把「哪一行 / 什么问题 / 做什么」直接写进指令，
+   * 省去 Codex 从整篇报告里定位的开销。缺省或为空时不改变既有文案。
+   */
+  directives?: RepairDirectives;
 }
 
 /**
@@ -72,6 +78,13 @@ export function buildFixPrompt(input: FixPromptInput): string {
     "",
     input.summary,
   ];
+  if (input.directives?.items.length) {
+    lines.push(
+      "",
+      "【结构化修复指令（摘要，最多 10 条；完整清单见修复计划文档）】",
+      ...renderDirectiveLines(input.directives, 10),
+    );
+  }
   if (input.evidence?.trim()) lines.push("", "关键证据：", "```text", input.evidence.trim().slice(-2000), "```");
   if (input.reportPath) lines.push("", `完整验收报告：${input.reportPath}`);
   lines.push("", "修复完成后正常结束本轮即可。");

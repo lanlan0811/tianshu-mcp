@@ -17,6 +17,9 @@ export function reportToJsonable(report: VerifyReport): Record<string, unknown> 
     message: report.message,
     ...(report.blockingIssues ? { blockingIssues: report.blockingIssues } : {}),
     ...(report.visual ? { visual: report.visual } : {}),
+    // issue #19：持久化结构化修复指令。手动返修路径（fix-loop 的 qoder 分支）会重读 report.json，
+    // 且跨 server 重启后仍要能拿到指令，故必须落盘而非仅存内存。
+    ...(report.repairDirectives ? { repairDirectives: report.repairDirectives } : {}),
   };
 }
 
@@ -73,6 +76,20 @@ export function reportToMd(report: VerifyReport): string {
     for (const w of a.warnings) L.push(`- [WARN] ${w}`);
   }
   for (const n of a.notes) L.push(`- [INFO] ${n}`);
+  L.push("", "## 结构化修复指令", "");
+  if (report.repairDirectives?.items.length) {
+    L.push(...report.repairDirectives.items.map((d) => {
+      const loc = d.file ? `\`${d.file}${d.line ? `:${d.line}` : ""}\`` : "（无具体文件）";
+      return `- ${loc} — ${d.issue} → ${d.action}${d.source ? `（来源 ${d.source}）` : ""}`;
+    }), "");
+  } else {
+    L.push(
+      `（不可用，请改看上方各检查项的输出尾部）原因：${
+        report.repairDirectives?.fallbackReason ?? "本轮报告未生成结构化指令"
+      }`,
+      "",
+    );
+  }
   L.push("", visualEvidence(report), "", "---", "", report.message, "");
   return L.join("\n");
 }

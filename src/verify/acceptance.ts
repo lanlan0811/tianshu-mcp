@@ -18,6 +18,7 @@ import { type AcceptanceCheckDef, type ServerConfig } from "../config/schema.js"
 import { toAcceptanceDef } from "../config/store.js";
 import { runVerifyCommand, makeSkipResult } from "./runner.js";
 import { analyzeChanges } from "./code-analysis.js";
+import { extractRepairDirectives } from "./directives.js";
 import { captureBaseline, gitDiffCheckSince } from "./git-baseline.js";
 import { nowIso } from "../util/id.js";
 import type { VerifyReport, CheckResult } from "../tasks/task.js";
@@ -468,6 +469,11 @@ export class AcceptanceEngine {
       ...(blockingIssues.length ? { blockingIssues } : {}),
       ...(visual ? { visual } : {}),
     };
+
+    // issue #19：把失败原因解析为可直接执行的指令。**通过的轮次不提取**（没有要修的东西，
+    // 徒增报告体积）；失败的轮次一律挂载——即使只得到 fallbackReason，渲染方也要如实说明
+    // 「结构化指令不可用，请回退完整报告」，而不是假装没有这个能力。
+    if (!passed) report.repairDirectives = extractRepairDirectives(report);
     await this.store.saveReport(req.taskId, report);
     this.logger.info(
       `任务 ${req.taskId} 第 ${req.round} 轮验收: ${passed ? "通过" : "失败"}（${checks.length} 项检查）`,

@@ -273,6 +273,7 @@ export class TaskManager {
   async rework(
     taskId: string,
     feedback?: string,
+    repairHint?: string,
   ): Promise<{ found: boolean; reason?: string; meta?: TaskMeta }> {
     const meta = (await this.getMeta(taskId)) ?? undefined;
     if (!meta) return { found: false, reason: `任务不存在: ${taskId}` };
@@ -294,15 +295,17 @@ export class TaskManager {
     meta.updatedAt = nowIso();
     meta.finishedAt = undefined;
     meta.reworkFeedback = feedback?.trim() || undefined;
+    meta.reworkHint = repairHint?.trim() || undefined;
     // 类型化事件（issue #18）：手动返修是引擎侧节点，事件名与自动返修统一为 rework_triggered，
     // 便于调用方用同一条规则观察「返修是否被触发」；mode 区分人工 / 自动。
+    const hintSuffix = meta.reworkHint ? `，结构化提示 ${meta.reworkHint.length} 字符` : "";
     await this.store.appendEvent(
       meta.taskId,
       "rework_triggered",
       "queued",
       meta.reworkFeedback
-        ? `rework 请求，追加指示: ${meta.reworkFeedback.slice(0, 200)}`
-        : "rework 请求（无追加指示）",
+        ? `rework 请求，追加指示: ${meta.reworkFeedback.slice(0, 200)}${hintSuffix}`
+        : `rework 请求（无追加指示${meta.reworkHint ? hintSuffix.replace("，", "；") : ""}）`,
       { mode: "manual" },
     );
     await this.store.writeSnapshot(meta);
@@ -628,11 +631,21 @@ export class TaskManager {
     // 必须在启动时清空，而不是运行结束后的收尾里——终态快照先落盘，调用方看到
     // failed 后可立即 rework_task 写入新的 reworkFeedback，而上一轮的收尾 delete
     // 会把这条新反馈一起抹掉，导致返修轮拿不到指示（实测负载下偶发）。
+    // reworkHint（issue #19）与 reworkFeedback 同批取走，避免出现「只清了一半」的窗口。
     const reworkFeedback = meta.reworkFeedback;
-    if (reworkFeedback) {
+    const reworkHint = meta.reworkHint;
+    if (reworkFeedback || reworkHint) {
       delete meta.reworkFeedback;
+      delete meta.reworkHint;
       await this.store.writeSnapshot(meta);
     }
+    // 结构化修复提示排在用户反馈之前：先给出精确定位，再给整段说明。
+    const initialFeedback = [
+      reworkHint ? `【结构化修复提示】\n${reworkHint}` : "",
+      reworkFeedback ?? "",
+    ]
+      .filter((s) => s !== "")
+      .join("\n\n");
 
     // 超时兜底（R2）：runChild 在 meta.taskTimeoutMs 处自行 kill 并返回 timeout → orchestrator 落 failed(timeout)。
     // 此 guard 只在非子进程阶段（resolve/编排卡死）长时间未返回时兜底，附一小段有文档说明的 kill grace。
@@ -663,7 +676,7 @@ export class TaskManager {
         },
         meta,
         ac.signal,
-        reworkFeedback, // 启动时已取走并清空（见上）
+        initialFeedback || undefined, // 启动时已取走并清空（见上）
       );
       const result = await orch.run();
       // 防御：以持久化 meta 为准 —— orchestrator 返回 status 与持久化 status 不一致时告警。

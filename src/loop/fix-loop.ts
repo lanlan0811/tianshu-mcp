@@ -20,6 +20,7 @@ import { runChild } from "../agents/spawn.js";
 import { captureBaseline, type Baseline } from "../verify/git-baseline.js";
 import { AcceptanceEngine, type VerifyRequest } from "../verify/acceptance.js";
 import { summarizeReport } from "../verify/report.js";
+import { renderDirectiveLines, type RepairDirectives } from "../verify/directives.js";
 import { writeRepairPlan } from "./repair-plan.js";
 import { writeCodexFixPlan } from "../agents/codex/fixplan.js";
 import { buildFixPrompt } from "../agents/codex/input.js";
@@ -351,6 +352,7 @@ export class TaskOrchestrator {
               planRelPath: plan.relPath,
               reportPath: verdict.mdPath,
               evidence: extractFailureEvidence(verdict.report),
+              directives: verdict.report.repairDirectives,
             });
             logger.info(`[codex] 第 ${roundNo} 轮返修指令已引用修复计划 ${plan.relPath}`);
             continue;
@@ -378,7 +380,13 @@ export class TaskOrchestrator {
               "返修计划或验收报告在任务数据目录中不可读，拒绝发送降级摘要",
             );
           }
-          feedback = buildFixFeedback(meta.task, verdict.summary, verdict.mdPath, plan.taskPath);
+          feedback = buildFixFeedback(
+            meta.task,
+            verdict.summary,
+            verdict.mdPath,
+            plan.taskPath,
+            verdict.report.repairDirectives,
+          );
           if (meta.agentId === "qoder") feedback += `\n\n修复计划全文（${path.basename(plan.taskPath)}）：\n${planReadable}`;
           continue;
         }
@@ -600,10 +608,21 @@ function buildFixFeedback(
   verifySummary: string,
   reportMd: string,
   planPath?: string,
+  directives?: RepairDirectives,
 ): string {
   const lines = ["【上一轮验收失败反馈 —— 请针对下列失败项定向修复，不要大范围重构】", ""];
   if (planPath) {
     lines.push(`修复计划文档：\`${planPath}\`（MCP 任务数据目录绝对路径；请先读取并逐条处理）`, "");
+  }
+  // issue #19：把结构化指令摘要直接放进返修消息，省去 agent 从整篇报告里定位的开销。
+  // 仅在确有指令时追加；提取失败时**不**在这里说明（计划文档的 2.5 节已如实交代），
+  // 避免返修消息被「提取失败」的噪声占据。
+  if (directives?.items.length) {
+    lines.push(
+      "【结构化修复指令（摘要，最多 10 条；完整清单见修复计划文档）】",
+      ...renderDirectiveLines(directives, 10),
+      "",
+    );
   }
   lines.push(verifySummary, "", `完整验收报告：${reportMd}`, "修复完成后正常结束本轮即可。");
   return lines.join("\n");

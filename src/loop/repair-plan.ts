@@ -8,6 +8,7 @@
  */
 import path from "node:path";
 import { visualEvidence } from "../visual/report.js";
+import { renderDirectiveSection } from "../verify/directives.js";
 import { mkdirp, writeTextAtomic } from "../util/fs.js";
 import type { VerifyReport } from "../tasks/task.js";
 import type { AgentRunLogger } from "../agents/adapter.js";
@@ -76,6 +77,8 @@ export function renderRepairPlan(input: RepairPlanInput): string {
       lines.push("", "输出尾部：", "```text", (c.outputTail || "(无输出)").slice(-2000), "```", "");
     });
   }
+
+  lines.push(renderDirectiveSection(report));
 
   lines.push("## 3. 通过的项（勿破坏）", "");
   if (passed.length === 0) lines.push("（无）", "");

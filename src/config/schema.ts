@@ -196,6 +196,12 @@ export type VerifyTaskParams = z.infer<typeof VerifyTaskParamsSchema>;
 export const ReworkTaskParamsSchema = z.object({
   taskId: z.string().min(1),
   feedback: z.string().optional(),
+  /**
+   * 结构化修复提示（issue #19）：调用方自带的一小段「文件 / 行 / 做什么」，会以
+   * 【结构化修复提示】块置于 feedback 之前，便于 agent 先精确定位再读整段说明。
+   * 自由字符串（上限 4000 字符）；不传则行为与既有版本一致。
+   */
+  repairHint: z.string().max(4000).optional(),
 });
 export type ReworkTaskParams = z.infer<typeof ReworkTaskParamsSchema>;
 

@@ -105,7 +105,10 @@ export const TOOL_DEFS: ToolDef[] = [
   {
     name: "rework_task",
     description:
-      "手动返修：把终态任务（failed/needs_attention）重新入队续跑，同一 agent/项目与轮次记账。feedback 为追加指示（建议带上一次验收失败摘要）。",
+      "手动返修：把终态任务（failed/needs_attention）重新入队续跑，同一 agent/项目与轮次记账。" +
+      "feedback 为追加指示（建议带上一次验收失败摘要）。" +
+      "repairHint 为可选的结构化修复提示（自由字符串，上限 4000 字符）——写「文件:行 / 问题 / 做什么」，" +
+      "会以【结构化修复提示】块置于 feedback 之前，便于 agent 先精确定位再读整段说明；不传则行为不变。",
     inputSchema: ReworkTaskParamsSchema,
     capability: "write",
     requireApproval: true,

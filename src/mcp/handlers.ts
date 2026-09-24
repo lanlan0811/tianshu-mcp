@@ -1143,12 +1143,16 @@ function reworkTaskHandler(ctx: AppContext): Handler {
     const args = rawArgs as ReworkTaskParams;
     const meta = await manager.getMeta(args.taskId);
     if (!meta) return errorResult(`任务不存在: ${args.taskId}`);
-    const res = await manager.rework(args.taskId, args.feedback);
+    const res = await manager.rework(args.taskId, args.feedback, args.repairHint);
     if (!res.found) return errorResult(res.reason ?? `无法 rework ${args.taskId}`);
     const m = await manager.getMeta(args.taskId);
     if (!m) return errorResult(`任务不存在: ${args.taskId}`);
+    const extras = [
+      args.feedback ? "带追加指示" : "",
+      args.repairHint ? `带结构化修复提示（${args.repairHint.length} 字符）` : "",
+    ].filter((s) => s !== "");
     const lines = [
-      `任务 ${args.taskId} 已重新入队（手动返修）${args.feedback ? "，带追加指示" : ""}。`,
+      `任务 ${args.taskId} 已重新入队（手动返修）${extras.length ? `，${extras.join("，")}` : ""}。`,
       `当前状态: ${m.status}，已用轮次 ${m.roundsUsed}。`,
       `请用 query_task(${args.taskId}) 轮询新一轮结果。`,
     ];

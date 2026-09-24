@@ -23,7 +23,8 @@ const BIG_FILE_THRESHOLD = 500;
 const HASH_MAX_BYTES = 4 * 1024 * 1024;
 /** 文件读取/探测的有界并发上限（worker 池，与 acceptance.ts 命令检查同构） */
 const FILE_IO_CONCURRENCY = 8;
-const LOCKFILE_PATTERN = /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock|go\.sum|Pipfile\.lock|poetry\.lock|composer\.lock)$/;
+/** 锁文件形态（供分析告警与 issue #19 的结构化修复指令共用，避免两处清单漂移） */
+export const LOCKFILE_PATTERN = /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock|go\.sum|Pipfile\.lock|poetry\.lock|composer\.lock)$/;
 const BINARY_EXT = new Set([
   ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".bmp",
   ".zip", ".gz", ".tar", ".7z", ".rar",

@@ -5,6 +5,7 @@
 import type { TraeworkMode, ReasoningLevel, IdempotencyScope } from "../config/schema.js";
 import type { VisualReport } from "../visual/types.js";
 import type { AgentEventName } from "../agents/agent-events.js";
+import type { RepairDirectives } from "../verify/directives.js";
 
 /**
  * 任务工作区模式（issue #12）：
@@ -119,6 +120,11 @@ export interface VerifyReport {
   visual?: VisualReport;
   message: string;
   blockingIssues?: { code: string; message: string }[];
+  /**
+   * 结构化修复指令（issue #19）：把失败原因解析为「文件 / 行 / 问题 / 动作」。
+   * `sources` 非空但 `items` 为空、或 `fallbackReason` 非空时，渲染方必须回退完整报告。
+   */
+  repairDirectives?: RepairDirectives;
 }
 
 /** 任务全量 meta（task.json 快照 + meta 块输出共用） */
@@ -184,6 +190,11 @@ export interface TaskMeta {
   abortSource?: "user" | "shutdown" | "timeout" | "internal";
   /** rework_task 注入的追加指示（仅作用于下一轮 agent） */
   reworkFeedback?: string;
+  /**
+   * rework_task 注入的结构化修复提示（issue #19，仅作用于下一轮 agent）。
+   * 与 reworkFeedback 同批消费与清空；渲染时置于 feedback 之前。
+   */
+  reworkHint?: string;
   /**
    * 结构化「本轮不适用项目验收」的原因。无项目模式（default 工作区）执行成功后置为
    * "no_project"——用结构化字段表达跳过，而不是生成虚假的验收通过报告。
