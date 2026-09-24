@@ -412,9 +412,26 @@ GUI agent 的取消是**尽力而为且诚实回报**，但各适配器能力不
 
 ### 7.2 报告产物（`src/verify/report.ts`）
 
-`report-<round>.md` 结构：标题与头部元信息 → `## 自动命令检查`（每项 `[PASS]/[FAIL]/[SKIP]` + 退出码 + 输出尾部）→ `## 代码分析`（变更清单 / diffstat / 可疑标记与告警）→ 视觉证据 → 人类可读结论。`report-<round>.json` 为同源机读版本。
+`report-<round>.md` 结构：标题与头部元信息 → `## 自动命令检查`（每项 `[PASS]/[FAIL]/[SKIP]` + 退出码 + 输出尾部）→ `## 代码分析`（变更清单 / diffstat / 可疑标记与告警）→ `## 结构化修复指令` → 视觉证据 → 人类可读结论。`report-<round>.json` 为同源机读版本（含 `repairDirectives` 字段）。
 
 可疑标记扫描（`src/verify/signals.ts`）是**确定性正则**，只做提示不单独判失败：`TODO/FIXME/HACK/XXX`、`console.*` / `debugger`、连续 3 行以上整行注释、疑似密钥字面量。
+
+### 7.3 结构化修复指令（`src/verify/directives.ts`，issue #19）
+
+返修报告是整篇叙述，agent 要自己定位「哪一行类型不匹配、哪个文件有 TODO」，推理开销高且易理解偏差。本模块把失败原因解析为**可直接执行的动作** `{file?, line?, issue, action, source}`。
+
+| 决策 | 实现与理由 |
+|---|---|
+| 匹配方式 | 仓库内**没有** per-verifier 模块（typecheck/test/build 都是通用 argv 命令检查），因此 source 按「检查项 name / argv 启发式」+ 报告内结构化数据匹配 |
+| 内置来源 | `typecheck`（解析失败类型检查项 `outputTail` 的 pretty / plain 两式 TS 报错，绝对路径归一化为项目相对 posix 路径，同处报错去重）；`diffstat`（超大单文件改动、被改动的锁文件、TODO / 调试输出 / 疑似密钥的行级计数） |
+| **不**做 test 类提取 | 测试框架输出没有稳定的文件/行号，强行解析会产出**错误**定位，比不给更糟 —— 这类一律走回退 |
+| 绝不抛错 | 单个 source 异常被吞掉并记入 `fallbackReason`，其余 source 继续工作 |
+| 显式回退 | `fallbackReason` 非空 ⇒ 渲染方（两块返修计划、返修消息）必须写明「不可用」并要求 agent 回到完整失败输出，**不允许静默留空** |
+| 失败轮次才提取 | 通过的轮次没有要修的东西，提取只会徒增报告体积 |
+| 持久化 | 落 `report-<round>.json`：手动返修路径会重读该文件，且需跨 server 重启存活 |
+| 行级信号不伪造文件 | `signals.ts` 只做计数、无稳定文件与行号，故对应指令**省略** `file` 字段 |
+
+**已知限制**：`CheckResult.outputTail` 被截断到最后 4000 字符（`runner.ts`），大型项目的类型错误总量可能远超此数，**只能提取到尾部错误**，其余靠回退兜底 —— 这是有意接受的取舍（不为提取放大报告体积）。详见 [结构化修复指令](docs/repair-directives.md)。
 
 ---
 

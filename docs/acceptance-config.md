@@ -95,6 +95,10 @@
 - 每轮验收产出 `report-N.md` + `report-N.json`（N 为轮次），存于该任务数据目录 `tasks/<taskId>/`。
 - `report.json.checks[]` 每条含 `{name, cmd, passed, durationMs, exitCode, outputTail, timeout, skipped, reason}`。
 - 变更/diffstat/可疑标记在 `report.json.analysis` 段，全部相对 **run_task/rework_task 动工前 git 基线**。
+- `report.json.repairDirectives`（**仅失败轮次**，issue #19）：把失败原因解析为可直接执行的动作，
+  形如 `{ items: [{file?, line?, issue, action, source}], sources, fallbackReason? }`。
+  `fallbackReason` 非空 ⇒ 结构化提取不可用，返修计划会显式回退到完整报告。
+  详见 [结构化修复指令](repair-directives.md)。
 
 ## visual 段：AI 内容校验字段
 

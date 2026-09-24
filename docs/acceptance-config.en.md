@@ -79,6 +79,8 @@ Built-in extra check (not configurable off): `git-diff-check` = `git diff --chec
 
 Each round writes `report-N.md` + `report-N.json` under the task dir `tasks/<taskId>/`. `report.json.checks[]` carries `{name, cmd, passed, durationMs, exitCode, outputTail, timeout, skipped, reason, optional}`. Changes/diffstat/suspicious signals live in `report.json.analysis`, all computed against the pre-work git baseline captured by run_task/rework_task.
 
+`report.json.repairDirectives` (**failed rounds only**, issue #19) parses failure reasons into directly executable actions, shaped as `{ items: [{file?, line?, issue, action, source}], sources, fallbackReason? }`. A non-empty `fallbackReason` means structured extraction was unavailable and the repair plan explicitly falls back to the full report. See [structured repair directives](repair-directives.en.md).
+
 ## visual section: AI content validation fields
 
 `visual.contents[]` (image content rules), `visual.content` (global command and budget), `pages[].content`, and

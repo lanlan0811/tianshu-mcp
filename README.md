@@ -43,6 +43,7 @@
 - **客观验收**：自动命令检查（typecheck/lint/test/build，缺则跳过 + 技术栈推导）+ 程序化代码分析（变更清单/diffstat/TODO·debugger·密钥形态等可疑标记），全部相对 **git 基线**，不自动 commit/stash。验收引擎 **fail-closed**：测试命令退出码为 0 但输出显示零用例时判失败；git 项目默认要求相对动工前基线产生变更（纯分析任务可在 `.tianshu-mcp/acceptance.json` 设 `"requireChanges": false` 显式关闭）。
 - **验收并行度**：命令检查默认**有界并行**（`verifyConcurrency`，默认 2、范围 1–4）。检查项之间有顺序依赖时（后续检查读取 build 产物、带 `--fix`、共享缓存目录）请设 `1` 完全退化为串行；项目级 `.tianshu-mcp/acceptance.json` 可覆盖，server 级在 `config.json`。报告与日志格式不变（结果按声明顺序返回）。
 - **失败返修闭环**：自动返修（`autoFixRounds`）+ 手动 `rework_task`；验收失败时自动生成修复计划文件并回填给 agent；轮次用尽 → `needs_attention` 等天枢裁决。
+- **结构化修复指令（issue #19）**：失败轮次会把原因解析为**可直接执行的动作**（`文件:行 / 问题 / 做什么`），随返修计划与返修消息一起喂给 agent，省去它从整篇报告里定位的开销；提取不到时**显式回退**到完整报告（不静默留空）。`rework_task` 另可选 `repairHint` 自带提示。详见 [结构化修复指令](docs/repair-directives.md)。
 - **执行面**：`driver: "gui"` 由显式 adapter 驱动桌面 UI（Codex / TraeWork / ZCode / Kimi Code 各自使用隔离的 CDP 流程）；`driver: "spawn"` 走外部 CLI 子进程。
 - **无项目派发（ZCode，issue #12）**：`run_task` 的 `projectPath` 可省略——ZCode 在 `default` 工作区承接任务，不登记/导入项目、不采集 Git 基线、不执行项目验收（结果以 `verificationNotApplicable: "no_project"` 结构化标注，`verify_task`/`get_task_report` 返回不适用说明）。配套 `allowCreateProject: false` 可在目标目录未登记时于任何导入副作用之前停止派发。详见 [ZCode CDP 适配器](docs/zcode-cdp.md)。
 - **幂等重试（issue #15）**：`run_task` / `verify_task` 接受可选 `idempotencyKey`——同一 key 在 TTL（默认 24h）内的重试**不会**重复派单（恒返回原 `taskId` 与当前状态）或重复跑验收（执行中返回进行中提示，已完成直接返回既有报告）；同键异参 fail-closed 报错。映射落盘于 `<数据目录>/idempotency.json`，跨 server 重启仍生效。详见 [v0.5.10 发布说明](<docs/release-v0.5.10.md>)。
@@ -190,7 +191,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=qoder, planDoc=./plans/development.m
 | `get_task_report` | read | 某轮验收报告全文（`report.md`） |
 | `cancel_task` | write + 审批 | 取消运行中任务：CLI agent kill 进程树；GUI agent 经 CDP 点击停止并在 `gui.cancelWaitMs`（默认 15s）内有界等待 GUI 空闲，未确认停止时终态明示。对已终态的 GUI 任务，本调用兼任人工确认入口——核实窗口无残留运行后调用可清除 `guiStopUnconfirmed` 待确认标记 |
 | `verify_task` | execute（不改源码，免审批） | 对任务/项目路径做一次验收。能力归 `execute`：会跑项目配置命令、可能产生构建产物，故 MCP `readOnlyHint` 为 `false`——但**不改源码、仍免审批**。可选 `idempotencyKey`：同键重试不重跑（执行中返回进行中提示，已完成返回既有报告） |
-| `rework_task` | write + 审批 | 手动返修（把失败报告喂回同一 agent） |
+| `rework_task` | write + 审批 | 手动返修（把失败报告喂回同一 agent）。可选 `repairHint`（≤4000 字符）自带结构化修复提示，以【结构化修复提示】块置于 `feedback` 之前 |
 | `get_profiles` | read | 查看 agent 适配与可执行探测结果 |
 | `prepare_visual_baseline` | write + 审批 | 截图或导入参考图，生成待审阅候选和摘要 |
 | `approve_visual_baseline` | write + 审批 | 用户审阅后校验摘要并写入基准与审批记录 |

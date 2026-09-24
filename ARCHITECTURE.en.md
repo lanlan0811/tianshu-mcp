@@ -424,9 +424,26 @@ Three fail-closed protections:
 
 ### 7.2 Report artifacts (`src/verify/report.ts`)
 
-`report-<round>.md` structure: title and header metadata → `## Automatic command checks` (each `[PASS]/[FAIL]/[SKIP]` with exit code and output tail) → `## Code analysis` (change list / diffstat / suspicious signals and warnings) → visual evidence → human-readable conclusion. `report-<round>.json` is the machine-readable counterpart.
+`report-<round>.md` structure: title and header metadata → `## Automatic command checks` (each `[PASS]/[FAIL]/[SKIP]` with exit code and output tail) → `## Code analysis` (change list / diffstat / suspicious signals and warnings) → `## Structured repair directives` → visual evidence → human-readable conclusion. `report-<round>.json` is the machine-readable counterpart (including the `repairDirectives` field).
 
 The suspicious-signal scan (`src/verify/signals.ts`) is **deterministic regexes** and is advisory only, never a standalone failure cause: `TODO/FIXME/HACK/XXX`, `console.*` / `debugger`, three or more consecutive full-line comments, and secret-like literals.
+
+### 7.3 Structured repair directives (`src/verify/directives.ts`, issue #19)
+
+A repair report is a full narrative, so the agent has to locate by itself "which line has the type mismatch, which file has a TODO" — high reasoning cost and easy to misread. This module parses failure reasons into **directly executable actions** `{file?, line?, issue, action, source}`.
+
+| Decision | Implementation and rationale |
+|---|---|
+| Matching | The repo has **no** per-verifier modules (typecheck/test/build are all generic argv command checks), so sources match on "check name / argv heuristics" plus structured data inside the report |
+| Built-in sources | `typecheck` (parses pretty / plain TS errors out of failed typecheck checks' `outputTail`; absolute paths normalized to project-relative POSIX; duplicates collapsed) and `diffstat` (oversized single-file changes, modified lockfiles, and line-level counts for TODO / debug output / secret-like patterns) |
+| **No** test-class extraction | Test-framework output has no stable file/line; parsing it anyway would produce **wrong** locations, which is worse than producing none — those always take the fallback path |
+| Never throws | A single source's exception is swallowed and recorded in `fallbackReason` while the other sources keep working |
+| Explicit fallback | A non-empty `fallbackReason` means renderers (both repair-plan variants and the rework message) must state "unavailable" and tell the agent to return to the full failure output — a **silent gap is not allowed** |
+| Failed rounds only | A passing round has nothing to fix; extracting there would only bloat the report |
+| Persistence | Written into `report-<round>.json`: the manual-rework path re-reads this file, and it must survive a server restart |
+| Line-level signals never fake a file | `signals.ts` only counts and has no stable file or line, so those directives **omit** `file` |
+
+**Known limitation**: `CheckResult.outputTail` is truncated to the last 4000 characters (`runner.ts`), and a large project's total error count can far exceed that, so **only tail errors are extractable** — the rest is covered by the fallback. This trade-off is accepted deliberately (report size is not inflated for extraction). See [structured repair directives](docs/repair-directives.en.md).
 
 ---
 
