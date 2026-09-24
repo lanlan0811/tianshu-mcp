@@ -18,6 +18,7 @@ import {
   waitForTerminal,
   gitInitAndCommit,
   rmrf,
+  STUB_SCRIPT,
   type TestServer,
 } from "../test-utils.js";
 
@@ -135,6 +136,49 @@ describe("任务级 acceptanceOverride（issue #20）", () => {
   }, 120_000);
 
   it("无项目模式拒绝 acceptanceOverride（没有项目验收可覆盖）", async () => {
+    // 无项目模式要求 agentId=zcode，而参数校验发生在 agent 解析**之后**。
+    // CI 上没装 ZCode，若不桩化 profile 会先撞上「agent 当前不可用」，测不到本校验。
+    // 数据目录的 profile 会整体替换内置项，故这里用 stub 脚本桩一个可解析的 zcode。
+    await fsp.writeFile(
+      path.join(ts.home, "agent-profiles.json"),
+      JSON.stringify(
+        {
+          profiles: {
+            stub: {
+              displayName: "Stub Agent (test)",
+              type: "cli",
+              status: "ready",
+              command: process.execPath,
+              argsTemplate: [STUB_SCRIPT, "<prompt:arg>"],
+              promptMode: "arg",
+              cwd: "task",
+              env: {},
+              timeoutMs: 120_000,
+              killTree: "taskkill",
+              authNote: "test-only stub",
+            },
+            zcode: {
+              displayName: "ZCode (stubbed for portability)",
+              type: "cli",
+              driver: "spawn",
+              status: "ready",
+              command: process.execPath,
+              argsTemplate: [STUB_SCRIPT, "<prompt:arg>"],
+              promptMode: "arg",
+              cwd: "task",
+              env: {},
+              timeoutMs: 120_000,
+              killTree: "taskkill",
+              authNote: "test-only stub override",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
     const res = await ts.client.callTool({
       name: "run_task",
       arguments: {
@@ -146,8 +190,8 @@ describe("任务级 acceptanceOverride（issue #20）", () => {
     const text = (res.content as { type?: string; text?: string }[])
       .map((c) => c.text ?? "")
       .join("\n");
-    expect(text).toContain("acceptanceOverride");
     expect(text).toContain("无项目模式");
+    expect(text).toContain("acceptanceOverride");
   }, 60_000);
 });
 
