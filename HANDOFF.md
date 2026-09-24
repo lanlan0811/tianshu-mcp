@@ -1,6 +1,6 @@
 # HANDOFF.md — 项目交接说明
 
-> **交接快照：2026-09-24 · 开发版本 `0.6.6`；`v0.6.6` 发布实测见下方「0.6.6 开发交接」末行。**
+> **交接快照：2026-09-24 · 开发版本 `0.6.6`；`v0.6.6` 已发布（GitHub Release / Gitee 发行版 / npm `latest` 三者一致，发布提交 `939ef15`）。**
 > 本文写给**接手本仓库的人**：先说清「这是什么、现在到哪一步」，再给出「怎么跑、怎么改、哪里会踩坑」。
 > 工作区规则见 `AGENTS.md`（gitignore，仅本地）；安装与用法见 `README.md`，本文不重复，只做导览与状态记录。
 
@@ -25,7 +25,7 @@
 - 测试：新增 **37** 用例 / 2 文件（`dry-run` 单测 29、`dry-run` 集成 8）+ stub 新增 `dry-run-plan` / `dry-run-edit` 两个剧本；全量 **1110 passed / 12 skipped**（101 文件，较 v0.6.5 的 1073 净增 37）；`check:stdio` dist 与 src 均 **8/8**。文档：[dryRun 干跑模式](docs/dry-run.md) 双语 + [发布说明 v0.6.6](docs/release-v0.6.6.md) 双语；ARCHITECTURE 双语新增 §7.5。
 - **本版**按 v0.6.5 的 CI 教训处理：新增用例**不依赖本机安装任何 GUI agent**（无项目模式用例自行桩化 profile，且重写 `agent-profiles.json` 时**必须把 stub 一起写回**，否则同文件后续用例会连 stub 都解析不到）。
 - **真机记录（待补，交付后执行）**：用 `scripts/probe-codex.mjs` 或 traework 探针跑真实 GUI 任务并加 `dryRun=true`，确认 agent 遵守只读约束（`git status` 无源码改动）、计划被正确解析、方案文档可作后续 `planDoc`。本版以单测 + 集成测试为门禁（issue #21 允许「测试**或**真机证据」）。
-- **发布实测**：待回写（CI 四平台 / `release.yml` / GitHub Release / Gitee 发行版 / npm `latest` / issue #21 关闭状态）。
+- **发布实测**：CI 四平台 **22/22 全绿**（`939ef15`）；`release.yml` 成功并生成 GitHub Release（`v0.6.6`，正文 12979 字符）；Gitee 发行版经 `scripts/gitee-release.mjs 0.6.6 0.6.5` 更新成功；npm `latest` 已为 **v0.6.6**。**issue #21 尚未关闭**：同 #18/#19/#20，本机无 GitHub 写权限令牌，需维护者回复并关闭。
 
 ### 0.6.5 开发交接（验收配置三级继承，issue #20）
 
