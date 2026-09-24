@@ -1,10 +1,30 @@
 # HANDOFF.md — 项目交接说明
 
-> **交接快照：2026-09-24 · 开发版本 `0.6.3`；`v0.6.3` 已发布（GitHub Release / Gitee 发行版 / npm `latest` 三者一致，发布提交 `a54a34f`）。**
+> **交接快照：2026-09-24 · 开发版本 `0.6.4`；`v0.6.4` 发布实测见下方「0.6.4 开发交接」末行。**
 > 本文写给**接手本仓库的人**：先说清「这是什么、现在到哪一步」，再给出「怎么跑、怎么改、哪里会踩坑」。
 > 工作区规则见 `AGENTS.md`（gitignore，仅本地）；安装与用法见 `README.md`，本文不重复，只做导览与状态记录。
 
 ---
+
+### 0.6.4 开发交接（结构化修复指令，issue #19）
+
+- **范围**：验收失败轮次新增结构化修复指令提取 + `rework_task` 的 `repairHint`。无新工具、无数据模型变更、无 MCP 注解变更。
+- **问题**：返修报告是整篇叙述，agent 需自行从报告里定位「哪一行类型不匹配、哪个文件有 TODO、哪个文件改动行数异常」，推理开销高且易理解偏差导致返修失败。
+- **新增 `src/verify/directives.ts`**：`RepairDirective{file?,line?,issue,action,source}` + `RepairDirectives{items,sources,fallbackReason?}` + `extractRepairDirectives()` + `renderDirectiveSection()` / `renderDirectiveLines()`。两个内置 source：
+  - `typecheck`：筛 `!passed && !skipped` 且 name/argv 命中 `typecheck|tsc|--noEmit|mypy|pyright` 的检查项，用两条正则解析 `outputTail`（pretty `file(l,c): error TSxxxx` 与 plain `file:l:c - error TSxxxx`）；绝对路径归一化为项目相对 posix（项目外原样保留），同处报错去重。
+  - `diffstat`：`analysis.bigFileChanges`、被改动的锁文件各一条（带 `file`）；`signals` 的 todo / consoleDebug / secretLike 各一条（**不带** `file` —— 只做计数、无稳定行号）。
+- **关键取舍（改这块前必读）**：
+  1. **不做 test 类提取** —— 测试框架输出没有稳定文件/行号，强行解析会产出**错误**定位，比不给更糟，一律走回退。
+  2. **提取器永不抛错** —— 单个 source 异常被吞掉并记入 `fallbackReason`，其余 source 继续工作。
+  3. **显式回退** —— `fallbackReason` 非空 ⇒ 渲染方必须写「不可用，回退完整报告」+ 要求 agent 回到完整失败输出，**不允许静默留空**。
+  4. **只在失败轮次提取**（`acceptance.ts` 的 `if (!passed) report.repairDirectives = …`），通过轮次不产出该字段。
+- **四处消费**：`report-<round>.json` 的 `repairDirectives`（持久化：手动返修路径重读、跨重启存活）→ `report-<round>.md` 的 `## 结构化修复指令` → 两块返修计划（`repair-plan.ts` 的 `renderRepairPlan` 与 `codex/fixplan.ts` 的 `renderCodexFixPlan`）在**第 2 与第 3 节之间**插入 `## 2.5` → 返修消息 `buildFixFeedback(..., directives)` / codex `buildFixPrompt({directives})` 的摘要块（最多 10 条；提取失败时不在消息里加噪声）。
+- **`repairHint` 贯通**：`ReworkTaskParamsSchema.repairHint`（`z.string().max(4000)`）→ `handlers.reworkTaskHandler` → `TaskManager.rework(taskId, feedback?, repairHint?)` 写 `meta.reworkHint` → `startTask()` 在**同一原子块**取走并清空 `reworkFeedback` + `reworkHint`，拼成 `initialFeedback`（提示在前）→ `TaskOrchestrator` 第四参。**注意**：两字段必须同批清理，否则会出现「只清了一半」的窗口。
+- **顺带改动**：`LOCKFILE_PATTERN` 由 `code-analysis.ts` 导出，分析告警与提取器共用一份清单（避免两处漂移）。
+- **已知限制（有意接受）**：`CheckResult.outputTail` 被截断到最后 4000 字符（`runner.ts`），大型项目只能提取到尾部类型错误，其余靠回退兜底 —— 不为提取放大报告体积。
+- 测试：新增 **35** 用例 / 3 文件（`repair-directives` 15、`repair-plan-directives` 16、`rework-repair-hint` 4）；全量 **1037 passed / 12 skipped**（96 文件，较 v0.6.3 的 1002 净增 35）；`check:stdio` dist 与 src 均 **8/8**。文档：[结构化修复指令](docs/repair-directives.md) 双语 + [发布说明 v0.6.4](docs/release-v0.6.4.md) 双语；`docs/acceptance-config` 双语补 `report.json.repairDirectives` 字段说明；ARCHITECTURE 双语新增 §7.3。
+- **真机记录（待补，交付后执行）**：用 `scripts/probe-codex.mjs` 构造必然 typecheck 失败的真实任务，确认 2.5 节给出正确的 `文件:行` 与动作，并留存 issue #19 要求的**前后对比**返修记录。本版以单测 + 集成测试为门禁。
+- **发布实测**：待回写（CI 四平台 / `release.yml` / GitHub Release / Gitee 发行版 / npm `latest` / issue #19 关闭状态）。
 
 ### 0.6.3 开发交接（细粒度事件流，issue #18）
 

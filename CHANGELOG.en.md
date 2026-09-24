@@ -8,6 +8,32 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.6.4] - 2026-09-24
+
+### Added
+
+- **Structured repair directives `repairDirectives`** ([issue #19](https://github.com/lanlan0811/tianshu-mcp/issues/19)): failed rounds parse acceptance failure reasons into **directly executable actions** (`file? / line? / issue / action / source`) carried in both the repair plan and the rework message, sparing the agent the cost of locating "which line has the type mismatch, which file has a TODO" in a full narrative report. See [structured repair directives](docs/repair-directives.en.md).
+- **Two built-in extraction sources**: `typecheck` (parses pretty / plain tsc errors out of failed typecheck checks' output tails; absolute paths normalized to project-relative POSIX; duplicates collapsed) and `diffstat` (oversized single-file changes, modified lockfiles, and line-level counts for TODO / debug output / secret-like patterns).
+- **New optional `repairHint` on `rework_task`** (free-form string, max 4000 chars): the caller supplies its own structured repair hint, rendered in the next round's task book as a `【结构化修复提示】` block placed **before** `feedback`.
+
+### Changed
+
+- **`report-<round>.md` gained a `## Structured repair directives` section**; `report-<round>.json` gained a `repairDirectives` field (**failed rounds only**).
+- **Both repair-plan variants (generic `rework-*.md` and Codex `codex-fix-r*.md`) gained a `## 2.5 Structured repair directives` section**, placed between section 2 (failures) and section 3 (passing checks).
+- `LOCKFILE_PATTERN` is now exported from `code-analysis.ts` so the analysis warnings and the extractor **share one list**, preventing drift between two copies.
+
+### Compatibility
+
+- **No tool contract, data model or MCP annotation changes.** `repairDirectives` is a new optional field inside the report, which readers may simply ignore; when `repairHint` is omitted, `rework_task` behaves exactly as in v0.6.3.
+- Extraction runs **only on failed acceptance rounds**; passing rounds do not produce the field (no report bloat).
+
+### Notes (disclosed honestly)
+
+- **Explicit fallback when extraction fails**: a non-empty `fallbackReason` means renderers state "unavailable, falling back to the full report" and tell the agent to return to the full failure output — a **silent gap is not allowed**. An exception from a single source is swallowed and recorded in the reason while other sources keep working — the extractors never throw.
+- **No extraction for test-class failures**: test-framework output has no stable file/line; parsing it anyway would produce **wrong** locations, which is worse than producing none.
+- **`diffstat`'s line-level signals never fake a location**: `signals.ts` only counts and has no stable file or line, so those directives omit the `file` field.
+- **Known limitation**: `outputTail` is truncated to the last 4000 characters, so a large project only yields tail type errors and the rest is covered by the fallback — a deliberately accepted trade-off.
+
 ## [0.6.3] - 2026-09-24
 
 ### Added
