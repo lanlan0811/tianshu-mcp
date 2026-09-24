@@ -1,10 +1,26 @@
 # HANDOFF.md — 项目交接说明
 
-> **交接快照：2026-09-24 · 开发版本 `0.6.4`；`v0.6.4` 已发布（GitHub Release / Gitee 发行版 / npm `latest` 三者一致，发布提交 `a977a66`）。**
+> **交接快照：2026-09-24 · 开发版本 `0.6.5`；`v0.6.5` 发布实测见下方「0.6.5 开发交接」末行。**
 > 本文写给**接手本仓库的人**：先说清「这是什么、现在到哪一步」，再给出「怎么跑、怎么改、哪里会踩坑」。
 > 工作区规则见 `AGENTS.md`（gitignore，仅本地）；安装与用法见 `README.md`，本文不重复，只做导览与状态记录。
 
 ---
+
+### 0.6.5 开发交接（验收配置三级继承，issue #20）
+
+- **范围**：验收配置新增全局层 + 任务级临时覆盖，并补调试命令。无新 MCP 工具、无数据模型变更、无 MCP 注解变更。
+- **问题**：原先只支持项目级 `.tianshu-mcp/acceptance.json`；一个宿主挂多个同类项目时逐项目建文件成本高、易遗漏。
+- **三级链（低 → 高）**：`<数据目录>/acceptance.default.json` → `<project>/.tianshu-mcp/acceptance.json` → `run_task`/`verify_task` 的 `acceptanceOverride`。解析点仍是 `resolveChecks()`（`src/verify/acceptance.ts`），新增合并工具 `src/config/acceptance-merge.ts`。
+- **本版修的隐患（改这块前必读）**：`AcceptanceConfigSchema` 给 `requireChanges` 上了 `.default(true)`；用它解析「只写了 `verifyConcurrency`」的项目文件会 materialize 出 `requireChanges: true`，**反过来覆盖全局层的 `false`** —— 继承链会静默失效。故新增**无任何默认值**的 `PartialAcceptanceConfigSchema` 专供分层解析（`readAcceptanceLayer()` 用它），默认值只在最终取值缺省时兜底；`AcceptanceConfigSchema` 保留给既有 visual/legacy 调用方。**注意**：因 `acceptanceOverride` 参数引用它，`PartialAcceptanceConfigSchema` / `AcceptanceCheckSchema` / `AcceptanceConfigSchema` 的定义已上移到 `RunTaskParamsSchema` 之前，别再把它们挪回文件尾部。
+- **合并语义**：合并粒度 = **字段**（高优先级层显式书写的取胜，`undefined` 视为未书写）；`checks` **整体覆盖不拼接**；**`visual` 整体覆盖、不做跨层深合并** —— `visual` 的 schema 几乎每个字段都带默认值，深合并会让低优先级层的**显式**取值被高优先级层「未书写、仅因默认值而出现」的字段静默覆盖（与 `requireChanges` 同类的污染）。这是**与 issue 建议的「深合并」的一处有意偏离**，理由同时记在 CHANGELOG、`docs/acceptance-config` 双语与 ARCHITECTURE §7.4。
+- **坏层 fail-closed**：仅 `ENOENT` 算「该层不存在」；「存在但读不了 / JSON 坏 / 字段不合法」→ 该轮进 `needs_attention` 并指明层与文件。
+- **任务级覆盖是任务数据不是配置**：`TaskMeta.acceptanceOverride` 随快照保存；不写任何 `acceptance*.json`、不影响同项目其他任务与其他项目；rework/continue 沿用同一快照故继续生效。无项目模式**显式拒绝**该参数。**计入幂等入参摘要**（`runTaskKeyedFields()` 与 `verifyIdempotencyDigest()` 均已纳入）—— 否则同键重放会返回策略不同的旧任务。
+- **每轮一行摘要**：`resolveChecks()` 输出 `生效层=… checks=… requireChanges=… verifyConcurrency=…`。
+- **调试命令**：`tianshu-mcp config acceptance [projectPath] [--task <taskId>]`（`src/config/cli.ts` + `src/index.ts` 在创建 server 前分发）。输出各层是否存在 / `appliedOrder` / `effective` / `summary`；某层写坏时**错误分层可见**且其余层仍解析。**不挂 `visual` 命名空间**（`acceptance.json` 是验收引擎的配置，视觉验收只是共用文件）。eslint 的 `no-console` 豁免已扩到 `src/config/cli.ts`（与 `visual/cli.ts` 同一条：pre-server CLI 的 stdout 未被 transport 占用）。
+- `executeVerify` 的 `visual` 改取合并结果，不再二次读项目文件（否则 override/全局层的 `visual` 会随项目文件是否存在而改变语义）。
+- 测试：新增 **36** 用例 / 3 文件（`acceptance-merge` 18、`acceptance-override` 6、`config-cli` 12）；全量 **1073 passed / 12 skipped**（99 文件，较 v0.6.4 的 1037 净增 36）；`check:stdio` dist 与 src 均 **8/8**。文档：`docs/acceptance-config` 双语优先级表按三级重写 + [发布说明 v0.6.5](docs/release-v0.6.5.md) 双语；ARCHITECTURE 双语新增 §7.4。
+- **本版无真机依赖**（验收标准三项均由单测/集成测试/CLI 冒烟覆盖），故不需要真机记录。
+- **发布实测**：待回写（CI 四平台 / `release.yml` / GitHub Release / Gitee 发行版 / npm `latest` / issue #20 关闭状态）。
 
 ### 0.6.4 开发交接（结构化修复指令，issue #19）
 

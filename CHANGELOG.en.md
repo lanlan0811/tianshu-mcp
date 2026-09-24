@@ -8,6 +8,36 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.6.5] - 2026-09-24
+
+### Added
+
+- **Three-level acceptance config inheritance** ([issue #20](https://github.com/lanlan0811/tianshu-mcp/issues/20)): `<data home>/acceptance.default.json` (global fallback) → `<project>/.tianshu-mcp/acceptance.json` (project override) → transient task-level override. With several similar projects under one host, the shared policy goes in the global layer instead of a file per project. See the [acceptance config spec](docs/acceptance-config.en.md).
+- **New optional `acceptanceOverride` on `run_task` / `verify_task`**: a transient task-level acceptance-config override (same format as `acceptance.json`) that applies **only to that task**, is saved with the task snapshot, writes no `acceptance*.json` and affects no other task on the same project. Project-less mode explicitly rejects the argument.
+- **`tianshu-mcp config acceptance [projectPath] [--task <taskId>]` debug command**: prints which layers exist, the effective order and the final values, so troubleshooting needs no guesswork. Each acceptance round also writes a same-source summary line to `server.log`.
+- New `src/config/acceptance-merge.ts` (a purpose-scoped merge helper, **deliberately not a general-purpose deep merge**).
+
+### Fixed
+
+- **The `.default()` pollution hazard in layered parsing**: `AcceptanceConfigSchema` puts `.default(true)` on `requireChanges`, so parsing a project file that only sets `verifyConcurrency` materializes `requireChanges: true`, which in the three-level chain would **in turn override the global layer's `false`**. A default-free `PartialAcceptanceConfigSchema` is now used for layered parsing, with defaults applied only when the final value is absent.
+
+### Changed
+
+- `resolveChecks()` now performs the three-level merge and returns the merged `visual` too; `executeVerify` no longer re-reads the project file (otherwise the `visual` from override/global layers would change meaning based on whether a project file happens to exist).
+- After the unified `LOCKFILE_PATTERN` export (v0.6.4), the bilingual `acceptance-config` precedence tables were rewritten around the three-level chain.
+
+### Compatibility
+
+- **No tool contract, data model or MCP annotation changes** (`acceptanceOverride` is a new optional argument; `extraChecks` semantics and precedence are unchanged and still rank above the base set).
+- Without creating a global `acceptance.default.json`, single-project behaviour is exactly as in v0.6.4 (an absent global layer = empty config, no error).
+- The existing semantics of the project-level `.tianshu-mcp/acceptance.json` are unchanged; error semantics remain fail-closed (only `ENOENT` counts as "layer absent").
+
+### Notes (disclosed honestly)
+
+- **Merge granularity is per field**: a field a higher layer explicitly writes wins outright; **arrays (`checks`) replace wholesale rather than concatenating** — concatenating would turn "the project adds one check" into "the project can never remove a global check".
+- **`visual` replaces wholesale and is not deep-merged across layers**: nearly every field of the `visual` schema carries a default, so deep merging would let a higher layer's "not written, present only as a default" fields silently clobber a lower layer's **explicit** values (the same pollution class as `requireChanges`). To reuse visual config across layers, write the full `visual` block in the project layer. **This is a deliberate deviation from the issue's suggested "deep merge"**, with the reasoning recorded in `docs/acceptance-config.en.md` and ARCHITECTURE §7.4.
+- **The task override is included in the idempotency argument digest**: replaying the same key with a different acceptance policy is rejected fail-closed rather than returning an old task built on a different policy.
+
 ## [0.6.4] - 2026-09-24
 
 ### Added

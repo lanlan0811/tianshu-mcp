@@ -7,6 +7,36 @@
 
 ---
 
+## [0.6.5] - 2026-09-24
+
+### 新增
+
+- **验收配置三级继承**（[issue #20](https://github.com/lanlan0811/tianshu-mcp/issues/20)）：`<数据目录>/acceptance.default.json`（全局兜底）→ `<project>/.tianshu-mcp/acceptance.json`（项目覆盖）→ 任务级临时覆盖。一个宿主下挂多个同类项目时，公共策略写全局层即可，不必逐项目建文件。详见 [验收配置规范](docs/acceptance-config.md)。
+- **`run_task` / `verify_task` 新增可选 `acceptanceOverride`**：任务级临时验收配置覆盖（格式同 `acceptance.json`），**仅当次生效**、随任务快照保存、不写入任何 `acceptance*.json`、不影响同项目其他任务。无项目模式显式拒绝该参数。
+- **`tianshu-mcp config acceptance [projectPath] [--task <taskId>]` 调试命令**：打印各层是否存在、实际生效顺序与最终取值，排障无需靠猜。每轮验收另往 `server.log` 写一行同源摘要。
+- 新增 `src/config/acceptance-merge.ts`（按用途收敛的合并工具，**刻意不做通用深合并**）。
+
+### 修复
+
+- **分层解析的 `.default()` 污染隐患**：`AcceptanceConfigSchema` 的 `requireChanges` 带 `.default(true)`，若用它解析「只写了 `verifyConcurrency`」的项目文件会 materialize 出 `requireChanges: true`，在三级继承里**反过来覆盖全局层的 `false`**。新增无默认值的 `PartialAcceptanceConfigSchema` 供分层解析，默认值只在最终取值缺省时兜底。
+
+### 变更
+
+- `resolveChecks()` 改为三级合并，并把合并后的 `visual` 一并返回；`executeVerify` 不再二次读取项目文件（否则 override/全局层的 `visual` 会随项目文件是否存在而改变语义）。
+- `LOCKFILE_PATTERN` 的统一导出（v0.6.4）之后，`acceptance-config` 双语优先级表按三级继承重写。
+
+### 兼容性
+
+- **无工具契约、数据模型或 MCP 注解变更**（`acceptanceOverride` 是新增可选参数；`extraChecks` 语义与优先级不变，仍高于基础集）。
+- 不创建全局 `acceptance.default.json` 时，单项目行为与 v0.6.4 完全一致（全局层缺失 = 空配置、不报错）。
+- 项目级 `.tianshu-mcp/acceptance.json` 的既有语义不变；错误语义仍是 fail-closed（仅 `ENOENT` 视为「该层不存在」）。
+
+### 说明（如实披露）
+
+- **合并粒度是「字段」**：高优先级层显式书写的字段整体取胜；**数组（`checks`）整体覆盖而非拼接** —— 拼接会让「项目追加一项检查」变成「项目无法移除全局检查」。
+- **`visual` 整体覆盖、不做跨层深合并**：`visual` 的 schema 几乎每个字段都带默认值，深合并会让低优先级层的**显式**取值被高优先级层「未书写、仅因默认值而出现」的字段静默覆盖（与 `requireChanges` 同类的污染）。需要跨层复用视觉配置时请在项目层写完整 `visual` 段。**这是与 issue 建议的「深合并」的一处有意偏离**，理由记录在 `docs/acceptance-config.md` 与 ARCHITECTURE §7.4。
+- **任务级覆盖计入幂等入参摘要**：同键换一套验收策略会被 fail-closed 拒绝，而不是返回策略不同的旧任务。
+
 ## [0.6.4] - 2026-09-24
 
 ### 新增
