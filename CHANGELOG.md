@@ -7,6 +7,33 @@
 
 ---
 
+## [0.6.7] - 2026-09-24
+
+### 新增
+
+- **任务终态 webhook 通知**（[issue #22](https://github.com/lanlan0811/tianshu-mcp/issues/22)）：任务完成 / 失败 / 进入 `needs_attention` 时向配置的 URL **异步 POST** 一条 JSON，降低长任务盯屏成本。详见 [任务终态通知](docs/notifications.md)。
+- **全局 `config.json` 新增 `notifications.webhook`**：`enabled`（默认 false）/ `url` / `timeoutMs` / `maxRetries` / `backoffMs` / `secret`（HMAC-SHA256 签名）/ `events`。
+- **`src/tasks/notifier.ts`**：`TaskNotifier`（fire-and-forget、重试 + 退避 + 超时、失败仅告警）与 `statusToEvent()` 映射。
+
+### 变更
+
+- `TaskStore` 构造函数新增**可选**第三参 `notifier`；终态通知在 `updateStatus` 写闭包内 `appendEvent` + `writeSnapshot` **成功之后**派发。既有 `new TaskStore(home, logger)` 调用完全不受影响。
+- `src/server.ts` 装配 `TaskNotifier`（惰性读取同一份 `config.json`，故运行中改配置也能生效）。
+
+### 兼容性
+
+- **默认关闭**：不配置或 `enabled:false` 时**完全不发起任何请求**，行为与 v0.6.6 一致。
+- **无工具契约、数据模型或 MCP 注解变更**；仅新增一个**可选**的 config 段。
+
+### 说明（如实披露）
+
+- **钩子点是 `TaskStore.updateStatus()`**（状态跃迁的唯一咽喉），**不是** `TaskOrchestrator.finish()` —— 后者只覆盖编排器主导的结束，`cancel()` 的 queued 分支、`initialize()` 的重启归档、`shutdownInterrupt()` / `persistInterrupted()` 全都绕过它。
+- **「恰好一次」按 `taskId + status + finishedAt` 去重，不能用 `prev !== status`**：多条路径会**先直接改写 `meta.status`** 再调用 `updateStatus`，那时 `prev` 已等于目标状态。`finishedAt` 由 `updateStatus` 在写终态时刷新、并被 `rework`/`continueTask` 清空 —— 故同回合重复写入被抑制，而**返修后的新回合会再次通知**。跨 server 重启或接收端重试仍可能重复送达，建议接收端按同一键幂等。
+- **默认只推真终态**：`needs_attention`（终态）→ `needs_human`；`needs_user`（**非终态**，可被 `continue_task` 恢复、之后可能再次进入）单独成类且**默认不订阅**，需要它的调用方须显式加入 `events`（已知会反复推送）。`cancelled` 同样默认关闭。
+- **尽力投递，不保证送达**：发送全异步，端点慢或挂掉**不阻塞状态机**；失败（网络错误 / 超时 / 非 2xx）重试 `maxRetries` 次后仅记一条 `warn`，**绝不改变任务终态**。
+- **请求体含本地路径**：包含 `projectPath` 与验收报告文件的绝对路径；转发到公网服务前请确认接收端可信。
+- **`enabled=true` 但缺 `url` 会被 schema 拒绝**（禁止「开了却不发」的静默混淆）；`config.json` 走 last-known-good，写坏只告警并沿用上一份有效配置。
+
 ## [0.6.6] - 2026-09-24
 
 ### 新增

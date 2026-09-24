@@ -1,10 +1,26 @@
 # HANDOFF.md — 项目交接说明
 
-> **交接快照：2026-09-24 · 开发版本 `0.6.6`；`v0.6.6` 已发布（GitHub Release / Gitee 发行版 / npm `latest` 三者一致，发布提交 `939ef15`）。**
+> **交接快照：2026-09-24 · 开发版本 `0.6.7`；`v0.6.7` 发布实测见下方「0.6.7 开发交接」末行。**
 > 本文写给**接手本仓库的人**：先说清「这是什么、现在到哪一步」，再给出「怎么跑、怎么改、哪里会踩坑」。
 > 工作区规则见 `AGENTS.md`（gitignore，仅本地）；安装与用法见 `README.md`，本文不重复，只做导览与状态记录。
 
 ---
+
+### 0.6.7 开发交接（任务终态 webhook 通知，issue #22）
+
+- **范围**：终态跃迁时向配置的 URL 异步 POST 通知。无新 MCP 工具、无数据模型变更、无 MCP 注解变更。
+- **问题**：长任务下调用方必须挂屏轮询 `query_task`，完成/失败/需人工时无主动推送。
+- **配置**：全局 `config.json` 的 `notifications.webhook`（`src/config/schema.ts` 的 `WebhookConfigSchema`）：`enabled`（默认 false）/ `url` / `timeoutMs`（5s）/ `maxRetries`（2）/ `backoffMs`（500）/ `secret` / `events`。**`enabled=true` 但缺 `url` 由 schema `.refine()` 拒绝**。放全局而非项目 `acceptance.json`：通知路由是宿主/传输层关注点，且 `updateStatus` 处只有数据目录 / taskId / logger，无法每次跃迁都廉价读项目配置。
+- **钩子点是 `TaskStore.updateStatus()`**（状态跃迁唯一咽喉），**不是** `TaskOrchestrator.finish()` —— 后者只覆盖编排器主导的结束；`cancel()` 的 queued 分支、`initialize()` 的重启归档、`shutdownInterrupt()` / `persistInterrupted()` 全都绕过它。派发时机在 `appendEvent` + `writeSnapshot` **成功之后**（先落本地事实，再对外通知）。
+- **「恰好一次」的正解（改这块前必读）**：按 `taskId + status + finishedAt` 去重（`TaskNotifier.sent`，进程内）。**不能用 `prev !== status`** —— 多条路径（cancel 的 queued 分支、shutdownInterrupt）会**先直接改写 `meta.status`** 再调用 `updateStatus`，那时 `prev` 已等于目标状态，门条件恒假。`finishedAt` 由 `updateStatus` 在写终态时刷新为 `updatedAt`（`task-store.ts`），并被 `rework()` / `continueTask()` 清空 —— 故同回合重复写入被抑制，而**返修后的新回合同样状态会再次通知**。
+- **`notify()` fire-and-forget**：返回 void，内部 `void this.send(...)`；`send()` 自身吞掉一切异常，`notify()` 再兜一层 catch。端点慢或挂掉**不阻塞状态机写入链**。
+- **事件类别**：`done`(succeeded) / `failed`(failed) / `needs_human`(`needs_attention`，真终态) / `needs_user`(`needs_user`，**非终态**) / `cancelled`(cancelled|interrupted)。**默认只订阅 `done`/`failed`/`needs_human`**；`needs_user` 单独成类且默认关闭（它可被 continue 恢复、之后可能再次进入，默认打开会反复打扰）；`cancelled` 同样默认关闭。
+- **请求**：`POST` + `content-type: application/json` + `X-Tianshu-Event: <event>`；配 `secret` 时加 `X-Tianshu-Signature: sha256=<hex>`（HMAC-SHA256 对**原始 body 字符串**签名）。`redirect: "manual"` + `AbortSignal.timeout(timeoutMs)`（与 `src/visual/services.ts` 同一约定）。重试 `1 + maxRetries` 次，退避 `backoffMs × 第几次`；全失败仅一条 `warn`。
+- **`TaskStore` 新增可选第三参 `notifier`**：大量测试直接 `new TaskStore(home, logger)`，**必须保持可选**；`src/server.ts` 用 `new TaskNotifier(() => dataHome.loadConfig(), logger)` 惰性读配置（运行中改配置即生效）。
+- **如实披露**：尽力投递、不保证送达；跨 server 重启或接收端重试仍可能重复送达（建议接收端按同一键幂等）；请求体含 `projectPath` 与报告文件绝对路径，转发到公网前确认接收端可信；飞书/钉钉需自行适配报文格式（文档给了自建转发服务与网关改写两种接法 + 签名校验示例）。
+- 测试：新增 **29** 用例 / 2 文件（`notifier` 单测 20、`webhook-notify` 集成 9）+ 测试基建（`startMockWebhook` / `closedPortUrl` / `waitForCondition`）；全量 **1139 passed / 12 skipped**（103 文件，较 v0.6.6 的 1110 净增 29）；`check:stdio` dist 与 src 均 **8/8**。文档：[任务终态通知](docs/notifications.md) 双语 + [发布说明 v0.6.7](docs/release-v0.6.7.md) 双语；ARCHITECTURE 双语新增 §5.7（原「细粒度事件流」顺延为 §5.8，文内交叉引用已同步）。
+- **本版无真机依赖**（通知触发只依赖状态机跃迁，stub agent 即可完整驱动），故不需要真机记录；测试也不依赖外网（mock 只监听 127.0.0.1 随机端口）。
+- **发布实测**：待回写（CI 四平台 / `release.yml` / GitHub Release / Gitee 发行版 / npm `latest` / issue #22 关闭状态）。
 
 ### 0.6.6 开发交接（dryRun 干跑模式，issue #21）
 

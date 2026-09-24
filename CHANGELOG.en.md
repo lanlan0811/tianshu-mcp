@@ -8,6 +8,33 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.6.7] - 2026-09-24
+
+### Added
+
+- **Terminal-state webhook notifications** ([issue #22](https://github.com/lanlan0811/tianshu-mcp/issues/22)): when a task completes, fails or enters `needs_attention`, a JSON body is **asynchronously POSTed** to a configured URL, cutting the babysitting cost of long tasks. See [task notifications](docs/notifications.en.md).
+- **New `notifications.webhook` in the global `config.json`**: `enabled` (default false) / `url` / `timeoutMs` / `maxRetries` / `backoffMs` / `secret` (HMAC-SHA256 signing) / `events`.
+- **`src/tasks/notifier.ts`**: `TaskNotifier` (fire-and-forget, retry + backoff + timeout, warnings only on failure) and the `statusToEvent()` mapping.
+
+### Changed
+
+- `TaskStore`'s constructor gained an **optional** third argument, `notifier`; terminal notifications are dispatched inside `updateStatus`'s write closure **after** `appendEvent` + `writeSnapshot` succeed. Existing `new TaskStore(home, logger)` calls are entirely unaffected.
+- `src/server.ts` assembles the `TaskNotifier` (reading the same `config.json` lazily, so config edits take effect while running).
+
+### Compatibility
+
+- **Off by default**: unset or `enabled:false` sends **no requests at all**, behaving exactly as v0.6.6.
+- **No tool contract, data model or MCP annotation changes**; only a new **optional** config section.
+
+### Notes (disclosed honestly)
+
+- **The hook point is `TaskStore.updateStatus()`** (the single state-transition choke point), **not** `TaskOrchestrator.finish()` — the latter only covers orchestrator-driven ends, while `cancel()`'s queued branch, `initialize()`'s restart archiving, and `shutdownInterrupt()` / `persistInterrupted()` all bypass it.
+- **"Exactly once" dedupes on `taskId + status + finishedAt`; `prev !== status` cannot be used**: several paths **write `meta.status` directly first** and only then call `updateStatus`, at which point `prev` already equals the target state. `finishedAt` is refreshed by `updateStatus` on a terminal write and cleared by `rework`/`continueTask`, so repeated writes for one episode are suppressed while **a new episode after rework notifies again**. Delivery can still repeat across a server restart or a receiver retry, so receivers should dedupe on the same key.
+- **Only true terminal states are pushed by default**: `needs_attention` (terminal) → `needs_human`; `needs_user` (**non-terminal**, restorable via `continue_task`, possibly re-entered) is a separate class that is **off by default** — callers who want it must add it to `events` explicitly (knowing it will repeat). `cancelled` is likewise off by default.
+- **Best-effort, not guaranteed**: sending is fully asynchronous, so a slow or dead endpoint **does not block the state machine**; failures (network error / timeout / non-2xx) are retried `maxRetries` times and then only logged as a single `warn` — they **never change a task's terminal state**.
+- **The body contains local paths**: it includes `projectPath` and absolute paths to acceptance report files; confirm the receiver is trusted before forwarding to a public service.
+- **`enabled=true` without `url` is rejected by the schema** (no silent "enabled but never sends" confusion); `config.json` follows last-known-good, so a broken file only warns and keeps the previous valid config.
+
 ## [0.6.6] - 2026-09-24
 
 ### Added
