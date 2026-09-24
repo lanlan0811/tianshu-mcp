@@ -1,6 +1,6 @@
 # HANDOFF.md — 项目交接说明
 
-> **交接快照：2026-09-24 · 开发版本 `0.6.3`；`v0.6.3` 发布实测见下方「0.6.3 开发交接」末行。**
+> **交接快照：2026-09-24 · 开发版本 `0.6.3`；`v0.6.3` 已发布（GitHub Release / Gitee 发行版 / npm `latest` 三者一致，发布提交 `a54a34f`）。**
 > 本文写给**接手本仓库的人**：先说清「这是什么、现在到哪一步」，再给出「怎么跑、怎么改、哪里会踩坑」。
 > 工作区规则见 `AGENTS.md`（gitignore，仅本地）；安装与用法见 `README.md`，本文不重复，只做导览与状态记录。
 
@@ -22,7 +22,7 @@
 - **如实披露**：`file_modification_started` 是**启发式**推断 —— 适配器并不直接观测文件系统，只能从界面运行信号（停止按钮）推断执行已开始，detail 一律写「停止按钮出现，开始执行（可能开始改动文件）」，**不声称已改动**。确切改动证据看验收报告的 `changedFiles` / `diffstat`。本版只在 **codex + traework** 真正上报；zcode / kimicode / qoder 与全部 CLI 适配器保留接口、暂不上报。
 - 测试：新增 **36** 用例 / 4 文件（`agent-events` 15、`fix-loop-events` 4、`codex-flow` +5、`traework-events` 5、`query-events` 7）；全量 **1002 passed / 12 skipped**（93 文件，较 v0.6.2 的 966 净增 36）；`check:stdio` dist 与 src 均 **8/8**。文档：[事件流](docs/event-stream.md) 双语 + [发布说明 v0.6.3](docs/release-v0.6.3.md) 双语。
 - **真机记录（待补，交付后执行）**：用 `scripts/probe-codex.mjs` / `scripts/probe-traework.mjs` 各跑一次真实 GUI 任务，确认 5 类事件在 `query_task` 输出中按预期出现（尤其卡在原生弹窗时的 `confirmation_dialog_detected` / `awaiting_user_authorization`），输出落 `docs/` 证据文件。本版以单测 + 假 CDP 集成测试为门禁。
-- **发布实测**：待回写（CI 四平台 / `release.yml` / GitHub Release / Gitee 发行版 / npm `latest` / issue 关闭状态）。
+- **发布实测**：CI 四平台 **22/22 全绿**（`a54a34f`）；`release.yml` 成功并生成 GitHub Release（`v0.6.3`，正文 10903 字符）；Gitee 发行版经 `scripts/gitee-release.mjs 0.6.3 0.6.2` 更新成功；npm `latest` 已为 **v0.6.3**（`npm publish --registry=https://registry.npmjs.org --access public`，237 文件 / 661.2 kB）。**issue #18 尚未关闭**：本机无 GitHub 写权限令牌（`GH_TOKEN` 等均未设置、`gh` 未安装），需由维护者回复并关闭。
 
 ### 0.6.2 开发交接（GUI 选择器版本漂移，issue #23）
 
