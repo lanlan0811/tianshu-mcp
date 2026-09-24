@@ -141,6 +141,8 @@ function runTaskKeyedFields(args: RunTaskParams): Record<string, unknown> {
     // issue #20：验收策略覆盖会改变这一轮的门禁，必须计入摘要 —— 否则同键重放
     // 会返回一个「策略不同」的旧任务，调用方以为重试成功、实际拿到的是另一套验收口径。
     acceptanceOverride: args.acceptanceOverride,
+    // issue #21：dryRun 改变 agent 的行为约束与验收口径，同属「会改变结果」的入参
+    dryRun: args.dryRun,
   };
 }
 
@@ -457,6 +459,8 @@ function runTaskHandler(
         taskTimeoutMs,
         // issue #20：任务级临时验收配置覆盖，随快照保存、仅本任务生效
         acceptanceOverride: args.acceptanceOverride,
+        // issue #21：干跑模式（只分析规划、不改源码）
+        dryRun: args.dryRun,
         idempotencyKey: args.idempotencyKey,
         idempotencyScope: args.idempotencyKey === undefined ? undefined : "run_task",
         idempotencyDigest: args.idempotencyKey === undefined ? undefined : digest,
@@ -558,6 +562,13 @@ async function runTaskWithoutProject(
     // 无项目模式没有项目验收，覆盖无的放矢；显式拒绝而非静默忽略，避免调用方误以为已生效
     return errorResult(
       "无项目模式不支持 acceptanceOverride：没有项目验收可覆盖。请提供 projectPath，或移除该参数。",
+    );
+  }
+  if (args.dryRun === true) {
+    // issue #21：dryRun 的静态分析依赖项目基线（引用文件是否存在、源码是否零改动），
+    // 无项目模式没有可分析的文件树，显式拒绝而不是让它退化成一次普通无项目任务。
+    return errorResult(
+      "无项目模式不支持 dryRun：没有可静态分析的项目基线与文件树。请提供 projectPath，或移除 dryRun。",
     );
   }
   try {

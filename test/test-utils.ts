@@ -20,7 +20,15 @@ const THIS_DIR = path.dirname(fileURLToPath(import.meta.url));
 export const FIXTURE_DIR = path.join(THIS_DIR, "stub-agent", "fixture");
 export const STUB_SCRIPT = path.join(THIS_DIR, "stub-agent", "stub-agent.mjs");
 
-export type Playbook = "good" | "fix-on-first" | "never" | "sleep";
+export type Playbook =
+  | "good"
+  | "fix-on-first"
+  | "never"
+  | "sleep"
+  /** issue #21：只产出计划、不改源码（合规 dryRun） */
+  | "dry-run-plan"
+  /** issue #21：产出计划同时改源码（触发 dry_run_violation） */
+  | "dry-run-edit";
 
 export async function makeTmpRoot(tag: string): Promise<string> {
   const root = path.join(os.tmpdir(), `tianshu-mcp-test-${tag}-${randomBytes(4).toString("hex")}`);

@@ -207,6 +207,16 @@ export interface TaskMeta {
    */
   acceptanceOverride?: PartialAcceptanceConfig;
   /**
+   * 干跑模式（issue #21）：只分析规划、不改源码，验收走静态分析。
+   * 随任务快照保存；dryRun 任务不进入自动返修，也不消耗验收轮次。
+   */
+  dryRun?: boolean;
+  /** dryRun 静态分析报告的绝对路径（`dry-run-report-<round>.md`，与常规 report-<round>.* 分开） */
+  dryRunReportMd?: string;
+  dryRunReportJson?: string;
+  /** dryRun 结构化计划渲染出的 markdown 绝对路径，供后续正式任务作 planDoc 复用 */
+  dryRunPlanMd?: string;
+  /**
    * 结构化「本轮不适用项目验收」的原因。无项目模式（default 工作区）执行成功后置为
    * "no_project"——用结构化字段表达跳过，而不是生成虚假的验收通过报告。
    */

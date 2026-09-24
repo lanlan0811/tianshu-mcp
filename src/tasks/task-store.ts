@@ -28,6 +28,11 @@ import { isAgentEventName } from "../agents/agent-events.js";
 import { nowIso } from "../util/id.js";
 import { Logger } from "../util/log.js";
 import { reportToJsonable, reportToMd } from "../verify/report.js";
+import {
+  dryRunReportToJsonable,
+  renderDryRunReportMd,
+  type DryRunReport,
+} from "../verify/dry-run.js";
 import { visualHtml } from "../visual/report.js";
 
 const STATUS_EVENT_MAP: Record<TaskStatus, TaskEventName> = {
@@ -75,6 +80,21 @@ export class TaskStore {
   }
   reportJsonPath(taskId: string, round: number): string {
     return path.join(this.dir(taskId), `report-${round}.json`);
+  }
+  /**
+   * dryRun 静态分析报告（issue #21）。**刻意与 `report-<round>.*` 分开命名**：
+   * 两者结论口径不同（静态分析 vs 真实命令验收），若共用文件名会让
+   * `nextReportRound()` 把 dryRun 误当成一轮验收、也会污染常规报告列表。
+   */
+  dryRunReportMdPath(taskId: string, round: number): string {
+    return path.join(this.dir(taskId), `dry-run-report-${round}.md`);
+  }
+  dryRunReportJsonPath(taskId: string, round: number): string {
+    return path.join(this.dir(taskId), `dry-run-report-${round}.json`);
+  }
+  /** dryRun 结构化计划渲染出的 markdown（供后续正式任务作 planDoc 复用） */
+  dryRunPlanMdPath(taskId: string): string {
+    return path.join(this.dir(taskId), "dry-run-plan.md");
   }
 
   /** 供 query/get_report 读取历史：目录内是否已有产物 */
@@ -219,6 +239,23 @@ export class TaskStore {
     }
     await writeTextAtomic(report.files.md, reportToMd(report));
     await writeJsonAtomic(report.files.json, reportToJsonable(report));
+  }
+
+  /**
+   * 写 dryRun 静态分析报告（issue #21）。
+   * **不触碰 `report-<round>.*`**：dryRun 不消耗验收轮次，两份产物互不干扰。
+   */
+  async saveDryRunReport(
+    taskId: string,
+    round: number,
+    report: DryRunReport,
+  ): Promise<{ md: string; json: string }> {
+    await mkdirp(this.dir(taskId));
+    const md = this.dryRunReportMdPath(taskId, round);
+    const json = this.dryRunReportJsonPath(taskId, round);
+    await writeTextAtomic(md, renderDryRunReportMd(report));
+    await writeJsonAtomic(json, dryRunReportToJsonable(report));
+    return { md, json };
   }
 
   /** 启动扫描：找出 running/interrupted/queued 遗留，供归档 */

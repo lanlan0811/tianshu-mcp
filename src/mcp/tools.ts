@@ -55,7 +55,8 @@ export const TOOL_DEFS: ToolDef[] = [
   {
     name: "run_task",
     description:
-      "派活：启动外部 AI-Agent 开发任务并可自动验收返修，异步返回 taskId。ZCode 要求 model=供应商/模型，不支持 mode；TraeWork 的 model 可选并支持 Work/Code/Design mode。task/context 内的 ZCode 项目路径引用会在发送前校验。Qoder CN 要求已有 projectPath 和可读 planDoc；modelSource 可选 default/custom，省略模型或等级则沿用当前设置。思考等级通过模型管理保存为全局偏好，权限模式不变；macOS research 禁止派发。可选 idempotencyKey（1..128 字符）：同一 key 在 TTL（默认 24h）内重复提交恒返回原 taskId 与当前状态、不新建任务，参数变更则报冲突——重试请复用同一 key。",
+      "派活：启动外部 AI-Agent 开发任务并可自动验收返修，异步返回 taskId。ZCode 要求 model=供应商/模型，不支持 mode；TraeWork 的 model 可选并支持 Work/Code/Design mode。task/context 内的 ZCode 项目路径引用会在发送前校验。Qoder CN 要求已有 projectPath 和可读 planDoc；modelSource 可选 default/custom，省略模型或等级则沿用当前设置。思考等级通过模型管理保存为全局偏好，权限模式不变；macOS research 禁止派发。可选 idempotencyKey（1..128 字符）：同一 key 在 TTL（默认 24h）内重复提交恒返回原 taskId 与当前状态、不新建任务，参数变更则报冲突——重试请复用同一 key。 " +
+      "可选 dryRun=true 进入干跑模式（先审后做）：agent 只分析规划、输出将要修改的文件清单与方案、不动源码；验收引擎只做静态分析（引用文件是否存在、拟改位置是否存在、明显逻辑冲突），跳过 typecheck/test/build。dryRun 需提供 projectPath、忽略 autoVerify、不进入自动返修；产物为独立报告（meta.dryRunReportFiles，不消耗验收轮次）与方案文档（meta.dryRunPlanDoc，可直接作为后续正式任务的 planDoc）。默认关闭。",
     inputSchema: RunTaskParamsSchema,
     capability: "write",
     requireApproval: true,

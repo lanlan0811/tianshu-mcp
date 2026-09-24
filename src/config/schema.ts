@@ -170,6 +170,15 @@ export const RunTaskParamsSchema = z.object({
    * 不影响其他任务或项目。不传则完全沿用全局/项目层配置。
    */
   acceptanceOverride: PartialAcceptanceConfigSchema.optional(),
+  /**
+   * 干跑模式（issue #21）：agent **只分析、只规划**，输出将要修改的文件清单与方案，
+   * 不动源码；验收引擎只做静态分析（引用文件是否存在、拟改位置是否存在、明显逻辑冲突），
+   * 跳过 typecheck/test/build 等需要实际改动的检查。
+   *
+   * 默认关闭（缺省 = 与既有行为完全一致）。**需要 projectPath**：无项目模式没有可静态分析的基线。
+   * dryRun 下忽略 `autoVerify`、不进入自动返修。
+   */
+  dryRun: z.boolean().optional(),
 });
 export type RunTaskParams = z.infer<typeof RunTaskParamsSchema>;
 

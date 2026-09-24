@@ -58,6 +58,8 @@ export interface NewTaskInput {
   taskTimeoutMs: number;
   /** 任务级临时验收配置覆盖（issue #20）；随快照保存，仅本任务生效。 */
   acceptanceOverride?: PartialAcceptanceConfig;
+  /** 干跑模式（issue #21）：只分析规划、不改源码。 */
+  dryRun?: boolean;
   /**
    * 幂等路径预生成的任务 id（issue #15）：让调用方能在 `submit()` **之前**把
    * 「幂等键 → taskId」落盘，从而消除「映射已写、任务尚未建」这一崩溃窗口；
@@ -258,6 +260,7 @@ export class TaskManager {
       autoFixRounds: input.autoFixRounds,
       taskTimeoutMs: input.taskTimeoutMs,
       acceptanceOverride: input.acceptanceOverride,
+      dryRun: input.dryRun,
       idempotencyKey: input.idempotencyKey,
       idempotencyScope: input.idempotencyScope,
       idempotencyDigest: input.idempotencyDigest,

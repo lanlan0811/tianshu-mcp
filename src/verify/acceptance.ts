@@ -29,6 +29,7 @@ import { toAcceptanceDef } from "../config/store.js";
 import { runVerifyCommand, makeSkipResult } from "./runner.js";
 import { analyzeChanges } from "./code-analysis.js";
 import { extractRepairDirectives } from "./directives.js";
+import { runDryRunChecks, type DryRunReport } from "./dry-run.js";
 import { captureBaseline, gitDiffCheckSince } from "./git-baseline.js";
 import { nowIso } from "../util/id.js";
 import type { VerifyReport, CheckResult } from "../tasks/task.js";
@@ -254,6 +255,47 @@ export class AcceptanceEngine {
     } finally {
       this.active.delete(req.taskId);
     }
+  }
+
+  /**
+   * 干跑模式（issue #21）：**只做静态分析**，不跑任何命令检查、不跑视觉验收、
+   * 不走 `requireChanges`／`no-changes` 门禁，也**不消耗验收轮次**。
+   *
+   * 刻意做成独立方法而不是在 `executeVerify` 里分支：dryRun 的产物是 `DryRunReport`
+   * （与 `VerifyReport` 口径不同：静态分析 vs 真实命令验收），若强行并进同一条返回值
+   * 就得引入联合类型或伪造一个 VerifyReport，既污染类型也让「轮次/报告」账目变复杂。
+   * 报告落 `dry-run-report-<round>.*`，文件名不匹配 `^report-(\d+)\.(md|json)$`，
+   * 因此 `nextReportRound()` 不会把它算成一轮验收。
+   */
+  async runDryRun(req: {
+    taskId: string;
+    projectPath: string;
+    round: number;
+    baseline?: Awaited<ReturnType<typeof captureBaseline>>;
+    allowedArtifacts?: string[];
+    taskText?: string;
+    store: TaskStore;
+  }): Promise<DryRunReport> {
+    const startedAt = nowIso();
+    const baseline = req.baseline ?? (await captureBaseline(req.projectPath));
+    const analysis = await analyzeChanges({
+      projectPath: req.projectPath,
+      baseline,
+      taskText: req.taskText,
+    });
+    const report = await runDryRunChecks({
+      taskId: req.taskId,
+      projectPath: req.projectPath,
+      round: req.round,
+      startedAt,
+      analysis,
+      allowedArtifacts: req.allowedArtifacts,
+    });
+    await req.store.saveDryRunReport(req.taskId, req.round, report);
+    this.logger.info(
+      `任务 ${req.taskId} 第 ${req.round} 轮 dryRun 静态分析: ${report.passed ? "通过" : "未通过"}（${report.findings.length} 项 finding）`,
+    );
+    return report;
   }
 
   private async executeVerify(

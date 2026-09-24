@@ -3,6 +3,8 @@
  * meta 块固定以 ---tianshu-mcp-meta--- 起止行包裹，天枢可正则抽取。
  * ToolResult 使用 type alias（带隐式索引签名），以匹配官方 SDK 的 CallToolResult。
  */
+import path from "node:path";
+import { toPosix } from "../util/fs.js";
 import type { TaskMeta } from "../tasks/task.js";
 
 export interface MetaBlockFields {
@@ -69,6 +71,20 @@ export interface MetaBlockFields {
     detail?: string;
     data?: Record<string, unknown>;
   }[];
+  /**
+   * 干跑模式（issue #21）：本任务是否为 dryRun 只分析规划。
+   */
+  dryRun?: boolean;
+  /**
+   * dryRun 静态分析报告（issue #21），与常规 `reportFiles` **分开**：
+   * 静态分析结论与真实命令验收结论口径不同，混在一起会误导调用方。
+   */
+  dryRunReportFiles?: { md?: string; json?: string };
+  /**
+   * dryRun 产出的方案文档（项目相对路径）。后续正式 `run_task` 可直接把它作为 `planDoc` 传入，
+   * 形成「先审后做」闭环。
+   */
+  dryRunPlanDoc?: string;
 }
 
 export type ToolResult = {
@@ -135,6 +151,14 @@ export function metaFromTask(meta: TaskMeta, extra?: Partial<MetaBlockFields>): 
       meta.guiResidualUnconfirmed === true || meta.interruptedCleanStop === false ? true : undefined,
     lastRunSignal: meta.lastRunSignal,
     idempotencyKey: meta.idempotencyKey,
+    ...(meta.dryRun ? { dryRun: true } : {}),
+    ...(meta.dryRunReportMd || meta.dryRunReportJson
+      ? { dryRunReportFiles: { md: meta.dryRunReportMd, json: meta.dryRunReportJson } }
+      : {}),
+    // 方案文档报**项目相对路径**：调用方要把它原样传给后续 run_task 的 planDoc
+    ...(meta.dryRunPlanMd
+      ? { dryRunPlanDoc: toPosix(path.relative(meta.projectPath, meta.dryRunPlanMd)) }
+      : {}),
     ...extra,
   };
 }

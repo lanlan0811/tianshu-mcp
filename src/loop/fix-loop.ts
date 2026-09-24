@@ -13,6 +13,7 @@ import {
   mkdirp,
   writeJsonAtomic,
   readJsonSafe,
+  writeTextAtomic,
 } from "../util/fs.js";
 import type { TaskContext, ResolvedAgent } from "../agents/adapter.js";
 import { AgentAdapterRegistry } from "../agents/registry.js";
@@ -21,6 +22,11 @@ import { captureBaseline, type Baseline } from "../verify/git-baseline.js";
 import { AcceptanceEngine, type VerifyRequest } from "../verify/acceptance.js";
 import { summarizeReport } from "../verify/report.js";
 import { renderDirectiveLines, type RepairDirectives } from "../verify/directives.js";
+import {
+  DRY_RUN_PLAN_REL_PATH,
+  dryRunPlanDocRelPath,
+  renderDryRunPlanDoc,
+} from "../verify/dry-run.js";
 import { writeRepairPlan } from "./repair-plan.js";
 import { writeCodexFixPlan } from "../agents/codex/fixplan.js";
 import { buildFixPrompt } from "../agents/codex/input.js";
@@ -254,6 +260,49 @@ export class TaskOrchestrator {
         if (runRes.killed) {
           return this.abortTerminal(runRes.guiStop);
         }
+
+        // ---- issue #21：dryRun 只做静态分析 ----
+        // 放在这里（agent 已返回、正常验收之前）的理由：先让 agent 跑完只读预演与计划产出，
+        // 再静态核对；硬失败/超时/取消/等人已在上面处理，不会走到这里。
+        // dryRun 刻意**忽略 autoVerify**（它本来就是「先审」而不是「验收」），也**不进返修循环**
+        // —— 方案有问题属人工决策，不是可以自动返修的代码缺陷。
+        if (meta.dryRun) {
+          const dryReport = await this.deps.engine.runDryRun({
+            taskId: meta.taskId,
+            projectPath: meta.projectPath,
+            round,
+            baseline,
+            taskText: meta.task,
+            // 允许 agent 写的产物：计划文件本身，以及任务书里点名的 planDoc（若有）
+            allowedArtifacts: [
+              DRY_RUN_PLAN_REL_PATH,
+              ...(meta.planDoc ? [meta.planDoc] : []),
+            ],
+            store,
+          });
+          meta.dryRunReportMd = store.dryRunReportMdPath(meta.taskId, round);
+          meta.dryRunReportJson = store.dryRunReportJsonPath(meta.taskId, round);
+          // 计划渲染成项目内 markdown，供后续正式任务作 planDoc 复用（「先审后做」闭环）
+          if (dryReport.plan) {
+            const rel = dryRunPlanDocRelPath(meta.taskId);
+            const abs = path.join(meta.projectPath, ...rel.split("/"));
+            await mkdirp(path.dirname(abs));
+            await writeTextAtomic(abs, renderDryRunPlanDoc(dryReport));
+            meta.dryRunPlanMd = abs;
+          }
+          const tail = [
+            dryReport.summary,
+            `静态分析报告：${meta.dryRunReportMd}`,
+            meta.dryRunPlanMd
+              ? `方案文档（可作为后续正式任务的 planDoc）：${dryRunPlanDocRelPath(meta.taskId)}`
+              : "（未取得结构化计划，无法作为 planDoc 复用）",
+          ].join("\n");
+          // 方案有问题 → needs_attention（人工裁决），不是 failed（并非代码缺陷）
+          return dryReport.passed
+            ? this.finish("succeeded", null, tail)
+            : this.finish("needs_attention", "verify_failed", tail);
+        }
+
         if (!runRes.ok && !meta.autoVerify) {
           return this.finish(
             "failed",
