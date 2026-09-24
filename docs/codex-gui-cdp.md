@@ -109,7 +109,7 @@ CDP 调试端口只有在**专属 user-data-dir** 下才会开启：
 
 `src/agents/codex/model.ts`。任务参数为**双字段**：
 
-- `model`：如 `GPT-5.6 Sol`
+- `model`（**必填**）：面板实际型号。**型号名会随版本/账号漂移**，不要照抄旧文档 —— 传了不存在的型号时适配器 fail-closed 并**回显当前可见候选**，以该回显为准（本机 26.917 实测候选：`6 Luna` / `5.6 Terra` / `5.6 Luna`；旧文档中的 `GPT-5.6 Sol` 在该版本上已不可用）
 - `reasoningLevel`：`低/中/高` 或 `low/medium/high`（内部归一为 `low|medium|high`）
 
 **界面真实结构（真机实测，与最初设想不同）**：打开模型菜单后——
@@ -205,7 +205,7 @@ CDP 调试端口只有在**专属 user-data-dir** 下才会开启：
 
 | 字段 | 说明 |
 |---|---|
-| `model` | 模型名，如 `GPT-5.6 Sol` |
+| `model` | 模型名，**必填**；以面板或错误回显的可见候选为准（见上） |
 | `reasoningLevel` | `低/中/高` 或 `low/medium/high` |
 | `planDoc` | 计划文档路径（相对项目根或绝对），拼进初始指令 |
 | `designSystem` | 设计系统目录路径，拼进初始指令 |

@@ -94,7 +94,7 @@ Multilingual: every key ships bilingual candidates (`texts` / `ariaLabels`) plus
 
 `src/agents/codex/model.ts`. Task parameters are **two fields**:
 
-- `model`: e.g. `GPT-5.6 Sol`
+- `model` (**required**): the model name shown in the panel. **Names drift across versions/accounts**, so do not copy them from older docs — an unknown name makes the adapter fail closed and **echo the currently visible candidates**, which is the authority (on 26.917 this machine listed `6 Luna` / `5.6 Terra` / `5.6 Luna`; the `GPT-5.6 Sol` of older docs is no longer available there)
 - `reasoningLevel`: `低/中/高` or `low/medium/high` (normalized internally to `low|medium|high`)
 
 **Actual UI structure (measured on hardware; differs from the original assumption)**: after opening the model menu —
@@ -160,7 +160,7 @@ The native dialog is unreachable from CDP, so `src/agents/codex/dialog.ts` drive
 
 | Field | Description |
 |---|---|
-| `model` | Model name, e.g. `GPT-5.6 Sol` |
+| `model` | Model name, **required**; take it from the panel or the candidate list echoed in the error (see above) |
 | `reasoningLevel` | `低/中/高` or `low/medium/high` |
 | `planDoc` | Plan document path (project-relative or absolute), added to the initial instruction |
 | `designSystem` | Design system directory path, added to the initial instruction |

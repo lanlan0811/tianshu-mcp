@@ -293,7 +293,7 @@ TraeWork 存活检测相关字段：`stableRounds` 仅确认 DOM 已稳定；随
 
 > `zcode` 使用 `driver=gui` + `adapter=zcode-gui`。`model` 必须是 `供应商/模型`，默认权限为“完全访问”、默认自动返修 2 轮。Windows 真机闭环已完成；macOS 真机证据完成前内置状态保持 `research`。
 
-> `codex` 使用 `driver=gui` + `adapter=codex-gui` + `activation=msix-com`。任务参数含 `model`（如 `GPT-5.6 Sol`）、`reasoningLevel`（低/中/高 或 low/medium/high）、`planDoc`、`designSystem`；默认权限“完全访问”、默认自动返修 5 轮。Windows 真机已验证；macOS 内置状态为 `research`。详见 [codex-gui-cdp.md](codex-gui-cdp.md)。
+> `codex` 使用 `driver=gui` + `adapter=codex-gui` + `activation=msix-com`。任务参数含 `model`（**必填**，以面板实际候选为准，型号名随版本漂移；本机 26.917 实测如 `5.6 Terra`）、`reasoningLevel`（低/中/高 或 low/medium/high）、`planDoc`、`designSystem`；默认权限“完全访问”、默认自动返修 5 轮。Windows 真机已验证；macOS 内置状态为 `research`。详见 [codex-gui-cdp.md](codex-gui-cdp.md)。
 
 > `kimicode` 使用 `driver=gui` + `adapter=kimicode-gui` + `activation=spawn`（普通 Electron 安装，实测 1.0.2）。`model` 必填且直接填界面模型名（如 `K3`、`K2.8 Preview`、`stepfun/step-3.7-flash:free`），**不支持 `mode`**；CDP 基准端口 `9666`（`cdpPortAuto` 时按 `cdpPortRange` 顺延），`launchTimeoutMs` 90000，默认权限「完全自动」、默认自动返修 2 轮。Windows 真机已验证（成功路径 / 未登记工作区导入 + 自动验收 / 失败→返修→再验收同会话闭环）；macOS 为 `research` 且 fail-closed。详见 [kimi-cdp.md](kimi-cdp.md)。
 
