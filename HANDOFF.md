@@ -1,6 +1,6 @@
 # HANDOFF.md — 项目交接说明
 
-> **交接快照：2026-09-24 · 开发版本 `0.6.5`；`v0.6.5` 发布实测见下方「0.6.5 开发交接」末行。**
+> **交接快照：2026-09-24 · 开发版本 `0.6.5`；`v0.6.5` 已发布（GitHub Release / Gitee 发行版 / npm `latest` 三者一致，发布提交 `6a150f5`）。**
 > 本文写给**接手本仓库的人**：先说清「这是什么、现在到哪一步」，再给出「怎么跑、怎么改、哪里会踩坑」。
 > 工作区规则见 `AGENTS.md`（gitignore，仅本地）；安装与用法见 `README.md`，本文不重复，只做导览与状态记录。
 
@@ -20,7 +20,8 @@
 - `executeVerify` 的 `visual` 改取合并结果，不再二次读项目文件（否则 override/全局层的 `visual` 会随项目文件是否存在而改变语义）。
 - 测试：新增 **36** 用例 / 3 文件（`acceptance-merge` 18、`acceptance-override` 6、`config-cli` 12）；全量 **1073 passed / 12 skipped**（99 文件，较 v0.6.4 的 1037 净增 36）；`check:stdio` dist 与 src 均 **8/8**。文档：`docs/acceptance-config` 双语优先级表按三级重写 + [发布说明 v0.6.5](docs/release-v0.6.5.md) 双语；ARCHITECTURE 双语新增 §7.4。
 - **本版无真机依赖**（验收标准三项均由单测/集成测试/CLI 冒烟覆盖），故不需要真机记录。
-- **发布实测**：待回写（CI 四平台 / `release.yml` / GitHub Release / Gitee 发行版 / npm `latest` / issue #20 关闭状态）。
+- **CI 失败与修复（值得记住的教训）**：首轮 CI **九作业全挂**，根因是本版新增的「无项目模式拒绝 `acceptanceOverride`」用例**依赖本机装了 ZCode**——无项目模式要求 `agentId=zcode`，而参数校验发生在 **agent 解析之后**，CI 上 ZCode 未安装会先撞上「agent 当前不可用」，根本测不到拒绝分支（本机因装了 ZCode 而恰好通过，本地全绿）。修法：在测试数据目录写 profile **覆盖内置 zcode**（`driver=spawn` + stub 脚本），使 `resolve` 在任何环境都成功。**通用教训：新增用例不得依赖本机安装的 GUI agent；需要某个内置 agent 可解析时，用数据目录 profile 覆盖它。**
+- **发布实测**：CI 四平台 **22/22 全绿**（`6a150f5`，首轮 `61ca0f0` 因上述用例不可移植而九作业全挂）；`release.yml` 成功并生成 GitHub Release（`v0.6.5`，正文 12208 字符）；Gitee 发行版经 `scripts/gitee-release.mjs 0.6.5 0.6.4` 更新成功；npm `latest` 已为 **v0.6.5**。**issue #20 尚未关闭**：同 #18/#19，本机无 GitHub 写权限令牌，需维护者回复并关闭。
 
 ### 0.6.4 开发交接（结构化修复指令，issue #19）
 
