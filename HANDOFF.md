@@ -37,6 +37,12 @@
 - **一处不阻断的小瑕疵（本轮顺带发现，未修）**：`reportToMd()` 对 `## 结构化修复指令` 段**无条件渲染**，
   于是**通过**轮次的报告里也会出现「（不可用，请改看上方各检查项的输出尾部）原因：本轮报告未生成结构化指令」。
   不影响判定与失败轮次的指令质量；如要清理，改成仅在失败轮次渲染即可（`src/verify/report.ts:79-92`）。
+- **四个 issue 已各附一条真机证据补充评论**（2026-09-25，均 HTTP 201）：
+  [#19](https://github.com/lanlan0811/tianshu-mcp/issues/19#issuecomment-5828195336) /
+  [#20](https://github.com/lanlan0811/tianshu-mcp/issues/20#issuecomment-5828195588) /
+  [#21](https://github.com/lanlan0811/tianshu-mcp/issues/21#issuecomment-5828195699) /
+  [#22](https://github.com/lanlan0811/tianshu-mcp/issues/22#issuecomment-5828195817)。
+  评论正文见 `.claude/plans/issue-19-rm-reply.md` ~ `issue-22-rm-reply.md`，重发脚本 `.claude/plans/post-rm-replies.mjs`（均 gitignore）。
 - **真机副作用**：受管 Codex 实例已关闭；scratch 项目登记进了 `~/.codex/.codex-global-state.json`
   （每次登记前自动备份为 `*.tianshu-mcp-backup.json`，项目名形如 `proj`，需在 Codex 内手动移除）；
   scratch 数据目录与项目保留在 `%TEMP%\tianshu-rm19-*|rm20-*|rm21-*|rm22-*` 供人工复核。
