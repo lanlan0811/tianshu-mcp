@@ -2,9 +2,44 @@
 
 > **交接快照：2026-09-24 · 开发版本 `0.6.7`；`v0.6.7` 已发布（GitHub Release / Gitee 发行版 / npm `latest` 三者一致，发布提交 `ca98797`）。**
 > **issue #18~#22 五项增强已全部交付**（v0.6.3~v0.6.7，每版各自完整发布），**五个 issue 均已回复并关闭**（2026-09-24）。
-> 仅剩 #18 / #19 / #21 的**真机记录**为交付后待办（各版发布说明已写明探针步骤；本机已确认装有 Codex 26.917，可随时补跑）。
+> **#18~#22 的真机记录已全部补齐**（2026-09-25）：见 [issue #19/#20/#21/#22 真机记录](docs/issue-19-22-real-machine-record.md) 与 [issue #18/#19/#21 真机记录](docs/issue-18-21-real-machine-record.md)；各 issue 另附真机证据补充评论。
+> **⚠️ 新发现一条会阻断全部 Codex 派发的适配器缺陷**（`26.917.9434` 模型触发器回读混入整条思考等级条 → `model_mismatch`），尚未修复、建议单开 issue，详见下方「真机取证补记」与记录文件 §5。
 > 本文写给**接手本仓库的人**：先说清「这是什么、现在到哪一步」，再给出「怎么跑、怎么改、哪里会踩坑」。
 > 工作区规则见 `AGENTS.md`（gitignore，仅本地）；安装与用法见 `README.md`，本文不重复，只做导览与状态记录。
+
+---
+
+### 真机取证补记（2026-09-25，issue #19~#22）
+
+按计划文档 `.claude/plans/issue-18-22-plan.md` 的「交付后待办」，本轮把 issue #19~#22 的真机记录补齐，
+机器 Windows 10 Pro 19045，被测版本 `master`（v0.6.7）的本地 `npm run build` 产物。
+完整记录：[issue #19/#20/#21/#22 真机记录](docs/issue-19-22-real-machine-record.md)（中文单语，沿用既有 `docs/issue-*-record.md` 体例）。
+
+| issue | 真机方式 | 结果 |
+|---|---|---|
+| #19 | 真实 Codex GUI + `autoVerify` + `autoFixRounds=1` | ✅ **前后对比**：第 0 轮 `[FAIL]` → `repairDirectives` 精确给出 `src/app.ts:13` / `:17`（与两处真实缺陷一致）→ 2.5 节进返修计划 → 第 1 轮 `[PASS]` |
+| #20 | 真实 CLI 子进程 + 真实 MCP server + stub | ✅ 三级继承逐字段可见；**项目层只写 `verifyConcurrency` 时 `requireChanges` 仍为全局层的 `false`**（本版修的 `.default()` 污染隐患）；override 不粘连；坏层 fail-closed |
+| #21 | 真实 Codex GUI + `dryRun=true` | ✅ 6/6：零源码改动（`git status` 仅 `.tianshu-mcp/`）、`planExtracted=true`、不消耗验收轮次、方案文档可作 `planDoc` |
+| #22 | 真实 MCP server + 真实本地 `node:http` 端点 + stub | ✅ 14/14：恰好一次 POST、HMAC 验签、500 端点重试 3 次不阻塞、白名单过滤、`enabled:false` 零请求 |
+
+- **取证脚本**：`.claude/plans/rm19.mjs` / `rm20.mjs` / `rm21.mjs` / `rm22.mjs`（`.claude/` 受 `.gitignore` 忽略，故意不入库）。
+  **要复跑请先读记录文件各节的「复现要点」** —— 脚本依赖 scratch 数据目录（`%TEMP%\tianshu-rm*`）+ `dist/` 构建产物。
+- **⚠️ 本轮新发现：Codex 模型回读缺陷（阻断全部 codex 派发，尚未修复）**。`26.917.9434`（`26.917.8451` 同样复现）下模型触发器的
+  `innerText` 混入整条思考等级条（实测回读 `6 Luna 中 无 极低 轻度 中 高 极高 最高 Ultra 持续`），
+  `parseTriggerValue()` 要求文本以「低/中/高」结尾才能分离等级，此处以「持续」结尾 → 整串被当作型号 →
+  `exactUiName()` 必然为假 → 三轮后判 `model_mismatch`。**这是本轮 #19/#21 取证的实际阻塞点**，
+  取证时在 scratch 数据目录用「克隆内置 profile + 只改 `gui.modelSwitch=false`」绕开
+  （运行时日志如实打印 `[codex] profile.gui.modelSwitch=false，忽略指定模型`）；**属取证规避，不是修复**，
+  内置 profile 仍为 `modelSwitch: true`、产品行为未改。**建议单开 issue 跟踪**，修好后上面两个规避可撤掉。
+- **型号名继续漂移**：`26.917.9434` 的可用候选为 `默认 推荐模型集、6 Astra、6 Sol、6 Luna`
+  （此前文档示例里的 `5.6 Terra`、更早的 `GPT-5.6 Sol` 均已不存在）。适配器 fail-closed 并回显候选，
+  行为符合设计；文档「以面板/错误回显为准」的写法依然正确。
+- **一处不阻断的小瑕疵（本轮顺带发现，未修）**：`reportToMd()` 对 `## 结构化修复指令` 段**无条件渲染**，
+  于是**通过**轮次的报告里也会出现「（不可用，请改看上方各检查项的输出尾部）原因：本轮报告未生成结构化指令」。
+  不影响判定与失败轮次的指令质量；如要清理，改成仅在失败轮次渲染即可（`src/verify/report.ts:79-92`）。
+- **真机副作用**：受管 Codex 实例已关闭；scratch 项目登记进了 `~/.codex/.codex-global-state.json`
+  （每次登记前自动备份为 `*.tianshu-mcp-backup.json`，项目名形如 `proj`，需在 Codex 内手动移除）；
+  scratch 数据目录与项目保留在 `%TEMP%\tianshu-rm19-*|rm20-*|rm21-*|rm22-*` 供人工复核。
 
 ---
 
@@ -39,9 +74,9 @@
 - **一次 CI 事故与修复**：v0.6.5 首轮 **九作业全挂** —— 新增用例依赖本机装了 ZCode。**通用教训：新增用例不得依赖本机安装的 GUI agent**；需要某个内置 agent 可解析时，用数据目录 `agent-profiles.json` 覆盖它（并记得把 `stub` 一起写回）。
 - **真机记录的实际结果**（2026-09-24 实跑，详见 [issue #18/#19/#21 真机记录](docs/issue-18-21-real-machine-record.md)）：
   - **#18 ✅ 已取得**：真实 Codex GUI（COM 激活 + CDP，非假 CDP）跑通任务 `tsk_20260924225851_8d2575`（model `5.6 Terra`），终态 `succeeded` 且 Codex 真的写出了 `marker.txt`；`query_task` 回传 `task_dispatched` 与 `file_modification_started`（`evidence=stop_button`）两条事件，并验证了「事件时间线先于进度回报」。
-  - **#19 ⚠️ 未取得**：同套脚本 5 次尝试**均在派发前**失败，未消耗额度。**根因已查明是本机网络中断**（该时段 `chatgpt.com` / `api.openai.com` / `api.github.com` / `baidu.com` 全部 000，仅 gitee 通）—— Codex 连不上后端就不渲染输入框，故 `Codex 输入框尚未恢复`；第 5 次已先关闭残留实例并**重置受管 profile** 后仍失败，反证不是 GUI/profile 问题（仅第 1~2 次确属等级菜单残留导致的 `model_mismatch`）。**与「推 GitHub / 补发评论」同一根因**，网络恢复后可直接重跑。
-  - **#21 不需要**：其验收标准原文是「有对应测试**或**真机证据」，已由集成测试满足。
-- **顺带修正一处文档漂移**：`model: "GPT-5.6 Sol"` 在本机 **26.917 上已不可用**（适配器 fail-closed 回显候选 `6 Luna / 5.6 Terra / 5.6 Luna`）。`docs/codex-gui-cdp` 与 `docs/agent-profiles` 双语的 `model` 示例已改为「以面板/错误回显为准」并说明型号随版本漂移；**历史记录类文档刻意保持原样**（记录的是当时事实）。
+  - **#19 ⚠️ 未取得（2026-09-24）→ ✅ 已于 2026-09-25 补齐**：9/24 那次同套脚本 5 次尝试**均在派发前**失败，未消耗额度 —— 当时根因是**本机网络中断**（`chatgpt.com` / `api.openai.com` / `api.github.com` / `baidu.com` 全部 000，仅 gitee 通），Codex 连不上后端就不渲染输入框。**9/25 复跑后网络已正常，暴露的是另一条独立缺陷**（模型触发器回读混入整条思考等级条 → `model_mismatch`），已按顶部「真机取证补记」绕开并取到**前后对比**记录；详见 [issue #19/#20/#21/#22 真机记录](docs/issue-19-22-real-machine-record.md) §1。
+  - **#21 不需要（2026-09-24 判定）→ 2026-09-25 额外补了真机**：其验收标准原文是「有对应测试**或**真机证据」，已由集成测试满足；本轮为把四个 issue 证据补齐，另跑了一份真实 GUI 的零改动验证（见新记录 §3）。
+- **顺带修正一处文档漂移**：`model: "GPT-5.6 Sol"` 在本机 **26.917 上已不可用**（适配器 fail-closed 回显候选 `6 Luna / 5.6 Terra / 5.6 Luna`；26.917.9434 的候选又变为 `6 Astra / 6 Sol / 6 Luna`，见顶部「真机取证补记」）。`docs/codex-gui-cdp` 与 `docs/agent-profiles` 双语的 `model` 示例已改为「以面板/错误回显为准」并说明型号随版本漂移；**历史记录类文档刻意保持原样**（记录的是当时事实）。
 - **五项均已回复并关闭**（2026-09-24，各一条回复 + `state_reason=completed`）。回复文案见 `.claude/plans/issue-close-comments.md`（gitignore，含逐条验收标准对照）；#18/#19 的真机记录补充评论正文与重发脚本见 `.claude/plans/issue-18-followup.md` / `issue-19-followup.md` / `post-issue-followups.mjs`。
 - **GitHub API 写权限的来源（备忘，别再误判）**：本机 `~/.git-credentials` 存有 `github.com` 的凭据（用户 `lanlan0811`，经典 PAT，`X-OAuth-Scopes: gist, repo, workflow`），`git push` 正是用它。需要用 API 写操作时可用 `git credential fill` 取出（**只经环境变量传递，不落日志/不回显**）。**注意 `GH_TOKEN` / `GITHUB_TOKEN` 环境变量与 `gh` CLI 均不可用**，别据此判定「没有权限」。
 
@@ -63,7 +98,7 @@
 - **无项目模式显式拒绝 `dryRun`**（`runTaskWithoutProject`）：没有可静态分析的文件树与基线，静默忽略会让调用方误以为在干跑。
 - 测试：新增 **37** 用例 / 2 文件（`dry-run` 单测 29、`dry-run` 集成 8）+ stub 新增 `dry-run-plan` / `dry-run-edit` 两个剧本；全量 **1110 passed / 12 skipped**（101 文件，较 v0.6.5 的 1073 净增 37）；`check:stdio` dist 与 src 均 **8/8**。文档：[dryRun 干跑模式](docs/dry-run.md) 双语 + [发布说明 v0.6.6](docs/release-v0.6.6.md) 双语；ARCHITECTURE 双语新增 §7.5。
 - **本版**按 v0.6.5 的 CI 教训处理：新增用例**不依赖本机安装任何 GUI agent**（无项目模式用例自行桩化 profile，且重写 `agent-profiles.json` 时**必须把 stub 一起写回**，否则同文件后续用例会连 stub 都解析不到）。
-- **真机记录（待补，交付后执行）**：用 `scripts/probe-codex.mjs` 或 traework 探针跑真实 GUI 任务并加 `dryRun=true`，确认 agent 遵守只读约束（`git status` 无源码改动）、计划被正确解析、方案文档可作后续 `planDoc`。本版以单测 + 集成测试为门禁（issue #21 允许「测试**或**真机证据」）。
+- **真机记录（✅ 已于 2026-09-25 补齐）**：真实 Codex GUI + `dryRun=true` 已跑通 —— 零源码改动（`git status` 仅 `.tianshu-mcp/`）、`planExtracted=true`、不消耗验收轮次、方案文档可作后续 `planDoc`。见 [issue #19~#22 真机记录](docs/issue-19-22-real-machine-record.md) §3 与本文顶部「真机取证补记」，以及 issue #21 的真机证据补充评论。
 - **发布实测**：CI 四平台 **22/22 全绿**（`939ef15`）；`release.yml` 成功并生成 GitHub Release（`v0.6.6`，正文 12979 字符）；Gitee 发行版经 `scripts/gitee-release.mjs 0.6.6 0.6.5` 更新成功；npm `latest` 已为 **v0.6.6**。**issue #21 尚未关闭**：同 #18/#19/#20，本机无 GitHub 写权限令牌，需维护者回复并关闭。
 
 ### 0.6.5 开发交接（验收配置三级继承，issue #20）
@@ -100,7 +135,10 @@
 - **顺带改动**：`LOCKFILE_PATTERN` 由 `code-analysis.ts` 导出，分析告警与提取器共用一份清单（避免两处漂移）。
 - **已知限制（有意接受）**：`CheckResult.outputTail` 被截断到最后 4000 字符（`runner.ts`），大型项目只能提取到尾部类型错误，其余靠回退兜底 —— 不为提取放大报告体积。
 - 测试：新增 **35** 用例 / 3 文件（`repair-directives` 15、`repair-plan-directives` 16、`rework-repair-hint` 4）；全量 **1037 passed / 12 skipped**（96 文件，较 v0.6.3 的 1002 净增 35）；`check:stdio` dist 与 src 均 **8/8**。文档：[结构化修复指令](docs/repair-directives.md) 双语 + [发布说明 v0.6.4](docs/release-v0.6.4.md) 双语；`docs/acceptance-config` 双语补 `report.json.repairDirectives` 字段说明；ARCHITECTURE 双语新增 §7.3。
-- **真机记录（待补，交付后执行）**：用 `scripts/probe-codex.mjs` 构造必然 typecheck 失败的真实任务，确认 2.5 节给出正确的 `文件:行` 与动作，并留存 issue #19 要求的**前后对比**返修记录。本版以单测 + 集成测试为门禁。
+- **真机记录（✅ 已于 2026-09-25 补齐）**：用真实 Codex GUI 构造必然 typecheck 失败的任务（`autoVerify` + `autoFixRounds=1`），
+  已取得**前后对比**：第 0 轮 `[FAIL]` → `repairDirectives` 精确给出 `src/app.ts:13` / `:17`（与两处真实缺陷一致）→
+  2.5 节进返修计划 → 第 1 轮 `[PASS]`。见 [issue #19~#22 真机记录](docs/issue-19-22-real-machine-record.md) §1 与 issue #19 的真机证据补充评论。
+  注：该次取证受下方「真机取证补记」里的 Codex 模型回读缺陷阻塞，需在 scratch profile 里绕开才跑得动。
 - **发布实测**：CI 四平台 **22/22 全绿**（`a977a66`）；`release.yml` 成功并生成 GitHub Release（`v0.6.4`，正文 9786 字符）；Gitee 发行版经 `scripts/gitee-release.mjs 0.6.4 0.6.3` 更新成功；npm `latest` 已为 **v0.6.4**（240 文件）。**issue #19 尚未关闭**：同 #18，本机无 GitHub 写权限令牌，需维护者回复并关闭。
 
 ### 0.6.3 开发交接（细粒度事件流，issue #18）
@@ -118,7 +156,7 @@
 - **健壮性**：适配器一律经 `makeEmitter` 上报 —— 未提供钩子时空操作，**并吞掉上报异常**。事件上报属观测能力，**绝不允许影响任务本体**（有专门用例：落盘异常时任务仍 `succeeded`）。
 - **如实披露**：`file_modification_started` 是**启发式**推断 —— 适配器并不直接观测文件系统，只能从界面运行信号（停止按钮）推断执行已开始，detail 一律写「停止按钮出现，开始执行（可能开始改动文件）」，**不声称已改动**。确切改动证据看验收报告的 `changedFiles` / `diffstat`。本版只在 **codex + traework** 真正上报；zcode / kimicode / qoder 与全部 CLI 适配器保留接口、暂不上报。
 - 测试：新增 **36** 用例 / 4 文件（`agent-events` 15、`fix-loop-events` 4、`codex-flow` +5、`traework-events` 5、`query-events` 7）；全量 **1002 passed / 12 skipped**（93 文件，较 v0.6.2 的 966 净增 36）；`check:stdio` dist 与 src 均 **8/8**。文档：[事件流](docs/event-stream.md) 双语 + [发布说明 v0.6.3](docs/release-v0.6.3.md) 双语。
-- **真机记录（待补，交付后执行）**：用 `scripts/probe-codex.mjs` / `scripts/probe-traework.mjs` 各跑一次真实 GUI 任务，确认 5 类事件在 `query_task` 输出中按预期出现（尤其卡在原生弹窗时的 `confirmation_dialog_detected` / `awaiting_user_authorization`），输出落 `docs/` 证据文件。本版以单测 + 假 CDP 集成测试为门禁。
+- **真机记录（✅ 已于 2026-09-25 补齐，见 §1）**：用 `scripts/probe-codex.mjs` / `scripts/probe-traework.mjs` 各跑一次真实 GUI 任务，确认 5 类事件在 `query_task` 输出中按预期出现（尤其卡在原生弹窗时的 `confirmation_dialog_detected` / `awaiting_user_authorization`），输出落 `docs/` 证据文件。本版以单测 + 假 CDP 集成测试为门禁。
 - **发布实测**：CI 四平台 **22/22 全绿**（`a54a34f`）；`release.yml` 成功并生成 GitHub Release（`v0.6.3`，正文 10903 字符）；Gitee 发行版经 `scripts/gitee-release.mjs 0.6.3 0.6.2` 更新成功；npm `latest` 已为 **v0.6.3**（`npm publish --registry=https://registry.npmjs.org --access public`，237 文件 / 661.2 kB）。**issue #18 尚未关闭**：本机无 GitHub 写权限令牌（`GH_TOKEN` 等均未设置、`gh` 未安装），需由维护者回复并关闭。
 
 ### 0.6.2 开发交接（GUI 选择器版本漂移，issue #23）

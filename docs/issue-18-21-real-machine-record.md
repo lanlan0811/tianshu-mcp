@@ -52,6 +52,12 @@ scratch 项目里 `marker.txt` 内容为 `tianshu-ok`（8 字节，创建于 23:
 
 ## 2. #19 结构化修复指令 —— ⚠️ 未取得，4 次尝试均因 GUI 环境状态失败
 
+> **后续（2026-09-25）**：本节结论**已被取代**。Codex 升级到 `26.917.9434` 后，网络与 GUI 抖动因素消失，
+> 但暴露出一条**独立的适配器缺陷**（模型触发器回读混入整条思考等级条 → `model_mismatch`，见下方「第二层」）。
+> 在该缺陷修复前，`#19` 的前后对比真机记录已在 scratch 数据目录用「克隆内置 profile + 只改
+> `gui.modelSwitch=false`」绕开取到 —— 见 [issue #19/#20/#21/#22 真机记录](issue-19-22-real-machine-record.md) §1。
+> 本节保留为**当时的事实记录**，不改写。
+
 **复现脚本**（一次性 scratch）：`.tmp-check/rm-stage-b.mts`（已随临时目录清理；要点见下）
 
 - scratch 项目含 `.tianshu-mcp/acceptance.json`，注册一条 `name: "typecheck"` 的检查
@@ -113,6 +119,10 @@ diffstat 五类指令、回退语义、`repairHint` 贯通到下一轮任务书�
 ---
 
 ## 3. #21 dryRun —— 不需要真机记录
+
+> **后续（2026-09-25）**：按「不需要」的判定仍然成立（验收标准是「有对应测试**或**真机证据」），
+> 但为把四个 issue 的证据补齐，本轮**额外**跑了一份真机证据（真实 Codex GUI，源码零改动）——
+> 见 [issue #19/#20/#21/#22 真机记录](issue-19-22-real-machine-record.md) §3。
 
 该 issue 的验收标准原文是「dryRun 模式下源码零改动，**有对应测试或真机证据**」——
 已由 `test/integration/dry-run.test.ts` 满足（合规预演后 `git status` 中所有变更都落在
