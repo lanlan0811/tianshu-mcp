@@ -46,7 +46,10 @@ pub fn resolve_rel(home: &Path, rel: &str) -> Result<PathBuf, String> {
             ".." => return Err("路径不得包含 ..".to_string()),
             other => {
                 if Path::new(other).components().any(|c| {
-                    matches!(c, Component::Prefix(_) | Component::RootDir | Component::ParentDir)
+                    matches!(
+                        c,
+                        Component::Prefix(_) | Component::RootDir | Component::ParentDir
+                    )
                 }) {
                     return Err("路径不得包含盘符或根前缀".to_string());
                 }

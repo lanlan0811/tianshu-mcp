@@ -9,8 +9,8 @@ mod export;
 mod models;
 mod preferences;
 mod scanner;
-mod search;
 mod schema;
+mod search;
 mod tail;
 mod updater;
 mod watcher;
@@ -131,7 +131,10 @@ async fn add_data_home(
     }
     let normalized = candidate.to_string_lossy().to_string();
     let prefs = {
-        let mut guard = state.preferences.lock().map_err(|_| "偏好状态锁失效".to_string())?;
+        let mut guard = state
+            .preferences
+            .lock()
+            .map_err(|_| "偏好状态锁失效".to_string())?;
         if !guard.data_homes.iter().any(|p| p == &normalized) {
             guard.data_homes.push(normalized.clone());
         }
@@ -148,7 +151,10 @@ async fn remove_data_home(
     path: String,
 ) -> Result<DataHomeState, String> {
     let prefs = {
-        let mut guard = state.preferences.lock().map_err(|_| "偏好状态锁失效".to_string())?;
+        let mut guard = state
+            .preferences
+            .lock()
+            .map_err(|_| "偏好状态锁失效".to_string())?;
         guard.data_homes.retain(|p| p != &path);
         guard.clone()
     };
@@ -156,7 +162,10 @@ async fn remove_data_home(
     // 移除的是当前目录时退回自动探测目录
     {
         let detected = data_home::resolve_data_home();
-        let mut active = state.data_home.lock().map_err(|_| "数据目录锁失效".to_string())?;
+        let mut active = state
+            .data_home
+            .lock()
+            .map_err(|_| "数据目录锁失效".to_string())?;
         if *active == path {
             *active = detected.to_string_lossy().to_string();
         }
@@ -165,7 +174,10 @@ async fn remove_data_home(
 }
 
 #[tauri::command]
-async fn set_active_data_home(state: State<'_, AppState>, path: String) -> Result<DataHomeState, String> {
+async fn set_active_data_home(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<DataHomeState, String> {
     let candidate = PathBuf::from(path.trim());
     let (valid, message) = data_home::validate_data_home(&candidate);
     if !valid {
@@ -176,7 +188,10 @@ async fn set_active_data_home(state: State<'_, AppState>, path: String) -> Resul
         });
     }
     {
-        let mut active = state.data_home.lock().map_err(|_| "数据目录锁失效".to_string())?;
+        let mut active = state
+            .data_home
+            .lock()
+            .map_err(|_| "数据目录锁失效".to_string())?;
         *active = candidate.to_string_lossy().to_string();
     }
     Ok(build_home_state(&state))
@@ -284,7 +299,10 @@ fn report_rel_path(task_id: &str, round: i64, kind: &str) -> Result<String, Stri
 }
 
 #[tauri::command]
-async fn read_report(state: State<'_, AppState>, req: ReadReportRequest) -> Result<ReadReportResult, String> {
+async fn read_report(
+    state: State<'_, AppState>,
+    req: ReadReportRequest,
+) -> Result<ReadReportResult, String> {
     let home = home_of(&state);
     let rel = report_rel_path(&req.task_id, req.round, &req.kind)?;
     let abs = data_home::resolve_rel(&home, &rel)?;
@@ -305,7 +323,10 @@ async fn read_report(state: State<'_, AppState>, req: ReadReportRequest) -> Resu
 /* ---------------- 导出 ---------------- */
 
 #[tauri::command]
-async fn export_file(state: State<'_, AppState>, req: ExportFileRequest) -> Result<ExportResult, String> {
+async fn export_file(
+    state: State<'_, AppState>,
+    req: ExportFileRequest,
+) -> Result<ExportResult, String> {
     let home = home_of(&state);
     export::export_file(&home, &req)
 }
@@ -361,7 +382,10 @@ async fn set_preferences(
     prefs: Preferences,
 ) -> Result<(), String> {
     {
-        let mut guard = state.preferences.lock().map_err(|_| "偏好状态锁失效".to_string())?;
+        let mut guard = state
+            .preferences
+            .lock()
+            .map_err(|_| "偏好状态锁失效".to_string())?;
         *guard = prefs.clone();
     }
     preferences::save(&app, &prefs)

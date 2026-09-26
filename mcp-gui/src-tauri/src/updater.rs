@@ -323,7 +323,8 @@ mod tests {
 
     #[test]
     fn pick_falls_back_and_marks_degraded() {
-        let (picked, degraded) = pick_source(&probe(false, None), &probe(false, None), Some("gitee"));
+        let (picked, degraded) =
+            pick_source(&probe(false, None), &probe(false, None), Some("gitee"));
         assert_eq!(picked, "gitee");
         assert!(degraded);
         let (picked2, degraded2) = pick_source(&probe(false, None), &probe(false, None), None);

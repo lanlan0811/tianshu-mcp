@@ -90,7 +90,12 @@ fn snippet_of(line: &str, match_start: usize, match_len: usize) -> String {
     out
 }
 
-fn scan_file(rel_path: &str, task_id: Option<String>, text: &str, req: &SearchRequest) -> Option<SearchFileGroup> {
+fn scan_file(
+    rel_path: &str,
+    task_id: Option<String>,
+    text: &str,
+    req: &SearchRequest,
+) -> Option<SearchFileGroup> {
     let needle = if req.case_sensitive {
         req.keyword.clone()
     } else {

@@ -66,10 +66,7 @@ pub fn read_events(home: &Path, req: &ReadEventsRequest) -> ReadEventsResult {
             bad_lines += 1;
             continue;
         }
-        let data = parsed
-            .get("data")
-            .filter(|d| !d.is_null())
-            .cloned();
+        let data = parsed.get("data").filter(|d| !d.is_null()).cloned();
         events.push(TaskEventOut {
             ts: as_string(&parsed, "ts"),
             kind: classify_event(&event).to_string(),
@@ -139,7 +136,11 @@ mod tests {
     fn bad_lines_are_counted_not_swallowed() {
         let home = std::env::temp_dir().join("tianshu-gui-events-bad-test");
         let _ = std::fs::remove_dir_all(&home);
-        write_jsonl(&home, "tsk_2", "{\"event\":\"queued\",\"state\":\"queued\"}\n{坏行\n\n");
+        write_jsonl(
+            &home,
+            "tsk_2",
+            "{\"event\":\"queued\",\"state\":\"queued\"}\n{坏行\n\n",
+        );
         let req = ReadEventsRequest {
             data_home: home.to_string_lossy().to_string(),
             task_id: "tsk_2".to_string(),
