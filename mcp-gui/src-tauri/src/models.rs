@@ -43,6 +43,8 @@ pub struct TaskSummary {
     pub check_summary: Option<String>,
     pub diffstat: Option<String>,
     pub changed_files: Vec<String>,
+    /// 前后端命令契约字段；Rust 侧部分命令不读取，故显式允许未读
+    #[allow(dead_code)]
     pub data_home: String,
     pub artifacts: ArtifactRounds,
 }
@@ -138,6 +140,8 @@ pub struct TaskFilter {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListTasksRequest {
+    /// 前后端命令契约字段；Rust 侧部分命令不读取，故显式允许未读
+    #[allow(dead_code)]
     pub data_home: String,
     #[serde(default)]
     pub filter: TaskFilter,
@@ -158,6 +162,8 @@ fn default_sort_dir() -> String {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReadEventsRequest {
+    /// 前后端命令契约字段；Rust 侧部分命令不读取，故显式允许未读
+    #[allow(dead_code)]
     pub data_home: String,
     pub task_id: String,
     #[serde(default)]
@@ -180,6 +186,8 @@ pub struct ReadEventsResult {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReadLogRequest {
+    /// 前后端命令契约字段；Rust 侧部分命令不读取，故显式允许未读
+    #[allow(dead_code)]
     pub data_home: String,
     pub rel_path: String,
     /// "tail" | "before"
@@ -193,6 +201,8 @@ pub struct ReadLogRequest {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReadReportRequest {
+    /// 前后端命令契约字段；Rust 侧部分命令不读取，故显式允许未读
+    #[allow(dead_code)]
     pub data_home: String,
     pub task_id: String,
     pub round: i64,
@@ -212,6 +222,8 @@ pub struct ReadReportResult {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportFileRequest {
+    /// 前后端命令契约字段；Rust 侧部分命令不读取，故显式允许未读
+    #[allow(dead_code)]
     pub data_home: String,
     pub rel_path: String,
     pub target_path: String,
@@ -220,6 +232,8 @@ pub struct ExportFileRequest {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportTaskZipRequest {
+    /// 前后端命令契约字段；Rust 侧部分命令不读取，故显式允许未读
+    #[allow(dead_code)]
     pub data_home: String,
     pub task_id: String,
     pub target_path: String,
@@ -253,6 +267,8 @@ pub struct SearchScope {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchRequest {
+    /// 前后端命令契约字段；Rust 侧部分命令不读取，故显式允许未读
+    #[allow(dead_code)]
     pub data_home: String,
     pub keyword: String,
     pub scope: SearchScope,

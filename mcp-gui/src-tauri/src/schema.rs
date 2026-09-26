@@ -8,6 +8,10 @@
 //! 与真源做集合比对；任何一侧漂移即 fail。**禁止在此新增未在真源出现的成员。**
 
 /// 任务状态全集（真源：`src/tasks/task.ts` 的 `TASK_STATUSES`）
+///
+/// Rust 运行时不直接读取：本常量作为**词表镜像**存在，由 CI 的
+/// `mcp-gui/scripts/check-schema-parity.mjs` 与 TS 真源做集合比对，漂移即 fail。
+#[allow(dead_code)]
 pub const TASK_STATUSES: [&str; 10] = [
     "queued",
     "running",
@@ -22,6 +26,9 @@ pub const TASK_STATUSES: [&str; 10] = [
 ];
 
 /// 终态集合（真源：`TERMINAL_STATUSES`）
+///
+/// 同 `TASK_STATUSES`：作为词表镜像存在，不被运行时读取，由 CI 一致性检查强制比对。
+#[allow(dead_code)]
 pub const TERMINAL_STATUSES: [&str; 5] = [
     "succeeded",
     "failed",
