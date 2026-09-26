@@ -15,7 +15,8 @@
 - **Open Design 原生「选择文件夹」对话框自动化**（`src/agents/opendesign/dialog.ts`，计划 P2 的不依赖选择器部分）：`toNativeDialogPath`（**绝对化** + 盘符大写 + 反斜杠）、`listOwnedDialogs`（枚举属目标进程的可见 `#32770`）、`closeStrayDialogs`（只关自己 pid 的残留模态框）、`selectOpenDesignFolder`（**双路线**：`WM_SETTEXT` 优先、失败退回键盘输入；两条都要求**回读一致**，确认后**等对话框真的关闭**才算成功）。安全边界：只操作「本次新出现 + 属目标进程 + 类名 `#32770` + 可见 + **唯一**」的窗口，基线在点击前采样，多个新对话框直接放弃，路径只经环境变量进入脚本。
 - **Open Design 运行检测（三信号）**（`src/agents/opendesign/liveness.ts`，计划 P5 核心）：停止按钮可见性 + 对话文本哈希 + **产物文件 mtime/大小指纹**；纯函数 `judgeOpenDesignPoll`，判定序为 运行信号 → 失败态 → 提问 → needs_user（停止久亮且全静止）→ 总时限 timeout → idle_timeout → finished。**产物信号是本适配器的关键差异**：Open Design 生成设计稿时会长时间不刷对话却持续写文件，只看文本会把这类正常工作判成「空闲完成」。
 - **Open Design 修复/优化计划文档**（`src/agents/opendesign/fixplan.ts`，计划 P6 核心）：落**项目根** `.opendesign/plans/opendesign-fix-r<N>.md`（每轮独立、绝不覆盖），正文含未通过项、**视觉验收差异表**（目标/视口/结论/差异比例/产物路径 + 逐条失败原因）、通过项、跳过项、代码分析与修复要求；`buildOpenDesignFixPrompt` 生成「未通过说明 + 计划文档相对路径 + 证据」的返修指令。
-- `run.ts` 在接管实例后先**清理属于本实例 pid 的残留 `#32770`**：模态框会吞掉主窗口合成点击，不清掉会让下一轮把「点选择目录毫无反应」误判成选择器失效。
+- **Open Design 视觉验收页面来源推导**（`src/agents/opendesign/visual.ts`，计划 P6）：`findStaticEntries`（广度优先 + 深度上限 3 + 跳过 `node_modules`/`.tianshu-mcp` 等噪声，按入口文件名与层级排序）、`hasPreviewableProject`、`suggestVisualPages`（先静态入口、再工程结构，两者都不成立时 `configured:false` 并给出可操作提示）。**只推导不落盘**：绝不自动修改 `.tianshu-mcp/acceptance.json`——验收配置显式化是仓库既有原则，偷偷补配置会让验收口径变成隐藏状态；推导不出来时也不硬编码 `/index.html`。
+- `run.ts` 在接管实例后先**清理属于本实例 pid 的残留 `#32770`**：模态框会吞掉主窗口合成点击，不清掉会让下一轮把「点选择目录毫无反应」误判成选择器失效；并在门禁前记录视觉页面来源建议（诊断用，不阻塞本轮）。
 
 ### 修复
 
@@ -24,8 +25,8 @@
 
 ### 测试
 
-- 新增 **53** 个用例：`opendesign-workspace.test.ts` 14 个（路径比较、已绑定跳过且零点击、成功路径与**基线采样顺序**、触发器缺失/菜单项缺失/原生失败/回读不一致四条失败路径、回读空值）、`opendesign-liveness.test.ts` 20 个、`opendesign-dialog-fixplan.test.ts` 19 个；`opendesign-dom.test.ts` 补覆盖语义回归。
-- 全量 **1256 passed / 12 skipped**（109 文件）；`typecheck` / `eslint src test scripts` / `build` 全绿。
+- 新增 **65** 个用例：`opendesign-workspace.test.ts` 14 个（路径比较、已绑定跳过且零点击、成功路径与**基线采样顺序**、触发器缺失/菜单项缺失/原生失败/回读不一致四条失败路径、回读空值）、`opendesign-liveness.test.ts` 20 个、`opendesign-dialog-fixplan.test.ts` 19 个、`opendesign-visual.test.ts` 12 个（静态入口发现与文件名优先级/深度上限/噪声跳过、工程结构判定、推导不出来的如实路径）；`opendesign-dom.test.ts` 补覆盖语义回归。
+- 全量 **1268 passed / 12 skipped**（110 文件）；`typecheck` / `eslint src test scripts` / `build` 全绿。
 
 ## [0.6.9] - 2026-09-26
 

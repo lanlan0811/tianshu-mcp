@@ -29,6 +29,7 @@ import { closeStrayDialogs, listOwnedDialogs } from "./dialog.js";
 import { readInstallInfo, openDesignNamespaceRoot, openDesignAppConfigPath } from "./discovery.js";
 import { createOpenDesignPageClient, probeLayout, type OpenDesignDocumentProbe } from "./cdp.js";
 import { missingSelectorKeys, OPEN_DESIGN_LAYOUT_GUARD_KEYS } from "./selectors.js";
+import { suggestVisualPages } from "./visual.js";
 import { normalizeOpenDesignDirection, directionLabel } from "./model.js";
 import type { KimicodePageClient } from "../kimicode/cdp.js";
 
@@ -250,6 +251,16 @@ export async function runOpenDesignTask(args: RunOpenDesignArgs): Promise<AgentR
       `[opendesign] 设计方向=${direction.direction}（菜单文本「${directionLabel(direction.direction, od.directionLabels)}」）` +
         ` 模型=${ctx.model ?? "(沿用当前)"} 设计系统=${ctx.designSystem ?? "(不指定)"}`,
     );
+
+    // ---- 视觉验收页面来源的**建议**（只推导不落盘，绝不静默改项目配置） ----
+    if (ctx.projectPath.trim()) {
+      try {
+        const hint = suggestVisualPages(ctx.projectPath);
+        logger.info(`[opendesign] 视觉验收页面来源建议：${hint.message}`);
+      } catch (error) {
+        logger.warn(`[opendesign] 视觉页面来源推导失败（不阻塞本轮）：${String(error)}`);
+      }
+    }
 
     // ---- 门禁 1：选择器是否已采集（缺键绝不点坐标） ----
     const missing = missingSelectorKeys(gui.selectors);
