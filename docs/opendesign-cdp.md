@@ -51,6 +51,10 @@ DevTools listening on ws://127.0.0.1:9889/devtools/browser/63dd8142-…
 且**不改命令行**——命令行仍是 profile 的 `exeArgs`（`--remote-debugging-port=<port>`），
 即官方启动器本来就支持的形态。
 
+> ⚠️ **手工验证时必须自己清变量**：用 `Start-Process` / 资源管理器快捷方式在**带该变量的会话**里启动，
+> 同样会失败——实测表现为**启动器 exit=0 且一个进程都不剩**（不是 `bad option`，因为参数没问题、
+> 是启动器内部 Node 模式分支直接返回）。两种表现都是同一个根因，别被退出码差异带偏。
+
 ### 2.2 启动器是「分离子进程形态」
 
 实测：启动器接受调试端口后会打印 `DevTools listening on …`，**然后自己以退出码 0 退出**，

@@ -57,6 +57,11 @@ value fails with `--remote-debugging-port= is not allowed in NODE_OPTIONS`.
 `sanitizedSpawnEnv()`) and **do not change the command line** — it stays the profile's `exeArgs`
 (`--remote-debugging-port=<port>`), which is the form the official launcher already supports.
 
+> ⚠️ **Manual verification must clear the variable yourself**: launching via `Start-Process` or the Explorer
+> shortcut from a session that carries it fails the same way — measured as **launcher exit=0 with zero
+> processes left** (not `bad option`, because the arguments are fine; the launcher's internal Node-mode branch
+> just returns). Both symptoms share one root cause, so do not be misled by the differing exit codes.
+
 ### 2.2 The launcher is a "detached child" shape
 
 Measured: after accepting the debug port the launcher prints `DevTools listening on …` and then **exits with
