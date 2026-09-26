@@ -18,6 +18,7 @@ on:
       - "mcp-gui/**"
       - "src/tasks/task.ts"
       - "src/agents/agent-events.ts"
+      - ".github/workflows/gui.yml"  # 临时：CI 修复期让本工作流自身改动也能触发（修复完成后移除）
     tags:
       - "gui-v*-beta.*"
   pull_request:
@@ -149,6 +150,41 @@ jobs:
         env:
           UPDATER_PUBKEY: ${{ secrets.UPDATER_PUBKEY }}
         run: node scripts/inject-updater-pubkey.mjs "$UPDATER_PUBKEY"
+
+      # 注意（临时诊断步骤，CI 修复期专用）：
+      # 公开仓的 job 日志下载接口需要 admin 权限，开发机按计划 D2 又不执行 cargo，
+      # 因此这里把 rustfmt diff / clippy / test 的关键输出转成 GitHub 注解（公开 API 可读，
+      # 见 check-runs/<id>/annotations），用于精确定位待修位置。修复完成后必须删除本步骤。
+      - name: Rust diagnostics (temporary, non-blocking)
+        continue-on-error: true
+        working-directory: mcp-gui/src-tauri
+        shell: bash
+        run: |
+          set +e
+          set +o pipefail
+
+          emit() {
+            # $1=title $2=file $3=line   正文来自 stdin
+            local title="$1" file="$2" line="$3" body
+            body=$(head -c 40000 | tr -d '\r' | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::error file=${file},line=${line},title=${title}::${body}"
+          }
+
+          echo "=== cargo fmt --check ==="
+          cargo fmt --check > /tmp/fmt.txt 2>&1
+          cat /tmp/fmt.txt
+          echo "=== cargo clippy ==="
+          cargo clippy --all-targets -- -D warnings > /tmp/clippy.txt 2>&1
+          cat /tmp/clippy.txt
+          echo "=== cargo test ==="
+          cargo test > /tmp/test.txt 2>&1
+          cat /tmp/test.txt
+
+          echo "--- 输出注解 ---"
+          emit "rustfmt" "mcp-gui/src-tauri/src/lib.rs" 1 < /tmp/fmt.txt
+          grep -E '^(error|warning)(\[|:)' /tmp/clippy.txt | emit "clippy" "mcp-gui/src-tauri/src/lib.rs" 1
+          grep -E '^(error|test .*FAILED|failures:)' /tmp/test.txt | emit "cargo-test" "mcp-gui/src-tauri/src/lib.rs" 1
+          exit 0
 
       - name: Rust format / clippy / tests
         working-directory: mcp-gui/src-tauri
