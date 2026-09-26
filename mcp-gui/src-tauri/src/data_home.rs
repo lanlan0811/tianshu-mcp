@@ -70,6 +70,8 @@ mod tests {
         assert!(resolve_rel(home, "../etc/passwd").is_err());
         assert!(resolve_rel(home, "/etc/passwd").is_err());
         assert!(resolve_rel(home, "tasks/../../x").is_err());
+        // 盘符前缀只在 Windows 上是 `Component::Prefix`；类 Unix 下 "C:/Windows" 只是普通相对路径
+        #[cfg(windows)]
         assert!(resolve_rel(home, "C:/Windows").is_err());
     }
 

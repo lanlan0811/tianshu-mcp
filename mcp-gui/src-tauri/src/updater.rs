@@ -284,9 +284,10 @@ pub fn app_version_info(app: &AppHandle) -> AppVersionInfo {
 /// 记录「本次成功使用的更新源」，供两端都不可达时回退
 pub fn remember_source(app: &AppHandle, source: &str) {
     let state = app.state::<AppState>();
+    // 末尾分号是必需的：让 `if let` 临时值（MutexGuard）先于 `state` 释放（edition 2021 规则）
     if let Ok(mut prefs) = state.preferences.lock() {
         prefs.last_good_update_source = Some(source.to_string());
-    }
+    };
 }
 
 /// 把取消标记复位（搜索开始前调用）

@@ -110,8 +110,8 @@ async fn get_app_version(app: AppHandle) -> AppVersionInfo {
 }
 
 #[tauri::command]
-async fn get_data_home_state(state: State<'_, AppState>) -> DataHomeState {
-    build_home_state(&state)
+async fn get_data_home_state(state: State<'_, AppState>) -> Result<DataHomeState, String> {
+    Ok(build_home_state(&state))
 }
 
 #[tauri::command]
@@ -219,19 +219,25 @@ async fn pick_save_path(app: AppHandle, default_name: String) -> Option<String> 
 /* ---------------- 任务 / 事件 / 日志 / 报告 ---------------- */
 
 #[tauri::command]
-async fn list_tasks(state: State<'_, AppState>, req: ListTasksRequest) -> Vec<TaskSummary> {
+async fn list_tasks(
+    state: State<'_, AppState>,
+    req: ListTasksRequest,
+) -> Result<Vec<TaskSummary>, String> {
     let home = if req.data_home.trim().is_empty() {
         home_of(&state)
     } else {
         PathBuf::from(req.data_home.trim())
     };
-    scanner::list_tasks(&home, &req)
+    Ok(scanner::list_tasks(&home, &req))
 }
 
 #[tauri::command]
-async fn read_events(state: State<'_, AppState>, req: ReadEventsRequest) -> ReadEventsResult {
+async fn read_events(
+    state: State<'_, AppState>,
+    req: ReadEventsRequest,
+) -> Result<ReadEventsResult, String> {
     let home = home_of(&state);
-    event_stream::read_events(&home, &req)
+    Ok(event_stream::read_events(&home, &req))
 }
 
 #[tauri::command]
@@ -371,8 +377,8 @@ async fn search_cancel(state: State<'_, AppState>) -> Result<(), String> {
 /* ---------------- 偏好 / 监听 / 更新 ---------------- */
 
 #[tauri::command]
-async fn get_preferences(state: State<'_, AppState>) -> Preferences {
-    current_preferences(&state)
+async fn get_preferences(state: State<'_, AppState>) -> Result<Preferences, String> {
+    Ok(current_preferences(&state))
 }
 
 #[tauri::command]

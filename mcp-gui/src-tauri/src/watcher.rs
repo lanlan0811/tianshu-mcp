@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+use notify::{RecursiveMode, Watcher};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -81,7 +81,8 @@ pub fn start(app: &AppHandle, home: &Path, rel_paths: &[String]) -> Result<(), S
 /// 停止监听（幂等）
 pub fn stop(app: &AppHandle) {
     let state = app.state::<AppState>();
+    // 末尾分号是必需的：让 `if let` 临时值（MutexGuard）先于 `state` 释放（edition 2021 规则）
     if let Ok(mut slot) = state.watcher.lock() {
         *slot = None;
-    }
+    };
 }
