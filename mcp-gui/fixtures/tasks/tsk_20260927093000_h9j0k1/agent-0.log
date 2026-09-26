@@ -1,0 +1,6 @@
+[traework] 面板模式：Code；项目：<项目目录>\docs-site
+[traework] 收到指令：把侧边栏目录改为按标题层级自动生成
+[traework] 读取 docs/ 下 18 个 markdown 文件
+[traework] 解析标题层级（h1/h2/h3）
+[traework] 正在改写 scripts/gen-sidebar.mjs
+（本文件仍在增长，可用「实时跟随」观察增量）

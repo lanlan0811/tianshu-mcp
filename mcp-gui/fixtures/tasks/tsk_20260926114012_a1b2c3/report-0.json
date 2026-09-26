@@ -1,0 +1,59 @@
+{
+  "round": 0,
+  "taskId": "tsk_20260926114012_a1b2c3",
+  "projectPath": "<项目目录>\\demo-app",
+  "startedAt": "2026-09-26T11:43:48.902Z",
+  "finishedAt": "2026-09-26T11:44:02.101Z",
+  "passed": true,
+  "verdict": "passed",
+  "message": "第 0 轮验收通过：3 项检查全部通过",
+  "checks": [
+    {
+      "name": "build",
+      "cmd": "npm run build",
+      "passed": true,
+      "durationMs": 4211,
+      "exitCode": 0,
+      "outputTail": "",
+      "timeout": false
+    },
+    {
+      "name": "lint",
+      "cmd": "npm run lint",
+      "passed": true,
+      "durationMs": 2874,
+      "exitCode": 0,
+      "outputTail": "",
+      "timeout": false
+    },
+    {
+      "name": "test",
+      "cmd": "npm test",
+      "passed": true,
+      "durationMs": 19042,
+      "exitCode": 0,
+      "outputTail": " Test Files  12 passed (12)\n      Tests  184 passed (184)",
+      "timeout": false
+    }
+  ],
+  "analysis": {
+    "changedFiles": ["README.md", "package.json"],
+    "untrackedFiles": [],
+    "diffstat": {
+      "totalAdd": 34,
+      "totalDel": 1,
+      "perFile": [
+        { "file": "README.md", "add": 31, "del": 1 },
+        { "file": "package.json", "add": 3, "del": 0 }
+      ]
+    },
+    "signals": { "todo": 0, "consoleDebug": 0, "commentedBlock": 0, "secretLike": 0 },
+    "bigFileChanges": [],
+    "warnings": [],
+    "notes": []
+  },
+  "files": {
+    "md": "<数据目录>\\tasks\\tsk_20260926114012_a1b2c3\\report-0.md",
+    "json": "<数据目录>\\tasks\\tsk_20260926114012_a1b2c3\\report-0.json"
+  }
+}

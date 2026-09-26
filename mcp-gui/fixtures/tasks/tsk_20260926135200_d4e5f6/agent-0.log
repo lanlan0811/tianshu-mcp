@@ -1,0 +1,5 @@
+[traework] 面板模式：Code；项目：<项目目录>\shop-web
+[traework] 收到指令：修复结算页在 375px 宽度下的横向溢出
+[traework] 读取 src/views/Checkout.vue
+[traework] 将容器 width 从 420px 改为 max-width: 100%
+[traework] 完成，等待验收

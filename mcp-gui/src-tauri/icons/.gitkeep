@@ -1,0 +1,2 @@
+占位文件：应用图标由 CI 在构建前用 `tauri icon` 从 assets/tianshu-mcp-icon.svg 生成到本目录，
+产物不入库（见根 .gitignore）。仓库内只保留 SVG 源，满足「图标一律 SVG 派生、禁用 emoji」的规则。

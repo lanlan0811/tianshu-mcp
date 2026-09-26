@@ -42,6 +42,8 @@
     "docs/qoder-cdp.en.md",
     "docs/opendesign-cdp.md",
     "docs/opendesign-cdp.en.md",
+    "docs/gui-log-viewer.md",
+    "docs/gui-log-viewer.en.md",
     "docs/qoder-evidence",
     "scripts/smoke-zcode.mjs",
     "scripts/prepare-zcode-fixture.mjs",

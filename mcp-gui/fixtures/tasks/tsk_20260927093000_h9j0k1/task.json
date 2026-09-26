@@ -1,0 +1,22 @@
+{
+  "taskId": "tsk_20260927093000_h9j0k1",
+  "status": "running",
+  "workspaceMode": "project",
+  "projectPath": "<项目目录>\\docs-site",
+  "displayPath": "<项目目录>\\docs-site",
+  "agentId": "traework",
+  "task": "把侧边栏目录改为按标题层级自动生成",
+  "context": "示例任务：进行中（脱敏样本）",
+  "mode": "Code",
+  "autoVerify": true,
+  "autoFixRounds": 2,
+  "taskTimeoutMs": 1800000,
+  "round": 0,
+  "roundsUsed": 1,
+  "errorType": null,
+  "createdAt": "2026-09-27T09:30:00.104Z",
+  "updatedAt": "2026-09-27T09:34:12.880Z",
+  "startedAt": "2026-09-27T09:30:00.211Z",
+  "lastMessage": "progressSummary：正在改写 sidebar 生成脚本",
+  "checkSummary": ""
+}

@@ -4,7 +4,16 @@ import prettier from "eslint-config-prettier";
 
 export default [
   {
-    ignores: ["dist/**", "node_modules/**", ".tianshu-mcp/**", ".tmp-check/**", "analysis-tools/**"],
+    ignores: [
+      "dist/**",
+      "node_modules/**",
+      ".tianshu-mcp/**",
+      ".tmp-check/**",
+      "analysis-tools/**",
+      // mcp-gui 是独立桌面应用（issue #25），有自己的 package.json / eslint.config.js，
+      // 不参与根工程 `eslint . --max-warnings 0`（否则无匹配配置的新文件会报错）。
+      "mcp-gui/**",
+    ],
   },
   {
     files: ["src/**/*.ts", "test/**/*.ts"],

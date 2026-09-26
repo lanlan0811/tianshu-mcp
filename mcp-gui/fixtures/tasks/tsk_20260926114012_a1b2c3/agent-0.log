@@ -1,0 +1,9 @@
+[codex] 会话就绪，工作目录：<项目目录>\demo-app
+[codex] 收到指令：新增 README 的安装小节，并在 package.json 中补 scripts.lint
+[codex] 读取 README.md（128 行）
+[codex] 追加「## 安装」小节
+[codex] 读取 package.json
+[codex] 写入 package.json 的 scripts.lint
+[codex] 运行 npm run lint（本地自检）
+[codex] 自检通过：0 error / 0 warning
+[codex] 完成，等待验收

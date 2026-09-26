@@ -1,0 +1,59 @@
+{
+  "round": 1,
+  "taskId": "tsk_20260926135200_d4e5f6",
+  "projectPath": "<项目目录>\\shop-web",
+  "startedAt": "2026-09-26T14:00:59.003Z",
+  "finishedAt": "2026-09-26T14:01:09.311Z",
+  "passed": true,
+  "verdict": "passed",
+  "message": "第 1 轮验收通过：3 项检查全部通过",
+  "checks": [
+    {
+      "name": "build",
+      "cmd": "npm run build",
+      "passed": true,
+      "durationMs": 3980,
+      "exitCode": 0,
+      "outputTail": "",
+      "timeout": false
+    },
+    {
+      "name": "lint",
+      "cmd": "npm run lint",
+      "passed": true,
+      "durationMs": 2104,
+      "exitCode": 0,
+      "outputTail": "",
+      "timeout": false
+    },
+    {
+      "name": "test",
+      "cmd": "npm test",
+      "passed": true,
+      "durationMs": 14360,
+      "exitCode": 0,
+      "outputTail": " Test Files  9 passed (9)\n      Tests  142 passed (142)",
+      "timeout": false
+    }
+  ],
+  "analysis": {
+    "changedFiles": ["src/views/Checkout.vue", "src/styles/layout.css"],
+    "untrackedFiles": [],
+    "diffstat": {
+      "totalAdd": 18,
+      "totalDel": 9,
+      "perFile": [
+        { "file": "src/views/Checkout.vue", "add": 11, "del": 6 },
+        { "file": "src/styles/layout.css", "add": 7, "del": 3 }
+      ]
+    },
+    "signals": { "todo": 0, "consoleDebug": 0, "commentedBlock": 0, "secretLike": 0 },
+    "bigFileChanges": [],
+    "warnings": [],
+    "notes": []
+  },
+  "files": {
+    "md": "<数据目录>\\tasks\\tsk_20260926135200_d4e5f6\\report-1.md",
+    "json": "<数据目录>\\tasks\\tsk_20260926135200_d4e5f6\\report-1.json"
+  }
+}

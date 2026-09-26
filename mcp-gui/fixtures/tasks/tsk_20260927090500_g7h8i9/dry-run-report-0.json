@@ -1,0 +1,21 @@
+{
+  "round": 0,
+  "taskId": "tsk_20260927090500_g7h8i9",
+  "projectPath": "<项目目录>\\api-service",
+  "startedAt": "2026-09-27T09:05:00.204Z",
+  "finishedAt": "2026-09-27T09:05:44.902Z",
+  "passed": true,
+  "reason": "dry_run_static_only",
+  "changedFiles": [],
+  "analysis": {
+    "changedFiles": [],
+    "untrackedFiles": [],
+    "diffstat": { "totalAdd": 0, "totalDel": 0, "perFile": [] },
+    "signals": { "todo": 1, "consoleDebug": 0, "commentedBlock": 0, "secretLike": 0 },
+    "bigFileChanges": [],
+    "warnings": [],
+    "notes": ["干跑模式：源码零改动"]
+  },
+  "checks": [],
+  "planMd": "<数据目录>\\tasks\\tsk_20260927090500_g7h8i9\\dry-run-plan.md"
+}

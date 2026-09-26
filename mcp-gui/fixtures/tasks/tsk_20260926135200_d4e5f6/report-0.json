@@ -1,0 +1,66 @@
+{
+  "round": 0,
+  "taskId": "tsk_20260926135200_d4e5f6",
+  "projectPath": "<项目目录>\\shop-web",
+  "startedAt": "2026-09-26T13:56:29.512Z",
+  "finishedAt": "2026-09-26T13:56:31.655Z",
+  "passed": false,
+  "verdict": "failed",
+  "message": "第 0 轮验收未通过：build 失败",
+  "checks": [
+    {
+      "name": "build",
+      "cmd": "npm run build",
+      "passed": false,
+      "durationMs": 3512,
+      "exitCode": 2,
+      "outputTail": "src/views/Checkout.vue(88,7): error TS2551: Property 'totalPricex' does not exist on type 'CartState'.",
+      "timeout": false
+    },
+    {
+      "name": "lint",
+      "cmd": "npm run lint",
+      "passed": true,
+      "durationMs": 2210,
+      "exitCode": 0,
+      "outputTail": "",
+      "timeout": false
+    },
+    {
+      "name": "test",
+      "cmd": "npm test",
+      "passed": true,
+      "durationMs": 14220,
+      "exitCode": 0,
+      "outputTail": " Test Files  9 passed (9)\n      Tests  142 passed (142)",
+      "timeout": false
+    }
+  ],
+  "analysis": {
+    "changedFiles": ["src/views/Checkout.vue"],
+    "untrackedFiles": [],
+    "diffstat": {
+      "totalAdd": 9,
+      "totalDel": 6,
+      "perFile": [{ "file": "src/views/Checkout.vue", "add": 9, "del": 6 }]
+    },
+    "signals": { "todo": 1, "consoleDebug": 2, "commentedBlock": 0, "secretLike": 0 },
+    "bigFileChanges": [],
+    "warnings": ["检出 2 处 console.debug"],
+    "notes": []
+  },
+  "repairDirectives": {
+    "items": [
+      {
+        "file": "src/views/Checkout.vue",
+        "line": 88,
+        "problem": "Property 'totalPricex' does not exist on type 'CartState'",
+        "action": "把 totalPricex 更正为 totalPrice"
+      }
+    ]
+  },
+  "files": {
+    "md": "<数据目录>\\tasks\\tsk_20260926135200_d4e5f6\\report-0.md",
+    "json": "<数据目录>\\tasks\\tsk_20260926135200_d4e5f6\\report-0.json"
+  }
+}

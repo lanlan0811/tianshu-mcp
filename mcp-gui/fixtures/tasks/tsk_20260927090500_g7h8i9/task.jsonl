@@ -1,0 +1,6 @@
+{"ts":"2026-09-27T09:05:00.017Z","event":"created","state":"queued","detail":"任务已创建（dryRun=true）"}
+{"ts":"2026-09-27T09:05:00.204Z","event":"started","state":"running","detail":"开始执行第 0 轮（干跑模式）"}
+{"ts":"2026-09-27T09:05:08.771Z","event":"task_dispatched","state":"running","detail":"第 0 轮指令已确认送达 Codex","data":{"round":0}}
+{"ts":"2026-09-27T09:05:41.115Z","event":"agent_exited","state":"running","detail":"agent 进程退出（exitCode=0）"}
+{"ts":"2026-09-27T09:05:44.880Z","event":"note","state":"running","detail":"干跑模式：只分析规划、不改源码，不消耗验收轮次"}
+{"ts":"2026-09-27T09:05:44.902Z","event":"succeeded","state":"succeeded","detail":"干跑静态分析完成（未改动源码）"}

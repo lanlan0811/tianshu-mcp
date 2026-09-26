@@ -1,0 +1,5 @@
+[codex] 干跑模式：只分析规划，不写入任何源码
+[codex] 读取 src/routes/orders.ts
+[codex] 读取 src/routes/__tests__/orders.test.ts
+[codex] 识别出 3 处待补校验（page / pageSize / sort 白名单）
+[codex] 输出结构化计划（未落盘任何源码改动）

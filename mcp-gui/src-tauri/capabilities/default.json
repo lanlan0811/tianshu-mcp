@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "日志台的默认能力：核心事件/路径能力 + 原生文件对话框（选择数据目录与导出位置）。",
+  "windows": ["main"],
+  "permissions": ["core:default", "dialog:default"]
+}

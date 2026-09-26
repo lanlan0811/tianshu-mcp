@@ -1,0 +1,21 @@
+$ git status --porcelain
+ M README.md
+ M package.json
+
+$ npm run build
+> demo-app@1.0.0 build
+> tsc -p tsconfig.json
+（无输出）
+exitCode=0 durationMs=4211
+
+$ npm run lint
+> demo-app@1.0.0 lint
+> eslint . --max-warnings 0
+exitCode=0 durationMs=2874
+
+$ npm test
+> demo-app@1.0.0 test
+> vitest run
+ Test Files  12 passed (12)
+      Tests  184 passed (184)
+exitCode=0 durationMs=19042

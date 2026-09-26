@@ -1,0 +1,319 @@
+name: GUI
+
+# Tianshu-mcp 日志台（mcp-gui/）的构建、门禁与双端测试版发布（issue #25）。
+#
+# 刻意**独立于** ci.yml / release.yml：
+#   - 不碰 MCP 主包的测试与发版链路，避免「GUI 发版影响 MCP 发版」；
+#   - tag 形如 `gui-v0.1.0-beta.1`，**不以 `v` 开头**，因此不会命中 release.yml 的 `v*`。
+#
+# 触发：
+#   - push 到 master 且 mcp-gui/**（或两个词表真源）有变更 → 构建 + artifact（编译验证，不发布）；
+#   - push tag `gui-v*-beta.*` → 构建 + 签名 + 双端 pre-release 发布 + 更新清单；
+#   - PR 且 mcp-gui/** 有变更 → 构建验证。
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - "mcp-gui/**"
+      - "src/tasks/task.ts"
+      - "src/agents/agent-events.ts"
+    tags:
+      - "gui-v*-beta.*"
+  pull_request:
+    branches: [master, main]
+    paths:
+      - "mcp-gui/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# 注意：`with:` 不接受 `env` 上下文，故 Node 版本在下面直接使用字面量（与 ci.yml 保持一致为 22）。
+jobs:
+  schema-parity:
+    name: Schema parity (TS ↔ frontend ↔ Rust)
+    runs-on: ubuntu-latest
+    outputs:
+      gui_changed: ${{ steps.changed.outputs.gui_changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # 三份词表（TS 真源 / 前端镜像 / Rust 镜像）任一漂移即失败
+      - name: Check TS ↔ frontend ↔ Rust schema parity
+        run: node mcp-gui/scripts/check-schema-parity.mjs
+
+      # GUI tag 必须不命中 MCP 的 release.yml（触发条件为 tags: v*）
+      - name: Assert GUI tag does not trigger the MCP release workflow
+        shell: bash
+        run: |
+          REF="${{ github.ref_name }}"
+          if [[ "$REF" == gui-v* ]]; then
+            if [[ "$REF" == v* ]]; then
+              echo "::error::GUI tag '$REF' 命中 MCP release.yml 的 v* 触发器"; exit 1
+            fi
+            echo "OK: '$REF' 不以 v 开头，不会触发 release.yml（v*），GUI 与 MCP 发版互不干扰"
+          else
+            echo "非 GUI tag 运行（ref=$REF），跳过隔离断言"
+          fi
+
+      - name: Detect whether mcp-gui changed
+        id: changed
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/gui-v* ]]; then
+            echo "gui_changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+          fi
+          SHA="${{ github.sha }}"
+          if [ -z "$BASE" ] || [[ "$BASE" =~ ^0+$ ]]; then
+            CHANGED=$(git diff --name-only HEAD~1 HEAD || true)
+          else
+            CHANGED=$(git diff --name-only "$BASE" "$SHA" || true)
+          fi
+          if echo "$CHANGED" | grep -q '^mcp-gui/'; then
+            echo "gui_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "gui_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "changed files:"; echo "$CHANGED"
+
+  build:
+    name: Build (${{ matrix.platform }})
+    needs: schema-parity
+    if: needs.schema-parity.outputs.gui_changed == 'true' || startsWith(github.ref, 'refs/tags/gui-v')
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows-x86_64
+          - os: macos-15-intel
+            platform: darwin-x86_64
+          - os: macos-15
+            platform: darwin-aarch64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: mcp-gui/package-lock.json
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: mcp-gui/src-tauri
+
+      - name: Install frontend dependencies
+        working-directory: mcp-gui
+        run: npm ci
+
+      - name: Frontend typecheck / lint / unit tests
+        working-directory: mcp-gui
+        shell: bash
+        run: |
+          npm run typecheck
+          npm run lint
+          npm run test
+
+      # 图标一律从 SVG 派生（仓库规则：不使用 emoji 图标，图标产物不入库）。
+      # 用本地已安装的 CLI（npm ci 已装 @tauri-apps/cli），避免再从 registry 拉一份版本不一致的 CLI。
+      - name: Generate app icons from assets/tianshu-mcp-icon.svg
+        working-directory: mcp-gui
+        shell: bash
+        run: npx tauri icon ../assets/tianshu-mcp-icon.svg --output src-tauri/icons
+
+      # 公钥未配置时不失败：构建照常，但自动更新不可用（设置面板会明确提示）
+      - name: Inject updater public key (optional)
+        working-directory: mcp-gui
+        shell: bash
+        env:
+          UPDATER_PUBKEY: ${{ secrets.UPDATER_PUBKEY }}
+        run: node scripts/inject-updater-pubkey.mjs "$UPDATER_PUBKEY"
+
+      - name: Rust format / clippy / tests
+        working-directory: mcp-gui/src-tauri
+        shell: bash
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+          cargo test
+
+      - name: Detect signing capability
+        id: signing
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "has=true" >> "$GITHUB_OUTPUT"
+            echo "已配置签名私钥：本次构建将产出可用的更新包"
+          else
+            echo "has=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::未配置 TAURI_SIGNING_PRIVATE_KEY，本次构建不产出更新包（自动更新暂不可用），但安装包仍会正常产出。"
+          fi
+
+      - name: Build app bundle
+        working-directory: mcp-gui
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [ "${{ steps.signing.outputs.has }}" = "true" ]; then
+            npx tauri build
+          else
+            # 无密钥时关掉 updater 产物，避免「缺签名」把整个构建拖失败
+            npx tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'
+          fi
+
+      - name: Build updater manifest fragment
+        if: startsWith(github.ref, 'refs/tags/gui-v') && steps.signing.outputs.has == 'true'
+        working-directory: mcp-gui
+        shell: bash
+        run: |
+          node scripts/build-updater-manifest.mjs fragment \
+            --platform ${{ matrix.platform }} \
+            --bundle-dir src-tauri/target/release/bundle \
+            --base-url "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}" \
+            --out src-tauri/target/release/bundle/fragment-${{ matrix.platform }}.json
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-${{ matrix.platform }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            mcp-gui/src-tauri/target/release/bundle/nsis/*.exe
+            mcp-gui/src-tauri/target/release/bundle/nsis/*.zip
+            mcp-gui/src-tauri/target/release/bundle/nsis/*.sig
+            mcp-gui/src-tauri/target/release/bundle/dmg/*.dmg
+            mcp-gui/src-tauri/target/release/bundle/macos/*.tar.gz
+            mcp-gui/src-tauri/target/release/bundle/macos/*.sig
+            mcp-gui/src-tauri/target/release/bundle/fragment-*.json
+
+  publish:
+    name: Publish beta pre-release (GitHub + Gitee)
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/gui-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Download all platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect release files and manifest fragments
+        shell: bash
+        run: |
+          mkdir -p release fragments
+          find artifacts -type f \( -name '*.exe' -o -name '*.zip' -o -name '*.dmg' -o -name '*.tar.gz' -o -name '*.sig' \) -exec cp -n {} release/ \;
+          find artifacts -type f -name 'fragment-*.json' -exec cp -n {} fragments/ \;
+          echo "release files:"; ls -la release
+          echo "fragments:"; ls -la fragments
+
+      - name: Compose updater manifest (GitHub)
+        id: manifest
+        shell: bash
+        run: |
+          TAG="${{ github.ref_name }}"
+          VER="${TAG#gui-v}"
+          if ls fragments/*.json >/dev/null 2>&1; then
+            node mcp-gui/scripts/build-updater-manifest.mjs merge \
+              --fragments fragments \
+              --version "$VER" \
+              --notes "Tianshu-mcp 日志台 $VER（测试版）" \
+              --out latest.json
+            echo "built=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::没有可用的签名片段，跳过更新清单生成（自动更新暂不可用）"
+            echo "built=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish GitHub pre-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          TAG="${{ github.ref_name }}"
+          gh release create "$TAG" \
+            --prerelease \
+            --title "Tianshu-mcp 日志台 $TAG（测试版）" \
+            --notes "本地只读查看天枢 MCP 的运行日志与任务产物（Tauri 2.x + Vue 3）。测试版通道，与 MCP 主包发版互不干扰。文档见 docs/gui-log-viewer.md / .en.md。" \
+            release/*
+
+      - name: Publish Gitee pre-release with attachments + write Gitee manifest
+        if: steps.manifest.outputs.built == 'true'
+        shell: bash
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          VER="${TAG#gui-v}"
+          FILES=$(ls release/* | paste -sd, -)
+          node scripts/gitee-gui-release.mjs \
+            --version "$VER" \
+            --tag "$TAG" \
+            --files "$FILES" \
+            --github-manifest latest.json \
+            --out-manifest latest-gitee.json
+
+      - name: Commit GitHub manifest (update/gui/latest.json)
+        if: steps.manifest.outputs.built == 'true'
+        shell: bash
+        run: |
+          TAG="${{ github.ref_name }}"
+          mkdir -p update/gui
+          cp latest.json update/gui/latest.json
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add update/gui/latest.json
+          if git diff --cached --quiet; then
+            echo "清单无变化，跳过提交"
+          else
+            # [skip ci]：避免清单提交再触发一次主 CI（GUI 发版与 MCP 发版互不干扰）
+            git commit -m "chore(gui): 发布 ${TAG} 并更新更新清单 [skip ci]"
+            git push origin HEAD:master
+          fi
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### Tianshu-mcp 日志台 ${{ github.ref_name }}"
+            echo ""
+            echo "- GitHub pre-release：已创建（测试版，不占用 latest）"
+            echo "- 更新清单生成：${{ steps.manifest.outputs.built }}"
+            echo "- Gitee 预发布与附件：见上一步日志"
+            echo "- 更新源实测择优：Gitee（中国大陆）/ GitHub（境外，含中国香港、中国台湾）"
+          } >> "$GITHUB_STEP_SUMMARY"

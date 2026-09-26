@@ -23,6 +23,21 @@ analysis-tools/*
 node_modules/*
 dist/*
 
+# mcp-gui（独立桌面应用，issue #25）构建产物隔离。
+# 注意：上面的 `node_modules/*` / `dist/*` 含斜杠，只匹配仓库根级，不覆盖 mcp-gui/。
+mcp-gui/node_modules/
+mcp-gui/dist/
+mcp-gui/src-tauri/target/
+mcp-gui/src-tauri/gen/
+
+# 应用图标由 CI 用 `tauri icon` 从 assets/*.svg 生成，产物不入库（规则：图标一律 SVG 派生）。
+mcp-gui/src-tauri/icons/*
+!mcp-gui/src-tauri/icons/.gitkeep
+
+# Cargo.lock 由 CI 在构建时生成：本机按 issue #25 的硬约束不安装/不执行 Rust 工具链，
+# 因此无法在本地生成锁文件（依赖版本以 Cargo.toml 的 major 约束为准）。
+mcp-gui/src-tauri/Cargo.lock
+
 # 发布/调试产物：npm pack 会在仓库根目录生成 tarball；本地临时校验目录不入库
 *.tgz
 .tmp-check/

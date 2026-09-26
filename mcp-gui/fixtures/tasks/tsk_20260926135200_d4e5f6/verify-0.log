@@ -1,0 +1,17 @@
+$ npm run build
+> shop-web@0.3.1 build
+> vite build
+src/views/Checkout.vue(88,7): error TS2551: Property 'totalPricex' does not exist on type 'CartState'.
+exitCode=2 durationMs=3512
+
+$ npm run lint
+> shop-web@0.3.1 lint
+> eslint . --max-warnings 0
+exitCode=0 durationMs=2210
+
+$ npm test
+> shop-web@0.3.1 test
+> vitest run
+ Test Files  9 passed (9)
+      Tests  142 passed (142)
+exitCode=0 durationMs=14220

@@ -1,0 +1,10 @@
+{"ts":"2026-09-26T11:41:03.512Z","event":"created","state":"queued","detail":"任务已创建（agentId=codex）"}
+{"ts":"2026-09-26T11:41:03.519Z","event":"queued","state":"queued"}
+{"ts":"2026-09-26T11:41:03.640Z","event":"started","state":"running","detail":"开始执行第 0 轮"}
+{"ts":"2026-09-26T11:41:12.884Z","event":"task_dispatched","state":"running","detail":"第 0 轮指令已确认送达 Codex","data":{"round":0}}
+{"ts":"2026-09-26T11:41:31.220Z","event":"file_modification_started","state":"running","detail":"停止按钮出现，Codex 开始执行（可能开始改动文件）"}
+{"ts":"2026-09-26T11:42:02.718Z","event":"note","state":"running","detail":"progressSummary：正在编辑 README.md"}
+{"ts":"2026-09-26T11:43:47.884Z","event":"agent_exited","state":"running","detail":"agent 进程退出（exitCode=0）"}
+{"ts":"2026-09-26T11:43:48.902Z","event":"verify_start","state":"verify_start","detail":"开始自动验收"}
+{"ts":"2026-09-26T11:44:02.101Z","event":"verify_round","state":"verify_start","detail":"第 0 轮验收完成：passed","data":{"round":0,"passed":true}}
+{"ts":"2026-09-26T11:44:02.121Z","event":"succeeded","state":"succeeded","detail":"验收通过（checks 3/3）"}
