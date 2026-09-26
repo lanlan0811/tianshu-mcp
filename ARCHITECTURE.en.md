@@ -1044,6 +1044,16 @@ Rust-side builds and checks (`cargo fmt` / `clippy` / `tauri build`) run **only 
 preview (`npm run dev`) and frontend gates are run. Icons are generated in CI by `tauri icon` from
 `assets/tianshu-mcp-icon.svg`; only the SVG source lives in the repository (per the "icons must derive from SVG" rule).
 
+**Triggering and change-detection semantics**: the `GUI` workflow filters pushes by `paths`
+(`mcp-gui/**`, the two vocabulary truth sources, and `gui.yml` itself) and then re-checks with a `changed` step so a
+docs-only commit does not spin up the whole three-platform matrix. The three events are **deliberately different**:
+
+| Event | Decision | Rationale |
+|---|---|---|
+| push of tag `gui-v*` | always build | a release must build regardless of changed paths |
+| `workflow_dispatch` (manual) | **always build** | manually triggering means "build now"; an earlier revision degraded to diffing the last two commits, so if they happened not to touch `mcp-gui/` the whole matrix was **silently skipped** (the manual run did nothing) |
+| push / PR | diff against the previous commit (or the PR base); build only when `mcp-gui/` or `gui.yml` matches | saves runners, while `gui.yml` changes still get re-verified |
+
 ---
 
 ## 17. Further reading

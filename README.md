@@ -478,7 +478,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=qoder, planDoc=./plans/development.m
   - **大日志与实时 tail**：首屏只读 64 KiB 尾部窗口、向前按块加载并显示「已加载 N / 共 M」；`notify` 文件监听驱动增量刷新，**上翻自动暂停跟随**、可一键「跳到最新」
   - **跨任务搜索 / 导出**：按需扫描（不建本地全文索引）+ 进度 + 可取消，命中按「任务 → 文件 → 行」分组并可跳转；单文件导出与任务整包 zip（可排除体积大的原始日志）
   - **双源自动更新**：**主动实测择优**（不依赖系统区域，VPN 场景下亦正确）+ 三态开关 + TTL 缓存 + 失败回退「上次可用源」；两端清单同版本同签名，**minisign 验签不通过一律拒绝安装**；更新失败不影响日志查看主流程
-  - **CI 隔离与门禁**：新增独立 `GUI` workflow（windows / macos-15-intel / macos-15 三平台矩阵），`gui-v*` 不以 `v` 开头故**不触发** MCP 的 `release.yml`；新增 TS 真源 ↔ 前端镜像 ↔ Rust 镜像的**三方词表一致性门禁**（漂移即 fail）
+  - **CI 隔离与门禁**：新增独立 `GUI` workflow（windows / macos-15-intel / macos-15 三平台矩阵），`gui-v*` 不以 `v` 开头故**不触发** MCP 的 `release.yml`；新增 TS 真源 ↔ 前端镜像 ↔ Rust 镜像的**三方词表一致性门禁**（漂移即 fail）；**手动触发（`workflow_dispatch`）无条件构建**（早期版本手动触发会因最近提交未改 `mcp-gui/` 而静默跳过整个矩阵）
   - 使用与开发说明见 [日志台文档](docs/gui-log-viewer.md)，真机记录见 [issue-25 记录](docs/issue-25-gui-real-machine-record.md)；**GUI 版本独立演进，不随 MCP 主包发布**（主包版本与本期无关）
 
 ## Agent 适配现状

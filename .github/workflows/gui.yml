@@ -72,6 +72,13 @@ jobs:
             echo "gui_changed=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # 手动触发语义 = 「我要现在构建」：无条件构建。
+          # 否则 `github.event.before` 为空会退化成比较最近两次提交，若它们恰好未改 mcp-gui/，
+          # 整个构建矩阵会被静默跳过（手动触发变成"什么都没跑"）。
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "gui_changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             BASE="${{ github.event.pull_request.base.sha }}"
           else

@@ -26,6 +26,10 @@
 - **三方词表一致性门禁**：`mcp-gui/scripts/check-schema-parity.mjs` 比对 **TS 真源（`src/tasks/task.ts` / `src/agents/agent-events.ts`）↔ 前端镜像 ↔ Rust 镜像**，任一漂移即 fail；`GUI` workflow 的触发路径含两个真源文件，故 TS 侧漂移也会被检出。
 - **`scripts/gitee-gui-release.mjs`**：Gitee 侧 GUI 预发布 + **安装包附件上传** + 更新清单写入（现有主包脚本只做发行版与正文，没有附件上传能力）。
 
+### 修复
+
+- **`GUI` workflow 手动触发会被静默跳过**：`workflow_dispatch` 不带 `github.event.before`，原变更检测退化为 `git diff HEAD~1 HEAD`，若最近两次提交仅改文档，则三平台构建矩阵**全部 skipped**（运行显示 Success 却什么都没跑）。现改为**手动触发无条件构建**，tag 同样无条件构建，仅 push / PR 走 diff 过滤。
+
 ### 测试
 
 - `mcp-gui` 新增 **81 项前端用例**（8 文件：日志行解析 / 事件解析 / 字节与窗口 / 筛选排序 / 报告摘要 / i18n 完整性 / 沙箱 / mock 出口）；本机 `vue-tsc --noEmit` / `eslint . --max-warnings 0` / `vitest` / `vite build` 全绿（只依赖 Node；按 issue #25 约束**不在本机执行任何 Rust 侧构建与检查**）。

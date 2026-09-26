@@ -180,8 +180,12 @@ CI 会依次执行：
 - 想自行打包，请直接复用 CI 产物，或自行准备 Rust 工具链后在本机执行 `npx tauri build`（本项目不以此为验收依据）。
 
 **实测状态（2026-09-27）**：`GUI` workflow 已跑通——`schema-parity` ✅，三平台 `cargo fmt --check` / `clippy -- -D warnings` / `cargo test` 全绿，
-`windows-x86_64`（NSIS）与 `darwin-aarch64`（dmg + `.app.tar.gz`）已成功打包并上传产物（`darwin-x86_64` 同步构建）。
+且**三平台（`windows-x86_64` / `darwin-x86_64` / `darwin-aarch64`）全部 success**，均完成 `tauri build` 打包并上传产物。
 打包时若未配置签名密钥，workflow 会自动降级为 `--config '{"bundle":{"createUpdaterArtifacts":false}}'`：**安装包照常产出，自动更新不可用**（设置面板会明确提示）。
+
+**手动触发（Actions 页的 `Run workflow`）语义**：**无条件构建**三平台矩阵（不看你最近提交改了什么），
+适合「本地什么都不想改、但想跑一次构建 / 验证 Secrets」。push 与 PR 才会做变更过滤（仅当 `mcp-gui/**`、两个词表真源或 `gui.yml` 自身有改动时才构建），
+以免纯文档提交也占满三平台 runner。
 
 ### 7.3 目录结构
 

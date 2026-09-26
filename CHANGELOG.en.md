@@ -29,6 +29,10 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 - **Three-way vocabulary parity gate**: `mcp-gui/scripts/check-schema-parity.mjs` compares the **TS truth (`src/tasks/task.ts` / `src/agents/agent-events.ts`) ↔ frontend mirror ↔ Rust mirror** and fails on any drift; the `GUI` workflow also triggers on the two truth files, so TS-side drift is caught too.
 - **`scripts/gitee-gui-release.mjs`**: Gitee-side GUI pre-release + **installer attachment upload** + update-manifest writing (the existing package script creates releases and bodies but has no attachment upload).
 
+### Fixed
+
+- **A manual `GUI` workflow run could be silently skipped**: `workflow_dispatch` carries no `github.event.before`, so the change detection degraded to `git diff HEAD~1 HEAD`; when the last two commits touched only docs, the whole three-platform matrix was **skipped** (the run reported Success while doing nothing). Now a manual run **always builds**, tags always build, and only push / PR go through diff filtering.
+
 ### Tests
 
 - `mcp-gui` adds **81 frontend cases** (8 files: log-line parsing / event parsing / bytes and windows / filtering and sorting / report summaries / i18n completeness / sandbox / mock data exit); locally `vue-tsc --noEmit` / `eslint . --max-warnings 0` / `vitest` / `vite build` are all green (Node only; per issue #25, **no Rust-side build or check runs locally**).

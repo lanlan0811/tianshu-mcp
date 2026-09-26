@@ -994,6 +994,15 @@ Rust 侧需要重写一份「状态枚举 / 事件词表」用于事件分类，
 本机**不执行 Rust 侧构建与检查**（`cargo fmt` / `clippy` / `tauri build` 全在 `GUI` workflow），本地只做前端预览（`npm run dev`）与前端门禁。
 图标由 CI 用 `tauri icon` 从 `assets/tianshu-mcp-icon.svg` 生成，仓库内只保留 SVG 源（符合「图标一律 SVG 派生」规则）。
 
+**触发与变更检测语义**：`GUI` workflow 按 `paths`（`mcp-gui/**`、两个词表真源、`gui.yml` 自身）过滤 push，并用 `changed` 步骤二次判定是否真的改了 GUI，
+从而避免「纯文档提交也跑一遍三平台构建」。三类事件的口径**刻意不同**：
+
+| 事件 | 判定 | 理由 |
+|---|---|---|
+| push tag `gui-v*` | 无条件构建 | 发版必须构建，与改动路径无关 |
+| `workflow_dispatch`（手动） | **无条件构建** | 手动触发的语义就是「我要现在构建」；早期版本会退化成比较最近两次提交，若它们恰好未改 `mcp-gui/`，整个矩阵会被**静默跳过**（手动触发变成"什么都没跑"） |
+| push / PR | 与上一提交（PR 则与 base）做 diff，命中 `mcp-gui/` 或 `gui.yml` 才构建 | 省算力，且 `gui.yml` 自身改动也需复验 |
+
 ---
 
 ## 17. 延伸阅读

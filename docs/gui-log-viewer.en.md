@@ -202,11 +202,16 @@ Therefore:
   (not part of this project's acceptance).
 
 **Verified status (2026-09-27)**: the `GUI` workflow now runs end to end — `schema-parity` ✅, and
-`cargo fmt --check` / `clippy -- -D warnings` / `cargo test` are green on all three platforms; `windows-x86_64` (NSIS)
-and `darwin-aarch64` (dmg + `.app.tar.gz`) built and uploaded their artifacts successfully (`darwin-x86_64` in progress).
+`cargo fmt --check` / `clippy -- -D warnings` / `cargo test` are green on all three platforms; **all three
+(`windows-x86_64` / `darwin-x86_64` / `darwin-aarch64`) succeeded**, each building and uploading its artifacts.
 When no signing key is configured, the workflow automatically degrades to
 `--config '{"bundle":{"createUpdaterArtifacts":false}}'`: **installers are still produced, auto-update is unavailable**
 (the settings panel states this explicitly).
+
+**Manual trigger (`Run workflow` on the Actions page)**: it **always builds** the full three-platform matrix,
+regardless of what your latest commits touched — useful to run a build or verify Secrets without changing any files.
+Only push and PR go through change filtering (build happens when `mcp-gui/**`, either vocabulary truth source, or
+`gui.yml` itself changed), so docs-only commits do not occupy three runners.
 
 ### 7.3 Layout
 
