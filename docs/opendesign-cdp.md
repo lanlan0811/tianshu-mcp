@@ -144,9 +144,14 @@ node scripts/probe-opendesign.mjs all                  # install + process + cdp
 
 | 文件 | 内容 | 为什么可以先做 |
 |---|---|---|
+| `workspace.ts` | 工作目录绑定编排：已绑定则跳过 → 展开触发器 → 点「选择目录」→ 原生对话框 → **回读校验**；`normalizeWorkspacePath` / `workspaceMatches`（含界面截断的省略号前缀匹配） | 流程编排与判定逻辑不依赖具体 CSS，只依赖语义键 |
 | `dialog.ts` | `toNativeDialogPath`（绝对化 + 盘符大写 + 反斜杠）、`listOwnedDialogs`、`closeStrayDialogs`、`selectOpenDesignFolder`（**双路线**：WM_SETTEXT 优先、失败退回键盘输入，两条都要求回读一致；确认后**等对话框真的关闭**才算成功） | 原生对话框是 Win32 层，不依赖页面 DOM |
 | `liveness.ts` | **三信号**判定：停止按钮可见性 + 对话文本哈希 + **产物文件 mtime/大小指纹**；纯函数 `judgeOpenDesignPoll` | 输入是采集结果，判定本身与选择器无关 |
 | `fixplan.ts` | 修复/优化计划落**项目根** `.opendesign/plans/opendesign-fix-r<N>.md`（每轮独立不覆盖）+ 返修指令拼装 | 计划由 MCP 生成，与页面操作无关 |
+
+**绑定成功的判据是「回读一致」，不是「对话框关掉了」**：原生对话框确认只代表系统接受了这个目录，
+应用是否真的把它当成工作目录必须回读界面显示值。两者不一致时如实报 `readback` 失败，
+绝不当成成功继续往下走（否则后续失败会被归因到完全无关的地方）。
 
 **为什么产物信号是必需的**：Open Design 生成设计稿时会**长时间不刷对话**却持续写文件，
 只看对话文本会把这类正常工作判成「空闲完成」。因此静止判据要求**文本与产物双稳定**。
@@ -165,6 +170,9 @@ node scripts/probe-opendesign.mjs all                  # install + process + cdp
 - 回退候选**不得是宽泛容器型**（`button`/`div[class]`/`li`…）：多命中会让坐标点击失效，
   且错误信息只会说「选择器未挂载」，极难定位（已固化成断言）。
 - 候选匹配**精确全等**，未命中报错并回显可见候选；**绝不退化成模糊匹配**。
+- **`gui.selectors` 覆盖是权威的**：一旦为某个语义键给出覆盖值，就只用它，**不再混入内置 fallbacks**
+  （fallbacks 含 `[aria-haspopup]` 这类宽泛候选，混入会让「唯一命中」必然失败——
+  热修复选择器反而把功能彻底关掉）。
 
 ### 已知的界面锚点（截图证据，待真机 DOM 校对）
 

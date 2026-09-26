@@ -160,6 +160,19 @@ export type FolderDialogOutcome =
       message: string;
     };
 
+/** 目录绑定流程可注入的依赖（Windows 与原生对话框在单测里都要能替换掉） */
+export interface FolderDialogDeps {
+  platform?: NodeJS.Platform;
+  listDialogs?: (pids: number[], options: NativeDialogOptions) => Promise<string[]>;
+  /** 实际执行「填路径 → 回读 → 确认 → 等关闭」的原生操作 */
+  selectFolder?: (
+    targetPath: string,
+    pids: number[],
+    baseline: string[],
+    options: NativeDialogOptions,
+  ) => Promise<FolderDialogOutcome>;
+}
+
 /**
  * 操作**新出现**的「选择文件夹」对话框，把 `targetPath` 填进去并确认。
  *

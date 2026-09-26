@@ -162,10 +162,20 @@ describe("Open Design 选择器注册表", () => {
     expect(missingSelectorKeys({ ...CAPTURED, sendButton: "   " })).toEqual(["sendButton"]);
   });
 
-  it("cssCandidates 去重且覆盖优先", () => {
+  it("cssCandidates：无覆盖时 primary 优先 + 去重", () => {
     const spec = { primary: "a", fallbacks: ["b", "a"] };
-    expect(cssCandidates(spec, { k: "c" }, "k")).toEqual(["c", "a", "b"]);
     expect(cssCandidates(spec)).toEqual(["a", "b"]);
+  });
+
+  it("cssCandidates：**覆盖是权威的**（只用作该值，不混入内置 fallbacks）", () => {
+    // 回归：曾把 override 与 fallbacks 合并，而 fallbacks 含 [aria-haspopup] 这类宽泛候选，
+    // 页面上多个元素命中 → 「唯一命中」判据必然失败 → 热修复选择器反而把功能彻底关掉。
+    const spec = { primary: "a", fallbacks: ["b", "a"] };
+    expect(cssCandidates(spec, { k: "c" }, "k")).toEqual(["c"]);
+    // 空白覆盖值视为未覆盖
+    expect(cssCandidates(spec, { k: "   " }, "k")).toEqual(["a", "b"]);
+    // 未提供 key 时不看覆盖表
+    expect(cssCandidates(spec, { k: "c" })).toEqual(["a", "b"]);
   });
 
   it("specArgs 输出 [css, texts, ariaLabels, ariaPatterns, excludes, scope] 六元组", () => {

@@ -12,6 +12,14 @@ import { resolveFnSource, selectorSpec, type OpenDesignSelectorKey } from "./sel
 
 export type SelectorOverrides = Record<string, string>;
 
+/** 语义键 → 页面内 spec（含 `gui.selectors` 覆盖）；workspace 等上层模块只认语义键 */
+export function selectorSpecFor(
+  key: OpenDesignSelectorKey,
+  overrides: SelectorOverrides = {},
+): string {
+  return selectorSpec(key, overrides);
+}
+
 /**
  * 页面内公共 helper。以源码形式保存，使 CDP 表达式与回归测试看到同一份语义。
  * `__opendesignResolve` 来自 `selectors.resolveFnSource()`。
@@ -48,6 +56,27 @@ export function textExpression(spec: string): string {
   return `(function(){${OPEN_DESIGN_DOM}/*od:text*/
     const nodes = odResolve(${spec}, true);
     return nodes.length ? odText(nodes[0]) : '';
+  })()`;
+}
+
+/**
+ * 按可见文本/aria 精确匹配并给出点击坐标（NFKC 归一后全等）；多命中即拒绝并回显候选。
+ * 与 `exactMatchExpression` 的区别：本函数直接返回 `point` 供可信点击使用，且**要求唯一**。
+ */
+export function exactMatchPointExpression(
+  key: OpenDesignSelectorKey,
+  value: string,
+  overrides: SelectorOverrides = {},
+): string {
+  return `(function(){${OPEN_DESIGN_DOM}/*od:exact-point*/
+    const nodes = __opendesignResolve(${selectorSpec(key, overrides)});
+    const labels = nodes.map(e => odLabel(e));
+    const available = labels.filter(Boolean).filter((v, i, a) => a.indexOf(v) === i);
+    const target = odNorm(${JSON.stringify(value)});
+    const matches = nodes.filter((e, i) => labels[i] && odNorm(labels[i]) === target && odVisible(e));
+    const result = { count: matches.length, available };
+    if (matches.length !== 1) return result;
+    return Object.assign({}, result, { point: odPoint(matches[0]) });
   })()`;
 }
 

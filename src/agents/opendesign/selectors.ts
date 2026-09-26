@@ -159,17 +159,23 @@ export const OPEN_DESIGN_SELECTORS: Record<OpenDesignSelectorKey, OpenDesignSele
   },
 };
 
-/** 合并 profile 覆盖后的 CSS 候选（去重，覆盖优先） */
+/**
+ * 合并 profile 覆盖后的 CSS 候选。
+ *
+ * **覆盖是权威的**：`profile.gui.selectors[key]` 一旦给出，就**只**用该值，不再混入内置 fallbacks。
+ * 理由（真机教训）：内置 fallbacks 里有 `[aria-haspopup]` 这类宽泛语义候选，页面上一屏往往有多个；
+ * 混进来会让「唯一命中」判据必然失败——于是热修复选择器反而把功能彻底关掉，表现为
+ * `no-panel：触发器无法唯一定位`。运维期望的语义是「我指定这个键就用它」，不是「在其上追加」。
+ */
 export function cssCandidates(
   spec: OpenDesignSelectorSpec,
   overrides: Record<string, string> = {},
   key?: string,
 ): string[] {
-  const override = key ? overrides[key] : undefined;
+  const override = key ? overrides[key]?.trim() : undefined;
+  if (override) return [override];
   return [
-    ...new Set(
-      [override, spec.primary, ...(spec.fallbacks ?? [])].filter((v): v is string => Boolean(v)),
-    ),
+    ...new Set([spec.primary, ...(spec.fallbacks ?? [])].filter((v): v is string => Boolean(v))),
   ];
 }
 
