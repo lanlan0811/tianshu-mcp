@@ -18,11 +18,14 @@ import type { GuiProfile, OpenDesignProfile } from "../../config/schema.js";
 import { OPEN_DESIGN_DEFAULTS, ZCODE_SETUP_DEFAULTS } from "../../config/schema.js";
 import {
   ensureOpenDesignInstance,
+  listOpenDesignProcessesAsync,
   probeOpenDesignPort,
   readAppConfig,
+  rootOpenDesignProcesses,
   versionGateError,
   type OpenDesignReady,
 } from "./instance.js";
+import { closeStrayDialogs, listOwnedDialogs } from "./dialog.js";
 import { readInstallInfo, openDesignNamespaceRoot, openDesignAppConfigPath } from "./discovery.js";
 import { createOpenDesignPageClient, probeLayout, type OpenDesignDocumentProbe } from "./cdp.js";
 import { missingSelectorKeys, OPEN_DESIGN_LAYOUT_GUARD_KEYS } from "./selectors.js";
@@ -188,6 +191,29 @@ export async function runOpenDesignTask(args: RunOpenDesignArgs): Promise<AgentR
     }
     const ready = inst.ready!;
     logger.info(`[opendesign] 已接管实例：port=${ready.port} title=${ready.title ?? "(未知)"}`);
+
+    // ---- 残留原生对话框清理（模态框会吞掉主窗口的合成点击） ----
+    // 上一轮失败/取消可能在实例上留下「选择文件夹」模态框，不清掉会让本轮把
+    // 「点选择目录毫无反应」误判成选择器失效。只清**属于本实例 pid** 的 #32770，绝不碰其他程序。
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const roots = rootOpenDesignProcesses(
+        await listOpenDesignProcessesAsync({ signal: opts.signal }),
+      );
+      const pids = roots.map((p) => p.pid);
+      if (pids.length) {
+        const strays = await listOwnedDialogs(pids, { signal: opts.signal });
+        if (strays.length) {
+          const closed = await closeStrayDialogs(pids);
+          logger.warn(
+            `[opendesign] 清理残留原生对话框 ${closed}/${strays.length} 个：${strays.join("；")}`,
+          );
+        }
+      }
+    } catch (error) {
+      // 清理失败不致命：目录绑定流程自身会做「新出现 + 属主 + 唯一」三重校验
+      logger.warn(`[opendesign] 残留对话框探测失败（不影响后续步骤）：${String(error)}`);
+    }
 
     // ---- 版本门禁（fail-closed）：只对接已真机验证的版本 ----
     // 判据用**产品版本**（安装目录 resources/open-design-config.json 的 appVersion）；

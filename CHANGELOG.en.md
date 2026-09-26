@@ -8,6 +8,24 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.6.10] - 2026-09-26
+
+### Added
+
+- **Open Design native "Select Folder" dialog automation** (`src/agents/opendesign/dialog.ts`, the selector-independent part of plan phase P2): `toNativeDialogPath` (**absolutise** + upper-case drive + backslashes), `listOwnedDialogs` (enumerate visible `#32770` windows owned by the target process), `closeStrayDialogs` (close only stray modals of our own pids), `selectOpenDesignFolder` (**two routes**: `WM_SETTEXT` first, keyboard input as fallback; both require a **matching read-back**, and success requires the dialog to **actually close**). Safety boundary: only operate on windows that are "newly appeared + owned by the target process + class `#32770` + visible + **unique**", the baseline is sampled before clicking, multiple new dialogs abort, and paths enter the script only via environment variables.
+- **Open Design run detection (three signals)** (`src/agents/opendesign/liveness.ts`, the core of plan phase P5): stop-button visibility + conversation-text hash + **artifact mtime/size fingerprint**; the pure function `judgeOpenDesignPoll` decides in the order run signal → failure state → question → needs_user (stop button lit long with everything static) → overall deadline timeout → idle_timeout → finished. **The artifact signal is this adapter's key difference**: Open Design writes files continuously while not refreshing the conversation for long stretches, and text-only judging would call that normal work "idle and finished".
+- **Open Design repair/optimisation plan document** (`src/agents/opendesign/fixplan.ts`, the core of plan phase P6): written to the **project root** `.opendesign/plans/opendesign-fix-r<N>.md` (per-round, never overwritten), containing failed items, a **visual acceptance difference table** (target / viewport / verdict / diff ratio / artifact path plus per-item failure reasons), passed items, skipped items, code analysis and repair requirements; `buildOpenDesignFixPrompt` assembles a repair prompt with "what failed + the plan document's relative path + evidence".
+- After taking over an instance, `run.ts` first **closes stray `#32770` windows owned by that instance's pids**: a modal swallows the main window's synthetic clicks, and leaving it in place makes the next round misread "clicking Select directory does nothing" as selector drift.
+
+### Fixed
+
+- `toNativeDialogPath` handling of **relative and empty paths**: `path.win32.normalize("")` returns `"."`, and the original implementation fed `.` into the native dialog as a valid path (symptom: "confirming appears to do nothing"). Relative paths are now resolved against the current working directory, and empty/blank paths return an empty string so the caller fails closed.
+
+### Tests
+
+- **39** new cases (`opendesign-liveness.test.ts` ×20 + `opendesign-dialog-fixplan.test.ts` ×19): every three-signal judging path (running / finished / artifacts still being written / idle timeout / overall deadline / failure state / stall → needs_user / conservative question detection with three non-triggering cases), fingerprint ordering and millisecond truncation, native-dialog path normalisation and platform guards, fix-plan filename and directory resolution (relative, absolute, outside the project) and document sections (including the visual difference table and the no-visual-result case), multi-round non-overwriting, and repair-prompt assembly.
+- Full suite: **1241 passed / 12 skipped** (108 files); `typecheck`, `eslint src test scripts` and `build` all green.
+
 ## [0.6.9] - 2026-09-26
 
 ### Added

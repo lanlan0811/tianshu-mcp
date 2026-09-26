@@ -591,6 +591,10 @@ export const OPEN_DESIGN_DEFAULTS = {
   designDirectionTimeoutMs: 15_000,
   sendReadyTimeoutMs: 20_000,
   planDir: ".opendesign/plans",
+  /** 枚举受管实例当前拥有的 #32770 窗口（残留对话框探测）的超时 */
+  dialogProbeTimeoutMs: 30_000,
+  /** 原生「选择文件夹」对话框「填路径 → 回读校验 → 确认 → 等关闭」的总预算 */
+  dialogOperationTimeoutMs: 60_000,
 } as const;
 
 export const AgentProfileSchema = z.object({

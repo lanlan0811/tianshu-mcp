@@ -140,6 +140,24 @@ node scripts/probe-opendesign.mjs all                  # install + process + cdp
 | `selectors.ts` | 16 个语义键的注册表（`primary` + 语义化 `fallbacks`）、`cssCandidates`、`specArgs`、`selectorSpec`、页面内 `resolveFnSource`、**布局守卫键集** `OPEN_DESIGN_LAYOUT_GUARD_KEYS` 与 `missingSelectorKeys()` |
 | `dom.ts` | 页面内表达式：`exists` / `text` / `singlePoint` / `firstPoint` / `exactMatch` / `listLabels` / `count` / `inputValue` / `conversationText` / `triggerText` / `layoutProbe` / `dismiss` / `directionItemVisible`，标记前缀 `od:` |
 
+### 不依赖选择器的模块（P2/P5/P6 已先行交付）
+
+| 文件 | 内容 | 为什么可以先做 |
+|---|---|---|
+| `dialog.ts` | `toNativeDialogPath`（绝对化 + 盘符大写 + 反斜杠）、`listOwnedDialogs`、`closeStrayDialogs`、`selectOpenDesignFolder`（**双路线**：WM_SETTEXT 优先、失败退回键盘输入，两条都要求回读一致；确认后**等对话框真的关闭**才算成功） | 原生对话框是 Win32 层，不依赖页面 DOM |
+| `liveness.ts` | **三信号**判定：停止按钮可见性 + 对话文本哈希 + **产物文件 mtime/大小指纹**；纯函数 `judgeOpenDesignPoll` | 输入是采集结果，判定本身与选择器无关 |
+| `fixplan.ts` | 修复/优化计划落**项目根** `.opendesign/plans/opendesign-fix-r<N>.md`（每轮独立不覆盖）+ 返修指令拼装 | 计划由 MCP 生成，与页面操作无关 |
+
+**为什么产物信号是必需的**：Open Design 生成设计稿时会**长时间不刷对话**却持续写文件，
+只看对话文本会把这类正常工作判成「空闲完成」。因此静止判据要求**文本与产物双稳定**。
+
+**原生对话框的安全边界**（`dialog.ts`）：只操作「**本次新出现** + 属目标进程 + 类名 `#32770` +
+可见 + **唯一**」的窗口；基线在点击「选择目录」之前采样，基线里已有的窗口一律不碰；
+出现多个新对话框直接放弃（绝不猜一个去点）；路径只经环境变量进入脚本（CJK 不被命令行代码页破坏）。
+
+`run.ts` 在接管制管实例后会先**清掉属于本实例 pid 的残留 `#32770`**——模态框会吞掉主窗口的合成点击，
+不清掉会让下一轮把「点选择目录毫无反应」误判成选择器失效。
+
 设计约束（与 `kimicode/dom.ts` 同构）：
 - 点击类表达式**只返回坐标**，鼠标事件由 `cdp.ts` 统一发出；不产生副作用；
 - 布局守卫**只收「初始页面就存在」的锚点**（标题/输入区/各触发器/发送按钮/对话区），

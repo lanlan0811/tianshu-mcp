@@ -318,6 +318,8 @@ export const BUILTIN_PROFILES: Record<string, AgentProfile> = {
         document: "文档",
         clone: "网站复刻",
       },
+      // 修复/优化计划落**项目根下**：Open Design 只能读它工作目录白名单内的文件
+      planDir: ".opendesign/plans",
     },
     note: "Open Design 桌面端（Electron，官方安装包，实测 0.24.1）：主进程强制把 Electron userData 设到 %APPDATA%\\Open Design\\namespaces\\<namespace>\\user-data，且 --user-data-dir 开关会被覆盖，因此不做「专属 userData 实例」；进程级单实例锁意味着用户已开着实例时无法另起受管实例，策略为「复用优先 → 自启 → 转 needs_user 请用户关闭旧实例」。设计方向只支持原型/文档/网站复刻。详见 docs/opendesign-cdp.md",
   },
