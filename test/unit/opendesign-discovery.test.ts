@@ -74,31 +74,61 @@ afterEach(() => {
 });
 
 /**
- * 目标平台为 win32 时，生产代码用 `path.win32` 拼候选路径（见 discovery.ts 的 `api`），
- * 因此夹具也必须用 win32 拼，否则在 POSIX 宿主（CI 的 ubuntu / macOS 腿）上
- * 「生产的反斜杠路径」与「夹具的正斜杠路径」对不上，测试会误报失败。
+ * win32 风格的路径拼装（目标平台是 win32 时的候选形态）。
+ * 注意：这只是**字符串**，磁盘上的真实文件用宿主分隔符创建（见 makeProbe）。
  */
 function win(...parts: string[]): string {
   return path.win32.join(...parts);
 }
 
-/** 造一个最小可用的安装目录：exe + resources/open-design-config.json */
+/**
+ * 造一个最小可用的安装目录：exe + resources/open-design-config.json。
+ *
+ * **关键**：磁盘上用**宿主**分隔符创建（POSIX 上反斜杠不是分隔符，用 win32 拼会造出
+ * 名字里带反斜杠的畸形文件）；而目标平台是 win32 时生产代码会产出 win32 风格路径，
+ * 两者靠 `makeProbe()` 提供的注入式 stat/readFile 对齐——这样断言与宿主平台无关，
+ * CI 的 ubuntu / macOS 腿也能验证 win32 分支。
+ */
 function makeInstall(
-  relativeExe = win("Open Design", "Open Design.exe"),
+  relativeExe = path.join("Open Design", "Open Design.exe"),
   config: Record<string, unknown> | null = {
     appVersion: "0.24.1",
     namespace: "release-stable-win",
   },
 ): string {
-  const exe = win(tmpRoot, relativeExe);
+  const exe = path.join(tmpRoot, relativeExe);
   fs.mkdirSync(path.dirname(exe), { recursive: true });
   fs.writeFileSync(exe, "stub");
   if (config) {
-    const configPath = win(path.dirname(exe), "resources", "open-design-config.json");
+    const configPath = path.join(path.dirname(exe), "resources", "open-design-config.json");
     fs.mkdirSync(path.dirname(configPath), { recursive: true });
     fs.writeFileSync(configPath, JSON.stringify(config));
   }
   return exe;
+}
+
+/**
+ * 把「目标平台的候选路径」映射回磁盘上的真实路径：
+ * 仅把分隔符统一成宿主分隔符即可（win32 → 宿主）。
+ */
+function toHostPath(p: string): string {
+  return path.sep === "/" ? p.replace(/\\/g, "/") : p.replace(/\//g, "\\");
+}
+
+/**
+ * 注入给 `discoverOpenDesign` 的探测原语：让 win32 目标路径在 POSIX 宿主上也能"存在"。
+ * 只做只读映射，不写盘。
+ */
+function makeProbe(): { statFile: (p: string) => boolean } {
+  return {
+    statFile: (p: string) => {
+      try {
+        return fs.statSync(toHostPath(p)).isFile();
+      } catch {
+        return false;
+      }
+    },
+  };
 }
 
 describe("Open Design 安装发现", () => {
@@ -122,7 +152,7 @@ describe("Open Design 安装发现", () => {
     expect(info!.appVersion).toBe("9.9.9");
     expect(info!.namespace).toBe("beta-win");
     expect(info!.installDir).toBe(path.dirname(exe));
-    expect(info!.resourcesDir).toBe(win(path.dirname(exe), "resources"));
+    expect(info!.resourcesDir).toBe(path.join(path.dirname(exe), "resources"));
   });
 
   it("配置缺失或不可解析时返回 null（探测不应因版本查询失败而中断）", () => {
@@ -130,7 +160,7 @@ describe("Open Design 安装发现", () => {
     expect(readInstallInfo(noConfig)).toBeNull();
     const broken = makeInstall("B/Open Design.exe", { appVersion: "0.24.1" });
     fs.writeFileSync(
-      win(path.dirname(broken), "resources", "open-design-config.json"),
+      path.join(path.dirname(broken), "resources", "open-design-config.json"),
       "{ 不是 json",
     );
     expect(readInstallInfo(broken)).toBeNull();
@@ -160,6 +190,7 @@ describe("Open Design 安装发现", () => {
       driveRoots: { "D:": tmpRoot },
       fixedDrives: [],
       registryDirs: [],
+      ...makeProbe(),
     });
     expect(candidate).not.toBeNull();
     expect(candidate!.source).toBe("fixed-drive");
@@ -173,6 +204,7 @@ describe("Open Design 安装发现", () => {
     const candidate = await discoverOpenDesign(BUILTIN_PROFILES.opendesign!, {
       platform: "win32",
       driveRoots: { "D:": win(tmpRoot, "not-there") },
+      ...makeProbe(),
       fixedDrives: [],
       registryDirs: [registryDir],
     });
@@ -184,6 +216,7 @@ describe("Open Design 安装发现", () => {
     const candidate = await discoverOpenDesign(BUILTIN_PROFILES.opendesign!, {
       platform: "win32",
       driveRoots: { "D:": win(tmpRoot, "nope") },
+      ...makeProbe(),
       fixedDrives: [],
       registryDirs: [tmpRoot],
     });
@@ -197,7 +230,11 @@ describe("Open Design 安装发现", () => {
       adapter: "opendesign-gui",
       gui: { exePath: exe },
     });
-    const found = await discoverOpenDesign(profile, { platform: "win32", fixedDrives: [] });
+    const found = await discoverOpenDesign(profile, {
+      platform: "win32",
+      fixedDrives: [],
+      ...makeProbe(),
+    });
     expect(found?.source).toBe("explicit");
 
     const missing = AgentProfileSchema.parse({
@@ -205,7 +242,9 @@ describe("Open Design 安装发现", () => {
       adapter: "opendesign-gui",
       gui: { exePath: win(tmpRoot, "nope", "Open Design.exe") },
     });
-    expect(await discoverOpenDesign(missing, { platform: "win32", fixedDrives: [] })).toBeNull();
+    expect(
+      await discoverOpenDesign(missing, { platform: "win32", fixedDrives: [], ...makeProbe() }),
+    ).toBeNull();
   });
 
   it("preferredDrives 排序：配置的盘优先，其余盘按枚举顺序跟随", () => {
@@ -231,6 +270,7 @@ describe("Open Design 安装发现", () => {
       driveRoots: { "D:": tmpRoot },
       fixedDrives: [],
       registryDirs: [],
+      ...makeProbe(),
     });
     expect(found).not.toBeNull();
     // win32 目标 → 路径必然含反斜杠，且不含正斜杠（宿主是 POSIX 时这一点最容易破）

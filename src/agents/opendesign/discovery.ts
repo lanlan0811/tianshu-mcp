@@ -27,16 +27,27 @@ export interface OpenDesignCandidate {
 export const OPEN_DESIGN_CONFIG_RELATIVE = "resources/open-design-config.json";
 
 /** 可执行名含空格（Open Design.exe），取 basename 后按完整名精确匹配，不做模糊包含。 */
-export function validExecutable(p: string, platform: NodeJS.Platform = process.platform): boolean {
+/** 文件存在性判定（可注入以便跨平台单测，见 discoverOpenDesign 的 input.statFile） */
+export type StatFileFn = (p: string) => boolean;
+
+const defaultStatFile: StatFileFn = (p) => {
   try {
-    const fileName = p.split(/[\\/]/).at(-1) ?? "";
-    return (
-      fs.statSync(p).isFile() &&
-      (platform === "win32" ? /^open design\.exe$/i : /^open design$/i).test(fileName)
-    );
+    return fs.statSync(p).isFile();
   } catch {
     return false;
   }
+};
+
+export function validExecutable(
+  p: string,
+  platform: NodeJS.Platform = process.platform,
+  statFile: StatFileFn = defaultStatFile,
+): boolean {
+  const fileName = p.split(/[\\/]/).at(-1) ?? "";
+  return (
+    statFile(p) &&
+    (platform === "win32" ? /^open design\.exe$/i : /^open design$/i).test(fileName)
+  );
 }
 
 export interface OpenDesignInstallInfo {
@@ -49,15 +60,30 @@ export interface OpenDesignInstallInfo {
 }
 
 /**
+ * 按**路径自身的风格**选 path 实现。
+ *
+ * 为什么需要它（CI 实测教训）：`discoverOpenDesign(profile, { platform: "win32" })` 在 POSIX 宿主上
+ * 会产出 `D:\...\Open Design.exe` 这样的 win32 风格路径，而 `path.dirname`/`path.join` 是**宿主**语义：
+ * 在 POSIX 上 `dirname("D:\\a\\b.exe")` 得到 `"."`，于是 `resources/open-design-config.json` 永远找不到、
+ * 版本恒为空 —— Windows 腿通过、ubuntu/macos 腿失败。
+ * 因此凡是「可能收到非宿主风格路径」的解析都必须按路径风格分派。
+ */
+function pathApiFor(p: string): typeof path.win32 {
+  // 反斜杠或盘符前缀 → 按 win32 解析；否则按宿主风格
+  return /^[a-zA-Z]:/.test(p) || p.includes("\\") ? path.win32 : (path as unknown as typeof path.win32);
+}
+
+/**
  * 解析安装信息。`--config` 不存在或不可解析时返回 null（探测顺序不应被版本查询中断）。
  */
 export function readInstallInfo(
   exePath: string,
   readFile: (p: string) => string = (p) => fs.readFileSync(p, "utf8"),
 ): OpenDesignInstallInfo | null {
-  const installDir = path.dirname(exePath);
-  const configPath = path.join(installDir, OPEN_DESIGN_CONFIG_RELATIVE);
-  const resourcesDir = path.join(installDir, "resources");
+  const api = pathApiFor(exePath);
+  const installDir = api.dirname(exePath);
+  const configPath = api.join(installDir, OPEN_DESIGN_CONFIG_RELATIVE);
+  const resourcesDir = api.join(installDir, "resources");
   let appVersion: string | undefined;
   let namespace: string | undefined;
   try {
@@ -167,9 +193,17 @@ export async function discoverOpenDesign(
     fixedDrives?: string[];
     registryDirs?: string[];
     driveRoots?: Record<string, string>;
+    /**
+     * 文件存在性判定（注入点）。
+     * 为什么需要：win32 目标的候选路径在 POSIX 宿主上**不可能真的存在**（反斜杠不是分隔符），
+     * 用真实 `fs.statSync` 会让「候选路径分隔符」这条断言只能在 Windows 上通过——
+     * 正是 CI ubuntu/macos 腿长期红的原因。测试注入此函数即可让断言与宿主无关。
+     */
+    statFile?: StatFileFn;
   } = {},
 ): Promise<OpenDesignCandidate | null> {
   const platform = input.platform ?? process.platform;
+  const statFile = input.statFile ?? defaultStatFile;
   /**
    * 候选路径必须按**目标平台**拼，不能跟着宿主 `path` 走：
    * `platform` 是注入参数，若仍用宿主 path，跨平台单测只能在 Windows 上通过，
@@ -178,7 +212,7 @@ export async function discoverOpenDesign(
   const api = platform === "win32" ? path.win32 : path.posix;
   const explicit = profile.gui?.exePath?.trim() || profile.command?.trim();
   if (explicit) {
-    if (!validExecutable(explicit, platform)) return null;
+    if (!validExecutable(explicit, platform, statFile)) return null;
     return { path: explicit, source: "explicit", version: readInstallInfo(explicit)?.appVersion };
   }
   const disc = profile.executableDiscovery;
@@ -192,7 +226,7 @@ export async function discoverOpenDesign(
       const key = platform === "win32" ? candidate.p.toLowerCase() : candidate.p;
       if (seen.has(key)) continue;
       seen.add(key);
-      if (validExecutable(candidate.p, platform)) {
+      if (validExecutable(candidate.p, platform, statFile)) {
         return {
           path: candidate.p,
           source: candidate.source,
