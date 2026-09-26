@@ -296,6 +296,15 @@ jobs:
           # 哨兵：把 clippy / test 的退出码与输出行数也作为可读注解暴露
           echo "::notice title=diag-lint::clippy_rc=${CLIPPY_RC} test_rc=${TEST_RC} clippy_lines=$(wc -l < /tmp/clippy.txt) test_lines=$(wc -l < /tmp/test.txt)"
 
+          # 兜底：直接暴露首个错误块原文（避免上面的解析规则失效或注解路径非法被丢弃时看不到错误）
+          S=$(grep -nE -m1 '^(error|warning)(\[|:| )' /tmp/clippy.txt | cut -d: -f1)
+          [ -z "$S" ] && S=1
+          echo "::warning title=clippy-raw1::$(tail -n +"${S}" /tmp/clippy.txt | head -c 3200 | esc)"
+          echo "::warning title=clippy-raw2::$(tail -n +"${S}" /tmp/clippy.txt | tail -c +3201 | head -c 3200 | esc)"
+          T=$(grep -nE -m1 '^(test .*FAILED|failures:)' /tmp/test.txt | cut -d: -f1)
+          [ -z "$T" ] && T=1
+          echo "::warning title=test-raw::$(tail -n +"${T}" /tmp/test.txt | head -c 3200 | esc)"
+
       # 下面 2 步只做「把收集好的注解行打印出来」；单步注解上限 10 条，故分 2 步共可输出 20 条
       - name: Rust lint diagnostics emit 1 (temporary)
         continue-on-error: true
