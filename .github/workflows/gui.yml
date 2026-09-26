@@ -82,7 +82,8 @@ jobs:
           else
             CHANGED=$(git diff --name-only "$BASE" "$SHA" || true)
           fi
-          if echo "$CHANGED" | grep -q '^mcp-gui/'; then
+          # 临时（CI 修复期）：把 gui.yml 自身改动也视为 GUI 变更，便于用诊断步骤定位问题；修复完成后还原
+          if echo "$CHANGED" | grep -qE '^(mcp-gui/|\.github/workflows/gui\.yml)'; then
             echo "gui_changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "gui_changed=false" >> "$GITHUB_OUTPUT"
