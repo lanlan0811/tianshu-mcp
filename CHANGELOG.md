@@ -26,10 +26,18 @@
 - `toNativeDialogPath` 对**相对路径与空路径**的处理：`path.win32.normalize("")` 会返回 `"."`，原实现会把 `.` 当有效路径送进原生对话框（表现为「确认后什么都没发生」）；现在相对路径按当前工作目录解析为绝对路径，空/空白路径返回空串由调用方 fail-closed。
 - **CI 红：Open Design 的发现模块「平台注入」没有端到端生效**（`discoverOpenDesign` 的候选路径用了**宿主** `path.join`，而 `platform` 是注入参数）。在 Windows 上恰好一致所以本地全绿，但 CI 的 **ubuntu / macos 腿全部失败**（`0.6.8` 起持续红）。修复：候选路径一律按**目标平台**拼（`const api = platform === "win32" ? path.win32 : path.posix`），并新增一条**与宿主平台无关**的断言（win32 目标 → 路径必须含反斜杠且不含正斜杠）。
 - 顺带修正若干**测试自身**的宿主平台假设（这些也在 CI 非 Windows 腿上失败）：夹具改用 `path.win32.join` 与生产一致；`normalizeWorkspacePath` 的大小写断言按平台分支（实现只在 win32 下 `toLowerCase`）；非 Windows 上断言 `listOwnedDialogs` / `closeStrayDialogs` **不调用 `powershell.exe`**（CI 上没有它）。
+- **另有 4 处断言只在 Windows 上成立**（本机伪装 `process.platform=linux` 复现出 CI 的确切失败）：
+  1. `normalizeWorkspacePath` 在 POSIX 下**保留输入大小写**（连盘符都不归一），断言却写死了小写；
+  2. `workspaceMatches("D:\\proj","d:/proj/")` 在 POSIX 下为 `false`（大小写敏感是**设计要求**），断言却写死 `true`；
+  3. `selectOpenDesignFolder("")` 的 `reason` 在非 Windows 上是 `platform`（平台分支在路径校验**之前**）；
+  4. `openDesignNamespaceRoot` 在非 win32 走 `HOME/Library/Application Support`，断言却按 `APPDATA` 写死。
+  修复方式：断言一律按 `process.platform` 分支；含中文的路径比较用例改为断言**可验证不变量**（避免手打字面量混入形近字符）。
+- **`readInstallInfo` 改为按路径风格选 path 实现**（`pathApiFor`）：win32 风格路径在 POSIX 宿主上此前会被 `path.dirname` 解析成 `"."`，导致版本恒读不到；`discoverOpenDesign` 同时新增**可注入的 `statFile` 探测原语**，使 win32 分支的断言与宿主平台无关（这是让 CI 的 ubuntu/macos 腿也能验证 win32 分支的关键）。
 
 ### 测试
 
 - 新增 **67** 个用例：`opendesign-workspace.test.ts` 14 个（路径比较、已绑定跳过且零点击、成功路径与**基线采样顺序**、触发器缺失/菜单项缺失/原生失败/回读不一致四条失败路径、回读空值）、`opendesign-liveness.test.ts` 20 个、`opendesign-dialog-fixplan.test.ts` 19 个、`opendesign-visual.test.ts` 12 个（静态入口发现与文件名优先级/深度上限/噪声跳过、工程结构判定、推导不出来的如实路径）；`opendesign-dom.test.ts` 补覆盖语义回归；`opendesign-discovery.test.ts` 补「候选路径按目标平台拼分隔符」与「非 Windows 目标平台的 posix 分支」两条回归。
+- **跨平台验证方法**：本机把 `process.platform` 伪装成 `linux` 后再跑 `test/unit/opendesign`，Open Design 全部 **131 用例通过**；真实 Windows 下同样 **131 通过**。
 - 全量 **1270 passed / 12 skipped**（110 文件）；`typecheck` / `eslint src test scripts` / `build` 全绿。
 
 ### 文档
