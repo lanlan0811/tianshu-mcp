@@ -7,6 +7,19 @@
 
 ---
 
+## [0.6.11] - 2026-09-26
+
+### 文档
+
+- **Open Design 适配器入册全部既有人工文档**（纯文档版本，无运行时变更）：
+  - [docs/adapter-matrix.md](docs/adapter-matrix.md) / [.en.md](docs/adapter-matrix.en.md)：汇总矩阵新增 Open Design 行（状态如实标为「开发中：判定层已交付、界面接线待选择器采集」，含发现顺序、登录态与数据目录、`ELECTRON_RUN_AS_NODE` 与「分离子进程形态」两个真机坑、端口 9889 的来由），E1 事件上报表补一行；顺带把英文表头从 5 列修回与数据行一致的 7 列（**既有缺陷**：英文行一直是 7 列，表头与服务端渲染不齐）。
+  - [docs/agent-profiles.md](docs/agent-profiles.md) / [.en.md](docs/agent-profiles.en.md)：字段说明补 `adapter="opendesign-gui"` 与 `opendesign` 配置块；新增「Open Design（开发中）」样例 profile 与要点清单（不设 `userDataDir` 的原因、版本门禁判据、`designDirection` 与 `designSystem` 的语义差异）。
+  - [skills/tianshu-mcp/SKILL.md](skills/tianshu-mcp/SKILL.md)：`description`/`triggers` 纳入 opendesign；参数兼容矩阵新增一列（`designDirection` 必填、`designSystem` 语义、`mode` 不支持）；§5 的 `close_existing_instance` 与 `continue_task` 支持面补 opendesign；修正 `projectPath` 一栏（**无项目派发当前仅支持 ZCode**，此前该格未说明）。
+  - [skills/tianshu-mcp/usage-examples.md](skills/tianshu-mcp/usage-examples.md)：新增 §2.8 opendesign 示例与「当前阶段会硬失败 `selector_drift`，这是 fail-closed 而非缺陷」的说明。
+  - README 双语：概述句的 agent 清单补「Open Design 适配器开发中」。
+
+> 本次为**文档版本**，`src/` 无改动；`typecheck` / `eslint src test scripts` / `build` / `check:stdio`（8/8）全绿。
+
 ## [0.6.10] - 2026-09-26
 
 ### 新增

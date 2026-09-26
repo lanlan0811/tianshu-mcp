@@ -12,7 +12,7 @@ Visual acceptance (since v0.5.0, with optional AI content validation since v0.5.
 
 **Tianshu × AI-Agent orchestration MCP server**
 
-Registered by Tianshu as a standard MCP server, it dispatches external AI-Agents (Codex desktop, TraeWork/TRAE SOLO CN, ZCode, Kimi Code and Qoder CN, all driven through their desktop UIs over CDP) to drive the closed loop of **project development → acceptance → failure rework → re-acceptance** (horizontally extensible).
+Registered by Tianshu as a standard MCP server, it dispatches external AI-Agents (Codex desktop, TraeWork/TRAE SOLO CN, ZCode, Kimi Code and Qoder CN, all driven through their desktop UIs over CDP; the Open Design adapter is in development) to drive the closed loop of **project development → acceptance → failure rework → re-acceptance** (horizontally extensible).
 
 > Official Tianshu repository: [github.com/huiliyi37/Tianshu-harness](https://github.com/huiliyi37/Tianshu-harness) — a harness-engineering terminal coding-agent runtime (TUI × GUI); this MCP plugs into it as an MCP server.
 

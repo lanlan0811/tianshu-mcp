@@ -8,6 +8,19 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.6.11] - 2026-09-26
+
+### Documentation
+
+- **The Open Design adapter is now documented in every existing human-facing document** (documentation-only release, no runtime changes):
+  - [docs/adapter-matrix.md](docs/adapter-matrix.md) / [.en.md](docs/adapter-matrix.en.md): the summary matrix gains an Open Design row (status stated truthfully as "in development: decision layer delivered, UI wiring awaits selector capture", covering discovery order, login and data directory, the two real-machine traps `ELECTRON_RUN_AS_NODE` and the "detached child" launcher shape, and why the port base is 9889), and the E1 event-reporting table gains a row; the English table header is also corrected from 5 columns back to the 7 columns the data rows already used (**pre-existing defect**: English rows were always 7 cells while the header was stale).
+  - [docs/agent-profiles.md](docs/agent-profiles.md) / [.en.md](docs/agent-profiles.en.md): the field reference gains `adapter="opendesign-gui"` and the `opendesign` config block; a new "Open Design (in development)" sample profile documents the essentials (why `userDataDir` is unset, the version-gate criterion, and how `designDirection` differs semantically from `designSystem`).
+  - [skills/tianshu-mcp/SKILL.md](skills/tianshu-mcp/SKILL.md): `description`/`triggers` now include opendesign; the parameter compatibility matrix gains a column (`designDirection` required, the meaning of `designSystem`, `mode` unsupported); §5's `close_existing_instance` and the `continue_task` support surface include opendesign; the `projectPath` cell is corrected (**project-less dispatch currently supports ZCode only**, which the cell previously left unstated).
+  - [skills/tianshu-mcp/usage-examples.md](skills/tianshu-mcp/usage-examples.md): a new §2.8 opendesign example explaining that "dispatching currently hard-fails with `selector_drift`, which is fail-closed protection rather than a defect".
+  - Bilingual README: the overview sentence's agent list mentions "the Open Design adapter is in development".
+
+> This is a **documentation-only release**; `src/` is unchanged. `typecheck` / `eslint src test scripts` / `build` / `check:stdio` (8/8) are all green.
+
 ## [0.6.10] - 2026-09-26
 
 ### Added

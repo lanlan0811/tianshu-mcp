@@ -25,7 +25,7 @@ built-in (`src/agents/builtin.ts`) → user `agent-profiles.json` overrides by `
       "displayName": "…",
       "type": "cli",                 // only cli today
       "driver": "spawn",             // spawn = external child process (default); gui = desktop UI automation
-      "adapter": "zcode-gui",        // GUI discriminator: traework-gui | zcode-gui | codex-gui | kimicode-gui | qoder-gui; missing keeps legacy TraeWork behavior
+      "adapter": "zcode-gui",        // GUI discriminator: traework-gui | zcode-gui | codex-gui | kimicode-gui | qoder-gui | opendesign-gui; missing keeps legacy TraeWork behavior
       "status": "ready",             // ready | research | unsupported
       "command": null,               // absolute path; null + discovery = auto-probe
       "argsTemplate": ["exec", "<prompt:arg>"],
@@ -48,6 +48,14 @@ built-in (`src/agents/builtin.ts`) → user `agent-profiles.json` overrides by `
         "idleTimeoutMs": 600000, "cdpSendTimeoutMs": 15000, "progressIntervalMs": 30000,
         "modelSwitch": true, "modeSwitch": true, "freshSession": true, "selectors": {},
         "modelRequired": false, "defaultPermissionMode": "Full Access", "defaultAutoFixRounds": 2
+      },
+      "opendesign": {                // only for adapter="opendesign-gui"; every field optional
+        "supportedVersions": { "win32": ["0.24.1"] }, // version gate (criterion = install config appVersion)
+        "directionLabels": { "prototype": "原型" },   // design direction → menu label (overridable for UI copy drift)
+        "planDir": ".opendesign/plans",               // repair-plan output dir (relative to the project root)
+        "workingDirPanelTimeoutMs": 15000, "nativeDialogTimeoutMs": 20000,
+        "modelMenuTimeoutMs": 15000, "designSystemTimeoutMs": 15000,
+        "designDirectionTimeoutMs": 15000, "sendReadyTimeoutMs": 20000
       }
     }
   }
@@ -274,6 +282,66 @@ Per-agent applicability and semantics:
 > **Essential**: `projectPath` and `planDoc` are mandatory; `modelSource` is optional and only needed to disambiguate identical names across the default/custom groups.
 > An invalid explicit `gui.exePath` fails loudly instead of silently falling back to another installation; an existing instance without usable CDP is preserved in place and turned into `needs_user` — it is never closed or restarted. An unregistered directory is imported through New Task → Workspace → New Workspace → Add Read/Write Folder.
 > Thinking tiers are saved in Model Management as a **global preference** (not restored afterwards) and the permission mode is retained. Details: [qoder-cdp.en.md](qoder-cdp.en.md).
+
+### Open Design (GUI driver, in development: decision layer delivered, UI wiring awaits selector capture)
+
+```json
+{
+  "profiles": {
+    "opendesign": {
+      "displayName": "Open Design (Open Design desktop)",
+      "driver": "gui",
+      "adapter": "opendesign-gui",
+      "status": "ready",                 // research on macOS (fail-closed, dispatch refused)
+      "executableDiscovery": {
+        "preferredDrives": ["D:"],
+        "relativePaths": ["Open Design/Open Design.exe"],
+        "fileNames": ["Open Design.exe"], // ["Open Design"] on macOS
+        "dirs": [
+          "{PROGRAMFILES}/Open Design",
+          "{LOCALAPPDATA}/Programs/Open Design",
+          "{LOCALAPPDATA}/Open Design"
+        ]
+      },
+      "gui": {
+        "cdpPort": 9889,                 // base port; 9777 is taken by Qoder CN, 9889-9898 does not overlap
+        "cdpPortRange": 10,
+        "exeArgs": ["--remote-debugging-port=<port>"],
+        "launchTimeoutMs": 90000,
+        "modelSwitch": true,
+        "modelRequired": true
+      },
+      "opendesign": {
+        "supportedVersions": { "win32": ["0.24.1"] },
+        "directionLabels": { "prototype": "原型", "document": "文档", "clone": "网站复刻" },
+        "planDir": ".opendesign/plans"   // repair plans go to the project root (Open Design can only read inside its working directory)
+      }
+    }
+  }
+}
+```
+
+> **Essential** (each point maps to a real-machine lesson; see [opendesign-cdp.en.md](opendesign-cdp.en.md)):
+> - **`gui.userDataDir` is intentionally unset**: the product's main process forces `app.setPath("userData", …)`,
+>   so that switch **is overridden** — writing it into the profile would be a false promise.
+> - **`exeArgs` only injects the debug port**: the command line shape stays the same, but **managed launches
+>   sanitise the environment** (dropping `ELECTRON_RUN_AS_NODE` and friends); otherwise the outer launcher
+>   degrades to Node mode and rejects `--remote-debugging-port` outright.
+> - **`supportedVersions` is the version gate**: the criterion is `appVersion` from
+>   `<install dir>/resources/open-design-config.json`, **not** CDP `/json/version`'s `Browser` (that is the
+>   Electron version).
+> - **Design direction uses the `designDirection` parameter** (not `mode`): only Prototype / Document /
+>   Website clone are supported; other UI directions (Slides / Image / HyperFrames) are rejected at the
+>   **entry point**.
+> - **`designSystem` means a design-system name** (e.g. `Claude`), which the adapter searches for and clicks
+>   in the design-system panel.
+> - An existing instance without a debug port yields `needs_user(close_existing_instance)`; user processes are
+>   **never** killed.
+>
+> **Current progress**: P0 (discovery / takeover / CDP), P1 (selector and expression layer, layout guard) and the
+> **decision layer** of P2/P5/P6 (native dialog, three-signal run detection, repair plans, visual page-source
+> derivation) are delivered; UI wiring awaits real-machine selector capture. While selectors are missing,
+> dispatching **hard-fails with `selector_drift`** listing the missing keys — it never clicks blindly.
 
 ### Historical: Codex kernel CLI (`codex exec`, superseded by the GUI driver)
 

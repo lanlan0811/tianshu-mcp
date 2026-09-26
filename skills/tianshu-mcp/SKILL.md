@@ -1,7 +1,7 @@
 ---
 name: tianshu-mcp
-description: 让外部 AI-Agent（codex/zcode/traework/kimicode/qoder）做项目开发并自动验收、失败返修的编排方法。当任务需要“叫一个 AI-Agent 去开发/改代码/补测试并验收，不行就返修”时先加载本技能：按它用 mcp__tianshu-mcp__ 的 11 个工具（run_task/continue_task/query_task/list_tasks/get_task_report/verify_task/rework_task/cancel_task/get_profiles/prepare_visual_baseline/approve_visual_baseline）派活、暂停继续、轮询、查历史、读验收报告、驱动返修、管理视觉基准，并按硬失败错误码快速定位卡点。小改动或纯问答不需要。
-triggers: '开发|编码|写代码|改代码|实现功能|加功能|修复|重构|补测试|写测试|验收|返修|返工|重做|自动验收|自动返修|任务书|ai.?agent|子代理|外部.?agent|agent|codex|zcode|traework|kimicode|kimi.?code|qoder|claude|编排|项目开发|派活|派单'
+description: 让外部 AI-Agent（codex/zcode/traework/kimicode/qoder，以及开发中的 opendesign）做项目开发并自动验收、失败返修的编排方法。当任务需要“叫一个 AI-Agent 去开发/改代码/补测试并验收，不行就返修”时先加载本技能：按它用 mcp__tianshu-mcp__ 的 11 个工具（run_task/continue_task/query_task/list_tasks/get_task_report/verify_task/rework_task/cancel_task/get_profiles/prepare_visual_baseline/approve_visual_baseline）派活、暂停继续、轮询、查历史、读验收报告、驱动返修、管理视觉基准，并按硬失败错误码快速定位卡点。小改动或纯问答不需要。
+triggers: '开发|编码|写代码|改代码|实现功能|加功能|修复|重构|补测试|写测试|验收|返修|返工|重做|自动验收|自动返修|任务书|ai.?agent|子代理|外部.?agent|agent|codex|zcode|traework|kimicode|kimi.?code|qoder|opendesign|open.?design|claude|编排|项目开发|派活|派单'
 ---
 
 # tianshu-mcp 编排技能：叫外部 AI-Agent 开发并验收
@@ -42,7 +42,7 @@ run_task（秒回 taskId，异步）
 | `get_task_report` | read | 读某轮验收报告 **Markdown 全文** | `taskId`、`round?`（0-based，缺省最新） |
 | `verify_task` | execute（不改源码、无需审批） | 对任务或任意项目**独立验收**（会跑项目命令、可产生构建产物，故 `readOnlyHint=false`；不改源码、无需审批） | `taskId` 或 `projectPath` 二选一、`extraChecks?`、`checksMode?`、`baselineRef?` |
 | `rework_task` | write + 审批 | 手动返修：终态任务重新入队续跑（同 agent/项目、同一轮次记账） | `taskId`、`feedback?` |
-| `continue_task` | write + 审批 | 恢复 `needs_user`（仅 codex/zcode/kimicode/qoder） | `taskId`、`message`（必填） |
+| `continue_task` | write + 审批 | 恢复 `needs_user`（仅 codex/zcode/kimicode/qoder/opendesign；traework 与 spawn 类不支持） | `taskId`、`message`（必填） |
 | `cancel_task` | write + 审批 | 取消运行中任务（GUI agent 尽力点停止并回读） | `taskId`、`reason?` |
 | `get_profiles` | read | 看当前机器实际探测结果（可用性、profileStatus、探测来源） | — |
 | `prepare_visual_baseline` | write + 审批 | 视觉基准**候选**准备（截图或导入参考图） | `projectPath` 等，见 §8 |
@@ -64,17 +64,18 @@ run_task（秒回 taskId，异步）
 
 ### 3.1 参数兼容矩阵（传错即报错，不会静默忽略）
 
-| 参数 | codex | zcode | traework | kimicode | qoder |
-|---|---|---|---|---|---|
-| `projectPath` | 必填 | **可省略**（无项目模式，见 §3.4） | 必填 | 必填 | 必填 |
-| `model` | **必填**（面板模型名） | **必填**，`供应商/模型` | 可选 | **必填**（界面模型名） | 可选 |
-| `modelSource` | ✗ | ✗ | ✗ | ✗ | 可选 `default`/`custom` |
-| `reasoningLevel` | `低/中/高`（`low/medium/high`） | ✗ | ✗ | `低/low`、`高/high`、`max`、`on`、`off` | `低/中/高/极高/最大/关闭思考` |
-| `mode` | ✗ | ✗ | **唯一支持**（`Work`/`Code`/`Design`） | ✗ | ✗ |
-| `planDoc` | 可选 | ✗ | ✗ | ✗ | **必填**且必须可读 |
-| `designSystem` | 可选 | ✗ | ✗ | ✗ | ✗ |
-| `allowCreateProject` | ✗ | 可选（`false` 关自动导入） | ✗ | ✗ | ✗ |
-| `continue_task` | 仅 `login_required` / `user_confirmation` | `agent_question` 回发答案；其余作已处理确认 | **不支持** | 见 §5 | 见 §5 |
+| 参数 | codex | zcode | traework | kimicode | qoder | opendesign |
+|---|---|---|---|---|---|---|
+| `projectPath` | 必填 | **可省略**（无项目模式，见 §3.4） | 必填 | 必填 | 必填 | 必填（无项目派发现仅支持 zcode） |
+| `model` | **必填**（面板模型名） | **必填**，`供应商/模型` | 可选 | **必填**（界面模型名） | 可选 | **必填**（界面模型名；精确匹配，未命中回显候选） |
+| `modelSource` | ✗ | ✗ | ✗ | ✗ | 可选 `default`/`custom` | ✗ |
+| `reasoningLevel` | `低/中/高`（`low/medium/high`） | ✗ | ✗ | `低/low`、`高/high`、`max`、`on`、`off` | `低/中/高/极高/最大/关闭思考` | ✗ |
+| `mode` | ✗ | ✗ | **唯一支持**（`Work`/`Code`/`Design`） | ✗ | ✗ | ✗（用 `designDirection`） |
+| `designDirection` | ✗ | ✗ | ✗ | ✗ | ✗ | **必填**（`原型`/`文档`/`网站复刻`） |
+| `planDoc` | 可选 | ✗ | ✗ | ✗ | **必填**且必须可读 | ✗ |
+| `designSystem` | 可选 | ✗ | ✗ | ✗ | ✗ | 可选（**设计系统名**，如 `Claude`） |
+| `allowCreateProject` | ✗ | 可选（`false` 关自动导入） | ✗ | ✗ | ✗ | ✗ |
+| `continue_task` | 仅 `login_required` / `user_confirmation` | `agent_question` 回发答案；其余作已处理确认 | **不支持** | 见 §5 | 见 §5 | 见 §5 |
 
 `reasoningLevel` 别名（`极高`/`xhigh`、`最大`、`关闭思考`）**只有 qoder 接受**，传给其他 agent 会直接报错。`max`/`off` 是全局取值，各适配器自行判定是否支持。
 
@@ -100,6 +101,11 @@ run_task（秒回 taskId，异步）
   `model`/`reasoningLevel` 可省略（沿用界面当前值并记录）；指定模型时若「默认」与「自定义」两组同名，必须用 `modelSource` 消歧，否则报 `qoder_model_ambiguous`。
   思考等级经「模型管理」设置并**重新打开回读**验证，不支持的档位在发送前报错；修改会保留为**全局偏好**（任务结束不还原），报告会说明影响。权限模式沿用当前设置，**不自动切「完全访问」**。
   自动与手动返修都**先落修复计划**，再把失败说明、计划文件名、完整路径与**全文**发回原会话。**macOS 为 `research` 且禁止派发**（`unsupported_platform`）。
+- **`opendesign`**（⚠️ **开发中，暂不可派活**）：Open Design 桌面端（Electron，实测 0.24.1；CDP 基准端口 **9889**）。
+  `designDirection` **必填**（只支持「原型 / 文档 / 网站复刻」；`幻灯片`/`图片`/`HyperFrames` 在**入口**即拒绝）；`designSystem` 传**设计系统名**（如 `Claude`）；`mode` 不支持。
+  **当前阶段派活会硬失败 `selector_drift`**（界面选择器尚未真机采集完），错误信息会列出缺失键——
+  详见 [docs/opendesign-cdp.md](../../docs/opendesign-cdp.md) 与 `.dsh/plans/opendesign-gui-adapter-plan.md`。
+  排查注意：外层启动器是「内嵌 Node 的 Electron」，**调用方若带 `ELECTRON_RUN_AS_NODE=1` 会被置为 Node 模式而拒绝调试端口**（受管启动已自动净化环境）。
 - **`codex-cli`**（可选，用户自建 profile，非内置）：不想依赖 GUI 时的**无头**路径，走 `codex exec`。需用户先在数据目录 `agent-profiles.json` 加 `driver=spawn` 的 profile（示例见 README「macOS 无头路径：codex-cli」）。
   `model` 参数对它**不生效**（模型取 `~/.codex/config.toml`，要锁模型在 `argsTemplate` 里加 `-m`）；无 GUI 交互，`continue_task` 不适用。CLI 需 **≥0.154.0**（≤0.130.0 签名证书已吊销，macOS 会被 Gatekeeper 直接 SIGKILL）。
 
@@ -158,7 +164,7 @@ meta 的 `needsUserKind` 给出等待类型，`pendingQuestion` 给出问题原�
 | `agent_question` | zcode / kimicode / qoder | 无需操作（或在客户端补充信息） | **把 `message` 发表在原会话**（不重发任务书）。qoder 多题用 JSON 对象字符串，键为界面完整问题文字，多选值为字符串数组；先全量校验再提交，缺答案/题目变化/选项不存在都保留等待 |
 | `user_confirmation` | codex / kimicode / qoder | 在客户端窗口完成确认（方案卡/订阅页等） | **只重新接入观察**，不发送消息 |
 | `login_required` | codex / zcode / kimicode / qoder | 在窗口完成登录 | codex：复检环境后**重新派发任务书**（新会话 + 项目绑定 + 完整初始指令）；kimicode/qoder：补发完整任务书；zcode：message 仅作已处理确认 |
-| `close_existing_instance` | zcode / kimicode / qoder | 关闭冲突的旧实例（MCP 不自动关停） | 复检环境后补发完整任务书（message 不作问题发送） |
+| `close_existing_instance` | zcode / kimicode / qoder / opendesign | 关闭冲突的旧实例（MCP 不自动关停） | 复检环境后补发完整任务书（message 不作问题发送） |
 | `system_permission` | zcode / kimicode | 授予系统权限（辅助功能等） | 同上 |
 | `setup_recovery` | zcode / kimicode / qoder | 在客户端确认目标项目/工作区，或手工完成绑定 | 同上；无锚点的环境恢复会补发完整原任务、上下文与已验证引用 |
 

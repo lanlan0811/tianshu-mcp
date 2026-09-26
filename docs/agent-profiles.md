@@ -27,7 +27,7 @@
       "displayName": "Codex (OpenAI 桌面端 CLI)",   // 展示名
       "type": "cli",                                  // 目前仅 cli
       "driver": "spawn",                              // spawn=外部子进程（默认）；gui=桌面 UI 自动化
-      "adapter": "zcode-gui",                         // GUI 可选：traework-gui | zcode-gui | codex-gui | kimicode-gui | qoder-gui；旧缺省按 TraeWork 兼容
+      "adapter": "zcode-gui",                         // GUI 可选：traework-gui | zcode-gui | codex-gui | kimicode-gui | qoder-gui | opendesign-gui；旧缺省按 TraeWork 兼容
       "status": "ready",                              // ready | research | unsupported
       "command": null,                                // 可执行；null + discovery 则自动探测
       "argsTemplate": ["exec", "<prompt:arg>", "--skip-git-repo-check"],
@@ -51,6 +51,14 @@
         "idleTimeoutMs": 600000, "cdpSendTimeoutMs": 15000, "progressIntervalMs": 30000,
         "modelSwitch": true, "modeSwitch": true, "freshSession": true, "selectors": {},
         "modelRequired": false, "defaultPermissionMode": "完全访问", "defaultAutoFixRounds": 2
+      },
+      "opendesign": {                                 // 仅 adapter="opendesign-gui" 使用；全部可选
+        "supportedVersions": { "win32": ["0.24.1"] }, // 版本门禁（判据=安装配置 appVersion）
+        "directionLabels": { "prototype": "原型" },   // 设计方向 → 菜单文本（可覆盖，应对 UI 文案漂移）
+        "planDir": ".opendesign/plans",               // 修复计划输出目录（相对项目根）
+        "workingDirPanelTimeoutMs": 15000, "nativeDialogTimeoutMs": 20000,
+        "modelMenuTimeoutMs": 15000, "designSystemTimeoutMs": 15000,
+        "designDirectionTimeoutMs": 15000, "sendReadyTimeoutMs": 20000
       }
     }
   }
@@ -258,6 +266,59 @@ TraeWork 存活检测相关字段：`stableRounds` 仅确认 DOM 已稳定；随
 > 显式 `gui.exePath` 无效时直接报错，不会偷偷换用另一份安装；已有实例无可用 CDP 时保留现场并转
 > `needs_user`，绝不关闭或重启。未登记目录经「新的任务 → 工作区 → 新建工作区 → 添加可读写文件夹」导入。
 > 思考等级经「模型管理」保存为**全局偏好**（不自动还原），权限模式沿用不切换。详见 [qoder-cdp.md](qoder-cdp.md)。
+
+### Open Design（GUI 驱动，开发中：判定层已交付、界面接线待选择器采集）
+
+```json
+{
+  "profiles": {
+    "opendesign": {
+      "displayName": "Open Design (Open Design 桌面端)",
+      "driver": "gui",
+      "adapter": "opendesign-gui",
+      "status": "ready",                 // macOS 为 research（fail-closed，禁止派发）
+      "executableDiscovery": {
+        "preferredDrives": ["D:"],
+        "relativePaths": ["Open Design/Open Design.exe"],
+        "fileNames": ["Open Design.exe"], // macOS 为 ["Open Design"]
+        "dirs": [
+          "{PROGRAMFILES}/Open Design",
+          "{LOCALAPPDATA}/Programs/Open Design",
+          "{LOCALAPPDATA}/Open Design"
+        ]
+      },
+      "gui": {
+        "cdpPort": 9889,                 // 基准端口；9777 已被 Qoder CN 占用，9889-9898 与既有 agent 不重叠
+        "cdpPortRange": 10,
+        "exeArgs": ["--remote-debugging-port=<port>"],
+        "launchTimeoutMs": 90000,
+        "modelSwitch": true,
+        "modelRequired": true
+      },
+      "opendesign": {
+        "supportedVersions": { "win32": ["0.24.1"] },
+        "directionLabels": { "prototype": "原型", "document": "文档", "clone": "网站复刻" },
+        "planDir": ".opendesign/plans"   // 修复计划落项目根（Open Design 只能读工作目录白名单内的文件）
+      }
+    }
+  }
+}
+```
+
+> **要点**（每一条都对应一次真机教训，详见 [opendesign-cdp.md](opendesign-cdp.md)）：
+> - **不设 `gui.userDataDir`**：产品主进程会强制 `app.setPath("userData", …)`，该开关**会被覆盖**，写进去是假承诺；
+> - **`exeArgs` 只注入调试端口**：命令行形态不变，但**受管启动会净化环境**（清 `ELECTRON_RUN_AS_NODE` 等），
+>   否则外层启动器退化成 Node 会直接拒绝 `--remote-debugging-port`；
+> - **`supportedVersions` 是版本门禁**：判据取安装目录 `resources/open-design-config.json` 的 `appVersion`，
+>   **不是** CDP `/json/version` 的 `Browser`（那是 Electron 版本）；
+> - **设计方向走 `designDirection` 参数**（不是 `mode`）：只支持「原型 / 文档 / 网站复刻」，
+>   其余 UI 方向（幻灯片/图片/HyperFrames）在**入口**即拒绝；
+> - **`designSystem` 的语义是「设计系统名」**（如 `Claude`），由适配器在设计系统面板搜索并点选；
+> - 已有实例未开调试端口时转 `needs_user(close_existing_instance)`，**绝不 kill 用户进程**。
+>
+> **当前进度**：P0（发现/接管/CDP）、P1（选择器与表达式层、布局守卫）与 P2/P5/P6 的**判定层**
+> （原生对话框、三信号运行检测、修复计划、视觉页面来源推导）已交付；界面接线待真机选择器采集。
+> 选择器缺失时派活会**硬失败 `selector_drift`** 并列出缺失键——不会盲点坐标。
 
 ### 历史：Codex 内核 CLI（`codex exec`，已被 GUI 驱动取代）
 
