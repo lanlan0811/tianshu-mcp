@@ -544,7 +544,7 @@ interface AgentAdapter {
 | `session / keptInstance` | Session anchor and whether the instance was kept, for `continue_task` |
 | `progressSummary` | Progress persisted for `query_task` to observe |
 
-### 8.2 Execution order for the five GUI drivers (measured; do not reorder casually)
+### 8.2 Execution order for the six GUI drivers (measured; do not reorder casually)
 
 **TraeWork** (CDP-driven TRAE SOLO CN):
 
@@ -615,9 +615,40 @@ discover installation (explicit gui.exePath → D-drive-first candidates → rel
 > Cancellation stops **only the bound original session** (`stopQoder` requires two consecutive non-running polls before it reports `idle`);
 > when unconfirmed, the instance is kept and re-dispatch is blocked. macOS is `research` and dispatch is disabled.
 
+**Open Design** (CDP-driven, **artifact signal**; in development: P0/P1 plus the P2/P5/P6 decision layer delivered, UI wiring awaits selector capture):
+
+```text
+launch/reuse the CDP instance after environment sanitisation (drop ELECTRON_RUN_AS_NODE etc.;
+  a live instance without CDP → needs_user(close_existing_instance))
+  → close this instance's stray #32770 windows (a modal swallows the main window's synthetic clicks)
+  → version gate (install config appVersion)
+  → bind the working directory (skip when already bound; expand → Select directory → native "Select Folder" via two routes → **read-back verification**)
+  → pick model (exact match + echo candidates) → pick design system (search filter + read-back) → pick design direction (Prototype/Document/Website clone only)
+  → type the task → send → three-signal run detection (stop button + conversation-text hash + **artifact mtime/size fingerprint**) → poll to completion
+  → visual acceptance (the page source is **derived as a suggestion** by visual.ts; acceptance.json is never modified automatically)
+  → on failure write .opendesign/plans/opendesign-fix-r<N>.md at the project root → send the plan name in the same session → re-accept
+```
+
+> **Two real-machine traps (both fixed; do not regress)**:
+> 1. `Open Design.exe` is an Electron launcher with embedded Node. If the caller carries `ELECTRON_RUN_AS_NODE=1`,
+>    the launcher is put into Node mode and **rejects `--remote-debugging-port`** (`bad option:`), showing
+>    "no window, no log lines, no crash dump". Managed launches always sanitise the environment
+>    (`OPEN_DESIGN_ENV_DENYLIST`) while leaving the command line unchanged.
+> 2. The launcher uses a "**detached child**" shape: after accepting the port it prints `DevTools listening on …`
+>    and **exits 0 by itself**; the real Electron main process is the detached child it spawned.
+>    **Exit code 0 never means failure** — the announced port must be parsed from stderr and polling must continue.
+>
+> **It is the only driver with an "artifact signal"**: Open Design writes files continuously while not refreshing the
+> conversation for long stretches, so text-only judging would call that normal work "idle and finished". The quiet
+> criterion therefore requires **both text and artifacts to be stable**.
+> **Binding success means a matching read-back** (not "the native dialog closed"); while selectors are uncaptured,
+> dispatching **hard-fails with `selector_drift`** listing the missing keys and never clicks blindly.
+> The version gate compares `appVersion` from `<install dir>/resources/open-design-config.json` (the **Electron**
+> version reported by CDP is not a product version). See [opendesign-cdp.en.md](docs/opendesign-cdp.en.md).
+
 ### 8.3 Completion detection: run signal first, completion marker second
 
-All five drivers share one judgment principle (implemented in each `liveness.ts`):
+All six drivers share one judgment principle (implemented in each `liveness.ts`):
 
 ```text
 A run signal exists (stop button / loading indicator / active tool call) → still running, never end
@@ -662,6 +693,17 @@ Idle for idleTimeoutMs (default 10 min)                               → idle_t
 > Qoder CN puts the concrete cause in the `error` text (`qoder_model_ambiguous` / `qoder_workspace_mismatch` /
 > `qoder_question_*` / `qoder_session_lost` and friends) while `endReason` stays `qoder_error`.
 
+**Open Design** (in development: UI wiring is incomplete, so only the values below are produced today; `reply_stable` / `idle_timeout` and friends follow once wired):
+
+| `endReason` | Trigger |
+|---|---|
+| `selector_drift` | Required selectors are uncaptured, or page anchors miss — hard failure **before any coordinate click**, listing the missing keys |
+| `version_mismatch` | The install config's `appVersion` is not in `opendesign.supportedVersions` |
+| `setup_failed` | Entry validation failed (invalid design direction / empty task text / executable not found / launch failure) |
+| `not_implemented` | The gates passed but the UI driver is not wired yet (current stage) |
+| `needs_user` | A live instance without a debug port (`close_existing_instance`) |
+| `aborted` | Cancelled (`cancel_task` / server exit) |
+
 `needsUserKind` (six values in the union; each driver produces a different subset):
 
 | Value | Meaning | Producer |
@@ -669,17 +711,19 @@ Idle for idleTimeoutMs (default 10 min)                               → idle_t
 | `agent_question` | The agent is asking the user something in the UI | ZCode, Kimi Code (heuristic question detection only when `gui.selectors.userGate` is configured), Qoder CN (dedicated answer controls) |
 | `user_confirmation` | Parked on a confirmation screen | Codex, Kimi Code, Qoder CN |
 | `login_required` | Login needed | Codex, ZCode, Kimi Code, Qoder CN |
-| `close_existing_instance` | An existing instance holds no CDP port; the user must close it | ZCode, Kimi Code, Qoder CN (**not Codex**: its `ensureInstance` declares `needsClose` but never returns true) |
+| `close_existing_instance` | An existing instance holds no CDP port; the user must close it | ZCode, Kimi Code, Qoder CN, **Open Design** (**not Codex**: its `ensureInstance` declares `needsClose` but never returns true) |
 | `system_permission` | Missing system permission (e.g. macOS Accessibility) | ZCode, Kimi Code |
 | `setup_recovery` | Automatic recovery budget exhausted / send result unknown; a human must step in | ZCode, Kimi Code, Qoder CN |
 
 > **Qoder CN is the only adapter that can emit all six kinds** (`pause(kind, …)` uses the kind as the endReason too).
+> **Open Design currently emits only `close_existing_instance`** (later it will add `system_permission` for an ambiguous
+> native "Select Folder" dialog).
 > TraeWork produces no `needsUserKind` at all: its "asking the user" case ends the turn normally (`ask_user`) and releases the instance,
 > and it **never reads `ctx.resume`** — so `continue_task` is meaningless for it.
 
 ### 8.5 Registry and executable discovery (`src/agents/registry.ts`)
 
-- The constructor pre-registers six `CliAdapter` bases (codex / zcode / traework / kimicode / qoder / stub), then swaps in the GUI implementation based on `profile.adapter` (`codex-gui` / `zcode-gui` / `traework-gui` / `kimicode-gui` / `qoder-gui`); it only rebuilds when the implementation class changes.
+- The constructor pre-registers seven `CliAdapter` bases (codex / zcode / traework / kimicode / qoder / opendesign / stub), then swaps in the GUI implementation based on `profile.adapter` (`codex-gui` / `zcode-gui` / `traework-gui` / `kimicode-gui` / `qoder-gui` / `opendesign-gui`); it only rebuilds when the implementation class changes.
 - `resolve(agentId)` branches on the profile's `status`:
   - `unsupported` → immediate failure;
   - `research` → ZCode goes through the dedicated `discoverZcode`, others through generic probing;

@@ -7,6 +7,17 @@
 
 ---
 
+## [0.6.12] - 2026-09-26
+
+### 文档
+
+- **ARCHITECTURE 双语补入 Open Design 为第 6 个 GUI driver**（纯文档版本，无运行时变更）：
+  - §8.2 标题由「五个 GUI driver」改为「六个」，新增 Open Design 的 12 步执行顺序（环境净化 → 清残留模态框 → 版本门禁 → 目录绑定 → 模型/设计系统/设计方向 → 输入发送 → 三信号轮询 → 视觉验收 → 返修再验收），并写明两个真机坑（`ELECTRON_RUN_AS_NODE`、启动器「分离子进程形态」）与它**唯一带「产物信号」**的原因。
+  - §8.3 由「五个 driver」改为「六个」；§8.4 新增 Open Design 的 `endReason` 取值表（**如实标注当前只产出 6 个取值**，接线后补齐），`needsUserKind` 的 `close_existing_instance` 行补 Open Design 并注明「当前仅产出该一种」。
+  - §8.5 注册表基座由六个改为七个（补 `opendesign` 与 `opendesign-gui`）。
+
+> 本次为**文档版本**，`src/` 无改动；`typecheck` / `eslint src test scripts` / `build` / `check:stdio`（8/8）全绿。
+
 ## [0.6.11] - 2026-09-26
 
 ### 文档

@@ -520,7 +520,7 @@ interface AgentAdapter {
 | `session / keptInstance` | 会话锚点与实例是否保留，供 `continue_task` 恢复 |
 | `progressSummary` | 落盘进 `query_task` 可见的进度 |
 
-### 8.2 五个 GUI driver 的执行顺序（实测结论，勿随意调整）
+### 8.2 六个 GUI driver 的执行顺序（实测结论，勿随意调整）
 
 **TraeWork**（CDP 驱动 TRAE SOLO CN）：
 
@@ -583,9 +583,34 @@ MSIX 发现（Appx 查询优先 + 扫盘回退） → COM 激活 + 专属 user-d
 > 取消只停**已绑定的原会话**（`stopQoder` 连续两次观测到非运行才认 `idle`），未确认时保留实例并阻止重派。
 > macOS 为 `research` 且禁止派发。
 
+**Open Design**（CDP 驱动，**产物信号**，开发中：P0/P1 与 P2/P5/P6 判定层已交付、界面接线待选择器采集）：
+
+```text
+环境净化后启动/复用 CDP 实例（清 ELECTRON_RUN_AS_NODE 等；已有非 CDP 实例 → needs_user(close_existing_instance)）
+  → 清理本实例残留 #32770（模态框会吞掉主窗口合成点击） → 版本门禁（安装配置 appVersion）
+  → 绑定工作目录（已绑定则跳过；展开 → 选择目录 → 原生「选择文件夹」双路线 → **回读校验**）
+  → 选模型（精确匹配 + 回显候选） → 选设计系统（搜索过滤 + 回读） → 选设计方向（只支持原型/文档/网站复刻）
+  → 输入任务书 → 发送 → 三信号运行检测（停止按钮 + 对话文本哈希 + **产物 mtime/大小指纹**） → 轮询到完成
+  → 视觉验收（页面来源由 visual.ts **推导建议**，不自动改 acceptance.json）
+  → 未通过则落项目根 .opendesign/plans/opendesign-fix-rN.md → 同会话发送计划名 → 再验收
+```
+
+> **两个真机坑（都已修复，勿回退）**：
+> 1. `Open Design.exe` 是「内嵌 Node 的 Electron」外层启动器；调用方若带 `ELECTRON_RUN_AS_NODE=1`，
+>    启动器被置为 Node 模式而**拒绝 `--remote-debugging-port`**（`bad option:`），表现为「无窗口、无日志、无转储」。
+>    受管启动一律净化环境（`OPEN_DESIGN_ENV_DENYLIST`），命令行形态不变。
+> 2. 启动器是「**分离子进程形态**」：接受端口后打印 `DevTools listening on …` 并**自行以 0 退出**，
+>    真正的 Electron 主进程是它 spawn 的分离子进程。**退出码 0 绝不等于失败**，必须从 stderr 解析宣告端口继续轮询。
+>
+> **它是唯一带「产物信号」的 driver**：Open Design 生成设计稿时会长时间不刷对话却持续写文件，
+> 只看对话文本会把这类正常工作判成「空闲完成」。因此静止判据要求**文本与产物双稳定**。
+> **绑定成功 = 回读一致**（不是「原生对话框关掉了」）；选择器未采集时派活**硬失败 `selector_drift`** 并列出缺失键，
+> 绝不盲点坐标。版本门禁判据是安装目录 `resources/open-design-config.json` 的 `appVersion`（**不是** CDP 的 Electron 版本）。
+> 详见 [opendesign-cdp.md](docs/opendesign-cdp.md)。
+
 ### 8.3 完成判定：运行信号优先，完成标志其次
 
-五个 driver 共用同一条判据原则（实现分别在各自的 `liveness.ts`）：
+六个 driver 共用同一条判据原则（实现分别在各自的 `liveness.ts`）：
 
 ```text
 运行信号存在（停止按钮 / loading 指示 / 活跃工具调用）  → 仍在运行，一律不结束
@@ -629,6 +654,17 @@ DOM 完成标志出现（"由AI生成" 等）                      → 判定完
 > Qoder CN 把具体失败原因写在 `error` 文本里（`qoder_model_ambiguous` / `qoder_workspace_mismatch` /
 > `qoder_question_*` / `qoder_session_lost` 等），`endReason` 统一为 `qoder_error`。
 
+**Open Design**（开发中：界面接线未完成，故当前只产出下列取值；接线后补齐 `reply_stable` / `idle_timeout` 等）：
+
+| `endReason` | 触发 |
+|---|---|
+| `selector_drift` | 关键选择器未采集，或页面锚点未命中 —— **在任何坐标点击之前**硬失败并列出缺失键 |
+| `version_mismatch` | 安装配置 `appVersion` 不在 `opendesign.supportedVersions` 内 |
+| `setup_failed` | 入口校验失败（设计方向非法 / 任务书为空 / 未找到可执行 / 启动失败） |
+| `not_implemented` | 门禁通过但界面驱动尚未接线（当前阶段） |
+| `needs_user` | 已有实例未开调试端口（`close_existing_instance`） |
+| `aborted` | 取消（`cancel_task` / server 退出） |
+
 `needsUserKind`（联合类型共 6 种，各 driver 实际产出的子集不同）：
 
 | 取值 | 含义 | 产出方 |
@@ -636,16 +672,17 @@ DOM 完成标志出现（"由AI生成" 等）                      → 判定完
 | `agent_question` | agent 在 UI 里向用户提问 | ZCode、Kimi Code（需配置 `gui.selectors.userGate` 才启用启发式提问检测）、Qoder CN（专用答题控件） |
 | `user_confirmation` | 停在等待用户确认的界面 | Codex、Kimi Code、Qoder CN |
 | `login_required` | 需要登录 | Codex、ZCode、Kimi Code、Qoder CN |
-| `close_existing_instance` | 已有实例未开 CDP 端口，需用户关闭 | ZCode、Kimi Code、Qoder CN（**Codex 不产出**：其 `ensureInstance` 声明了 `needsClose` 却从不返回 true） |
+| `close_existing_instance` | 已有实例未开 CDP 端口，需用户关闭 | ZCode、Kimi Code、Qoder CN、**Open Design**（**Codex 不产出**：其 `ensureInstance` 声明了 `needsClose` 却从不返回 true） |
 | `system_permission` | 系统权限不足（如 macOS 辅助功能） | ZCode、Kimi Code |
 | `setup_recovery` | 自动恢复预算耗尽 / 发送结果不确定，需人工介入 | ZCode、Kimi Code、Qoder CN |
 
 > **Qoder CN 是唯一能产出全部 6 种 kind 的适配器**（`pause(kind, …)` 把 kind 同时当作 `endReason`）。
+> **Open Design 当前只产出 `close_existing_instance`**（后续会补 `system_permission`——原生「选择文件夹」对话框归属不明时）。
 > TraeWork 不产出 `needsUserKind`：它的「向用户提问」被当作正常结束（`ask_user`）并释放实例，且**完全不读 `ctx.resume`**——所以 `continue_task` 对它无意义。
 
 ### 8.5 注册表与可执行探测（`src/agents/registry.ts`）
 
-- 构造时预注册六个 `CliAdapter` 基座（codex / zcode / traework / kimicode / qoder / stub），随后按 `profile.adapter` 换装 GUI 实现（`codex-gui` / `zcode-gui` / `traework-gui` / `kimicode-gui` / `qoder-gui`）；仅当实现类变化时才重建。
+- 构造时预注册七个 `CliAdapter` 基座（codex / zcode / traework / kimicode / qoder / opendesign / stub），随后按 `profile.adapter` 换装 GUI 实现（`codex-gui` / `zcode-gui` / `traework-gui` / `kimicode-gui` / `qoder-gui` / `opendesign-gui`）；仅当实现类变化时才重建。
 - `resolve(agentId)` 按 profile 的 `status` 分支：
   - `unsupported` → 直接失败；
   - `research` → ZCode 走专用 `discoverZcode`，其他走通用探测；

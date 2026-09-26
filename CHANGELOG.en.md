@@ -8,6 +8,17 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.6.12] - 2026-09-26
+
+### Documentation
+
+- **ARCHITECTURE (both languages) now documents Open Design as the sixth GUI driver** (documentation-only release, no runtime changes):
+  - §8.2's heading changes from "five GUI drivers" to "six", and a new Open Design execution order covers the twelve steps (environment sanitisation → stale-modal cleanup → version gate → directory binding → model/design-system/design-direction → input and send → three-signal polling → visual acceptance → repair and re-acceptance), spelling out the two real-machine traps (`ELECTRON_RUN_AS_NODE` and the launcher's "detached child" shape) and why it is the **only driver with an artifact signal**.
+  - §8.3 changes from "five drivers" to "six"; §8.4 gains an Open Design `endReason` table (**truthfully noting that only six values are produced today**, with the rest following the wiring) and the `close_existing_instance` row in `needsUserKind` now includes Open Design with a note that it currently emits only that kind.
+  - §8.5's registry bases go from six to seven (adding `opendesign` and `opendesign-gui`).
+
+> This is a **documentation-only release**; `src/` is unchanged. `typecheck` / `eslint src test scripts` / `build` / `check:stdio` (8/8) are all green.
+
 ## [0.6.11] - 2026-09-26
 
 ### Documentation
