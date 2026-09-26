@@ -179,6 +179,10 @@ CI 会依次执行：
 - `mcp-gui/src-tauri/icons/` 与 `Cargo.lock` **不入库**（由 CI 生成）；
 - 想自行打包，请直接复用 CI 产物，或自行准备 Rust 工具链后在本机执行 `npx tauri build`（本项目不以此为验收依据）。
 
+**实测状态（2026-09-27）**：`GUI` workflow 已跑通——`schema-parity` ✅，三平台 `cargo fmt --check` / `clippy -- -D warnings` / `cargo test` 全绿，
+`windows-x86_64`（NSIS）与 `darwin-aarch64`（dmg + `.app.tar.gz`）已成功打包并上传产物（`darwin-x86_64` 同步构建）。
+打包时若未配置签名密钥，workflow 会自动降级为 `--config '{"bundle":{"createUpdaterArtifacts":false}}'`：**安装包照常产出，自动更新不可用**（设置面板会明确提示）。
+
 ### 7.3 目录结构
 
 ```text

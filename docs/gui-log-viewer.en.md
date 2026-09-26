@@ -201,6 +201,13 @@ Therefore:
 - to package locally, reuse the CI artifacts or install a Rust toolchain and run `npx tauri build`
   (not part of this project's acceptance).
 
+**Verified status (2026-09-27)**: the `GUI` workflow now runs end to end — `schema-parity` ✅, and
+`cargo fmt --check` / `clippy -- -D warnings` / `cargo test` are green on all three platforms; `windows-x86_64` (NSIS)
+and `darwin-aarch64` (dmg + `.app.tar.gz`) built and uploaded their artifacts successfully (`darwin-x86_64` in progress).
+When no signing key is configured, the workflow automatically degrades to
+`--config '{"bundle":{"createUpdaterArtifacts":false}}'`: **installers are still produced, auto-update is unavailable**
+(the settings panel states this explicitly).
+
 ### 7.3 Layout
 
 ```text

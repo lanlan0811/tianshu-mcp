@@ -28,6 +28,18 @@
 - **与 MCP 发版隔离**：GUI 使用独立版本（`0.1.0-beta.N`）与独立 tag（`gui-v*`），**不以 `v` 开头**，**不触发** `release.yml`（workflow 内另有显式断言）。
 - **测试**：`mcp-gui` 新增 **81 项前端用例**（8 文件：日志行解析 / 事件解析 / 字节与窗口 / 筛选排序 / 报告摘要 / i18n 完整性 / 沙箱 / mock 出口）；
   本机 `vue-tsc --noEmit` / `eslint . --max-warnings 0` / `vitest` / `vite build` 全绿（只依赖 Node）。
+- **CI 实测（`GUI` workflow，2026-09-27）**：`schema-parity` ✅；**Windows x86_64 ✅** 与 **macOS aarch64 ✅** 均已跑通
+  `cargo fmt --check` → `cargo clippy --all-targets -D warnings` → `cargo test` → `tauri build` 打包 → 产物上传全链路；
+  `darwin-x86_64` 同步构建中。修复过程中依次消除 **rustfmt 违规（14 文件结尾换行 + 折行/导入顺序）→ Rust 编译错误（11 处）→ clippy `dead_code`（8 处）**。
+- **CI 排障教训（可复用）**：① 公开仓的 job 日志下载接口需 admin 权限（403），而本机按 D2 不跑 cargo →
+  诊断信息只能靠 **GitHub 注解**暴露（`::error` / `::warning` + 公开可读的 `check-runs/<job_id>/annotations`）；
+  ② **cargo / rustc 输出带 ANSI 颜色码**，解析前必须先剥离（`sed` 去掉 `ESC[...m`），否则 `^error` 行一条也匹配不到；
+  ③ 注解有「**单条正文 ~4K 字符 + 单步 10 条**」上限，故需按 ≤2500 字符切块并**分多步**打印；
+  ④ `rustfmt` 在 Windows runner 上的 diff 表头是 `Diff in <路径>:<行号>:`（非 Unix 的 `at line <行号>`），解析需兼容两种。
+- **Tauri 2 异步命令规则（本次踩坑）**：`async fn` 命令**只要含借用输入**（如 `State<'_, T>`）就**必须返回 `Result<_, _>`**，
+  否则编译报 `E0277 async commands that contain references as inputs must return a Result` +
+  `E0597 __tauri_message__ does not live long enough`（`get_data_home_state` / `list_tasks` / `read_events` / `get_preferences` 已按此改正）；
+  另 edition 2021 下 `let state = app.state::<T>(); if let Ok(g) = state.x.lock() { .. }` 需在 `if let` 后补 `;`，否则守卫临时值晚于 `state` 释放而报 `E0597`。
 - **待办（需要维护者的动作）**：
   1. 在 GitHub 与 Gitee 仓库 Secrets 配置 `TAURI_SIGNING_PRIVATE_KEY`（+ `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`）与 `UPDATER_PUBKEY`；
      **未配置时构建仍然成功**，但产出的安装包不含更新清单，设置面板会明确提示「自动更新暂不可用」；

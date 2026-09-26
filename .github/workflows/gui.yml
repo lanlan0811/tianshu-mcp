@@ -18,13 +18,14 @@ on:
       - "mcp-gui/**"
       - "src/tasks/task.ts"
       - "src/agents/agent-events.ts"
-      - ".github/workflows/gui.yml"  # 临时：CI 修复期让本工作流自身改动也能触发（修复完成后移除）
+      - ".github/workflows/gui.yml"  # 工作流自身改动也要复验（否则改完 CI 配置无从验证）
     tags:
       - "gui-v*-beta.*"
   pull_request:
     branches: [master, main]
     paths:
       - "mcp-gui/**"
+      - ".github/workflows/gui.yml"
   workflow_dispatch:
 
 permissions:
@@ -82,7 +83,7 @@ jobs:
           else
             CHANGED=$(git diff --name-only "$BASE" "$SHA" || true)
           fi
-          # 临时（CI 修复期）：把 gui.yml 自身改动也视为 GUI 变更，便于用诊断步骤定位问题；修复完成后还原
+          # gui.yml 自身改动也视为 GUI 变更（与上面的 paths 触发保持一致）
           if echo "$CHANGED" | grep -qE '^(mcp-gui/|\.github/workflows/gui\.yml)'; then
             echo "gui_changed=true" >> "$GITHUB_OUTPUT"
           else
@@ -125,94 +126,6 @@ jobs:
         with:
           workspaces: mcp-gui/src-tauri
 
-      # ===== 临时诊断步骤组 A（CI 修复期专用，修复完成后必须整体删除）=====
-      # 背景：公开仓 job 日志下载接口需 admin 权限（403），开发机按计划 D2 又不执行 cargo，
-      # 故把 rustfmt diff 切块转成 GitHub 注解 —— 注解可通过公开 API 读取：
-      #   https://api.github.com/repos/<owner>/<repo>/check-runs/<job_id>/annotations
-      # 单条注解正文有长度上限、单步上限 10 条，故「先收集成块，再分步各打印 10 条」。
-      # 放在 Rust 工具链之后、前端步骤之前：`cargo fmt` 是秒级命令，注解能最快出现。
-      - name: Rust fmt diagnostics collect (temporary, non-blocking)
-        continue-on-error: true
-        working-directory: mcp-gui/src-tauri
-        shell: bash
-        run: |
-          set +e
-          set +o pipefail
-
-          esc() { tr -d '\r' | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}'; }
-          norm() {
-            local p
-            p=$(printf '%s' "$1" | tr '\\' '/' | sed -E 's#.*(mcp-gui/)#\1#')
-            case "$p" in
-              mcp-gui/*) printf '%s' "$p" ;;
-              *) printf 'mcp-gui/src-tauri/%s' "${p#./}" ;;
-            esac
-          }
-
-          rm -f /tmp/fmt.txt /tmp/annots_fmt.txt
-          cargo fmt --check > /tmp/fmt.txt 2>&1
-          echo "=== cargo fmt --check ==="
-          cat /tmp/fmt.txt
-
-          # 按 ≤3000 字符切块（每块一条注解，锚在该块首个 hunk 的文件 + 行号）
-          buf=""
-          first_file=""
-          first_line=""
-          seq_no=0
-          flush() {
-            [ -z "$buf" ] && return 0
-            seq_no=$((seq_no + 1))
-            [ -z "$first_file" ] && first_file="mcp-gui/src-tauri/src/lib.rs"
-            [ -z "$first_line" ] && first_line="1"
-            printf '::error file=%s,line=%s,title=rustfmt(%s)::%s\n' \
-              "$first_file" "$first_line" "$seq_no" "$(printf '%s' "$buf" | esc)" >> /tmp/annots_fmt.txt
-            buf=""
-            first_file=""
-            first_line=""
-          }
-          while IFS= read -r line; do
-            case "$line" in
-              "Diff in "*)
-                # 兼容两种表头：新版 rustfmt（Windows 构建）`Diff in <path>:<line>:`；
-                # 旧版 / Unix `Diff in <path> at line <line>:`
-                hdr="${line#Diff in }"
-                hdr="${hdr%:}"
-                case "$hdr" in
-                  *" at line "*) p="${hdr% at line *}"; n="${hdr##* at line }" ;;
-                  *:*) p="${hdr%:*}"; n="${hdr##*:}" ;;
-                  *) p="$hdr"; n="" ;;
-                esac
-                f=$(norm "$p")
-                ;;
-              *) : ;;
-            esac
-            if [ -n "$buf" ] && [ $(( ${#buf} + ${#line} )) -gt 2500 ]; then
-              flush
-            fi
-            if [ -z "$first_file" ]; then
-              first_file="$f"
-              first_line="$n"
-            fi
-            buf="${buf}${line}"$'\n'
-          done < /tmp/fmt.txt
-          flush
-          echo "fmt annotation blocks: $(wc -l < /tmp/annots_fmt.txt 2>/dev/null || echo 0)"
-
-          # 哨兵：无论有无 diff 都发一条 notice，便于只读注解即可判断 rustfmt 是否已清零
-          echo "::notice title=diag-fmt::chunks=$(wc -l < /tmp/annots_fmt.txt 2>/dev/null || echo 0)"
-
-      - name: Rust fmt diagnostics emit 1 (temporary)
-        continue-on-error: true
-        shell: bash
-        run: |
-          [ -f /tmp/annots_fmt.txt ] && sed -n '1,10p' /tmp/annots_fmt.txt || echo "无 fmt 诊断数据"
-
-      - name: Rust fmt diagnostics emit 2 (temporary)
-        continue-on-error: true
-        shell: bash
-        run: |
-          [ -f /tmp/annots_fmt.txt ] && sed -n '11,20p' /tmp/annots_fmt.txt || true
-      # ===== 临时诊断步骤组 A 结束 =====
 
       - name: Install frontend dependencies
         working-directory: mcp-gui
@@ -241,86 +154,6 @@ jobs:
           UPDATER_PUBKEY: ${{ secrets.UPDATER_PUBKEY }}
         run: node scripts/inject-updater-pubkey.mjs "$UPDATER_PUBKEY"
 
-      # ===== 临时诊断步骤组 B（CI 修复期专用，修复完成后必须整体删除）=====
-      # 目的同上组 A：把 clippy / cargo test 的输出也以「可公开读取的注解」形式暴露。
-      # 本组较慢（需先编译全部依赖），故排在组 A 之后。
-      - name: Rust lint diagnostics collect (temporary, non-blocking)
-        continue-on-error: true
-        working-directory: mcp-gui/src-tauri
-        shell: bash
-        run: |
-          set +e
-          set +o pipefail
-
-          # 注解正文转义（%→%25，换行→%0A）
-          esc() { tr -d '\r' | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}'; }
-          # 绝对/相对路径 → 仓库相对路径（rustfmt 给绝对路径，clippy 给 crate 相对路径）
-          norm() {
-            local p
-            p=$(printf '%s' "$1" | tr '\\' '/' | sed -E 's#.*(mcp-gui/)#\1#')
-            case "$p" in
-              mcp-gui/*) printf '%s' "$p" ;;
-              *) printf 'mcp-gui/src-tauri/%s' "${p#./}" ;;
-            esac
-          }
-
-          rm -f /tmp/clippy.txt /tmp/test.txt /tmp/annots_lint.txt
-          cargo clippy --all-targets -- -D warnings > /tmp/clippy.txt 2>&1
-          CLIPPY_RC=$?
-          cargo test > /tmp/test.txt 2>&1
-          TEST_RC=$?
-          echo "=== cargo clippy (rc=${CLIPPY_RC}) ==="; cat /tmp/clippy.txt
-          echo "=== cargo test (rc=${TEST_RC}) ==="; cat /tmp/test.txt
-
-          # 关键：cargo / rustc 输出带 ANSI 颜色码，会让 `^error` / `^warning` 行匹配失败，先剥离
-          ESC=$(printf '\033')
-          sed -e "s/${ESC}\[[0-9;]*[A-Za-z]//g" /tmp/clippy.txt > /tmp/clippy.plain.txt
-          sed -e "s/${ESC}\[[0-9;]*[A-Za-z]//g" /tmp/test.txt > /tmp/test.plain.txt
-
-          # clippy 诊断（错误/警告 + 紧随其后的 --> 位置）
-          awk '
-            /^(error|warning)(\[|:)/ { msg = $0; next }
-            /^[[:space:]]*--> / {
-              loc = $0; sub(/^[[:space:]]*--> /, "", loc)
-              if (msg != "") { print msg "\t" loc; msg = "" }
-            }
-          ' /tmp/clippy.plain.txt | head -n 12 | while IFS=$'\t' read -r msg loc; do
-            printf '::warning file=%s,line=%s,title=clippy::%s\n' \
-              "$(norm "$(printf '%s' "$loc" | cut -d: -f1)")" \
-              "$(printf '%s' "$loc" | cut -d: -f2)" \
-              "$(printf '%s' "$msg" | esc)" >> /tmp/annots_lint.txt
-          done
-
-          # cargo test 失败摘要
-          grep -E '^(test .*FAILED|failures:|right:|left:)' /tmp/test.plain.txt | head -n 4 | while IFS= read -r l; do
-            printf '::warning title=cargo-test::%s\n' "$(printf '%s' "$l" | esc)" >> /tmp/annots_lint.txt
-          done
-
-          echo "lint annotation blocks: $(wc -l < /tmp/annots_lint.txt 2>/dev/null || echo 0)"
-
-          # 哨兵：把 clippy / test 的退出码与输出行数也作为可读注解暴露
-          echo "::notice title=diag-lint::clippy_rc=${CLIPPY_RC} test_rc=${TEST_RC} clippy_lines=$(wc -l < /tmp/clippy.txt) test_lines=$(wc -l < /tmp/test.txt)"
-
-          # 兜底：失败原因通常在输出「尾部」（前部是 487 个依赖的下载/编译噪声），故暴露尾部原文
-          echo "::warning title=clippy-tail1::$(tail -c 6400 /tmp/clippy.plain.txt | head -c 3200 | esc)"
-          echo "::warning title=clippy-tail2::$(tail -c 3200 /tmp/clippy.plain.txt | esc)"
-          echo "::warning title=test-tail::$(tail -c 3200 /tmp/test.plain.txt | esc)"
-          # 兜底 2：列出以 error / warning 开头的行（带行号），便于定位首个诊断
-          echo "::warning title=clippy-errlines::$(grep -nE '^(error|warning)' /tmp/clippy.plain.txt | head -n 6 | esc)"
-
-      # 下面 2 步只做「把收集好的注解行打印出来」；单步注解上限 10 条，故分 2 步共可输出 20 条
-      - name: Rust lint diagnostics emit 1 (temporary)
-        continue-on-error: true
-        shell: bash
-        run: |
-          [ -f /tmp/annots_lint.txt ] && sed -n '1,10p' /tmp/annots_lint.txt || echo "无 lint 诊断数据"
-
-      - name: Rust lint diagnostics emit 2 (temporary)
-        continue-on-error: true
-        shell: bash
-        run: |
-          [ -f /tmp/annots_lint.txt ] && sed -n '11,20p' /tmp/annots_lint.txt || true
-      # ===== 临时诊断步骤组 B 结束 =====
 
       - name: Rust format / clippy / tests
         working-directory: mcp-gui/src-tauri

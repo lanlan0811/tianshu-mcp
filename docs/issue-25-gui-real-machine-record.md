@@ -17,7 +17,8 @@
 | 本机 Node / npm | 可用 | 前端预览、单测、门禁脚本均可本地执行 |
 | 本机 Rust 工具链 | **不使用** | issue #25 明确要求 Rust 侧一律在 CI 完成 |
 | `gh` CLI | 不可用 | 故 artifact 需经浏览器从 Actions 运行页下载 |
-| CI 构建产物 | 待生成 | 首次 push 触发 `GUI` workflow 后产出 |
+| CI 构建产物 | **已生成** | `GUI` workflow 首次跑通：`windows-x86_64`（NSIS）与 `darwin-aarch64`（dmg/app）已产出并上传；`darwin-x86_64` 同步构建中 |
+| CI 排障通道 | **注解 + 只读代理** | 公开仓 job 日志需 admin（403）→ 用 `check-runs/<job_id>/annotations` 读取诊断（详见 §三.2） |
 
 ---
 
@@ -66,19 +67,40 @@
 
 ## 三、CI 门禁结果
 
+### 3.1 门禁现状（2026-09-27）
+
 | 门禁 | 命令 / workflow | 结果 |
 |---|---|---|
-| 词表三方一致性 | `node mcp-gui/scripts/check-schema-parity.mjs` | 本地已通过（TS 真源 / 前端镜像 / Rust 镜像 全部一致） |
-| 前端 typecheck / lint / test | `mcp-gui` 的 `npm run typecheck` / `lint` / `test` | 本地已通过（81 项用例） |
-| Rust 质量门禁 | `GUI` workflow：`cargo fmt --check` / `cargo clippy -D warnings` / `cargo test` | 待 CI |
-| GUI 三平台构建 | `GUI` workflow（windows / macos-15-intel / macos-15） | 待 CI |
-| MCP 主链路不受影响 | `ci.yml` / `release.yml` | 待 CI |
+| 词表三方一致性 | `node mcp-gui/scripts/check-schema-parity.mjs` | ✅ 本地 + CI 均通过（TS 真源 / 前端镜像 / Rust 镜像 全部一致，含 23 项事件全集） |
+| 前端 typecheck / lint / test | `mcp-gui` 的 `npm run typecheck` / `lint` / `test` | ✅ 本地 + CI 均通过（81 项用例） |
+| Rust 质量门禁 | `GUI` workflow：`cargo fmt --check` / `cargo clippy -D warnings` / `cargo test` | ✅ **三平台全通过**（Windows / macOS aarch64 / macOS x86_64） |
+| GUI 三平台构建 | `GUI` workflow（windows-latest / macos-15-intel / macos-15） | ✅ `windows-x86_64`（NSIS）+ `darwin-aarch64`（dmg/app）**打包并上传产物成功**；`darwin-x86_64` 同步 |
+| 与 MCP 发版隔离 | `gui-v*` 不匹配 `release.yml` 的 `v*` | ✅ workflow 内显式断言通过（另见 `docs/gui-log-viewer.md` §7.2） |
+
+### 3.2 本轮修复过程（首次跑通前）
+
+按「CI 是唯一 Rust 侧真源」的约束，本机不跑 cargo；因公开仓 job 日志下载需 admin 权限（403），
+诊断信息一律经 **GitHub 注解**（`::error` / `::warning` → `check-runs/<job_id>/annotations`，公开可读）取得，依次修掉三类问题：
+
+| 轮次 | 失败面 | 根因 | 修法 |
+|---|---|---|---|
+| 1 | `cargo fmt --check` | 14 个 `.rs` **缺少文件结尾换行**；另有多处签名折行、链式调用折行、`mod` 声明顺序 | 按 `rustfmt` 实际 diff 逐处改正（`cargo fmt` 输出即权威） |
+| 2 | Rust 编译（`cargo clippy` / `cargo test` 均 101） | **Tauri 2 规则**：`async fn` 命令含借用输入（`State<'_, T>`）必须返回 `Result<_, _>`，否则 `E0277` + `E0597 __tauri_message__`；另有 `if let` 守卫临时值晚于 `State` 释放的 `E0597`；`RecommendedWatcher` 未用导入（`-D warnings` 下为错误） | 4 个命令改为返回 `Result`；`if let` 后补 `;`；删未用导入 |
+| 3 | `cargo clippy` `dead_code` | 词表常量在私有模块内且仅由 CI 脚本比对；6 个请求结构体的 `data_home` 字段 Rust 侧不读取（契约字段） | 显式 `#[allow(dead_code)]` + 注释说明用途 |
+| — | 附带 | 跨平台测试断言：`C:/Windows` 在类 Unix 下只是普通相对路径 | 该断言加 `#[cfg(windows)]` |
+
+> 排障关键细节（已同步至 `HANDOFF.md`）：**cargo / rustc 输出带 ANSI 颜色码**，解析前必须剥离，否则 `^error` 行匹配不到；
+> Windows runner 上 `rustfmt` 的 diff 表头是 `Diff in <路径>:<行号>:`（非 Unix 的 `at line <行号>`）；注解有「单条 ~4K 字符 + 单步 10 条」上限，故按 2500 字符切块并分多步打印。
 
 ---
 
 ## 四、结论
 
-待 CI 产物到位并完成第二、三节清单后填写。
+**CI 侧已跑通**（2026-09-27）：`GUI` workflow 的 `schema-parity` 与三平台 `cargo fmt` / `clippy -D warnings` / `cargo test` 全绿，
+且 `windows-x86_64`（NSIS）与 `darwin-aarch64`（dmg/app）**已成功打包并上传产物**，`darwin-x86_64` 同步构建中。
+
+**第二、三节的功能与更新清单（F1~F12 / U1~U8 / P1~P4）仍需维护者用 CI 产物在真机上逐项验收**——
+本机按 issue #25 的硬约束不跑 Rust 侧，也不具备双系统的真机点击条件；产物到位后按清单填写即可。
 
 已知限制（已在 `docs/gui-log-viewer.md` 如实披露）：
 
@@ -87,3 +109,4 @@
 3. 未构建 Linux 版本；
 4. 无任务写操作、无本地全文索引；
 5. macOS 侧仅保证 CI 构建通过。
+6. 签名 Secret 未配置前，产物不含更新清单（自动更新不可用，安装包本身可正常使用）。
