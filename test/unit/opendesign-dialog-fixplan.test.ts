@@ -76,10 +76,11 @@ describe("Open Design 原生对话框：平台与空输入守卫", () => {
     expect(MACOS_FOLDER_DIALOG_UNAVAILABLE).toContain("macOS");
   });
 
-  it("空路径直接拒绝，不启动脚本", async () => {
+  it("空路径在 Windows 上直接拒绝（不启动脚本）；非 Windows 先按平台 fail-closed", async () => {
     const res = await selectOpenDesignFolder("", [1], []);
     expect(res.ok).toBe(false);
-    if (!res.ok) expect(res.reason).toBe("error");
+    // 平台分支在路径校验之前（macOS/其他平台不做未验证的原生流程），故 reason 按平台不同
+    if (!res.ok) expect(res.reason).toBe(isWin ? "error" : "platform");
   });
 });
 

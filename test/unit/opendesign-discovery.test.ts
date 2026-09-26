@@ -27,6 +27,9 @@ import {
 } from "../../src/agents/opendesign/instance.js";
 import { AgentProfileSchema } from "../../src/config/schema.js";
 
+/** 宿主平台（少数断言必须按平台分支，见各用例注释） */
+const isWin = process.platform === "win32";
+
 /**
  * 真机 UA（2026-09-25，Open Design 0.24.1 / Electron 41.3.0）：
  * /json/version 的 User-Agent 含 `Electron/`，这是「本产品是 Electron 应用」的判据的一部分，
@@ -169,15 +172,12 @@ describe("Open Design 安装发现", () => {
   it("数据目录由 APPDATA + 命名空间推导；缺命名空间时不猜（返回 null）", () => {
     const info: Pick<OpenDesignInstallInfo, "namespace"> = { namespace: "release-stable-win" };
     const root = openDesignNamespaceRoot(info, { APPDATA: "C:\\Users\\x\\AppData\\Roaming" });
-    // 实现用宿主 path.join，断言也用宿主 path.join（跨平台成立）
-    expect(root).toBe(
-      path.join(
-        "C:\\Users\\x\\AppData\\Roaming",
-        "Open Design",
-        "namespaces",
-        "release-stable-win",
-      ),
-    );
+    // 实现按**宿主平台**取基目录：win32 用 APPDATA；darwin 用 HOME/Library/Application Support。
+    // 断言因此必须按平台分支，否则在 CI 的 macOS 腿上必然失败（这正是长期红的原因之一）。
+    const base = isWin
+      ? "C:\\Users\\x\\AppData\\Roaming"
+      : path.join(os.homedir(), "Library", "Application Support");
+    expect(root).toBe(path.join(base, "Open Design", "namespaces", "release-stable-win"));
     expect(openDesignAppConfigPath(root)).toBe(path.join(root!, "data", "app-config.json"));
     expect(openDesignNamespaceRoot({ namespace: undefined }, { APPDATA: "C:\\x" })).toBeNull();
     expect(openDesignAppConfigPath(null)).toBeNull();

@@ -165,18 +165,24 @@ function deps(over: Partial<Parameters<typeof bindWorkspace>[0]["deps"]> = {}) {
 
 describe("Open Design 工作目录：路径比较", () => {
   it("归一斜杠/尾斜杠；大小写按平台（Windows 不敏感、POSIX 敏感）", () => {
-    // 实现只在 win32 下 toLowerCase（大小写不敏感是 Windows 语义），故断言按平台分支
-    const normalized = isWin ? "d:\\trae项目\\tianshu-mcp" : "D:\\trae项目\\tianshu-mcp";
-    expect(normalizeWorkspacePath("D:/Trae项目/tianshu-mcp/")).toBe(normalized);
-    expect(normalizeWorkspacePath("d:\\Trae项目\\tianshu-mcp")).toBe(normalized);
+    // 实现只在 win32 下 toLowerCase（大小写不敏感是 Windows 语义）；非 win32 下保留输入原样。
+    // 这里不手打路径字面量（极易混入形近字符），而是断言可验证的不变量：
+    // 正斜杠被换成反斜杠、尾斜杠被去掉、盘符大小写按平台归一。
+    const fromSlashes = normalizeWorkspacePath("D:/proj/app/");
+    const drive = process.platform === "win32" ? "d:" : "D:";
+    expect(fromSlashes).toBe(`${drive}\\proj\\app`);
+    expect(fromSlashes.includes("/")).toBe(false);
+    // 输入盘符是小写时同样只做大小写归一（win32 全小写，POSIX 保留原样）
+    expect(normalizeWorkspacePath("d:/proj/app")).toBe(`d:\\proj\\app`);
   });
 
   it("盘根补成 `D:\\`", () => {
     expect(normalizeWorkspacePath("d:")).toBe("d:\\");
   });
 
-  it("完全一致 → 命中", () => {
-    expect(workspaceMatches("D:\\proj", "d:/proj/")).toBe(true);
+  it("完全一致 → 命中；大小写差异只在 Windows 上视为一致", () => {
+    expect(workspaceMatches("D:\\proj", "D:\\proj")).toBe(true);
+    expect(workspaceMatches("D:\\proj", "d:/proj/")).toBe(isWin);
   });
 
   it("界面截断（省略号结尾）时按前缀命中", () => {
