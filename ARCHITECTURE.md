@@ -927,7 +927,76 @@ CLI 子命令族（`node dist/index.js visual ...`）：`init`（写入禁用的
 
 ---
 
-## 16. 延伸阅读
+## 16. 独立交付面：日志台 GUI（`mcp-gui/`）
+
+`mcp-gui/` 是本仓库的**第二个交付面**（issue #25）：一个**本地只读**的桌面应用，用 Tauri 2.x（Rust 后端）+ Vue 3 实现，
+把 MCP 落盘的四类日志与任务产物统一到一个界面里查看。它与 MCP server 的关系只有一条：
+**共享同一批落盘事实，不产生第二个事实来源**。
+
+```text
+┌──────────────────────────────┐        ┌──────────────────────────────┐
+│ 天枢（Tianshu）               │        │ Tianshu-mcp 日志台（mcp-gui）  │
+│ · tools/call：机器可读契约     │        │ · 纯读文件系统（不依赖 server） │
+└──────────────┬───────────────┘        └──────────────┬───────────────┘
+               │ MCP over stdio                        │ 只读
+┌──────────────▼───────────────┐        ┌──────────────▼───────────────┐
+│ tianshu-mcp server           │◀──────▶│ <数据目录>/logs · /tasks     │
+│ · 唯一写入方（Logger / 任务）  │  事实   │ · 只读消费方                  │
+└──────────────────────────────┘        └──────────────────────────────┘
+```
+
+### 16.1 解耦边界（改这里之前先读）
+
+| 边界 | 约定 |
+|---|---|
+| 数据 | GUI **只读**业务目录；唯一写入是应用自身偏好（系统应用配置目录）与用户显式选择的导出 / 更新文件 |
+| 代码 | `mcp-gui/` 有自己的 `package.json` / `tsconfig` / eslint / vitest，**不参与根工程门禁**（根 `eslint.config.js` 已忽略 `mcp-gui/**`） |
+| 打包 | 根 `package.json` 的 `files` 是白名单，本就不含 `mcp-gui`；`.gitignore` 隔离 `node_modules` / `dist` / `target` / `icons` / `Cargo.lock` |
+| 发版 | GUI 独立版本号（`0.1.0-beta.N`）与独立 tag（`gui-v*`），**不随 MCP 主包发布**（`release.yml` 只认 `v*`） |
+
+### 16.2 双份 schema 的防漂移机制（本交付面最重要的约束）
+
+Rust 侧需要重写一份「状态枚举 / 事件词表」用于事件分类，前端镜像也需要一份用于展示与 mock。
+**真源始终是** `src/tasks/task.ts` 与 `src/agents/agent-events.ts`。
+
+`mcp-gui/scripts/check-schema-parity.mjs` 在 CI 中解析三处常量做集合比对，**任一不一致即 fail**；
+`GUI` workflow 的触发路径同时包含两个真源文件，因此 TS 侧漂移也会被检出。
+
+| 位置 | 角色 |
+|---|---|
+| `src/tasks/task.ts`、`src/agents/agent-events.ts` | **真源**（唯一权威） |
+| `mcp-gui/src/core/events.ts` | 前端镜像（展示 / mock 判定） |
+| `mcp-gui/src-tauri/src/schema.rs` | Rust 镜像（事件分类） |
+
+### 16.3 只读后端的分层
+
+| 模块 | 职责 |
+|---|---|
+| `data_home.rs` | 数据目录解析（`TIANSHU_MCP_HOME` → `~/.tianshu-mcp`）、合法性校验、**相对路径越界防护** |
+| `scanner.rs` | `tasks/` 扫描 + `task.json` 容错解析 + 产物轮次聚合 + 筛选 / 排序 |
+| `event_stream.rs` | `task.jsonl` 解析（坏行跳过但计数）与事件分类 |
+| `tail.rs` | 字节窗口读取（尾部窗口 / 任意区间），与前端 `core/bytes.ts` 同口径 |
+| `watcher.rs` | `notify` 监听 → `gui/log-changed` 事件（只监听当前打开的日志文件） |
+| `search.rs` | 跨任务按需扫描 + 进度事件 + 可取消（**不建全文索引**） |
+| `export.rs` | 单文件导出 + 任务整包 zip（可排除体积大的原始日志） |
+| `updater.rs` | 双源探测择优 + 三态开关 + 调用 `tauri-plugin-updater`（验签门禁） |
+
+### 16.4 双源自动更新
+
+- **实测择优**：并发探测 GitHub / Gitee 清单端点，按「可达性 + 延迟」选择；**不依赖系统区域**（VPN 场景下区域不可信）；
+- **两端清单同版本、同签名**：minisign 签名针对**产物文件**，与源无关，故 Gitee 清单复用 GitHub 清单的 `signature`，只改 `url`；
+- **验签是硬门禁**：`tauri-plugin-updater` + 内置公钥，**验签不通过一律拒绝安装**；
+- **Windows 更新载体必须是 NSIS**（Tauri updater 不支持 MSI）；macOS 为 `.app.tar.gz`；
+- **失败不阻塞**：任一步失败只影响更新，日志查看始终可用，并给出「手动下载」兜底入口。
+
+### 16.5 构建边界（issue #25 的硬约束）
+
+本机**不执行 Rust 侧构建与检查**（`cargo fmt` / `clippy` / `tauri build` 全在 `GUI` workflow），本地只做前端预览（`npm run dev`）与前端门禁。
+图标由 CI 用 `tauri icon` 从 `assets/tianshu-mcp-icon.svg` 生成，仓库内只保留 SVG 源（符合「图标一律 SVG 派生」规则）。
+
+---
+
+## 17. 延伸阅读
 
 | 主题 | 文档 |
 |---|---|

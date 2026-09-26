@@ -1,11 +1,41 @@
 # HANDOFF.md — 项目交接说明
 
-> **交接快照：2026-09-24 · 开发版本 `0.6.7`；`v0.6.7` 已发布（GitHub Release / Gitee 发行版 / npm `latest` 三者一致，发布提交 `ca98797`）。**
+> **交接快照：2026-09-27 · 开发版本 `0.7.0`（**尚未发布**）；本次新增独立交付面「日志台 GUI」（`0.1.0-beta.1`，独立 tag `gui-v*`，待发布）。**
+> **issue #25 已交付**：新增**独立交付面** `mcp-gui/`（「Tianshu-mcp 日志台」，Tauri 2.x + Vue 3）——本地只读查看四类日志与任务产物；MCP 主包**运行时逻辑零改动、版本号不变**。签名 Secret 待维护者配置（未配置时自动更新不可用，安装包仍可正常使用）。
 > **issue #18~#22 五项增强已全部交付**（v0.6.3~v0.6.7，每版各自完整发布），**五个 issue 均已回复并关闭**（2026-09-24）。
 > **#18~#22 的真机记录已全部补齐**（2026-09-25）：见 [issue #19/#20/#21/#22 真机记录](docs/issue-19-22-real-machine-record.md) 与 [issue #18/#19/#21 真机记录](docs/issue-18-21-real-machine-record.md)；各 issue 另附真机证据补充评论。
 > **⚠️ 新发现一条会阻断全部 Codex 派发的适配器缺陷**（`26.917.9434` 模型触发器回读混入整条思考等级条 → `model_mismatch`），尚未修复、建议单开 issue，详见下方「真机取证补记」与记录文件 §5。
 > 本文写给**接手本仓库的人**：先说清「这是什么、现在到哪一步」，再给出「怎么跑、怎么改、哪里会踩坑」。
 > 工作区规则见 `AGENTS.md`（gitignore，仅本地）；安装与用法见 `README.md`，本文不重复，只做导览与状态记录。
+
+---
+
+### 独立交付面 · 日志台 GUI（`mcp-gui/`，Tauri 2.x + Vue 3）（未发布，2026-09-27）
+
+- **范围**：新增独立交付面 `mcp-gui/` —— 本地**只读**桌面应用，把四类日志与任务产物统一到一个界面；
+  与 MCP server **完全解耦**（纯读文件系统，不依赖 server 在跑），**MCP 主包运行时逻辑零改动**。
+- **四类日志**：`server.log`（级别 / 时间范围过滤 + 关键字高亮）、`task.jsonl`（状态跃迁 / 细粒度 Agent 事件 / `note` 进度通道分区，坏行跳过但计数）、
+  `agent-<轮次>.log` 与 `verify-<轮次>.log`（轮次切换 + 行号 + 换行）、`report-<轮次>.{md,json,html}` 与 `dry-run-report-*`
+  （Markdown / 结构化卡片 / **sandbox iframe**（注入 CSP + 剥离 `<script>`）/ 干跑与常规分区 / 多轮对比）。
+- **大日志与实时 tail**：首屏只读 64 KiB 尾窗 + 向前分块 + 「已加载 N / 共 M」；`notify` 驱动增量刷新，**手动上翻自动暂停跟随**、可一键「跳到最新」。
+- **搜索 / 导出**：跨任务按需扫描（**不建全文索引**）+ 进度 + 可取消；单文件导出 + 任务整包 zip（可排除体积大的原始日志并如实回报排除数）。
+- **双源自动更新**：**实测择优**（不依赖系统区域，VPN 场景下亦正确）+ 三态开关 + TTL 缓存 + 回退上次可用源；
+  两端清单同版本同签名，`tauri-plugin-updater` **验签不通过一律拒绝安装**；任一步失败都**不影响日志查看主流程**（提供「手动下载」兜底）。
+- **构建边界（硬约束）**：本机**不执行 Rust 侧构建与检查**（`cargo fmt` / `clippy` / `tauri build` 全在新增的 `GUI` workflow）；
+  图标由 CI 用 `tauri icon` 从 `assets/tianshu-mcp-icon.svg` 生成，`icons/` 与 `Cargo.lock` **不入库**。
+- **防漂移门禁**：`mcp-gui/scripts/check-schema-parity.mjs` 比对 **TS 真源（`src/tasks/task.ts` / `src/agents/agent-events.ts`）↔ 前端镜像 ↔ Rust 镜像**，
+  任一漂移即 fail；`GUI` workflow 的触发路径含两个真源文件，故 TS 侧漂移也会被检出。
+- **与 MCP 发版隔离**：GUI 使用独立版本（`0.1.0-beta.N`）与独立 tag（`gui-v*`），**不以 `v` 开头**，**不触发** `release.yml`（workflow 内另有显式断言）。
+- **测试**：`mcp-gui` 新增 **81 项前端用例**（8 文件：日志行解析 / 事件解析 / 字节与窗口 / 筛选排序 / 报告摘要 / i18n 完整性 / 沙箱 / mock 出口）；
+  本机 `vue-tsc --noEmit` / `eslint . --max-warnings 0` / `vitest` / `vite build` 全绿（只依赖 Node）。
+- **待办（需要维护者的动作）**：
+  1. 在 GitHub 与 Gitee 仓库 Secrets 配置 `TAURI_SIGNING_PRIVATE_KEY`（+ `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`）与 `UPDATER_PUBKEY`；
+     **未配置时构建仍然成功**，但产出的安装包不含更新清单，设置面板会明确提示「自动更新暂不可用」；
+  2. 首次发布打 `gui-v0.1.0-beta.1` tag，并按 [issue-25 真机记录](docs/issue-25-gui-real-machine-record.md) 的清单用 **CI 产物**完成真机验收；
+  3. 本机 `gh` CLI 不可用，Actions artifact 需经浏览器下载。
+- **文档**：`docs/gui-log-viewer.md` / `.en.md`、`docs/issue-25-gui-real-machine-record.md`；
+  README / ARCHITECTURE / CHANGELOG 双语已同步（ARCHITECTURE 新增「第 16 节 独立交付面」）。
+- **不涉及 MCP 主包版本迭代**：主包仍为 `0.7.0`（**尚未发布**，Open Design 调用尚未开发完），本次未改动任何主包运行时逻辑与版本号。
 
 ---
 

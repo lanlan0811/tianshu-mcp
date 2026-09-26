@@ -7,6 +7,39 @@
 
 ---
 
+## [未发布]
+
+> 本次变更为**新增独立交付面**：MCP 主包的运行时逻辑（工具契约、任务模型、验收引擎与 `src/**`）**零改动**。
+> **MCP 主包版本保持不变**（仍为 `0.7.0`，尚未发布）；GUI 使用独立版本号（`0.1.0-beta.N`）与独立 tag（`gui-v*`）独立演进。
+
+### 新增
+
+- **日志台 GUI（`mcp-gui/`，Tauri 2.x + Vue 3，独立版本 `0.1.0-beta.1`）**（issue #25）：与 MCP server **完全解耦**的本地只读桌面应用（纯读文件系统，**不依赖 server 在跑**），把四类日志与任务产物统一到一个界面。
+  - **数据目录**：按 `TIANSHU_MCP_HOME` → `~/.tianshu-mcp` 自动探测，支持手动追加 / 移除 / 切换多个目录（追加时校验目录下存在 `logs/` 或 `tasks/`）。
+  - **三栏界面**：任务列表（项目 / Agent / 状态 / 时间范围筛选 + 状态色标 + 轮次）· 内容区 · 详情区（元信息 / 事件属性 / 报告摘要）。
+  - **四类日志**：`server.log`（级别 / 时间范围过滤 + 关键字高亮）；`task.jsonl`（**区分状态跃迁事件与细粒度 Agent 事件**，`note` 仍为进度 / 审计通道，坏行跳过但计数）；`agent-<轮次>.log` 与 `verify-<轮次>.log`（轮次切换 + 行号 + 自动换行）；`report-<轮次>.{md,json,html}` 与 `dry-run-report-*`（Markdown 渲染 / 结构化卡片 / **sandbox iframe 视觉预览**（注入 CSP + 剥离 `<script>`）/ 干跑与常规分区 / 多轮对比）。
+  - **大日志与实时 tail**：首屏只读 64 KiB 尾部窗口 + 向前分块加载 + 「已加载 N / 共 M」；`notify` 驱动增量刷新，**手动上翻自动暂停跟随**、可一键「跳到最新」。
+  - **跨任务搜索 / 导出 / 复制**：按需扫描（**不建本地全文索引**）+ 进度反馈 + 可取消；单文件导出 + 任务整包 zip（可排除体积大的原始日志并如实回报排除数）。
+  - **体验**：中英双语（默认中文）+ 深色 / 浅色 / 跟随系统（默认跟随）。
+- **双源（Gitee / GitHub）自动更新**：**主动实测择优**（并发探测两端端点并按时延选择，**不依赖系统区域 / 时区**，VPN 场景下亦正确）+ TTL 缓存 + 三态开关（自动 / 强制 Gitee / 强制 GitHub）+ 两端均不可达时回退上次可用源；两端清单同版本同签名，`tauri-plugin-updater` **验签不通过一律拒绝安装**；任一步失败都**不影响日志查看主流程**（提供「手动下载」兜底）。Windows 更新载体为 NSIS（Tauri updater 不支持 MSI）。
+- **独立 `GUI` workflow**（`.github/workflows/gui.yml`）：`windows-latest` / `macos-15-intel` / `macos-15` 三平台矩阵；push 到 `master` 仅编译验证并上传 artifact，`gui-v*-beta.*` tag 才双端发布 pre-release。`gui-v*` **不以 `v` 开头**，**不触发** MCP 的 `release.yml`（workflow 内含显式断言）。
+- **三方词表一致性门禁**：`mcp-gui/scripts/check-schema-parity.mjs` 比对 **TS 真源（`src/tasks/task.ts` / `src/agents/agent-events.ts`）↔ 前端镜像 ↔ Rust 镜像**，任一漂移即 fail；`GUI` workflow 的触发路径含两个真源文件，故 TS 侧漂移也会被检出。
+- **`scripts/gitee-gui-release.mjs`**：Gitee 侧 GUI 预发布 + **安装包附件上传** + 更新清单写入（现有主包脚本只做发行版与正文，没有附件上传能力）。
+
+### 测试
+
+- `mcp-gui` 新增 **81 项前端用例**（8 文件：日志行解析 / 事件解析 / 字节与窗口 / 筛选排序 / 报告摘要 / i18n 完整性 / 沙箱 / mock 出口）；本机 `vue-tsc --noEmit` / `eslint . --max-warnings 0` / `vitest` / `vite build` 全绿（只依赖 Node；按 issue #25 约束**不在本机执行任何 Rust 侧构建与检查**）。
+- MCP 主工程全量 **1270 passed / 12 skipped**；`typecheck` / `lint` / `build` / `check:stdio` / `pack:check` 全绿。
+- GUI 侧 Rust 门禁（`cargo fmt --check` / `cargo clippy -D warnings` / `cargo test`）与三平台打包由 `GUI` workflow 执行。
+
+### 文档
+
+- 新增 `docs/gui-log-viewer.md` / `.en.md`（安装、数据目录、四类日志、搜索 / 导出、双源更新与故障自救、本地开发与 CI 构建边界）与 `docs/issue-25-gui-real-machine-record.md`（中文单语）。
+- `README` / `ARCHITECTURE` / `HANDOFF` / `CHANGELOG` 双语同步；ARCHITECTURE 新增「第 16 节 独立交付面：日志台 GUI」。
+- 根 `package.json` 的 `files` 白名单新增两份 GUI 文档（npm 包**不含** `mcp-gui/`）。
+
+---
+
 ## [0.7.0] - 2026-09-26
 
 > **版本号纠正**：按 `AGENTS.md`（加满 `0.0.10` 下个版本进位为 `+0.1.0`），`0.6.9` 之后的下一次增量应为 `0.7.0`。开发过程中曾把 `0.6.10`/`0.6.11`/`0.6.12` 推到 `master`，但三者**均未打 tag、未发布到 npm**，故合并为本条 `0.7.0` 记录。

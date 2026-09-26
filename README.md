@@ -266,6 +266,8 @@ run_task(projectPath=D:/xxx/my-app, agentId=qoder, planDoc=./plans/development.m
 | [docs/codex-windows-smoke.md](docs/codex-windows-smoke.md) | Codex Windows 真机验收记录（含验收失败→自动生成计划→返修通过闭环） |
 | [docs/qoder-cdp.md](docs/qoder-cdp.md) | Qoder CN GUI 驱动：安装发现与实例复用、完整路径工作区与原生导入、`modelSource` 与模型管理全局思考等级、发送/答题检查点、运行判定与原会话返修、真机证据与未覆盖项 |
 | [docs/opendesign-cdp.md](docs/opendesign-cdp.md) | Open Design GUI 驱动（阶段 P0）：安装发现与数据目录推导、单实例锁与 `--user-data-dir` 真相、sidecar 根进程判定、CDP 产品校验与端口档位、界面锚点候选与选择器采集流程、失败码表 |
+| [docs/gui-log-viewer.md](docs/gui-log-viewer.md) | **日志台 GUI（`mcp-gui/`）**：本地只读查看四类日志与任务产物、数据目录配置、搜索/导出、双源（Gitee/GitHub）自动更新与故障自救、本地开发与 CI 构建边界 |
+| [docs/issue-25-gui-real-machine-record.md](docs/issue-25-gui-real-machine-record.md) | 日志台 GUI 的真机验收记录（CI 产物为载体）与双源更新实测清单（issue #25） |
 | [docs/release-v0.5.10.md](<docs/release-v0.5.10.md>) | v0.5.10 发布说明（`run_task` / `verify_task` 幂等键：TTL 重放、执行中提示、同键异参 fail-closed、`idempotency.json` 落盘与 `idempotentHint` 注解；issue #15） |
 | [docs/release-v0.5.9.md](<docs/release-v0.5.9.md>) | v0.5.9 发布说明（server 退出 / 重启归档的 GUI 终态如实化：按 `guiStop` 分流文案、`shutdown.guiStopWaitMs` 有界等待、结构化待确认字段与人工确认入口；issue #14） |
 | [docs/release-v0.5.8.md](<docs/release-v0.5.8.md>) | v0.5.8 发布说明（四份主文档按代码逐项核对重写 + 补发 TraeWork 探针与三个 probe script；无运行时变更） |
@@ -470,6 +472,14 @@ run_task(projectPath=D:/xxx/my-app, agentId=qoder, planDoc=./plans/development.m
   - **TraeWork**：新增 `discovery.ts`（固定盘枚举 + 注册表 + 相对路径），修正内置目录（`{APPDATA}/TRAE SOLO CN` 实为**用户数据目录**，非安装位置）；Windows 文件名收窄为只认 `TRAE SOLO CN.exe`（旧清单含 `Trae CN` 会误匹配另一产品 TraeCode CN）；端口未就绪时输出诊断（退出码 / 端口监听者 / 既有实例），**只诊断不改启动策略**
   - **统一诊断**：新增 `src/agents/gui-diagnostics.ts`，三 GUI agent 在选择器解析失败时把「页面可见候选」写进错误，使用者一步定位漂移
   - 详见 [v0.6.2 发布说明](<docs/release-v0.6.2.md>)；验证记录见 [issue-23 记录](docs/issue-23-selector-drift-record.md)
+- **M33 — 日志台 GUI（`mcp-gui/`，Tauri 2.x + Vue 3）**（2026-09-27）— 新增 81 项前端用例（issue #25；GUI 独立版本 `0.1.0-beta.1`）
+  - **独立只读桌面应用**：`mcp-gui/` 与 MCP server **完全解耦**（不依赖 MCP 进程在跑，纯读文件系统），把四类日志与任务产物统一到一个界面；对业务数据全程只读，唯一写入是应用自身偏好（系统应用配置目录）
+  - **四类日志**：`logs/server.log`（级别/时间范围过滤 + 关键字高亮）、`task.jsonl`（区分状态跃迁 / 细粒度 Agent 事件 / `note` 进度通道，坏行跳过但计数）、`agent-<轮次>.log` 与 `verify-<轮次>.log`（轮次切换 + 行号/换行）、`report-<轮次>.{md,json,html}` 与 `dry-run-report-*`（Markdown 渲染 / 结构化卡片 / **sandbox iframe** 视觉预览 / 干跑与常规分区 / 多轮对比）
+  - **大日志与实时 tail**：首屏只读 64 KiB 尾部窗口、向前按块加载并显示「已加载 N / 共 M」；`notify` 文件监听驱动增量刷新，**上翻自动暂停跟随**、可一键「跳到最新」
+  - **跨任务搜索 / 导出**：按需扫描（不建本地全文索引）+ 进度 + 可取消，命中按「任务 → 文件 → 行」分组并可跳转；单文件导出与任务整包 zip（可排除体积大的原始日志）
+  - **双源自动更新**：**主动实测择优**（不依赖系统区域，VPN 场景下亦正确）+ 三态开关 + TTL 缓存 + 失败回退「上次可用源」；两端清单同版本同签名，**minisign 验签不通过一律拒绝安装**；更新失败不影响日志查看主流程
+  - **CI 隔离与门禁**：新增独立 `GUI` workflow（windows / macos-15-intel / macos-15 三平台矩阵），`gui-v*` 不以 `v` 开头故**不触发** MCP 的 `release.yml`；新增 TS 真源 ↔ 前端镜像 ↔ Rust 镜像的**三方词表一致性门禁**（漂移即 fail）
+  - 使用与开发说明见 [日志台文档](docs/gui-log-viewer.md)，真机记录见 [issue-25 记录](docs/issue-25-gui-real-machine-record.md)；**GUI 版本独立演进，不随 MCP 主包发布**（主包版本与本期无关）
 
 ## Agent 适配现状
 

@@ -973,7 +973,80 @@ Ordered by impact on a successor:
 
 ---
 
-## 16. Further reading
+## 16. The second delivery surface: log viewer GUI (`mcp-gui/`)
+
+`mcp-gui/` is the repository's **second delivery surface** (issue #25): a **read-only local** desktop app built with
+Tauri 2.x (Rust backend) + Vue 3 that unifies the four log types and task artifacts written by the MCP server.
+Its only relationship with the server is: **they share the same on-disk facts, and no second source of truth exists**.
+
+```text
+┌──────────────────────────────┐        ┌──────────────────────────────┐
+│ Tianshu                      │        │ Tianshu-mcp Logs (mcp-gui)   │
+│ · tools/call: machine-facing │        │ · reads the FS only           │
+└──────────────┬───────────────┘        └──────────────┬───────────────┘
+               │ MCP over stdio                        │ read-only
+┌──────────────▼───────────────┐        ┌──────────────▼───────────────┐
+│ tianshu-mcp server           │◀──────▶│ <data home>/logs · /tasks    │
+│ · the only writer            │ facts  │ · read-only consumer          │
+└──────────────────────────────┘        └──────────────────────────────┘
+```
+
+### 16.1 Decoupling boundaries (read before changing anything here)
+
+| Boundary | Rule |
+|---|---|
+| Data | The GUI is **read-only** for business data; the only writes are its own preferences (system config dir) and user-chosen export/update files |
+| Code | `mcp-gui/` has its own `package.json` / `tsconfig` / eslint / vitest and **does not take part in root gates** (root `eslint.config.js` ignores `mcp-gui/**`) |
+| Packaging | The root `package.json` `files` allowlist never includes `mcp-gui`; `.gitignore` isolates `node_modules` / `dist` / `target` / `icons` / `Cargo.lock` |
+| Releases | The GUI has its own version (`0.1.0-beta.N`) and tag (`gui-v*`) and is **never released with the MCP package** (`release.yml` only matches `v*`) |
+
+### 16.2 Anti-drift mechanism for the duplicated schema (the most important rule here)
+
+The Rust side needs its own copy of the state/event vocabulary for classification, and the frontend mirror needs one
+for rendering and mock data. The **truth is always** `src/tasks/task.ts` and `src/agents/agent-events.ts`.
+
+`mcp-gui/scripts/check-schema-parity.mjs` parses all three and compares the sets in CI — **any mismatch fails the
+build**. The `GUI` workflow also triggers on the two truth files, so TS-side drift is caught too.
+
+| Location | Role |
+|---|---|
+| `src/tasks/task.ts`, `src/agents/agent-events.ts` | **truth** (sole authority) |
+| `mcp-gui/src/core/events.ts` | frontend mirror (rendering / mock decisions) |
+| `mcp-gui/src-tauri/src/schema.rs` | Rust mirror (event classification) |
+
+### 16.3 Layering of the read-only backend
+
+| Module | Responsibility |
+|---|---|
+| `data_home.rs` | data-home resolution (`TIANSHU_MCP_HOME` → `~/.tianshu-mcp`), validation, **relative-path escape guards** |
+| `scanner.rs` | `tasks/` scan + tolerant `task.json` parsing + artifact round aggregation + filtering/sorting |
+| `event_stream.rs` | `task.jsonl` parsing (bad lines skipped but counted) and event classification |
+| `tail.rs` | byte-window reads (tail window / arbitrary ranges), same semantics as `core/bytes.ts` |
+| `watcher.rs` | `notify` watching → `gui/log-changed` events (only the currently open log) |
+| `search.rs` | on-demand cross-task scanning + progress events + cancellation (**no full-text index**) |
+| `export.rs` | single-file export + whole-task zip (optionally excluding heavy raw logs) |
+| `updater.rs` | dual-source probing and selection + three-state switch + `tauri-plugin-updater` (signature gate) |
+
+### 16.4 Dual-source auto-update
+
+- **Probe, don't guess**: both manifest endpoints are probed concurrently and ranked by reachability + latency;
+  the system region is never trusted (it is unreliable behind a VPN);
+- **Same version, same signature on both sides**: the minisign signature covers the **artifact file**, not the source,
+  so the Gitee manifest reuses the GitHub `signature` and only changes `url`;
+- **Signature verification is a hard gate**: `tauri-plugin-updater` with the embedded public key;
+  **a failed verification is always rejected**;
+- **Windows payload must be NSIS** (the Tauri updater does not support MSI); macOS uses `.app.tar.gz`;
+- **Failures never block**: any failure only affects updating; log viewing keeps working, with a "Manual download" entry.
+
+### 16.5 Build boundary (a hard constraint from issue #25)
+
+Rust-side builds and checks (`cargo fmt` / `clippy` / `tauri build`) run **only in CI**; locally only frontend
+preview (`npm run dev`) and frontend gates are run. Icons are generated in CI by `tauri icon` from
+`assets/tianshu-mcp-icon.svg`; only the SVG source lives in the repository (per the "icons must derive from SVG" rule).
+
+---
+
+## 17. Further reading
 
 | Topic | Document |
 |---|---|

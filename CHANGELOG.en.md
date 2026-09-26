@@ -8,6 +8,41 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [Unreleased]
+
+> This change adds a **new independent delivery surface**. The MCP package's runtime logic (tool contracts, task
+> model, acceptance engine and all of `src/**`) is **unchanged**.
+> **The MCP package version stays at `0.7.0` (not yet released)**; the GUI evolves independently with its own version
+> (`0.1.0-beta.N`) and its own tag (`gui-v*`).
+
+### Added
+
+- **Log viewer GUI (`mcp-gui/`, Tauri 2.x + Vue 3, independent version `0.1.0-beta.1`)** (issue #25): a **fully decoupled**, read-only local desktop app (filesystem only, **no server needed**) that unifies the four log types and task artifacts in one UI.
+  - **Data home**: auto-detected via `TIANSHU_MCP_HOME` → `~/.tianshu-mcp`, with manual add / remove / switch across multiple directories (an added directory must contain `logs/` or `tasks/`).
+  - **Three-pane UI**: task list (project / agent / status / time-range filters, status colors, rounds) · content pane · details pane (metadata / event attributes / report summary).
+  - **Four log types**: `server.log` (level and time-range filtering + keyword highlighting); `task.jsonl` (**separating state transitions from fine-grained agent events**; `note` stays the progress/audit channel; unparsable lines are skipped but counted); `agent-<round>.log` and `verify-<round>.log` (round switching, line numbers, word wrap); `report-<round>.{md,json,html}` and `dry-run-report-*` (Markdown rendering / structured cards / **sandbox iframe visual preview** with injected CSP and stripped `<script>` / dry-run shown separately / cross-round comparison).
+  - **Large logs and live tail**: first screen reads only a 64 KiB tail window plus on-demand earlier chunks with "loaded N / total M"; `notify`-driven incremental refresh, **scrolling up pauses follow automatically**, one-click "Jump to latest".
+  - **Cross-task search / export / copy**: on-demand scanning (**no local full-text index**) with progress and cancellation; single-file export plus whole-task zip (optionally excluding heavy raw logs, reporting the excluded count).
+  - **Experience**: Chinese and English (Chinese by default) plus system / light / dark theme (system by default).
+- **Dual-source (Gitee / GitHub) auto-update**: **actual probing instead of system region** (both endpoints are probed concurrently and ranked by latency, which is correct behind a VPN) + TTL cache + a three-state switch (Auto / Force Gitee / Force GitHub) + fallback to the last known good source when both are unreachable; both manifests share the same version and signature, and `tauri-plugin-updater` **always rejects a failed signature**. Any failure only affects updating and **never blocks log viewing** (a "Manual download" entry is provided). The Windows payload is NSIS (the Tauri updater does not support MSI).
+- **Standalone `GUI` workflow** (`.github/workflows/gui.yml`): a `windows-latest` / `macos-15-intel` / `macos-15` matrix; pushes to `master` only compile-verify and upload artifacts, while a `gui-v*-beta.*` tag publishes pre-releases to both hosts. `gui-v*` **does not start with `v`** and therefore **never triggers** the MCP `release.yml` (an explicit assertion covers this).
+- **Three-way vocabulary parity gate**: `mcp-gui/scripts/check-schema-parity.mjs` compares the **TS truth (`src/tasks/task.ts` / `src/agents/agent-events.ts`) ↔ frontend mirror ↔ Rust mirror** and fails on any drift; the `GUI` workflow also triggers on the two truth files, so TS-side drift is caught too.
+- **`scripts/gitee-gui-release.mjs`**: Gitee-side GUI pre-release + **installer attachment upload** + update-manifest writing (the existing package script creates releases and bodies but has no attachment upload).
+
+### Tests
+
+- `mcp-gui` adds **81 frontend cases** (8 files: log-line parsing / event parsing / bytes and windows / filtering and sorting / report summaries / i18n completeness / sandbox / mock data exit); locally `vue-tsc --noEmit` / `eslint . --max-warnings 0` / `vitest` / `vite build` are all green (Node only; per issue #25, **no Rust-side build or check runs locally**).
+- MCP package full suite: **1270 passed / 12 skipped**; `typecheck` / `lint` / `build` / `check:stdio` / `pack:check` all green.
+- GUI Rust gates (`cargo fmt --check` / `cargo clippy -D warnings` / `cargo test`) and the three-platform packaging run in the `GUI` workflow.
+
+### Documentation
+
+- New `docs/gui-log-viewer.md` / `.en.md` (installation, data homes, the four log types, search/export, dual-source updating and recovery, local development vs. CI build boundary) and `docs/issue-25-gui-real-machine-record.md`.
+- `README` / `ARCHITECTURE` / `HANDOFF` / `CHANGELOG` updated in both languages; ARCHITECTURE gained "Section 16: the second delivery surface — log viewer GUI".
+- The root `package.json` `files` allowlist now includes the two GUI docs (the npm package does **not** contain `mcp-gui/`).
+
+---
+
 ## [0.7.0] - 2026-09-26
 
 > **Version numbering correction**: per `AGENTS.md` (`加满0.0.10下个版本将+0.1.0` — the 10th patch increment rolls over), the increment after `0.6.9` must be `0.7.0`. Three intermediate numbers (`0.6.10`/`0.6.11`/`0.6.12`) were pushed to `master` during development but were never tagged or published to npm, so they are consolidated into this single `0.7.0` entry.
