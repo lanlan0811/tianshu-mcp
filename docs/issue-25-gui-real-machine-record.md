@@ -17,7 +17,7 @@
 | 本机 Node / npm | 可用 | 前端预览、单测、门禁脚本均可本地执行 |
 | 本机 Rust 工具链 | **不使用** | issue #25 明确要求 Rust 侧一律在 CI 完成 |
 | `gh` CLI | 不可用 | 故 artifact 需经浏览器从 Actions 运行页下载 |
-| CI 构建产物 | **已生成** | `GUI` workflow 首次跑通：`windows-x86_64`（NSIS）与 `darwin-aarch64`（dmg/app）已产出并上传；`darwin-x86_64` 同步构建中 |
+| CI 构建产物 | **已生成** | `GUI` workflow 已跑通并**三平台全部 success**：`windows-x86_64`（NSIS）、`darwin-x86_64`、`darwin-aarch64`（dmg + `.app.tar.gz`）均打包并上传产物 |
 | CI 排障通道 | **注解 + 只读代理** | 公开仓 job 日志需 admin（403）→ 用 `check-runs/<job_id>/annotations` 读取诊断（详见 §三.2） |
 
 ---
@@ -58,10 +58,10 @@
 
 | # | 步骤 | 期望 | 结果 |
 |---|---|---|---|
-| P1 | `npm pack --dry-run` | `mcp-gui/` **未被打入** npm 包 | 待测 |
-| P2 | 仓库状态 | `mcp-gui/node_modules`、`dist`、`src-tauri/target`、`icons/*`、`Cargo.lock` 均未入库 | 待测 |
-| P3 | 图标 | 仓库内只有 `assets/tianshu-mcp-icon.svg`；无 emoji、无二进制图标 | 待测 |
-| P4 | `tianshu-mcp-web/` | 未被改动 | 待测 |
+| P1 | `npm pack --dry-run` | `mcp-gui/` **未被打入** npm 包 | ✅ 通过：tarball 共 266 文件，清单内**无任何 `mcp-gui/` 条目** |
+| P2 | 仓库状态 | `mcp-gui/node_modules`、`dist`、`src-tauri/target`、`icons/*`、`Cargo.lock` 均未入库 | ✅ 通过：6 条规则全部命中（`node_modules/` / `dist/` / `src-tauri/target/` / `src-tauri/gen/` / `Cargo.lock` / `icons/*`），且 `src/lib.rs`、`icons/.gitkeep`、`package.json` 等应跟踪文件未被误伤 |
+| P3 | 图标 | 仓库内只有 `assets/tianshu-mcp-icon.svg`；无 emoji、无二进制图标 | ✅ 通过：`assets/` 下仅 `tianshu-mcp-icon.svg`；`src-tauri/icons/` 仅提交 `.gitkeep`（其余由 CI 生成） |
+| P4 | `tianshu-mcp-web/` | 未被改动 | ✅ 通过：最近 12 次提交均未触及该目录 |
 
 ---
 
@@ -74,7 +74,7 @@
 | 词表三方一致性 | `node mcp-gui/scripts/check-schema-parity.mjs` | ✅ 本地 + CI 均通过（TS 真源 / 前端镜像 / Rust 镜像 全部一致，含 23 项事件全集） |
 | 前端 typecheck / lint / test | `mcp-gui` 的 `npm run typecheck` / `lint` / `test` | ✅ 本地 + CI 均通过（81 项用例） |
 | Rust 质量门禁 | `GUI` workflow：`cargo fmt --check` / `cargo clippy -D warnings` / `cargo test` | ✅ **三平台全通过**（Windows / macOS aarch64 / macOS x86_64） |
-| GUI 三平台构建 | `GUI` workflow（windows-latest / macos-15-intel / macos-15） | ✅ `windows-x86_64`（NSIS）+ `darwin-aarch64`（dmg/app）**打包并上传产物成功**；`darwin-x86_64` 同步 |
+| GUI 三平台构建 | `GUI` workflow（windows-latest / macos-15-intel / macos-15） | ✅ **三平台全部 success**：`windows-x86_64`（NSIS）、`darwin-x86_64`、`darwin-aarch64` 均完成 `tauri build` 打包并上传产物（清理临时诊断步骤后已复验一轮全绿） |
 | 与 MCP 发版隔离 | `gui-v*` 不匹配 `release.yml` 的 `v*` | ✅ workflow 内显式断言通过（另见 `docs/gui-log-viewer.md` §7.2） |
 
 ### 3.2 本轮修复过程（首次跑通前）
@@ -97,10 +97,13 @@
 ## 四、结论
 
 **CI 侧已跑通**（2026-09-27）：`GUI` workflow 的 `schema-parity` 与三平台 `cargo fmt` / `clippy -D warnings` / `cargo test` 全绿，
-且 `windows-x86_64`（NSIS）与 `darwin-aarch64`（dmg/app）**已成功打包并上传产物**，`darwin-x86_64` 同步构建中。
+且 **三个平台（windows-x86_64 / darwin-x86_64 / darwin-aarch64）全部 success**，均完成 `tauri build` 打包并上传产物。
 
-**第二、三节的功能与更新清单（F1~F12 / U1~U8 / P1~P4）仍需维护者用 CI 产物在真机上逐项验收**——
+**§2.3 打包与隔离（P1~P4）已在本机验证通过**（纯 Node 检查，不涉及 Rust 侧，见上表）。
+
+**§2.1 功能（F1~F12）与 §2.2 更新（U1~U8）仍需维护者用 CI 产物在真机上逐项验收**——
 本机按 issue #25 的硬约束不跑 Rust 侧，也不具备双系统的真机点击条件；产物到位后按清单填写即可。
+其中 U1/U3 需先打 `gui-v0.1.0-beta.1` tag 才会走到发布链路。
 
 已知限制（已在 `docs/gui-log-viewer.md` 如实披露）：
 

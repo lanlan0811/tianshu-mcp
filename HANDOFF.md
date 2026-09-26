@@ -1,7 +1,7 @@
 # HANDOFF.md — 项目交接说明
 
 > **交接快照：2026-09-27 · 开发版本 `0.7.0`（**尚未发布**）；本次新增独立交付面「日志台 GUI」（`0.1.0-beta.1`，独立 tag `gui-v*`，待发布）。**
-> **issue #25 已交付**：新增**独立交付面** `mcp-gui/`（「Tianshu-mcp 日志台」，Tauri 2.x + Vue 3）——本地只读查看四类日志与任务产物；MCP 主包**运行时逻辑零改动、版本号不变**。签名 Secret 待维护者配置（未配置时自动更新不可用，安装包仍可正常使用）。
+> **issue #25 已交付**：新增**独立交付面** `mcp-gui/`（「Tianshu-mcp 日志台」，Tauri 2.x + Vue 3）——本地只读查看四类日志与任务产物；MCP 主包**运行时逻辑零改动、版本号不变**。签名密钥等 4 项 Secrets **已由维护者配置完成**（2026-09-27）。
 > **issue #18~#22 五项增强已全部交付**（v0.6.3~v0.6.7，每版各自完整发布），**五个 issue 均已回复并关闭**（2026-09-24）。
 > **#18~#22 的真机记录已全部补齐**（2026-09-25）：见 [issue #19/#20/#21/#22 真机记录](docs/issue-19-22-real-machine-record.md) 与 [issue #18/#19/#21 真机记录](docs/issue-18-21-real-machine-record.md)；各 issue 另附真机证据补充评论。
 > **⚠️ 新发现一条会阻断全部 Codex 派发的适配器缺陷**（`26.917.9434` 模型触发器回读混入整条思考等级条 → `model_mismatch`），尚未修复、建议单开 issue，详见下方「真机取证补记」与记录文件 §5。
@@ -28,9 +28,9 @@
 - **与 MCP 发版隔离**：GUI 使用独立版本（`0.1.0-beta.N`）与独立 tag（`gui-v*`），**不以 `v` 开头**，**不触发** `release.yml`（workflow 内另有显式断言）。
 - **测试**：`mcp-gui` 新增 **81 项前端用例**（8 文件：日志行解析 / 事件解析 / 字节与窗口 / 筛选排序 / 报告摘要 / i18n 完整性 / 沙箱 / mock 出口）；
   本机 `vue-tsc --noEmit` / `eslint . --max-warnings 0` / `vitest` / `vite build` 全绿（只依赖 Node）。
-- **CI 实测（`GUI` workflow，2026-09-27）**：`schema-parity` ✅；**Windows x86_64 ✅** 与 **macOS aarch64 ✅** 均已跑通
-  `cargo fmt --check` → `cargo clippy --all-targets -D warnings` → `cargo test` → `tauri build` 打包 → 产物上传全链路；
-  `darwin-x86_64` 同步构建中。修复过程中依次消除 **rustfmt 违规（14 文件结尾换行 + 折行/导入顺序）→ Rust 编译错误（11 处）→ clippy `dead_code`（8 处）**。
+- **CI 实测（`GUI` workflow，2026-09-27）**：`schema-parity` ✅；**三平台（`windows-x86_64` / `darwin-x86_64` / `darwin-aarch64`）全部 success** ——
+  `cargo fmt --check` → `cargo clippy --all-targets -D warnings` → `cargo test` → `tauri build` 打包 → 产物上传，全链路通过（清理临时诊断步骤后已复验一轮全绿）。
+  修复过程中依次消除 **rustfmt 违规（14 文件结尾换行 + 折行/导入顺序）→ Rust 编译错误（11 处）→ clippy `dead_code`（8 处）**。
 - **CI 排障教训（可复用）**：① 公开仓的 job 日志下载接口需 admin 权限（403），而本机按 D2 不跑 cargo →
   诊断信息只能靠 **GitHub 注解**暴露（`::error` / `::warning` + 公开可读的 `check-runs/<job_id>/annotations`）；
   ② **cargo / rustc 输出带 ANSI 颜色码**，解析前必须先剥离（`sed` 去掉 `ESC[...m`），否则 `^error` 行一条也匹配不到；
@@ -41,9 +41,9 @@
   `E0597 __tauri_message__ does not live long enough`（`get_data_home_state` / `list_tasks` / `read_events` / `get_preferences` 已按此改正）；
   另 edition 2021 下 `let state = app.state::<T>(); if let Ok(g) = state.x.lock() { .. }` 需在 `if let` 后补 `;`，否则守卫临时值晚于 `state` 释放而报 `E0597`。
 - **待办（需要维护者的动作）**：
-  1. 在 GitHub 与 Gitee 仓库 Secrets 配置 `TAURI_SIGNING_PRIVATE_KEY`（+ `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`）与 `UPDATER_PUBKEY`；
-     **未配置时构建仍然成功**，但产出的安装包不含更新清单，设置面板会明确提示「自动更新暂不可用」；
-  2. 首次发布打 `gui-v0.1.0-beta.1` tag，并按 [issue-25 真机记录](docs/issue-25-gui-real-machine-record.md) 的清单用 **CI 产物**完成真机验收；
+  1. ~~配置 Secrets~~ **✅ 已完成（2026-09-27）**：`UPDATER_PUBKEY` / `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`（私钥带密码，三项已成套）+ `GITEE_TOKEN`；
+     密钥对由 `npx tauri signer generate -w ~/.tauri/tianshu-gui.key` 在本机生成（私钥**不入库**，请离线备份 —— 更换密钥会让已发布版本的自动更新验签失败）；
+  2. 首次发布打 `gui-v0.1.0-beta.1` tag，并按 [issue-25 真机记录](docs/issue-25-gui-real-machine-record.md) 的清单用 **CI 产物**完成真机验收（其中 §2.3 P1~P4 已在本机验证通过）；
   3. 本机 `gh` CLI 不可用，Actions artifact 需经浏览器下载。
 - **文档**：`docs/gui-log-viewer.md` / `.en.md`、`docs/issue-25-gui-real-machine-record.md`；
   README / ARCHITECTURE / CHANGELOG 双语已同步（ARCHITECTURE 新增「第 16 节 独立交付面」）。
