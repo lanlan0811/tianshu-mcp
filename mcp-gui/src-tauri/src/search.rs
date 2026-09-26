@@ -278,7 +278,8 @@ mod tests {
         let mut r = req("e");
         r.max_hits_per_file = 2;
         let text = "e\ne\ne\ne\n";
-        let group = scan_file("tasks/tsk_1/task.jsonl", Some("tsk_1".into()), text, &r).expect("应有命中");
+        let group =
+            scan_file("tasks/tsk_1/task.jsonl", Some("tsk_1".into()), text, &r).expect("应有命中");
         assert_eq!(group.hits.len(), 2);
         assert!(group.truncated);
     }
@@ -291,13 +292,17 @@ mod tests {
 
     #[test]
     fn snippet_handles_multibyte_lines() {
-        let group = scan_file("x", None, "前缀中文内容命中关键字后缀", &req("关键字")).expect("应有命中");
+        let group =
+            scan_file("x", None, "前缀中文内容命中关键字后缀", &req("关键字")).expect("应有命中");
         assert!(group.hits[0].snippet.contains("关键字"));
     }
 
     #[test]
     fn task_id_extraction() {
-        assert_eq!(task_id_of("tasks/tsk_1/agent-0.log").as_deref(), Some("tsk_1"));
+        assert_eq!(
+            task_id_of("tasks/tsk_1/agent-0.log").as_deref(),
+            Some("tsk_1")
+        );
         assert_eq!(task_id_of("logs/server.log"), None);
     }
 

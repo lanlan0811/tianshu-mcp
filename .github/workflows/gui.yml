@@ -198,6 +198,9 @@ jobs:
           flush
           echo "fmt annotation blocks: $(wc -l < /tmp/annots_fmt.txt 2>/dev/null || echo 0)"
 
+          # 哨兵：无论有无 diff 都发一条 notice，便于只读注解即可判断 rustfmt 是否已清零
+          echo "::notice title=diag-fmt::chunks=$(wc -l < /tmp/annots_fmt.txt 2>/dev/null || echo 0)"
+
       - name: Rust fmt diagnostics emit 1 (temporary)
         continue-on-error: true
         shell: bash
@@ -263,7 +266,9 @@ jobs:
 
           rm -f /tmp/clippy.txt /tmp/test.txt /tmp/annots_lint.txt
           cargo clippy --all-targets -- -D warnings > /tmp/clippy.txt 2>&1
+          CLIPPY_RC=$?
           cargo test > /tmp/test.txt 2>&1
+          TEST_RC=$?
           echo "=== cargo clippy ==="; cat /tmp/clippy.txt
           echo "=== cargo test ==="; cat /tmp/test.txt
 
@@ -287,6 +292,9 @@ jobs:
           done
 
           echo "lint annotation blocks: $(wc -l < /tmp/annots_lint.txt 2>/dev/null || echo 0)"
+
+          # 哨兵：把 clippy / test 的退出码与输出行数也作为可读注解暴露
+          echo "::notice title=diag-lint::clippy_rc=${CLIPPY_RC} test_rc=${TEST_RC} clippy_lines=$(wc -l < /tmp/clippy.txt) test_lines=$(wc -l < /tmp/test.txt)"
 
       # 下面 2 步只做「把收集好的注解行打印出来」；单步注解上限 10 条，故分 2 步共可输出 20 条
       - name: Rust lint diagnostics emit 1 (temporary)

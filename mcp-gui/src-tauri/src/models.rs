@@ -345,8 +345,7 @@ pub const UPDATE_ENDPOINT_GITEE: &str =
     "https://gitee.com/lan0811/tianshu-mcp/raw/master/update/gui/latest-gitee.json";
 
 /// 手动下载兜底入口（更新失败时给用户）
-pub const MANUAL_DOWNLOAD_URL: &str =
-    "https://github.com/lanlan0811/tianshu-mcp/releases";
+pub const MANUAL_DOWNLOAD_URL: &str = "https://github.com/lanlan0811/tianshu-mcp/releases";
 
 /// 尾窗默认字节数（与 `src/tasks/task-store.ts` 的 64 KiB 思路一致）
 pub const DEFAULT_WINDOW_BYTES: u64 = 64 * 1024;

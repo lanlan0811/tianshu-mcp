@@ -16,7 +16,7 @@ use url::Url;
 
 use crate::models::{
     AppVersionInfo, CheckUpdateResult, InstallUpdateResult, ProbeSourceResult, SourceProbe,
-    MANUAL_DOWNLOAD_URL, UPDATE_ENDPOINT_GITHUB, UPDATE_ENDPOINT_GITEE,
+    MANUAL_DOWNLOAD_URL, UPDATE_ENDPOINT_GITEE, UPDATE_ENDPOINT_GITHUB,
 };
 use crate::AppState;
 
@@ -317,8 +317,14 @@ mod tests {
 
     #[test]
     fn pick_uses_only_reachable_source() {
-        assert_eq!(pick_source(&probe(false, None), &probe(true, Some(80)), None).0, "github");
-        assert_eq!(pick_source(&probe(true, Some(80)), &probe(false, None), None).0, "gitee");
+        assert_eq!(
+            pick_source(&probe(false, None), &probe(true, Some(80)), None).0,
+            "github"
+        );
+        assert_eq!(
+            pick_source(&probe(true, Some(80)), &probe(false, None), None).0,
+            "gitee"
+        );
     }
 
     #[test]

@@ -42,20 +42,19 @@ pub fn start(app: &AppHandle, home: &Path, rel_paths: &[String]) -> Result<(), S
     let handle = app.clone();
     let home_owned = home.to_path_buf();
 
-    let mut watcher =
-        notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-            let event = match res {
-                Ok(e) => e,
-                Err(_) => return,
-            };
-            if event.kind.is_remove() {
-                return;
-            }
-            for path in &event.paths {
-                emit_for_path(&handle, &home_owned, path);
-            }
-        })
-        .map_err(|e| format!("创建文件监听失败：{e}"))?;
+    let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+        let event = match res {
+            Ok(e) => e,
+            Err(_) => return,
+        };
+        if event.kind.is_remove() {
+            return;
+        }
+        for path in &event.paths {
+            emit_for_path(&handle, &home_owned, path);
+        }
+    })
+    .map_err(|e| format!("创建文件监听失败：{e}"))?;
     for rel in rel_paths {
         let abs = crate::data_home::resolve_rel(home, rel)?;
         if abs.is_file() {
@@ -71,7 +70,10 @@ pub fn start(app: &AppHandle, home: &Path, rel_paths: &[String]) -> Result<(), S
     }
 
     let state = app.state::<AppState>();
-    let mut slot = state.watcher.lock().map_err(|_| "监听状态锁失效".to_string())?;
+    let mut slot = state
+        .watcher
+        .lock()
+        .map_err(|_| "监听状态锁失效".to_string())?;
     *slot = Some(watcher);
     Ok(())
 }

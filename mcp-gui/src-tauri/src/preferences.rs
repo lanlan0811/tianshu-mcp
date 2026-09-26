@@ -33,7 +33,6 @@ pub fn save(app: &AppHandle, prefs: &Preferences) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("创建配置目录失败：{e}"))?;
     }
-    let text =
-        serde_json::to_string_pretty(prefs).map_err(|e| format!("序列化偏好失败：{e}"))?;
+    let text = serde_json::to_string_pretty(prefs).map_err(|e| format!("序列化偏好失败：{e}"))?;
     std::fs::write(&path, text).map_err(|e| format!("写入偏好失败：{e}"))
 }
