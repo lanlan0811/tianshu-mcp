@@ -7,6 +7,28 @@
 
 ---
 
+## [0.6.9] - 2026-09-26
+
+### 新增
+
+- **Open Design 适配器阶段 P1（选择器与页面内表达式层）**：新增 `src/agents/opendesign/selectors.ts`（16 个语义键的选择器注册表 + 页面内 `resolveFnSource` + **布局守卫键集**）与 `dom.ts`（13 个页面内表达式，标记前缀 `od:`：存在性/文本/单点/首点/精确匹配/候选回显/计数/输入值/对话文本/触发区文本/布局盘点/菜单收起/方向项可见）。`run.ts` 的派活门禁由「未实现」升级为**布局守卫**：关键选择器未采集或页面锚点未命中时，硬失败 `selector_drift` 并列出缺失键，**不进任何坐标点击**。详见 [Open Design GUI（CDP）适配器](docs/opendesign-cdp.md)。
+
+### 修复
+
+- **`ELECTRON_RUN_AS_NODE` 导致 Open Design 完全无法启动（真机关键根因）**：`Open Design.exe` 是「内嵌 Node 的 Electron」外层启动器；调用方若带 `ELECTRON_RUN_AS_NODE=1`（DSH harness 会注入），启动器被置为 Node 模式，`--remote-debugging-port` / `--headless` 一律被拒（`bad option:`，退出码 9），表现为「无窗口、无新日志、无崩溃转储」。受管启动现在**净化环境**（新增 `OPEN_DESIGN_ENV_DENYLIST` + `sanitizedSpawnEnv()`，清 `ELECTRON_RUN_AS_NODE` / `NODE_OPTIONS` / `ELECTRON_ENABLE_LOGGING` / `ELECTRON_EXTRA_LAUNCH_ARGS`），命令行不变。清除后启动器立即打印 `DevTools listening on ws://127.0.0.1:9889/…`。
+- **启动器「分离子进程形态」被误判为失败**：启动器接受调试端口后打印 `DevTools listening` 并**自行以 0 退出**，真正的 Electron 主进程是它 spawn 的分离子进程。首版把退出码 0 直接判成 `needs_user(close_existing_instance)`，真机表现为「明明起来了却要用户关闭旧实例」。现在从 stderr 解析宣告端口（`devtoolsPortsFromOutput()`）并在剩余预算内继续轮询；退出码 9 归为「无法接管」，其他非零才抛错并附 stderr 尾部。
+- **`resolveFnSource` 只认数组 spec**：`specArgs()` 产出的是 JSON 字符串，被当成 CSS 候选去 `querySelectorAll` → **永远零命中**（静默失效）。现在两种形态都支持；同时补 `__odSpecError` 哨兵，让「表达式拼错」报 `count=-1` 而不是伪装成「页面没这个元素」。
+
+### 变更
+
+- 受管启动改为收集 **stderr 尾部**（新增 `guiInstanceDiagSpawnOptions()`，有界 4KB 缓冲）。原 `guiInstanceSpawnOptions()`（stdio 全忽略）保持不变、继续服务其他 GUI agent。
+
+### 测试
+
+- 新增 **23** 个用例（`test/unit/opendesign-dom.test.ts`）：注册表不变量（回退候选不得宽泛容器型、布局守卫不含运行期键）、`missingSelectorKeys` fail-closed 与覆盖热修复、`specArgs` 六元组契约，以及在 **linkedom 真实 DOM** 上执行全部页面内表达式（存在性/可见性、单点唯一性、精确匹配不回退模糊、候选回显、坏候选容错、布局盘点 `count=0`/`-1`、方向项精确匹配、Escape 收起）。
+- `opendesign-discovery.test.ts` 增至 **28** 用例：新增环境净化（含「不改调用方 process.env」）与调试端口宣告解析（IPv4/localhost/IPv6、去重保序、噪音不误判）。
+- 全量 **1202 passed / 12 skipped**（106 文件）；`typecheck`、`eslint src test scripts`、`build` 全绿。
+
 ## [0.6.8] - 2026-09-26
 
 ### 新增

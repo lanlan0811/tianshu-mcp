@@ -18,3 +18,18 @@ import type { SpawnOptions } from "node:child_process";
 export function guiInstanceSpawnOptions(windowsHide = true): SpawnOptions {
   return { detached: true, stdio: "ignore", windowsHide };
 }
+
+/**
+ * 需要**诊断输出**时的 spawn 选项（启动失败排查）。
+ *
+ * 常规 GUI 启动继续用 `guiInstanceSpawnOptions()`（stdio 全忽略）；本函数只把 **stderr 收成管道**：
+ * - stdout 仍忽略（本产品会往 stdout 打大量日志，收进来只是噪音）；
+ * - stderr 收进管道后**必须有人消费**，否则管道写满会让子进程阻塞——
+ *   调用方负责累积到有界缓冲区（见 `opendesign/instance.ts`）。
+ *
+ * 真机依据（2026-09-26）：Open Design 0.24.1 在本机启动即退出（无窗口、无新日志、无崩溃转储），
+ * 用 stdio:"ignore" 时调用方只能看到一个退出码，无法判断是缺网络、缺依赖还是单实例锁转交。
+ */
+export function guiInstanceDiagSpawnOptions(windowsHide = true): SpawnOptions {
+  return { detached: true, stdio: ["ignore", "ignore", "pipe"], windowsHide };
+}

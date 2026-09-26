@@ -271,28 +271,28 @@ async function commandAppConfig() {
 /* -------------------------------- anchors -------------------------------- */
 
 /**
- * 候选选择器：真机采集用。键与 selectors.ts 的 OpenDesignSelectorKey 对齐，
- * 值是**候选 CSS**（多个用逗号分隔 = querySelectorAll 的并集语义，仅用于盘点，不等同最终选择器）。
- * 这里刻意写得宽（包含 aria/placeholder/语义候选），靠实跑结果收敛到稳定选择器。
+ * 候选选择器：真机采集用。键与 `selectors.ts` 的 `OpenDesignSelectorKey` 对齐。
+ * 值刻意写得宽（aria/role/placeholder/语义类名），靠实跑结果收敛到稳定选择器，
+ * 收敛后写回 `src/agents/opendesign/selectors.ts` 的 `primary`。
+ * 单键多个候选用逗号分隔（= querySelectorAll 的并集语义，仅用于盘点，不等同最终选择器）。
  */
 const ANCHOR_CANDIDATES = {
-  openDesignTitle: "h1,header,main h1,[class*=title i]",
-  composer: "[class*=composer i],[class*=prompt i],main form,[class*=input i]",
+  title: "header h1,main h1,[class*=title i]",
+  composer: "main form,[role=form],[class*=composer i],[class*=prompt i]",
   inputBox: "textarea,[contenteditable=true],[role=textbox]",
-  workingDirTrigger: "[aria-haspopup],[class*=working i],[class*=dir i],[class*=folder i]",
+  workingDirTrigger: "button[aria-haspopup],[aria-expanded],[class*=working i],[class*=dir i]",
+  selectDirItem: "[role=menuitem],[role=option]",
   workingDirValue: "[class*=path i],code,[class*=value i]",
-  modelTrigger: "[class*=model i],[aria-label*=model i]",
-  designSystemTrigger: "[class*=design-system i],[aria-label*=design i]",
-  designDirectionTrigger: "[class*=direction i],[aria-label*=direction i]",
-  sendButton: "button[type=submit],[aria-label*=send i],[class*=send i]",
-  stopButton: "[class*=stop i],[aria-label*=stop i]",
-  conversationText: "[class*=message i],[class*=conversation i],[class*=thread i],main",
-  designSystemSearch: "input[placeholder],[role=searchbox],[type=search]",
-  modelMenuItem: "[role=menuitem],[role=option],li,button",
-  designSystemItem: "[role=option],[role=menuitem],li,button",
-  designDirectionItem: "[role=option],[role=menuitem],li,button",
-  selectDirItem: "[role=menuitem],[role=option],li,button",
-  recentDirItem: "[role=menuitem],[role=option],li,button",
+  modelTrigger: "[class*=model i],[aria-label*=model i],[aria-haspopup]",
+  modelMenuItem: "[role=menuitem],[role=option],[role=menuitemradio]",
+  designSystemTrigger: "[class*=design i],[aria-label*=design i],[aria-haspopup]",
+  designSystemSearch: "input[type=search],[role=searchbox],input[placeholder]",
+  designSystemItem: "[role=option],[role=menuitem],[role=listitem]",
+  designDirectionTrigger: "[class*=direction i],[aria-label*=direction i],[aria-haspopup]",
+  designDirectionItem: "[role=menuitem],[role=option],[role=menuitemradio]",
+  sendButton: "button[type=submit],[aria-label*=send i],[aria-label*=发送]",
+  stopButton: "[aria-label*=stop i],[aria-label*=停止]",
+  conversationText: "[role=log],[class*=message i],[class*=conversation i],main",
 };
 
 async function withMainClient(fn) {
@@ -384,34 +384,40 @@ async function resolveEndpoint() {
 async function commandAnchors() {
   section("anchors：主窗口锚点盘点（只读，不点击）");
   return withMainClient(async (client) => {
-    const href = await client.evaluate("location.href");
-    line("主窗口 URL", String(href ?? ""));
-    const probe = await client.evaluate(
+    // 与适配器**共用同一份**布局探针实现（各写一套必然漂移）
+    const { probeAllAnchors } = await load("../dist/agents/opendesign/cdp.js");
+    const report = await probeAllAnchors(client, ANCHOR_CANDIDATES);
+    line("主窗口 URL", report.url);
+    line("document.title", report.title);
+    line("可见文本长度", String(report.bodyTextLength));
+
+    const counts = await client.evaluate(
       `(() => ({
-        title: document.title,
-        href: location.href,
-        bodyTextLength: (document.body.innerText ?? "").length,
         controls: document.querySelectorAll("button,[role=button],a,select,textarea,input,[contenteditable=true]").length,
         menus: document.querySelectorAll("[role=menu],[role=listbox],[role=option],[role=menuitem]").length,
         dialogs: document.querySelectorAll("[role=dialog],[class*=modal i],[class*=dialog i]").length,
       }))()`,
     );
-    line("document.title", String(probe.title ?? ""));
-    line("可见文本长度", String(probe.bodyTextLength));
-    line("控件数", String(probe.controls));
-    line("菜单/选项数", String(probe.menus));
-    line("对话框数", String(probe.dialogs));
+    line("控件数", String(counts.controls));
+    line("菜单/选项数", String(counts.menus));
+    line("对话框数", String(counts.dialogs));
 
-    const { probeDocumentAnchors } = await load("../dist/agents/opendesign/cdp.js");
-    const report = await probeDocumentAnchors(client, ANCHOR_CANDIDATES);
     console.log("\n  --- 候选锚点命中情况（count 为并集匹配数；-1 = 选择器语法错误）---");
-    for (const [key, value] of Object.entries(report.anchors)) {
+    for (const entry of report.anchors) {
       console.log(
-        `  - ${key}: count=${value.count}${value.text ? ` text="${value.text.replace(/\s+/g, " ").slice(0, 120)}"` : ""}`,
+        `  - ${entry.key}: count=${entry.count}${entry.text ? ` text="${entry.text.replace(/\s+/g, " ").slice(0, 120)}"` : ""}`,
       );
     }
+    const { OPEN_DESIGN_LAYOUT_GUARD_KEYS } = await load("../dist/agents/opendesign/selectors.js");
+    const guard = new Set(OPEN_DESIGN_LAYOUT_GUARD_KEYS);
+    const guardMiss = report.anchors.filter((entry) => guard.has(entry.key) && entry.count <= 0);
     console.log(
-      "\n  说明: 这些是**候选**选择器（宽匹配）。把真正稳定的选择器写回 src/agents/opendesign/selectors.ts，" +
+      `\n  --- 布局守卫（决定适配器能否开始点击）：${
+        guardMiss.length ? `未命中 ${guardMiss.map((e) => e.key).join("、")}` : "全部命中"
+      } ---`,
+    );
+    console.log(
+      "\n  说明: 这些是**候选**选择器（宽匹配）。把真正稳定的选择器写回 src/agents/opendesign/selectors.ts 的 primary，" +
         "并同步 docs/opendesign-cdp.md；适配器在关键选择器缺失时硬失败 selector_drift，不做盲点坐标点击",
     );
     const bodyPreview = await client.evaluate(

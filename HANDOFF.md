@@ -9,6 +9,35 @@
 
 ---
 
+### Open Design GUI 适配器 · 阶段 P1 交接（0.6.9，2026-09-26）
+
+- **范围**：选择器注册表 + 页面内表达式层（`selectors.ts` / `dom.ts`），并把派活门禁从「未实现」升级为**布局守卫**。
+- **⚠️ 本轮最重要发现：`ELECTRON_RUN_AS_NODE` 会让 Open Design 完全起不来**（详见 [docs/opendesign-cdp.md](docs/opendesign-cdp.md) §2.1）：
+  `Open Design.exe` 是「内嵌 Node 的 Electron」外层启动器；调用方若带 `ELECTRON_RUN_AS_NODE=1`（**本机 DSH harness 会注入**），
+  启动器被置为 Node 模式，`--remote-debugging-port` / `--headless` 全被拒（`bad option:`，退出码 9），
+  表现为「无窗口、无新日志、无崩溃转储」——**我本轮一开始就误判成应用损坏，排查了很久**。
+  清除该变量后同一条命令立刻打印 `DevTools listening on ws://127.0.0.1:9889/…`。
+  **受管启动已自动净化环境**（`OPEN_DESIGN_ENV_DENYLIST` / `sanitizedSpawnEnv()`），命令行不变。
+  手工排查时记得自己 `Remove-Item Env:\ELECTRON_RUN_AS_NODE`。
+- **第二个真机形态**：启动器接受调试端口后打印 `DevTools listening` 并**自行以退出码 0 退出**，
+  真正的 Electron 主进程是它 spawn 的分离子进程。**退出码 0 绝不等于失败**——
+  已改为从 stderr 解析宣告端口并继续轮询（`devtoolsPortsFromOutput()`）。
+- **布局守卫（`run.ts`）**：关键选择器未采集 → `selector_drift` 并列出缺失键，**不进任何坐标点击**；
+  选择器采集后门禁自动解除，无需改代码。守卫**只收初始页面就存在的锚点**
+  （不含 `stopButton`、各菜单项、设计系统搜索框——收了会让适配器永远起不来）。
+- **P1 未完成的部分（阻塞原因如实记录）**：`selectors.ts` 的 `primary` 仍是**空占位**，真实 DOM 采集**没做成**。
+  原因：本机 DSH 会话**无外网**，而 Open Design 启动期会做版本/遥测/计费请求，请求不可达导致**主线程卡在启动期**——
+  进程与窗口都在、`DevTools listening` 已打印，但 `/json`、`/json/version` **连上后不响应**（curl 连接成功、0 字节、超时）。
+  这不是代码缺陷，是环境限制。**在能联网的普通终端里**按 docs §9 的 5 步即可完成采集。
+- **测试**：新增 23 用例（`opendesign-dom.test.ts`，含在 linkedom 真实 DOM 上执行全部表达式）；
+  全量 **1202 passed / 12 skipped**（106 文件）；`typecheck` / `eslint src test scripts` / `build` 全绿。
+  新增用例**不依赖本机安装 Open Design**。
+- **下一步（P1 收尾 → P2）**：在联网终端 `node scripts/probe-opendesign.mjs anchors --launch`，
+  把选择器写回 `selectors.ts` 的 `primary`（或用 `agent-profiles.json` 的 `gui.selectors` 覆盖，免发版），
+  确认探针「布局守卫」一节显示全部命中；随后进 P2 目录绑定（含原生对话框归属核对）。
+
+---
+
 ### Open Design GUI 适配器 · 阶段 P0 交接（0.6.8，2026-09-26）
 
 - **范围**：新增内置 agent `opendesign`（`driver=gui` / `adapter=opendesign-gui`）的**安装发现 + 实例接管 + CDP 探测**；

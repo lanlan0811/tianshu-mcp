@@ -8,6 +8,28 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.6.9] - 2026-09-26
+
+### Added
+
+- **Open Design adapter phase P1 (selector and in-page expression layer)**: new `src/agents/opendesign/selectors.ts` (a 16-key selector registry + the in-page `resolveFnSource` + the **layout guard key set**) and `dom.ts` (13 in-page expressions under the `od:` marker prefix: existence / text / single point / first point / exact match / candidate echo / count / input value / conversation text / trigger text / layout probe / menu dismiss / direction-item visibility). `run.ts`'s dispatch gate is upgraded from "not implemented" to a **layout guard**: when required selectors are uncaptured or page anchors miss, it hard-fails with `selector_drift` listing the missing keys and performs **no coordinate clicks**. See [Open Design GUI (CDP) adapter](docs/opendesign-cdp.en.md).
+
+### Fixed
+
+- **`ELECTRON_RUN_AS_NODE` made Open Design completely unable to start (real-machine root cause)**: `Open Design.exe` is an Electron launcher with embedded Node; when the caller carries `ELECTRON_RUN_AS_NODE=1` (the DSH harness injects it), the launcher is forced into Node mode and rejects `--remote-debugging-port` / `--headless` (`bad option:`, exit code 9), showing "no window, no new logs, no crash dump". Managed launches now **sanitise the environment** (new `OPEN_DESIGN_ENV_DENYLIST` + `sanitizedSpawnEnv()`, dropping `ELECTRON_RUN_AS_NODE` / `NODE_OPTIONS` / `ELECTRON_ENABLE_LOGGING` / `ELECTRON_EXTRA_LAUNCH_ARGS`) while leaving the command line unchanged. With it cleared the launcher immediately prints `DevTools listening on ws://127.0.0.1:9889/…`.
+- **The launcher's "detached child" shape was misjudged as failure**: after accepting the debug port the launcher prints `DevTools listening` and **exits with code 0 by itself**; the real Electron main process is the detached child it spawned. The first implementation treated exit code 0 as `needs_user(close_existing_instance)`, which on the real machine meant "it is clearly running yet it asks the user to close it". The announced port is now parsed from stderr (`devtoolsPortsFromOutput()`) and polling continues within the remaining budget; exit code 9 is treated as "cannot take over", and only other non-zero codes throw, with the stderr tail attached.
+- **`resolveFnSource` only accepted array specs**: `specArgs()` emits a JSON string, which was passed to `querySelectorAll` as a CSS candidate → **always zero matches** (silent failure). Both shapes are now supported, plus an `__odSpecError` sentinel so a malformed expression reports `count=-1` instead of masquerading as "the page has no such element".
+
+### Changed
+
+- Managed launches now collect the **stderr tail** (new `guiInstanceDiagSpawnOptions()`, bounded 4 KB buffer). The original `guiInstanceSpawnOptions()` (all-ignored stdio) is unchanged and still serves the other GUI agents.
+
+### Tests
+
+- **23** new cases (`test/unit/opendesign-dom.test.ts`): registry invariants (fallbacks must not be broad containers, the layout guard excludes runtime-only keys), `missingSelectorKeys` fail-closed behaviour and override hot-fix, the `specArgs` six-tuple contract, and execution of every in-page expression against a **real linkedom DOM** (existence/visibility, single-point uniqueness, exact match with no fuzzy fallback, candidate echo, malformed-candidate tolerance, layout probe `count=0`/`-1`, exact direction-item matching, Escape dismissal).
+- `opendesign-discovery.test.ts` grew to **28** cases: environment sanitisation (including "does not modify the caller's `process.env`") and debug-port announcement parsing (IPv4/localhost/IPv6, dedupe with order preserved, noise not misparsed).
+- Full suite: **1202 passed / 12 skipped** (106 files); `typecheck`, `eslint src test scripts` and `build` all green.
+
 ## [0.6.8] - 2026-09-26
 
 ### Added

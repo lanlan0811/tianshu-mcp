@@ -7,7 +7,13 @@
  */
 import { TraeworkCdpClient } from "../traework/cdp/client.js";
 import type { KimicodePageClient, KimicodePageRole } from "../kimicode/cdp.js";
-import type { SelectorOverrides } from "../kimicode/dom.js";
+import type { SelectorOverrides } from "./dom.js";
+import {
+  OPEN_DESIGN_LAYOUT_GUARD_KEYS,
+  OPEN_DESIGN_SELECTORS,
+  type OpenDesignSelectorKey,
+} from "./selectors.js";
+import { layoutProbeExpression, type LayoutProbeEntry } from "./dom.js";
 
 export interface OpenDesignTargetLike {
   type?: string;
@@ -63,40 +69,41 @@ export interface OpenDesignDocumentProbe {
   url: string;
   title: string;
   /** 关键锚点的存在性与文本（选择器漂移的诊断依据） */
-  anchors: Record<string, { count: number; text?: string }>;
+  anchors: LayoutProbeEntry[];
+  /** 页面可见文本长度（判「页面还没渲染完」用的粗信号） */
+  bodyTextLength: number;
 }
 
 /**
- * 在**主窗口**里执行一次只读盘点：把 anchors 里每个 CSS 选择器数一遍并取首个文本。
- * 脚本是纯读取，不点任何东西——probe 脚本与后续 selector_drift 诊断共用。
+ * 在**主窗口**里执行一次只读布局盘点：按注册表里每个语义键解析元素并计数。
+ * 纯读取、不点任何东西——probe 脚本、`run.ts` 的 selector_drift 判据共用同一份实现
+ * （两处各写一套必然漂移）。
+ *
+ * `overrides` 用于真机采集：把候选 CSS 按语义键传进来即可读出命中情况。
  */
-export async function probeDocumentAnchors(
+export async function probeLayout(
   client: KimicodePageClient,
-  selectors: Record<string, string>,
+  overrides: SelectorOverrides = {},
 ): Promise<OpenDesignDocumentProbe> {
-  const payload = JSON.stringify(selectors);
-  const expression = `(() => {
-  const spec = ${payload};
-  const out = {};
-  for (const key of Object.keys(spec)) {
-    let count = 0;
-    let text;
-    try {
-      const nodes = document.querySelectorAll(spec[key]);
-      count = nodes.length;
-      if (count > 0) {
-        const raw = (nodes[0].innerText ?? nodes[0].textContent ?? "").trim();
-        text = raw.length > 200 ? raw.slice(0, 200) : raw;
-      }
-    } catch (e) {
-      count = -1;
-      text = "selector-error: " + String(e && e.message ? e.message : e);
-    }
-    out[key] = text === undefined ? { count } : { count, text };
-  }
-  return { url: location.href, title: document.title, anchors: out };
-})()`;
-  return client.evaluate<OpenDesignDocumentProbe>(expression);
+  return client.evaluate<OpenDesignDocumentProbe>(
+    layoutProbeExpression(OPEN_DESIGN_LAYOUT_GUARD_KEYS, overrides),
+  );
+}
+
+/**
+ * 采集模式：对**全部**语义键（含菜单/按钮这类运行期才出现的键）做布局盘点，
+ * 供 `scripts/probe-opendesign.mjs` 输出候选命中清单。缺值的键不会进表达式。
+ */
+export async function probeAllAnchors(
+  client: KimicodePageClient,
+  overrides: SelectorOverrides = {},
+): Promise<OpenDesignDocumentProbe> {
+  const keys = Object.keys(OPEN_DESIGN_SELECTORS) as OpenDesignSelectorKey[];
+  const present = keys.filter((key) => {
+    const spec = OPEN_DESIGN_SELECTORS[key];
+    return Boolean(overrides[key]?.trim() || spec.primary.trim() || (spec.fallbacks ?? []).length);
+  });
+  return client.evaluate<OpenDesignDocumentProbe>(layoutProbeExpression(present, overrides));
 }
 
 /** 选择器覆盖的浅合并（profile.gui.selectors 覆盖内置默认） */

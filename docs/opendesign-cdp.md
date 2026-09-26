@@ -28,6 +28,38 @@
 
 这是本适配器与 ZCode / Kimi Code / Qoder 最关键的差异，直接决定实例策略。
 
+### 2.1 ⚠️ `ELECTRON_RUN_AS_NODE`：启动失败的真正根因（真机实测）
+
+`Open Design.exe` 是「**内嵌 Node 的 Electron**」外层启动器。若启动它的进程带着
+`ELECTRON_RUN_AS_NODE=1`（本机 DSH harness 就会注入该变量），启动器会被强行置为 **Node 模式**：
+
+```
+D:\Open Design\Open Design.exe: bad option: --remote-debugging-port=9889   （退出码 9）
+D:\Open Design\Open Design.exe: bad option: --headless                     （退出码 9）
+```
+
+表现为「无窗口、无新日志、无崩溃转储」——**极易误判成应用本身损坏**。清除该变量后同一命令立刻生效：
+
+```
+DevTools listening on ws://127.0.0.1:9889/devtools/browser/63dd8142-…
+```
+
+`NODE_OPTIONS` 同样必须清除：Node 明确禁止 `--remote-debugging-port` 出现在其中，
+残留时会报 `--remote-debugging-port= is not allowed in NODE_OPTIONS`。
+
+**因此受管启动一律净化环境**（`OPEN_DESIGN_ENV_DENYLIST` + `sanitizedSpawnEnv()`），
+且**不改命令行**——命令行仍是 profile 的 `exeArgs`（`--remote-debugging-port=<port>`），
+即官方启动器本来就支持的形态。
+
+### 2.2 启动器是「分离子进程形态」
+
+实测：启动器接受调试端口后会打印 `DevTools listening on …`，**然后自己以退出码 0 退出**，
+真正的 Electron 主进程是它 spawn 的分离子进程。因此：
+
+- **退出码 0 绝不等于失败**：必须从 stderr 解析宣告端口（`devtoolsPortsFromOutput()`）并继续轮询；
+- 首版直接把退出码 0 判成「请用户关闭旧实例」，真机上表现为「明明起来了却说要关旧实例」——已修。
+- 退出码 9 归类为「无法接管 → `needs_user`」，其他非零才是真实启动失败（带 stderr 尾部抛错）。
+
 | 事实 | 依据（`resources/app/prebundled/packaged-main.mjs`） |
 |---|---|
 | 有**进程级单实例锁**；第二实例只把 deeplink 转交给首实例然后退出 | `claimPackagedSingleInstanceLock`（:34250-34259）、`createPackagedSecondInstanceHandoff`（:34260-34283） |
@@ -87,9 +119,30 @@ node scripts/probe-opendesign.mjs all                  # install + process + cdp
 `anchors` 会把 `ANCHOR_CANDIDATES` 里每个候选选择器的命中数与首个文本打印出来，并把页面可见文本前
 1200 字符贴出，供人工收敛为稳定选择器写回 `src/agents/opendesign/selectors.ts`。
 
-> **当前状态**：`selectors.ts` 仍为空占位，选择器采集（计划 P1）尚未完成。
-> 因此 `run.ts` 在关键选择器缺失时**硬失败 `not_implemented`**——派一个还没接上界面的适配器却报成功，
-> 会污染验收与返修记账，比一条清晰的错误危险得多。
+> **当前状态（P1）**：**选择器/DOM 层已实现**，`selectors.ts` 的 `primary` 仍为**空占位**——
+> 即「代码就绪、取值待采集」。因此 `run.ts` 的**布局守卫**会在任何点击之前硬失败 `selector_drift`
+> 并列出缺失键；选择器一旦采集写回，该门禁自动解除，无需改代码。
+>
+> **选择器采集被环境限制阻塞（2026-09-26 实测）**：本机 DSH harness 会话**无外网**，
+> Open Design 启动期会先做版本/遥测/计费请求（`releases.open-design.ai`、`amr-api.open-design.ai` 等），
+> 这些请求在本会话下不可达，导致**主线程在启动期被阻塞**：进程与窗口都在、`DevTools listening` 已打印、
+> 但 `/json` 与 `/json/version` **连上后不响应**（curl 连接成功、0 字节、超时）。
+> 因此本轮无法完成真实 DOM 采集。**在能联网的普通终端里**按 §9 执行采集即可。
+
+### 已实现的选择器/DOM 层（P1 交付）
+
+| 文件 | 内容 |
+|---|---|
+| `selectors.ts` | 16 个语义键的注册表（`primary` + 语义化 `fallbacks`）、`cssCandidates`、`specArgs`、`selectorSpec`、页面内 `resolveFnSource`、**布局守卫键集** `OPEN_DESIGN_LAYOUT_GUARD_KEYS` 与 `missingSelectorKeys()` |
+| `dom.ts` | 页面内表达式：`exists` / `text` / `singlePoint` / `firstPoint` / `exactMatch` / `listLabels` / `count` / `inputValue` / `conversationText` / `triggerText` / `layoutProbe` / `dismiss` / `directionItemVisible`，标记前缀 `od:` |
+
+设计约束（与 `kimicode/dom.ts` 同构）：
+- 点击类表达式**只返回坐标**，鼠标事件由 `cdp.ts` 统一发出；不产生副作用；
+- 布局守卫**只收「初始页面就存在」的锚点**（标题/输入区/各触发器/发送按钮/对话区），
+  刻意不含 `stopButton`、各菜单项、设计系统搜索框等运行期才出现的键——否则适配器永远无法启动；
+- 回退候选**不得是宽泛容器型**（`button`/`div[class]`/`li`…）：多命中会让坐标点击失效，
+  且错误信息只会说「选择器未挂载」，极难定位（已固化成断言）。
+- 候选匹配**精确全等**，未命中报错并回显可见候选；**绝不退化成模糊匹配**。
 
 ### 已知的界面锚点（截图证据，待真机 DOM 校对）
 
@@ -156,6 +209,9 @@ node scripts/probe-opendesign.mjs all                  # install + process + cdp
 
 ```sh
 npm run build
+# ⚠️ 先清掉会让启动器退化成 Node 的变量（见 §2.1）；受管启动已自动净化，手工排查时需自行清除
+unset ELECTRON_RUN_AS_NODE; unset NODE_OPTIONS      # Windows PowerShell: Remove-Item Env:\ELECTRON_RUN_AS_NODE
+
 node scripts/probe-opendesign.mjs install      # 安装/版本/命名空间/数据目录
 node scripts/probe-opendesign.mjs process      # 进程与根进程判定
 node scripts/probe-opendesign.mjs appconfig    # app-config.json 旁证
@@ -163,6 +219,15 @@ node scripts/probe-opendesign.mjs cdp          # 端口与 page target（需实�
 node scripts/probe-opendesign.mjs anchors      # 界面锚点盘点（需实例带调试端口）
 ```
 
-**要跑 `cdp` / `anchors` 必须先让 Open Design 带调试端口启动**：先关闭现有窗口，再
-`node scripts/probe-opendesign.mjs anchors --launch`（会新开一个窗口）。
-若现有实例在运行且未开端口，探针与适配器都会如实报告 `needs_user(close_existing_instance)`。
+**采集选择器的完整步骤**（需要外网可达，否则主线程会卡在启动期请求）：
+
+1. 关闭所有 Open Design 窗口（未开调试端口的实例无法接管）；
+2. `node scripts/probe-opendesign.mjs anchors --launch`：启动受管实例 → 打印
+   `/json/version`、page target 拓扑、每个语义键的候选命中数与文本、页面可见文本前 1200 字符；
+3. 把收敛出的稳定 CSS 写回 `src/agents/opendesign/selectors.ts` 的 `primary`
+   （或在 `agent-profiles.json` 的 `gui.selectors` 里按语义键覆盖，不必发版）；
+4. 重新 `anchors`，确认「布局守卫」一节显示**全部命中**；
+5. 把证据贴进本文 §4 的锚点表。
+
+`--no-focus`：连接后不置前（纯 DOM 读取用）。点击类诊断**必须置前**——
+后台页面会被 Chromium 节流，合成事件不可靠。

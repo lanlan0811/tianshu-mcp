@@ -32,6 +32,43 @@ unreadable") instead of a loud error.
 
 This is where Open Design differs most from ZCode / Kimi Code / Qoder, and it decides the instance strategy.
 
+### 2.1 ⚠️ `ELECTRON_RUN_AS_NODE`: the real root cause of failed launches (measured)
+
+`Open Design.exe` is an **Electron launcher with an embedded Node**. If the process that starts it carries
+`ELECTRON_RUN_AS_NODE=1` (this machine's DSH harness injects exactly that), the launcher is forced into
+**Node mode**:
+
+```
+D:\Open Design\Open Design.exe: bad option: --remote-debugging-port=9889   (exit code 9)
+D:\Open Design\Open Design.exe: bad option: --headless                     (exit code 9)
+```
+
+The symptom is "no window, no new log lines, no crash dump" — **very easy to misdiagnose as a broken
+installation**. Clearing the variable makes the same command work immediately:
+
+```
+DevTools listening on ws://127.0.0.1:9889/devtools/browser/63dd8142-…
+```
+
+`NODE_OPTIONS` must be cleared too: Node explicitly forbids `--remote-debugging-port` there, and a leftover
+value fails with `--remote-debugging-port= is not allowed in NODE_OPTIONS`.
+
+**Managed launches therefore sanitise the environment** (`OPEN_DESIGN_ENV_DENYLIST` +
+`sanitizedSpawnEnv()`) and **do not change the command line** — it stays the profile's `exeArgs`
+(`--remote-debugging-port=<port>`), which is the form the official launcher already supports.
+
+### 2.2 The launcher is a "detached child" shape
+
+Measured: after accepting the debug port the launcher prints `DevTools listening on …` and then **exits with
+code 0**; the real Electron main process is the detached child it spawned. Therefore:
+
+- **Exit code 0 does not mean failure**: the announced port must be parsed from stderr
+  (`devtoolsPortsFromOutput()`) and polling must continue;
+- The first implementation treated exit code 0 as "ask the user to close the old instance", which on the real
+  machine manifested as "it is clearly running yet it keeps asking me to close it" — fixed.
+- Exit code 9 is classified as "cannot take over → `needs_user`"; any other non-zero is a genuine launch
+  failure (thrown with the stderr tail).
+
 | Fact | Source (`resources/app/prebundled/packaged-main.mjs`) |
 |---|---|
 | A **process-level single-instance lock** exists; a second instance only hands its deeplink to the first and exits | `claimPackagedSingleInstanceLock` (:34250-34259), `createPackagedSecondInstanceHandoff` (:34260-34283) |
@@ -100,10 +137,36 @@ first text for every candidate selector in `ANCHOR_CANDIDATES`, plus the first 1
 text, so a human can converge on stable selectors and write them back to
 `src/agents/opendesign/selectors.ts`.
 
-> **Current state**: `selectors.ts` still holds empty placeholders; selector capture (plan phase P1) is not
-> finished. `run.ts` therefore **hard-fails with `not_implemented`** when required selectors are missing —
-> reporting success for an adapter that is not wired to the UI yet would corrupt acceptance and repair
-> accounting, and is far more dangerous than a clear error.
+> **Current state (P1)**: the **selector/DOM layer is implemented**, while `selectors.ts`'s `primary` values
+> are still **empty placeholders** — the code is ready, the values await capture. `run.ts`'s **layout guard**
+> therefore hard-fails with `selector_drift` before any click and lists the missing keys; once selectors are
+> captured and written back the gate clears with no code change.
+>
+> **Selector capture is blocked by an environment limit (measured 2026-09-26)**: this DSH harness session has
+> **no external network**, and Open Design performs version/telemetry/billing requests at startup
+> (`releases.open-design.ai`, `amr-api.open-design.ai`, …). With those unreachable the **main thread is wedged
+> during startup**: processes and window exist, `DevTools listening` has been printed, yet `/json` and
+> `/json/version` **connect and then never respond** (curl connects, receives 0 bytes, times out).
+> Real DOM capture therefore could not be completed in this round. Run §9 from a normal, network-capable
+> terminal to capture it.
+
+### Implemented selector/DOM layer (P1 deliverables)
+
+| File | Contents |
+|---|---|
+| `selectors.ts` | 16 semantic keys (`primary` + semantic `fallbacks`), `cssCandidates`, `specArgs`, `selectorSpec`, the in-page `resolveFnSource`, the **layout guard key set** `OPEN_DESIGN_LAYOUT_GUARD_KEYS` and `missingSelectorKeys()` |
+| `dom.ts` | In-page expressions: `exists` / `text` / `singlePoint` / `firstPoint` / `exactMatch` / `listLabels` / `count` / `inputValue` / `conversationText` / `triggerText` / `layoutProbe` / `dismiss` / `directionItemVisible`, marker prefix `od:` |
+
+Design constraints (isomorphic to `kimicode/dom.ts`):
+- Click expressions **return coordinates only**; `cdp.ts` dispatches the mouse events. No side effects.
+- The layout guard **only covers anchors that exist in the initial page** (title / composer / triggers /
+  send button / conversation). It deliberately excludes `stopButton`, menu items and the design-system search
+  box, which only appear at runtime — including them would make the adapter unable to ever start.
+- Fallbacks **must not be broad containers** (`button`/`div[class]`/`li`…): multiple matches break
+  coordinate clicking, and the error only says "selector not mounted", which is very hard to diagnose
+  (now pinned by assertions).
+- Candidate matching is **exact equality**; a miss errors and echoes the visible candidates, and
+  **never degrades into fuzzy matching**.
 
 ### Known UI anchors (screenshot evidence, pending DOM confirmation)
 
@@ -174,6 +237,10 @@ matching — picking the wrong model is worse than an error.
 
 ```sh
 npm run build
+# ⚠️ Clear the variables that force the launcher into Node mode first (see §2.1);
+# managed launches sanitise automatically, manual diagnosis must do it explicitly.
+unset ELECTRON_RUN_AS_NODE; unset NODE_OPTIONS      # Windows PowerShell: Remove-Item Env:\ELECTRON_RUN_AS_NODE
+
 node scripts/probe-opendesign.mjs install      # install / version / namespace / data directories
 node scripts/probe-opendesign.mjs process      # processes and root-process determination
 node scripts/probe-opendesign.mjs appconfig    # app-config.json corroboration
@@ -181,6 +248,17 @@ node scripts/probe-opendesign.mjs cdp          # ports and page targets (needs a
 node scripts/probe-opendesign.mjs anchors      # UI anchor survey (needs an instance with a debug port)
 ```
 
-**`cdp` / `anchors` require Open Design to be running with a debug port**: close any existing window first, then
-run `node scripts/probe-opendesign.mjs anchors --launch` (this opens a new window). If an existing instance is
-running without a port, both the probe and the adapter report `needs_user(close_existing_instance)` truthfully.
+**Full selector-capture procedure** (requires reachable external network, otherwise the main thread wedges on
+startup requests):
+
+1. Close every Open Design window (an instance without a debug port cannot be taken over);
+2. `node scripts/probe-opendesign.mjs anchors --launch`: starts a managed instance and prints
+   `/json/version`, the page-target topology, the match count and text for every semantic key, and the first
+   1200 characters of visible page text;
+3. Write the converged stable CSS back into `primary` in `src/agents/opendesign/selectors.ts`
+   (or override per semantic key in `agent-profiles.json`'s `gui.selectors` — no release needed);
+4. Re-run `anchors` and confirm the "layout guard" section reports **all anchors matched**;
+5. Paste the evidence into the anchor table in §4.
+
+`--no-focus` connects without bringing the window to the front (for pure DOM reads). Click diagnostics
+**must** focus it — background pages are throttled by Chromium and synthetic events become unreliable.

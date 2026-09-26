@@ -24,13 +24,8 @@ import {
   type OpenDesignReady,
 } from "./instance.js";
 import { readInstallInfo, openDesignNamespaceRoot, openDesignAppConfigPath } from "./discovery.js";
-import {
-  createOpenDesignPageClient,
-  mergeSelectors,
-  probeDocumentAnchors,
-  type OpenDesignDocumentProbe,
-} from "./cdp.js";
-import { missingRequiredSelectors, OPEN_DESIGN_SELECTORS } from "./selectors.js";
+import { createOpenDesignPageClient, probeLayout, type OpenDesignDocumentProbe } from "./cdp.js";
+import { missingSelectorKeys, OPEN_DESIGN_LAYOUT_GUARD_KEYS } from "./selectors.js";
 import { normalizeOpenDesignDirection, directionLabel } from "./model.js";
 import type { KimicodePageClient } from "../kimicode/cdp.js";
 
@@ -211,16 +206,12 @@ export async function runOpenDesignTask(args: RunOpenDesignArgs): Promise<AgentR
     const gate = versionGateError(od.supportedVersions, info?.appVersion);
     if (gate) return hardFail(gate, "version_mismatch");
 
-    // ---- 只读盘点页面（P1 的选择器采集入口；不点任何东西） ----
+    // ---- 只读盘点页面：布局守卫（不点任何东西） ----
     client = deps.createPageClient(ready.port, gui.cdpSendTimeoutMs);
     await client.connect();
-    const selectors = mergeSelectors(
-      OPEN_DESIGN_SELECTORS as Record<string, string>,
-      gui.selectors,
-    );
     let document: OpenDesignDocumentProbe | undefined;
     try {
-      document = await probeDocumentAnchors(client, selectors);
+      document = await probeLayout(client, gui.selectors);
     } catch (error) {
       logger.warn(`[opendesign] 页面盘点失败：${String(error)}`);
     }
@@ -234,17 +225,40 @@ export async function runOpenDesignTask(args: RunOpenDesignArgs): Promise<AgentR
         ` 模型=${ctx.model ?? "(沿用当前)"} 设计系统=${ctx.designSystem ?? "(不指定)"}`,
     );
 
-    // ---- 门禁：P1 未完成前拒绝「假派活」 ----
-    const missing = missingRequiredSelectors(selectors);
+    // ---- 门禁 1：选择器是否已采集（缺键绝不点坐标） ----
+    const missing = missingSelectorKeys(gui.selectors);
     if (missing.length) {
       return hardFail(
-        `Open Design 适配器尚未完成界面驱动（缺少关键选择器：${missing.join(", ")}）。` +
-          `请在计划文档 .dsh/plans/opendesign-gui-adapter-plan.md 的 P1 阶段完成选择器采集后重试。` +
+        `Open Design 适配器尚未完成界面驱动（缺少关键选择器：${missing.join(", ")}，共 ${missing.length} 个）。` +
+          `请先关闭 Open Design 并执行 \`npm run probe:opendesign -- anchors --launch\` 采集锚点，` +
+          `再把稳定选择器写入 src/agents/opendesign/selectors.ts（或在 profile.gui.selectors 里按语义键覆盖）。` +
+          `判据见 .dsh/plans/opendesign-gui-adapter-plan.md 的 P1 阶段。` +
           `本轮只完成了实例接管与页面盘点（${document ? `页面标题「${document.title}」` : "页面盘点失败"}）。`,
-        "not_implemented",
+        "selector_drift",
       );
     }
-    return hardFail("Open Design 界面驱动尚未实现", "not_implemented");
+
+    // ---- 门禁 2：选择器有值但页面锚点全缺 = UI 漂移，同样不进点击 ----
+    if (document) {
+      const dead = document.anchors.filter((a) => a.count <= 0).map((a) => a.key);
+      if (dead.length) {
+        logger.warn(`[opendesign] 布局守卫未命中：${dead.join(", ")}`);
+        return hardFail(
+          `Open Design 页面结构已漂移（布局守卫未命中：${dead.join(", ")}）；` +
+            `已跳过全部点击。请用 \`npm run probe:opendesign -- anchors\` 重新采集选择器。` +
+            `当前页面：${document.title} ${document.url}（可见文本 ${document.bodyTextLength} 字）`,
+          "selector_drift",
+        );
+      }
+      const guard = OPEN_DESIGN_LAYOUT_GUARD_KEYS.length;
+      logger.info(`[opendesign] 布局守卫 ${guard - dead.length}/${guard} 通过`);
+    }
+
+    // 后续阶段（P2~P6）在此接入：目录绑定 → 模型 → 设计系统 → 设计方向 → 输入发送 → 运行检测。
+    return hardFail(
+      "Open Design 界面驱动尚未实现（P2 起：目录绑定 / 模型 / 设计系统 / 方向 / 输入发送 / 运行检测）",
+      "not_implemented",
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger.error(`[opendesign] 执行失败：${message}`);

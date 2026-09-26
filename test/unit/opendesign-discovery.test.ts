@@ -13,11 +13,15 @@ import {
   type OpenDesignInstallInfo,
 } from "../../src/agents/opendesign/discovery.js";
 import {
+  classifyLauncherExit,
+  devtoolsPortsFromOutput,
   listOpenDesignProcessesAsync,
+  OPEN_DESIGN_ENV_DENYLIST,
   parseProcessRows,
   probeOpenDesignPort,
   remoteDebugPort,
   rootOpenDesignProcesses,
+  sanitizedSpawnEnv,
   versionGateError,
   type CdpJsonFetcher,
 } from "../../src/agents/opendesign/instance.js";
@@ -316,6 +320,74 @@ describe("Open Design 版本门禁", () => {
     expect(versionGateError({}, "1.2.3", "win32")).toBeNull();
     expect(versionGateError(supported, undefined, "win32")).toBeNull();
     expect(versionGateError(supported, "0.24.1", "darwin")).toBeNull();
+  });
+});
+
+describe("Open Design 启动器退出码分类", () => {
+  it("0 = 单实例锁转交；9 = 实测的「应用自身启动失败」，两者都按「无法接管」处理", () => {
+    expect(classifyLauncherExit(0)).toBe("handoff");
+    expect(classifyLauncherExit(9)).toBe("needs-close");
+    // 回归：首版只把 0 当转交，9 落到「硬失败抛错」分支，真机上表现为「启动失败」而非「请关闭旧实例」
+    expect(classifyLauncherExit(9)).not.toBe("failed");
+  });
+
+  it("其他非零退出即真实启动失败（要带 stderr 尾部抛错）", () => {
+    expect(classifyLauncherExit(1)).toBe("failed");
+    expect(classifyLauncherExit(127)).toBe("failed");
+    expect(classifyLauncherExit(null)).toBe("failed");
+  });
+});
+
+describe("Open Design 启动环境净化与端口宣告", () => {
+  it("净化掉会让启动器退化成 Node 模式的变量（真机关键修复）", () => {
+    const env = sanitizedSpawnEnv({
+      PATH: "C:\\Windows",
+      ELECTRON_RUN_AS_NODE: "1",
+      NODE_OPTIONS: "--remote-debugging-port=9889",
+      ELECTRON_ENABLE_LOGGING: "1",
+      KEEP_ME: "yes",
+    });
+    // 回归：带 ELECTRON_RUN_AS_NODE=1 时启动器报
+    // `bad option: --remote-debugging-port=9889`（退出码 9），应用完全起不来
+    expect(env.ELECTRON_RUN_AS_NODE).toBeUndefined();
+    expect(env.NODE_OPTIONS).toBeUndefined();
+    expect(env.ELECTRON_ENABLE_LOGGING).toBeUndefined();
+    expect(env.KEEP_ME).toBe("yes");
+    expect(env.PATH).toBe("C:\\Windows");
+    for (const key of OPEN_DESIGN_ENV_DENYLIST) expect(env[key]).toBeUndefined();
+  });
+
+  it("净化不修改调用方 process.env（只产出副本）", () => {
+    const before = process.env.ELECTRON_RUN_AS_NODE;
+    sanitizedSpawnEnv();
+    expect(process.env.ELECTRON_RUN_AS_NODE).toBe(before);
+  });
+
+  it("从启动器输出解析宣告的调试端口（0.0.0.0/localhost/IPv6 都要认）", () => {
+    expect(
+      devtoolsPortsFromOutput(
+        "DevTools listening on ws://127.0.0.1:9889/devtools/browser/63dd8142-fb18-4081-972c-0c8ae8f0c902\n",
+      ),
+    ).toEqual([9889]);
+    expect(
+      devtoolsPortsFromOutput("DevTools listening on ws://localhost:9222/devtools/browser/x"),
+    ).toEqual([9222]);
+    expect(
+      devtoolsPortsFromOutput("DevTools listening on ws://[::1]:9333/devtools/browser/x"),
+    ).toEqual([9333]);
+    // 多行/重复只保留唯一端口，并保持出现顺序
+    expect(
+      devtoolsPortsFromOutput(
+        "noise\nDevTools listening on ws://127.0.0.1:7000/a\nDevTools listening on ws://127.0.0.1:7001/b\nDevTools listening on ws://127.0.0.1:7000/c\n",
+      ),
+    ).toEqual([7000, 7001]);
+  });
+
+  it("无宣告时返回空数组（不能把噪音解析成端口）", () => {
+    expect(devtoolsPortsFromOutput("")).toEqual([]);
+    expect(devtoolsPortsFromOutput("bad option: --headless")).toEqual([]);
+    // 非 DevTools 行的 ws:// 端口不算
+    expect(devtoolsPortsFromOutput("open ws://127.0.0.1:1234")).toEqual([]);
   });
 });
 
