@@ -8,31 +8,9 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
-## [0.6.12] - 2026-09-26
+## [0.7.0] - 2026-09-26
 
-### Documentation
-
-- **ARCHITECTURE (both languages) now documents Open Design as the sixth GUI driver** (documentation-only release, no runtime changes):
-  - §8.2's heading changes from "five GUI drivers" to "six", and a new Open Design execution order covers the twelve steps (environment sanitisation → stale-modal cleanup → version gate → directory binding → model/design-system/design-direction → input and send → three-signal polling → visual acceptance → repair and re-acceptance), spelling out the two real-machine traps (`ELECTRON_RUN_AS_NODE` and the launcher's "detached child" shape) and why it is the **only driver with an artifact signal**.
-  - §8.3 changes from "five drivers" to "six"; §8.4 gains an Open Design `endReason` table (**truthfully noting that only six values are produced today**, with the rest following the wiring) and the `close_existing_instance` row in `needsUserKind` now includes Open Design with a note that it currently emits only that kind.
-  - §8.5's registry bases go from six to seven (adding `opendesign` and `opendesign-gui`).
-
-> This is a **documentation-only release**; `src/` is unchanged. `typecheck` / `eslint src test scripts` / `build` / `check:stdio` (8/8) are all green.
-
-## [0.6.11] - 2026-09-26
-
-### Documentation
-
-- **The Open Design adapter is now documented in every existing human-facing document** (documentation-only release, no runtime changes):
-  - [docs/adapter-matrix.md](docs/adapter-matrix.md) / [.en.md](docs/adapter-matrix.en.md): the summary matrix gains an Open Design row (status stated truthfully as "in development: decision layer delivered, UI wiring awaits selector capture", covering discovery order, login and data directory, the two real-machine traps `ELECTRON_RUN_AS_NODE` and the "detached child" launcher shape, and why the port base is 9889), and the E1 event-reporting table gains a row; the English table header is also corrected from 5 columns back to the 7 columns the data rows already used (**pre-existing defect**: English rows were always 7 cells while the header was stale).
-  - [docs/agent-profiles.md](docs/agent-profiles.md) / [.en.md](docs/agent-profiles.en.md): the field reference gains `adapter="opendesign-gui"` and the `opendesign` config block; a new "Open Design (in development)" sample profile documents the essentials (why `userDataDir` is unset, the version-gate criterion, and how `designDirection` differs semantically from `designSystem`).
-  - [skills/tianshu-mcp/SKILL.md](skills/tianshu-mcp/SKILL.md): `description`/`triggers` now include opendesign; the parameter compatibility matrix gains a column (`designDirection` required, the meaning of `designSystem`, `mode` unsupported); §5's `close_existing_instance` and the `continue_task` support surface include opendesign; the `projectPath` cell is corrected (**project-less dispatch currently supports ZCode only**, which the cell previously left unstated).
-  - [skills/tianshu-mcp/usage-examples.md](skills/tianshu-mcp/usage-examples.md): a new §2.8 opendesign example explaining that "dispatching currently hard-fails with `selector_drift`, which is fail-closed protection rather than a defect".
-  - Bilingual README: the overview sentence's agent list mentions "the Open Design adapter is in development".
-
-> This is a **documentation-only release**; `src/` is unchanged. `typecheck` / `eslint src test scripts` / `build` / `check:stdio` (8/8) are all green.
-
-## [0.6.10] - 2026-09-26
+> **Version numbering correction**: per `AGENTS.md` (`加满0.0.10下个版本将+0.1.0` — the 10th patch increment rolls over), the increment after `0.6.9` must be `0.7.0`. Three intermediate numbers (`0.6.10`/`0.6.11`/`0.6.12`) were pushed to `master` during development but were never tagged or published to npm, so they are consolidated into this single `0.7.0` entry.
 
 ### Added
 
@@ -47,11 +25,31 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 - **`gui.selectors` overrides are now authoritative** (`cssCandidates`): the original implementation **merged** an override with the built-in fallbacks, which contain broad semantic candidates such as `[aria-haspopup]`. Multiple page elements then matched, so the "unique match" criterion necessarily failed and a hot-fix selector **switched the feature off entirely** (symptom: `no-panel: trigger cannot be uniquely located`). An override is now the only candidate used.
 - `toNativeDialogPath` handling of **relative and empty paths**: `path.win32.normalize("")` returns `"."`, and the original implementation fed `.` into the native dialog as a valid path (symptom: "confirming appears to do nothing"). Relative paths are now resolved against the current working directory, and empty/blank paths return an empty string so the caller fails closed.
+- **Red CI: the Open Design discovery module's platform injection was not end-to-end** (`discoverOpenDesign` built candidate paths with the **host** `path.join` even though `platform` is an injected parameter). It happened to agree on Windows, so everything was green locally, but **every ubuntu / macos CI leg failed** (red continuously since `0.6.8`). Fix: candidate paths are now always built for the **target platform** (`const api = platform === "win32" ? path.win32 : path.posix`), plus a **host-independent** assertion (a win32 target must produce a path containing backslashes and no forward slashes).
+- Several host-platform assumptions in the tests themselves were corrected too (these also failed on non-Windows CI legs): fixtures now use `path.win32.join` to match production; the `normalizeWorkspacePath` case assertion branches by platform (the implementation only lower-cases on win32); and on non-Windows the tests assert that `listOwnedDialogs` / `closeStrayDialogs` **never invoke `powershell.exe`** (CI has no PowerShell).
 
 ### Tests
 
-- **65** new cases: `opendesign-workspace.test.ts` ×14 (path comparison, skip-when-bound with zero clicks, the success path and **baseline sampling order**, the four failure paths of missing trigger / missing menu item / native failure / read-back mismatch, and empty read-back), `opendesign-liveness.test.ts` ×20, `opendesign-dialog-fixplan.test.ts` ×19, `opendesign-visual.test.ts` ×12 (static entry discovery with filename priority, depth limit and noise skipping, project-structure detection, and the truthful "cannot derive" path); `opendesign-dom.test.ts` gained an override-semantics regression.
-- Full suite: **1268 passed / 12 skipped** (110 files); `typecheck`, `eslint src test scripts` and `build` all green.
+- **67** new cases: `opendesign-workspace.test.ts` ×14 (path comparison, skip-when-bound with zero clicks, the success path and **baseline sampling order**, the four failure paths of missing trigger / missing menu item / native failure / read-back mismatch, and empty read-back), `opendesign-liveness.test.ts` ×20, `opendesign-dialog-fixplan.test.ts` ×19, `opendesign-visual.test.ts` ×12 (static entry discovery with filename priority, depth limit and noise skipping, project-structure detection, and the truthful "cannot derive" path); `opendesign-dom.test.ts` gained an override-semantics regression; `opendesign-discovery.test.ts` gained two regressions for "candidate paths use the target platform's separator" and "the posix branch of a non-Windows target".
+- Full suite: **1270 passed / 12 skipped** (110 files); `typecheck`, `eslint src test scripts` and `build` all green.
+
+### Documentation
+
+- **ARCHITECTURE (both languages) now documents Open Design as the sixth GUI driver**:
+  - §8.2's heading changes from "five GUI drivers" to "six", and a new Open Design execution order covers the twelve steps (environment sanitisation → stale-modal cleanup → version gate → directory binding → model/design-system/design-direction → input and send → three-signal polling → visual acceptance → repair and re-acceptance), spelling out the two real-machine traps (`ELECTRON_RUN_AS_NODE` and the launcher's "detached child" shape) and why it is the **only driver with an artifact signal**.
+  - §8.3 changes from "five drivers" to "six"; §8.4 gains an Open Design `endReason` table (**truthfully noting that only six values are produced today**, with the rest following the wiring) and the `close_existing_instance` row in `needsUserKind` now includes Open Design with a note that it currently emits only that kind.
+  - §8.5's registry bases go from six to seven (adding `opendesign` and `opendesign-gui`).
+
+> The two items above are documentation changes; this same release also contains the cross-platform fixes in the Fixed and Tests sections below.
+
+- **The Open Design adapter is now documented in every existing human-facing document**:
+  - [docs/adapter-matrix.md](docs/adapter-matrix.md) / [.en.md](docs/adapter-matrix.en.md): the summary matrix gains an Open Design row (status stated truthfully as "in development: decision layer delivered, UI wiring awaits selector capture", covering discovery order, login and data directory, the two real-machine traps `ELECTRON_RUN_AS_NODE` and the "detached child" launcher shape, and why the port base is 9889), and the E1 event-reporting table gains a row; the English table header is also corrected from 5 columns back to the 7 columns the data rows already used (**pre-existing defect**: English rows were always 7 cells while the header was stale).
+  - [docs/agent-profiles.md](docs/agent-profiles.md) / [.en.md](docs/agent-profiles.en.md): the field reference gains `adapter="opendesign-gui"` and the `opendesign` config block; a new "Open Design (in development)" sample profile documents the essentials (why `userDataDir` is unset, the version-gate criterion, and how `designDirection` differs semantically from `designSystem`).
+  - [skills/tianshu-mcp/SKILL.md](skills/tianshu-mcp/SKILL.md): `description`/`triggers` now include opendesign; the parameter compatibility matrix gains a column (`designDirection` required, the meaning of `designSystem`, `mode` unsupported); §5's `close_existing_instance` and the `continue_task` support surface include opendesign; the `projectPath` cell is corrected (**project-less dispatch currently supports ZCode only**, which the cell previously left unstated).
+  - [skills/tianshu-mcp/usage-examples.md](skills/tianshu-mcp/usage-examples.md): a new §2.8 opendesign example explaining that "dispatching currently hard-fails with `selector_drift`, which is fail-closed protection rather than a defect".
+  - Bilingual README: the overview sentence's agent list mentions "the Open Design adapter is in development".
+
+> The two items above are documentation changes; this same release also contains the cross-platform fixes in the Fixed and Tests sections below.
 
 ## [0.6.9] - 2026-09-26
 

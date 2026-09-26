@@ -7,31 +7,9 @@
 
 ---
 
-## [0.6.12] - 2026-09-26
+## [0.7.0] - 2026-09-26
 
-### 文档
-
-- **ARCHITECTURE 双语补入 Open Design 为第 6 个 GUI driver**（纯文档版本，无运行时变更）：
-  - §8.2 标题由「五个 GUI driver」改为「六个」，新增 Open Design 的 12 步执行顺序（环境净化 → 清残留模态框 → 版本门禁 → 目录绑定 → 模型/设计系统/设计方向 → 输入发送 → 三信号轮询 → 视觉验收 → 返修再验收），并写明两个真机坑（`ELECTRON_RUN_AS_NODE`、启动器「分离子进程形态」）与它**唯一带「产物信号」**的原因。
-  - §8.3 由「五个 driver」改为「六个」；§8.4 新增 Open Design 的 `endReason` 取值表（**如实标注当前只产出 6 个取值**，接线后补齐），`needsUserKind` 的 `close_existing_instance` 行补 Open Design 并注明「当前仅产出该一种」。
-  - §8.5 注册表基座由六个改为七个（补 `opendesign` 与 `opendesign-gui`）。
-
-> 本次为**文档版本**，`src/` 无改动；`typecheck` / `eslint src test scripts` / `build` / `check:stdio`（8/8）全绿。
-
-## [0.6.11] - 2026-09-26
-
-### 文档
-
-- **Open Design 适配器入册全部既有人工文档**（纯文档版本，无运行时变更）：
-  - [docs/adapter-matrix.md](docs/adapter-matrix.md) / [.en.md](docs/adapter-matrix.en.md)：汇总矩阵新增 Open Design 行（状态如实标为「开发中：判定层已交付、界面接线待选择器采集」，含发现顺序、登录态与数据目录、`ELECTRON_RUN_AS_NODE` 与「分离子进程形态」两个真机坑、端口 9889 的来由），E1 事件上报表补一行；顺带把英文表头从 5 列修回与数据行一致的 7 列（**既有缺陷**：英文行一直是 7 列，表头与服务端渲染不齐）。
-  - [docs/agent-profiles.md](docs/agent-profiles.md) / [.en.md](docs/agent-profiles.en.md)：字段说明补 `adapter="opendesign-gui"` 与 `opendesign` 配置块；新增「Open Design（开发中）」样例 profile 与要点清单（不设 `userDataDir` 的原因、版本门禁判据、`designDirection` 与 `designSystem` 的语义差异）。
-  - [skills/tianshu-mcp/SKILL.md](skills/tianshu-mcp/SKILL.md)：`description`/`triggers` 纳入 opendesign；参数兼容矩阵新增一列（`designDirection` 必填、`designSystem` 语义、`mode` 不支持）；§5 的 `close_existing_instance` 与 `continue_task` 支持面补 opendesign；修正 `projectPath` 一栏（**无项目派发当前仅支持 ZCode**，此前该格未说明）。
-  - [skills/tianshu-mcp/usage-examples.md](skills/tianshu-mcp/usage-examples.md)：新增 §2.8 opendesign 示例与「当前阶段会硬失败 `selector_drift`，这是 fail-closed 而非缺陷」的说明。
-  - README 双语：概述句的 agent 清单补「Open Design 适配器开发中」。
-
-> 本次为**文档版本**，`src/` 无改动；`typecheck` / `eslint src test scripts` / `build` / `check:stdio`（8/8）全绿。
-
-## [0.6.10] - 2026-09-26
+> **版本号纠正**：按 `AGENTS.md`（加满 `0.0.10` 下个版本进位为 `+0.1.0`），`0.6.9` 之后的下一次增量应为 `0.7.0`。开发过程中曾把 `0.6.10`/`0.6.11`/`0.6.12` 推到 `master`，但三者**均未打 tag、未发布到 npm**，故合并为本条 `0.7.0` 记录。
 
 ### 新增
 
@@ -46,11 +24,31 @@
 
 - **`gui.selectors` 覆盖语义改为「权威」**（`cssCandidates`）：原实现把覆盖值与内置 fallbacks **合并**，而 fallbacks 含 `[aria-haspopup]` 这类宽泛语义候选，页面上常有多个元素命中 → 「唯一命中」判据必然失败 → **热修复选择器反而把功能彻底关掉**（表现为 `no-panel：触发器无法唯一定位`）。现在覆盖值一旦给出就**只**用它。
 - `toNativeDialogPath` 对**相对路径与空路径**的处理：`path.win32.normalize("")` 会返回 `"."`，原实现会把 `.` 当有效路径送进原生对话框（表现为「确认后什么都没发生」）；现在相对路径按当前工作目录解析为绝对路径，空/空白路径返回空串由调用方 fail-closed。
+- **CI 红：Open Design 的发现模块「平台注入」没有端到端生效**（`discoverOpenDesign` 的候选路径用了**宿主** `path.join`，而 `platform` 是注入参数）。在 Windows 上恰好一致所以本地全绿，但 CI 的 **ubuntu / macos 腿全部失败**（`0.6.8` 起持续红）。修复：候选路径一律按**目标平台**拼（`const api = platform === "win32" ? path.win32 : path.posix`），并新增一条**与宿主平台无关**的断言（win32 目标 → 路径必须含反斜杠且不含正斜杠）。
+- 顺带修正若干**测试自身**的宿主平台假设（这些也在 CI 非 Windows 腿上失败）：夹具改用 `path.win32.join` 与生产一致；`normalizeWorkspacePath` 的大小写断言按平台分支（实现只在 win32 下 `toLowerCase`）；非 Windows 上断言 `listOwnedDialogs` / `closeStrayDialogs` **不调用 `powershell.exe`**（CI 上没有它）。
 
 ### 测试
 
-- 新增 **65** 个用例：`opendesign-workspace.test.ts` 14 个（路径比较、已绑定跳过且零点击、成功路径与**基线采样顺序**、触发器缺失/菜单项缺失/原生失败/回读不一致四条失败路径、回读空值）、`opendesign-liveness.test.ts` 20 个、`opendesign-dialog-fixplan.test.ts` 19 个、`opendesign-visual.test.ts` 12 个（静态入口发现与文件名优先级/深度上限/噪声跳过、工程结构判定、推导不出来的如实路径）；`opendesign-dom.test.ts` 补覆盖语义回归。
-- 全量 **1268 passed / 12 skipped**（110 文件）；`typecheck` / `eslint src test scripts` / `build` 全绿。
+- 新增 **67** 个用例：`opendesign-workspace.test.ts` 14 个（路径比较、已绑定跳过且零点击、成功路径与**基线采样顺序**、触发器缺失/菜单项缺失/原生失败/回读不一致四条失败路径、回读空值）、`opendesign-liveness.test.ts` 20 个、`opendesign-dialog-fixplan.test.ts` 19 个、`opendesign-visual.test.ts` 12 个（静态入口发现与文件名优先级/深度上限/噪声跳过、工程结构判定、推导不出来的如实路径）；`opendesign-dom.test.ts` 补覆盖语义回归；`opendesign-discovery.test.ts` 补「候选路径按目标平台拼分隔符」与「非 Windows 目标平台的 posix 分支」两条回归。
+- 全量 **1270 passed / 12 skipped**（110 文件）；`typecheck` / `eslint src test scripts` / `build` 全绿。
+
+### 文档
+
+- **ARCHITECTURE 双语补入 Open Design 为第 6 个 GUI driver**：
+  - §8.2 标题由「五个 GUI driver」改为「六个」，新增 Open Design 的 12 步执行顺序（环境净化 → 清残留模态框 → 版本门禁 → 目录绑定 → 模型/设计系统/设计方向 → 输入发送 → 三信号轮询 → 视觉验收 → 返修再验收），并写明两个真机坑（`ELECTRON_RUN_AS_NODE`、启动器「分离子进程形态」）与它**唯一带「产物信号」**的原因。
+  - §8.3 由「五个 driver」改为「六个」；§8.4 新增 Open Design 的 `endReason` 取值表（**如实标注当前只产出 6 个取值**，接线后补齐），`needsUserKind` 的 `close_existing_instance` 行补 Open Design 并注明「当前仅产出该一种」。
+  - §8.5 注册表基座由六个改为七个（补 `opendesign` 与 `opendesign-gui`）。
+
+> 上述两条为文档改动；同一版本还包含下方「修复」与「测试」两节的跨平台修复。
+
+- **Open Design 适配器入册全部既有人工文档**：
+  - [docs/adapter-matrix.md](docs/adapter-matrix.md) / [.en.md](docs/adapter-matrix.en.md)：汇总矩阵新增 Open Design 行（状态如实标为「开发中：判定层已交付、界面接线待选择器采集」，含发现顺序、登录态与数据目录、`ELECTRON_RUN_AS_NODE` 与「分离子进程形态」两个真机坑、端口 9889 的来由），E1 事件上报表补一行；顺带把英文表头从 5 列修回与数据行一致的 7 列（**既有缺陷**：英文行一直是 7 列，表头与服务端渲染不齐）。
+  - [docs/agent-profiles.md](docs/agent-profiles.md) / [.en.md](docs/agent-profiles.en.md)：字段说明补 `adapter="opendesign-gui"` 与 `opendesign` 配置块；新增「Open Design（开发中）」样例 profile 与要点清单（不设 `userDataDir` 的原因、版本门禁判据、`designDirection` 与 `designSystem` 的语义差异）。
+  - [skills/tianshu-mcp/SKILL.md](skills/tianshu-mcp/SKILL.md)：`description`/`triggers` 纳入 opendesign；参数兼容矩阵新增一列（`designDirection` 必填、`designSystem` 语义、`mode` 不支持）；§5 的 `close_existing_instance` 与 `continue_task` 支持面补 opendesign；修正 `projectPath` 一栏（**无项目派发当前仅支持 ZCode**，此前该格未说明）。
+  - [skills/tianshu-mcp/usage-examples.md](skills/tianshu-mcp/usage-examples.md)：新增 §2.8 opendesign 示例与「当前阶段会硬失败 `selector_drift`，这是 fail-closed 而非缺陷」的说明。
+  - README 双语：概述句的 agent 清单补「Open Design 适配器开发中」。
+
+> 上述两条为文档改动；同一版本还包含下方「修复」与「测试」两节的跨平台修复。
 
 ## [0.6.9] - 2026-09-26
 

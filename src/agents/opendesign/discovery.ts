@@ -170,6 +170,12 @@ export async function discoverOpenDesign(
   } = {},
 ): Promise<OpenDesignCandidate | null> {
   const platform = input.platform ?? process.platform;
+  /**
+   * 候选路径必须按**目标平台**拼，不能跟着宿主 `path` 走：
+   * `platform` 是注入参数，若仍用宿主 path，跨平台单测只能在 Windows 上通过，
+   * CI 的 ubuntu / macOS 腿会因为分隔符不同而失败（实测踩到过）。
+   */
+  const api = platform === "win32" ? path.win32 : path.posix;
   const explicit = profile.gui?.exePath?.trim() || profile.command?.trim();
   if (explicit) {
     if (!validExecutable(explicit, platform)) return null;
@@ -208,8 +214,7 @@ export async function discoverOpenDesign(
       for (const drive of drives)
         for (const rel of disc.relativePaths ?? [])
           candidates.push({
-            // `platform` 可注入以便跨平台单测；候选路径仍属于执行 fs.statSync 的宿主文件系统。
-            p: path.join(input.driveRoots?.[drive] ?? `${drive}\\`, rel),
+            p: api.join(input.driveRoots?.[drive] ?? `${drive}\\`, rel),
             source: "fixed-drive",
           });
       return candidates;
@@ -222,9 +227,9 @@ export async function discoverOpenDesign(
 
     const registryCandidates: Array<{ p: string; source: OpenDesignCandidate["source"] }> = [];
     for (const dir of input.registryDirs ?? (await registryInstallLocations())) {
-      registryCandidates.push({ p: path.join(dir, "Open Design.exe"), source: "registry" });
+      registryCandidates.push({ p: api.join(dir, "Open Design.exe"), source: "registry" });
       registryCandidates.push({
-        p: path.join(dir, "Open Design", "Open Design.exe"),
+        p: api.join(dir, "Open Design", "Open Design.exe"),
         source: "registry",
       });
     }
@@ -244,7 +249,7 @@ export async function discoverOpenDesign(
     const dir = expandEnvPath(dirTpl.replace("{HOME}", os.homedir()));
     for (const name of disc.fileNames ?? [])
       standardCandidates.push({
-        p: path.join(dir, name),
+        p: api.join(dir, name),
         source: platform === "darwin" && dir.includes(".app") ? "bundle" : "standard",
       });
   }

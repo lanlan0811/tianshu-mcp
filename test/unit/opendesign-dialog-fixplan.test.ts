@@ -60,11 +60,13 @@ describe("Open Design 原生对话框：平台与空输入守卫", () => {
 
   it("非 Windows 平台 fail-closed，且错误信息可操作", async () => {
     if (isWin) {
-      // Windows 上真实探测允许返回数组（不同机器残留不同），只断言形状
+      // Windows 上才会真正拉起 PowerShell：只断言形状，不要求机器上有残留对话框
       expect(Array.isArray(await listOwnedDialogs([process.pid]))).toBe(true);
       return;
     }
+    // 非 Windows 走 fail-closed 分支，**绝不调用 powershell.exe**（CI 的 ubuntu / macos 腿没有它）
     expect(await listOwnedDialogs([process.pid])).toEqual([]);
+    expect(await closeStrayDialogs([process.pid])).toBe(0);
     const res = await selectOpenDesignFolder("D:\\x", [1], []);
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.reason).toBe("platform");

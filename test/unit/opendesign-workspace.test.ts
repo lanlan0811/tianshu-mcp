@@ -11,6 +11,8 @@ import {
 import { GuiProfileSchema, ZCODE_SETUP_DEFAULTS } from "../../src/config/schema.js";
 import type { FolderDialogOutcome } from "../../src/agents/opendesign/dialog.js";
 
+const isWin = process.platform === "win32";
+
 /** 采集后写回 selectors.ts 的样子（测试用稳定钩子，不代表最终 CSS） */
 const CAPTURED: Record<string, string> = {
   title: '[data-od="title"]',
@@ -162,9 +164,11 @@ function deps(over: Partial<Parameters<typeof bindWorkspace>[0]["deps"]> = {}) {
 }
 
 describe("Open Design 工作目录：路径比较", () => {
-  it("归一大小写/斜杠/尾斜杠", () => {
-    expect(normalizeWorkspacePath("D:/Trae项目/tianshu-mcp/")).toBe("d:\\trae项目\\tianshu-mcp");
-    expect(normalizeWorkspacePath("d:\\Trae项目\\tianshu-mcp")).toBe("d:\\trae项目\\tianshu-mcp");
+  it("归一斜杠/尾斜杠；大小写按平台（Windows 不敏感、POSIX 敏感）", () => {
+    // 实现只在 win32 下 toLowerCase（大小写不敏感是 Windows 语义），故断言按平台分支
+    const normalized = isWin ? "d:\\trae项目\\tianshu-mcp" : "D:\\trae项目\\tianshu-mcp";
+    expect(normalizeWorkspacePath("D:/Trae项目/tianshu-mcp/")).toBe(normalized);
+    expect(normalizeWorkspacePath("d:\\Trae项目\\tianshu-mcp")).toBe(normalized);
   });
 
   it("盘根补成 `D:\\`", () => {
