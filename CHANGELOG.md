@@ -7,6 +7,29 @@
 
 ---
 
+## [0.6.8] - 2026-09-26
+
+### 新增
+
+- **Open Design GUI 适配器（阶段 P0：安装发现 / 实例接管 / CDP 探测）**：新增内置 agent `opendesign`（`driver=gui`、`adapter=opendesign-gui`），把 Open Design 桌面端（Electron，实测 0.24.1）纳入 tianshu-mcp 的派活闭环。本阶段交付安装探测、数据目录推导、实例复用/受管启动与 CDP 产品校验，**界面驱动（目录绑定、模型/设计系统/设计方向、输入发送、运行检测、视觉验收）留待后续阶段**；未接完界面时派活会**硬失败 `not_implemented`** 并列出缺失的选择器键，而不是假装成功。详见 [Open Design GUI（CDP）适配器](docs/opendesign-cdp.md)。
+- **只读诊断探针 `scripts/probe-opendesign.mjs`**：`install` / `process` / `cdp` / `appconfig` / `anchors` 五个子命令，与既有 `probe-kimicode.mjs` 同构；默认只读（不点击、不输入、不发送），仅显式 `--launch` 才启动实例。`npm run probe:opendesign` 可用。
+
+### 变更
+
+- **新增 `designDirection` 参数**（`run_task`，仅 Open Design 生效）：只支持「原型 / 文档 / 网站复刻」（`prototype` / `document` / `clone`），UI 里的「幻灯片 / 图片 / HyperFrames」**显式拒绝**；非法取值在**入口**即拒绝，不进 GUI。刻意不复用 `mode`（后者是 TraeWork 的面板模式）。
+- `designSystem` 参数补充 Open Design 语义：此处传**设计系统名**（如 `Claude`），由适配器在设计系统面板搜索并点选。
+
+### 真机取证（Windows 10 19045 / Open Design 0.24.1）
+
+- 本产品有**进程级单实例锁**，且主进程**强制** `app.setPath("userData", …)`——`--user-data-dir` 开关会被覆盖，因此不做「专属 userData 受管实例」；策略为**复用优先 → 自管启动 → `needs_user(close_existing_instance)` 请用户关闭**，绝不 kill 用户进程。
+- 本产品的 daemon / web sidecar 也以同一可执行文件启动（argv 带 `*.mjs` 脚本），实测 11 个同名进程里只有 1 个真·桌面主进程；根进程判定必须剔除 sidecar，否则用户关窗后受管实例**永远起不来**。
+- CDP 基准端口原计划 9777，实测**已被 Qoder CN 占用**（区段 9777-9796）→ 改为 **9889**（区段 9889-9898）。
+- 版本门禁判据必须是**产品版本**（安装目录 `resources/open-design-config.json` 的 `appVersion`）；CDP `/json/version` 的 `Browser` 是 **Electron 版本**，误用会阻断全部派发（已加回归测试）。
+
+### 测试
+
+- 新增 **34** 个用例（2 文件）：安装发现（固定盘相对路径 / 注册表回退 / 显式路径权威性 / 版本与命名空间读取 / 脏数据不误判）、进程枚举与根进程过滤（含 sidecar 实测形态）、CDP 产品校验（拒绝异种 Electron）、版本门禁、设计方向归一与菜单候选精确匹配。全量 **1173 passed / 12 skipped**（105 文件）。新增用例**不依赖本机安装 Open Design**（全部走注入与临时目录）。
+
 ## [0.6.7] - 2026-09-24
 
 ### 新增

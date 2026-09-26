@@ -5,6 +5,7 @@
 import fsp from "node:fs/promises";
 import { validateQoderReferences } from "../agents/qoder/references.js";
 import { normalizeLevel } from "../agents/qoder/model.js";
+import { normalizeOpenDesignDirection } from "../agents/opendesign/model.js";
 import {
   prepareBaseline,
   approveBaseline,
@@ -133,6 +134,7 @@ function runTaskKeyedFields(args: RunTaskParams): Record<string, unknown> {
     modelSource: args.modelSource,
     planDoc: args.planDoc,
     designSystem: args.designSystem,
+    designDirection: args.designDirection,
     mode: args.mode,
     allowCreateProject: args.allowCreateProject,
     autoVerify: args.autoVerify,
@@ -432,6 +434,22 @@ function runTaskHandler(
       }
     }
 
+    if (finalAgentId === "opendesign") {
+      if (args.designDirection === undefined)
+        return errorResult(
+          "Open Design 需要 designDirection 参数（设计方向）：只支持「原型 / 文档 / 网站复刻」（prototype / document / clone）",
+        );
+      if (args.mode !== undefined)
+        return errorResult(
+          "Open Design 不支持 mode 参数（mode 是 TraeWork 的面板模式）；请改用 designDirection",
+        );
+      // 取值合法性在**入口**就拒绝：非法设计方向绝不进 GUI（进去才发现等于已经点了菜单）
+      const direction = normalizeOpenDesignDirection(args.designDirection);
+      if (!direction.ok) return errorResult(direction.error);
+    } else if (args.designDirection !== undefined) {
+      return errorResult("designDirection 是 Open Design 专用参数");
+    }
+
     const cfg = await dataHome.loadConfig();
     // 有效任务超时（R2）：调用参数 > profile > server 默认值，在提交时固化
     const taskTimeoutMs =
@@ -449,6 +467,7 @@ function runTaskHandler(
         modelSource: args.modelSource,
         planDoc: args.planDoc,
         designSystem: args.designSystem,
+        designDirection: args.designDirection,
         mode: args.mode,
         allowCreateProject: args.allowCreateProject,
         autoVerify: args.autoVerify ?? defaults.defaultAutoVerify,
@@ -595,6 +614,7 @@ async function runTaskWithoutProject(
       reasoningLevel: args.reasoningLevel,
       planDoc: args.planDoc,
       designSystem: args.designSystem,
+      designDirection: args.designDirection,
       mode: args.mode,
       allowCreateProject: args.allowCreateProject,
       autoVerify: false,

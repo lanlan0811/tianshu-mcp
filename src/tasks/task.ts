@@ -155,6 +155,8 @@ export interface TaskMeta {
   planDoc?: string;
   /** Codex GUI 初始开发指令引用的设计系统目录路径 */
   designSystem?: string;
+  /** Open Design 设计方向（已归一为 prototype/document/clone）；其他 agent 忽略 */
+  designDirection?: string;
   /** GUI 类 agent（traework）使用的面板模式（Work/Code/Design）；CLI 类忽略 */
   mode?: TraeworkMode;
   /**

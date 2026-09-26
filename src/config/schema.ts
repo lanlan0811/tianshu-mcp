@@ -147,8 +147,19 @@ export const RunTaskParamsSchema = z.object({
   /**
    * 设计系统目录路径（仅 codex GUI 生效）：相对项目根或绝对路径，
    * 会被拼进初始开发指令「…和设计系统(<designSystem>)…」。
+   *
+   * Open Design：此处传**设计系统名**（如 `Claude` / `Claude (Anthropic)`），
+   * 由适配器在「设计系统」面板里搜索并点选——语义相同（指定设计系统），形态不同（名字 vs 目录）。
    */
   designSystem: z.string().min(1).optional(),
+  /**
+   * 设计方向（仅 opendesign-gui 生效）：只支持「原型 / 文档 / 网站复刻」
+   * （prototype / document / clone 亦可）。其他 UI 方向（幻灯片/图片/HyperFrames）显式拒绝。
+   *
+   * 刻意**不复用** `mode`：`mode` 是 TraeWork 的 Work/Code/Design 面板模式，
+   * 两者混在一个枚举里会让 TraeWork 的模式识别（detectModeFromText）分支失真。
+   */
+  designDirection: z.string().min(1).optional(),
   autoVerify: z.boolean().optional(),
   autoFixRounds: z.number().int().min(0).max(10).optional(),
   /**
@@ -358,12 +369,7 @@ export const ServerConfigSchema = z.object({
   idempotency: z
     .object({
       ttlMs: z.number().int().positive().default(IDEMPOTENCY_TTL_DEFAULT_MS),
-      maxEntries: z
-        .number()
-        .int()
-        .min(1)
-        .max(100_000)
-        .default(IDEMPOTENCY_MAX_ENTRIES_DEFAULT),
+      maxEntries: z.number().int().min(1).max(100_000).default(IDEMPOTENCY_MAX_ENTRIES_DEFAULT),
     })
     .default({}),
   /**
@@ -537,6 +543,56 @@ export const GuiProfileSchema = z.object({
 });
 export type GuiProfile = z.infer<typeof GuiProfileSchema>;
 
+/**
+ * Open Design 专属配置（`adapter="opendesign-gui"`）。
+ *
+ * 为什么单独一段而不是塞进 GuiProfileSchema：这些键只有 Open Design 语义能解释
+ * （步骤预算、模型回读、工作目录回读、版本门禁），塞进公共 GuiProfile 会让其他
+ * adapter 的 profile 字面量多出一堆与它无关的必填/默认键。
+ *
+ * 除 `supportedVersions` 外**全部可选且不带 `.default()`**：默认值由读取点兜底，
+ * 避免「只写了一个键」的 profile 被 materialize 出一堆默认值。
+ */
+export const OpenDesignProfileSchema = z.object({
+  /**
+   * 已真机验证的产品版本（平台 → 版本列表），如 `{ win32: ["0.24.1"] }`。
+   * 探测到的版本不在列表内时**拒绝派发**（fail-closed），并由错误信息回显实测版本。
+   * 空对象/缺省 = 不做版本门禁。
+   */
+  supportedVersions: z.record(z.string(), z.array(z.string())).default({}),
+  /** 等待「工作目录」面板展开并确认「选择目录」项的预算（ms） */
+  workingDirPanelTimeoutMs: z.number().int().positive().optional(),
+  /** 等待原生「选择文件夹」对话框出现的预算（ms） */
+  nativeDialogTimeoutMs: z.number().int().positive().optional(),
+  /** 等待模型菜单展开并回读触发区的预算（ms） */
+  modelMenuTimeoutMs: z.number().int().positive().optional(),
+  /** 等待设计系统面板展开并回读触发区的预算（ms） */
+  designSystemTimeoutMs: z.number().int().positive().optional(),
+  /** 等待设计方向菜单展开并回读触发区的预算（ms） */
+  designDirectionTimeoutMs: z.number().int().positive().optional(),
+  /** 等待发送按钮由「不可用」变可用的预算（ms） */
+  sendReadyTimeoutMs: z.number().int().positive().optional(),
+  /** 修复/优化计划文档输出目录（相对项目根），默认 `.opendesign/plans` */
+  planDir: z.string().optional(),
+  /**
+   * 设计方向 → UI 菜单项显示名映射（可覆盖，应对 UI 文案漂移）。
+   * 键为内部值 `prototype|document|clone`，值为该语言界面上的菜单文本。
+   */
+  directionLabels: z.record(z.string(), z.string()).default({}),
+});
+export type OpenDesignProfile = z.infer<typeof OpenDesignProfileSchema>;
+
+/** OpenDesign 预算默认值（读取点兜底，profile 可覆盖） */
+export const OPEN_DESIGN_DEFAULTS = {
+  workingDirPanelTimeoutMs: 15_000,
+  nativeDialogTimeoutMs: 20_000,
+  modelMenuTimeoutMs: 15_000,
+  designSystemTimeoutMs: 15_000,
+  designDirectionTimeoutMs: 15_000,
+  sendReadyTimeoutMs: 20_000,
+  planDir: ".opendesign/plans",
+} as const;
+
 export const AgentProfileSchema = z.object({
   id: z.string().min(1).optional(), // 仅内置 profiles 使用；数据目录 profiles 以键名为准
   displayName: z.string().default(""),
@@ -547,7 +603,9 @@ export const AgentProfileSchema = z.object({
    */
   driver: z.enum(["spawn", "gui"]).default("spawn"),
   /** GUI adapter 显式判别；旧 profile 缺省时保持 TraeWork 兼容行为。 */
-  adapter: z.enum(["traework-gui", "zcode-gui", "codex-gui", "kimicode-gui", "qoder-gui"]).optional(),
+  adapter: z
+    .enum(["traework-gui", "zcode-gui", "codex-gui", "kimicode-gui", "qoder-gui", "opendesign-gui"])
+    .optional(),
   status: z.enum(["ready", "research", "unsupported"]).default("ready"),
   command: z.string().nullable().optional(),
   argsTemplate: z.array(z.string()).default([]),
@@ -563,6 +621,8 @@ export const AgentProfileSchema = z.object({
   authNote: z.string().default(""),
   executableDiscovery: ExecutableDiscoverySchema.optional(),
   gui: GuiProfileSchema.optional(),
+  /** Open Design 专属配置（adapter="opendesign-gui" 时使用） */
+  opendesign: OpenDesignProfileSchema.optional(),
   note: z.string().optional(),
 });
 export type AgentProfile = z.infer<typeof AgentProfileSchema>;

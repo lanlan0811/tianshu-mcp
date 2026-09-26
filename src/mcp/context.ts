@@ -55,6 +55,7 @@ export function makeBuildCtx(services: AppServices) {
     modelSource: meta.modelSource,
     planDoc: meta.planDoc,
     designSystem: meta.designSystem,
+    designDirection: meta.designDirection,
     mode: meta.mode,
     allowCreateProject: meta.allowCreateProject,
     round,

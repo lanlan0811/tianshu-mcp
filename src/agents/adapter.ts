@@ -44,6 +44,8 @@ export interface TaskContext {
   planDoc?: string;
   /** Codex GUI 初始开发指令引用的设计系统目录路径；其他 agent 忽略 */
   designSystem?: string;
+  /** Open Design 设计方向（已归一 prototype/document/clone）；其他 agent 忽略 */
+  designDirection?: string;
   /** GUI 类 agent（traework）使用的面板模式；CLI 类忽略 */
   mode?: TraeworkMode;
   /**

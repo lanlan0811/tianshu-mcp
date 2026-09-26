@@ -49,6 +49,8 @@ export interface NewTaskInput {
   planDoc?: string;
   /** Codex GUI 初始开发指令引用的设计系统目录路径 */
   designSystem?: string;
+  /** Open Design 设计方向（已归一为 prototype/document/clone）；其他 agent 忽略 */
+  designDirection?: string;
   /** GUI 类 agent（traework）使用的面板模式；CLI 类忽略 */
   mode?: TraeworkMode;
   /** ZCode 专用：目标项目未登记时是否允许自动导入（省略 = 允许）。 */
@@ -254,6 +256,7 @@ export class TaskManager {
       modelSource: input.modelSource,
       planDoc: input.planDoc,
       designSystem: input.designSystem,
+      designDirection: input.designDirection,
       mode: input.mode,
       allowCreateProject: input.allowCreateProject,
       autoVerify: input.autoVerify,

@@ -12,9 +12,11 @@ import { CodexGuiAdapter } from "./codex/adapter.js";
 import { QoderGuiAdapter } from "./qoder/adapter.js";
 import { discoverQoder } from "./qoder/discovery.js";
 import { KimicodeGuiAdapter } from "./kimicode/adapter.js";
+import { OpenDesignGuiAdapter } from "./opendesign/adapter.js";
 import { discoverZcode } from "./zcode/discovery.js";
 import { discoverCodex } from "./codex/discovery.js";
 import { discoverKimicode } from "./kimicode/discovery.js";
+import { discoverOpenDesign } from "./opendesign/discovery.js";
 import { discoverTraework } from "./traework/discovery.js";
 import type { AgentProfile } from "../config/schema.js";
 import type { SpawnResult } from "./spawn.js";
@@ -32,7 +34,7 @@ export class AgentAdapterRegistry {
   ) {
     // 默认：所有 profile 都用通用 CLI adapter（按 profile.promptMode 传递 prompt）。
     // driver=gui 的 profile 会在 resolve() 时替换为 GUI adapter（见 ensureAdapterFor）。
-    for (const id of ["codex", "zcode", "traework", "kimicode", "qoder", "stub"]) {
+    for (const id of ["codex", "zcode", "traework", "kimicode", "qoder", "opendesign", "stub"]) {
       this.adapters.set(id, new CliAdapter(id));
     }
   }
@@ -46,7 +48,11 @@ export class AgentAdapterRegistry {
     const adapterType = profile.adapter ?? (profile.driver === "gui" ? "traework-gui" : undefined);
     const current = this.adapters.get(agentId);
     if (adapterType === "qoder-gui") {
-      if (!(current instanceof QoderGuiAdapter)) this.adapters.set(agentId, new QoderGuiAdapter(agentId));
+      if (!(current instanceof QoderGuiAdapter))
+        this.adapters.set(agentId, new QoderGuiAdapter(agentId));
+    } else if (adapterType === "opendesign-gui") {
+      if (!(current instanceof OpenDesignGuiAdapter))
+        this.adapters.set(agentId, new OpenDesignGuiAdapter(agentId));
     } else if (adapterType === "zcode-gui") {
       if (!(current instanceof ZcodeGuiAdapter))
         this.adapters.set(agentId, new ZcodeGuiAdapter(agentId));
@@ -65,6 +71,7 @@ export class AgentAdapterRegistry {
       current instanceof CodexGuiAdapter ||
       current instanceof KimicodeGuiAdapter ||
       current instanceof QoderGuiAdapter ||
+      current instanceof OpenDesignGuiAdapter ||
       !current
     ) {
       this.adapters.set(agentId, new CliAdapter(agentId));
@@ -182,18 +189,34 @@ export class AgentAdapterRegistry {
               ? `探测到 TraeWork: ${found.path}${found.version ? ` (v${found.version})` : ""}`
               : "未找到 TraeWork；请配置 gui.exePath",
         discovered: found
-          ? { source: found.source === "explicit" ? "explicit" : "discovery", version: found.version }
+          ? {
+              source: found.source === "explicit" ? "explicit" : "discovery",
+              version: found.version,
+            }
           : undefined,
       };
     }
     if (profile.adapter === "qoder-gui") {
       const found = await discoverQoder(profile);
       return {
-        id: agentId, displayName: profile.displayName || agentId, profile,
-        command: found?.path ?? "", argsTemplate: profile.argsTemplate,
+        id: agentId,
+        displayName: profile.displayName || agentId,
+        profile,
+        command: found?.path ?? "",
+        argsTemplate: profile.argsTemplate,
         ok: !!found && process.platform === "win32",
-        message: process.platform !== "win32" ? "Qoder CN macOS research：未完成真机验证，禁止派发" : found ? "探测到 Qoder CN: " + found.path : "未找到 Qoder CN；请配置 gui.exePath",
-        discovered: found ? {source: found.source === "explicit" ? "explicit" : "discovery",version:found.version} : undefined,
+        message:
+          process.platform !== "win32"
+            ? "Qoder CN macOS research：未完成真机验证，禁止派发"
+            : found
+              ? "探测到 Qoder CN: " + found.path
+              : "未找到 Qoder CN；请配置 gui.exePath",
+        discovered: found
+          ? {
+              source: found.source === "explicit" ? "explicit" : "discovery",
+              version: found.version,
+            }
+          : undefined,
       };
     }
     if (profile.adapter === "kimicode-gui") {
@@ -224,6 +247,46 @@ export class AgentAdapterRegistry {
           `未探测到 Kimi Code 桌面端（固定盘相对路径、注册表卸载信息与标准安装目录均未命中）；请确认已安装 Kimi Code`,
       };
     }
+    if (profile.adapter === "opendesign-gui") {
+      const found = await discoverOpenDesign(profile);
+      if (process.platform !== "win32") {
+        return {
+          id: agentId,
+          displayName: profile.displayName || agentId,
+          profile,
+          command: found?.path ?? "",
+          argsTemplate: profile.argsTemplate,
+          ok: false,
+          message: "Open Design macOS research：未完成真机验证，禁止派发",
+          discovered: found ? { source: "discovery", version: found.version } : undefined,
+        };
+      }
+      if (found)
+        return {
+          id: agentId,
+          displayName: profile.displayName || agentId,
+          profile,
+          command: found.path,
+          argsTemplate: profile.argsTemplate,
+          ok: true,
+          message: `探测到 Open Design: ${found.path}${found.version ? ` (v${found.version})` : ""}`,
+          discovered: {
+            source: found.source === "explicit" ? "explicit" : "discovery",
+            version: found.version,
+          },
+        };
+      return {
+        id: agentId,
+        displayName: profile.displayName || agentId,
+        profile,
+        command: "",
+        argsTemplate: profile.argsTemplate,
+        ok: false,
+        message:
+          profile.note ||
+          "未探测到 Open Design 桌面端（固定盘相对路径、注册表卸载信息与标准安装目录均未命中）；请确认已安装 Open Design",
+      };
+    }
     if (profile.status === "research") {
       if (profile.adapter === "zcode-gui") {
         const found = await discoverZcode(profile);
@@ -247,7 +310,12 @@ export class AgentAdapterRegistry {
         const dirs = (disc.dirs.length > 0 ? disc.dirs : platformDefaultDiscoveryDirs()).map((d) =>
           expandEnvPath(d),
         );
-        const found = await this.probeDiscovery(agentId, disc.fileNames, dirs, disc.fallbackCommand);
+        const found = await this.probeDiscovery(
+          agentId,
+          disc.fileNames,
+          dirs,
+          disc.fallbackCommand,
+        );
         if (found) {
           return {
             id: agentId,
@@ -289,7 +357,12 @@ export class AgentAdapterRegistry {
         const dirs = (disc.dirs.length > 0 ? disc.dirs : platformDefaultDiscoveryDirs()).map((d) =>
           expandEnvPath(d),
         );
-        const found = await this.probeDiscovery(agentId, disc.fileNames, dirs, disc.fallbackCommand);
+        const found = await this.probeDiscovery(
+          agentId,
+          disc.fileNames,
+          dirs,
+          disc.fallbackCommand,
+        );
         if (found) {
           return {
             id: agentId,

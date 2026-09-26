@@ -8,6 +8,29 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.6.8] - 2026-09-26
+
+### Added
+
+- **Open Design GUI adapter (phase P0: install discovery / instance takeover / CDP probing)**: a new built-in agent `opendesign` (`driver=gui`, `adapter=opendesign-gui`) brings the Open Design desktop client (Electron, measured 0.24.1) into tianshu-mcp's dispatch loop. This phase delivers install discovery, data-directory derivation, instance reuse/managed launch, and CDP product validation; **UI driving (directory binding, model/design-system/design-direction selection, input and send, run detection, visual acceptance) is left to later phases**. While the UI is not wired up, dispatching **hard-fails with `not_implemented`** listing the missing selector keys instead of pretending to succeed. See [Open Design GUI (CDP) adapter](docs/opendesign-cdp.en.md).
+- **Read-only diagnostic probe `scripts/probe-opendesign.mjs`**: `install` / `process` / `cdp` / `appconfig` / `anchors` subcommands, mirroring `probe-kimicode.mjs`; read-only by default (no clicking, typing, or sending) and only starts an instance with an explicit `--launch`. Available as `npm run probe:opendesign`.
+
+### Changed
+
+- **New `designDirection` parameter** (`run_task`, Open Design only): supports only Prototype / Document / Website clone (`prototype` / `document` / `clone`); the UI's "Slides / Image / HyperFrames" are **rejected explicitly**, and invalid values are rejected at the **entry point** before any GUI action. It deliberately does not reuse `mode`, which is TraeWork's panel mode.
+- The `designSystem` parameter now documents its Open Design meaning: here it is a **design-system name** (e.g. `Claude`) that the adapter searches for and clicks in the design-system panel.
+
+### Real-machine evidence (Windows 10 19045 / Open Design 0.24.1)
+
+- The product has a **process-level single-instance lock**, and its main process **forces** `app.setPath("userData", …)` — the `--user-data-dir` switch is overridden. There is therefore no "dedicated userData managed instance"; the strategy is **reuse first → managed launch → `needs_user(close_existing_instance)` asking the user to close it**, never killing user processes.
+- The product also starts its daemon/web sidecars from the same executable (argv carrying a `*.mjs` script). Of 11 same-named processes measured, only 1 is the real desktop main process; root-process determination must drop the sidecars, otherwise a managed instance could **never start** once the user closes the window.
+- The CDP base port was planned as 9777, but measurement showed it is **taken by Qoder CN** (range 9777-9796) → changed to **9889** (range 9889-9898).
+- The version gate must compare the **product version** (`appVersion` in `<install dir>/resources/open-design-config.json`); CDP `/json/version`'s `Browser` is the **Electron version**, and misusing it blocks every dispatch (regression-tested).
+
+### Tests
+
+- **34** new cases across 2 files: install discovery (fixed-drive relative paths / registry fallback / explicit-path authority / version and namespace reading / dirty data not misjudged), process enumeration and root-process filtering (including the measured sidecar shape), CDP product validation (rejecting foreign Electron apps), the version gate, design-direction normalisation, and exact menu-candidate matching. Full suite: **1173 passed / 12 skipped** (105 files). The new cases **do not depend on Open Design being installed** (all use injection and temporary directories).
+
 ## [0.6.7] - 2026-09-24
 
 ### Added

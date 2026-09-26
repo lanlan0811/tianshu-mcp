@@ -265,6 +265,7 @@ run_task(projectPath=D:/xxx/my-app, agentId=qoder, planDoc=./plans/development.m
 | [docs/kimi-cdp.md](docs/kimi-cdp.md) | Kimi Code GUI 驱动：双渲染进程（主窗口 + `Kimi Browser Overlay`）、工作区完整路径绑定与原生对话框导入、模型三级选择与思考档位、执行模式、运行检测与排障 |
 | [docs/codex-windows-smoke.md](docs/codex-windows-smoke.md) | Codex Windows 真机验收记录（含验收失败→自动生成计划→返修通过闭环） |
 | [docs/qoder-cdp.md](docs/qoder-cdp.md) | Qoder CN GUI 驱动：安装发现与实例复用、完整路径工作区与原生导入、`modelSource` 与模型管理全局思考等级、发送/答题检查点、运行判定与原会话返修、真机证据与未覆盖项 |
+| [docs/opendesign-cdp.md](docs/opendesign-cdp.md) | Open Design GUI 驱动（阶段 P0）：安装发现与数据目录推导、单实例锁与 `--user-data-dir` 真相、sidecar 根进程判定、CDP 产品校验与端口档位、界面锚点候选与选择器采集流程、失败码表 |
 | [docs/release-v0.5.10.md](<docs/release-v0.5.10.md>) | v0.5.10 发布说明（`run_task` / `verify_task` 幂等键：TTL 重放、执行中提示、同键异参 fail-closed、`idempotency.json` 落盘与 `idempotentHint` 注解；issue #15） |
 | [docs/release-v0.5.9.md](<docs/release-v0.5.9.md>) | v0.5.9 发布说明（server 退出 / 重启归档的 GUI 终态如实化：按 `guiStop` 分流文案、`shutdown.guiStopWaitMs` 有界等待、结构化待确认字段与人工确认入口；issue #14） |
 | [docs/release-v0.5.8.md](<docs/release-v0.5.8.md>) | v0.5.8 发布说明（四份主文档按代码逐项核对重写 + 补发 TraeWork 探针与三个 probe script；无运行时变更） |

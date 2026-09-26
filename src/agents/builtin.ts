@@ -1,5 +1,5 @@
 import { ZCODE_SETUP_DEFAULTS } from "../config/schema.js";
-import { QODER_PROFILE } from './qoder/profile.js';
+import { QODER_PROFILE } from "./qoder/profile.js";
 /**
  * 内置 agent profiles（开发计划 §7.2）。用户数据目录 agent-profiles.json 可整键覆盖。
  * 代码优先、profile 可配：真实路径属于机器/环境数据 → 默认只给结构与探测规则。
@@ -154,7 +154,10 @@ export const BUILTIN_PROFILES: Record<string, AgentProfile> = {
         "/Applications/TraeWork.app/Contents/MacOS",
         "/Applications/Trae CN.app/Contents/MacOS",
       ],
-      fileNames: process.platform === "darwin" ? ["TRAE SOLO CN", "TraeWork", "Trae CN"] : ["TRAE SOLO CN.exe"],
+      fileNames:
+        process.platform === "darwin"
+          ? ["TRAE SOLO CN", "TraeWork", "Trae CN"]
+          : ["TRAE SOLO CN.exe"],
       fallbackCommand: undefined,
       preferredDrives: ["D:"],
       relativePaths: ["TRAE Work CN/TRAE SOLO CN.exe"],
@@ -245,6 +248,78 @@ export const BUILTIN_PROFILES: Record<string, AgentProfile> = {
       defaultAutoFixRounds: 2,
     },
     note: "Kimi Code（Moonshot AI，实测 1.0.2）为普通 Electron 安装：以 --remote-debugging-port 注入后经 CDP 驱动，无需 MSIX COM 激活。模型菜单/思考档位/执行模式菜单渲染在独立的 Kimi Browser Overlay 渲染进程；任务以「会话文件夹（工作区）」组织。详见 docs/kimi-cdp.md",
+  },
+  opendesign: {
+    displayName: "Open Design (Open Design 桌面端)",
+    type: "cli",
+    driver: "gui",
+    adapter: "opendesign-gui",
+    // macOS 无真机证据前保持 research（registry 会拒绝派发）。
+    status: process.platform === "darwin" ? "research" : "ready",
+    command: null,
+    argsTemplate: [],
+    promptMode: "arg",
+    cwd: "task",
+    env: {},
+    timeoutMs: 30 * 60_000,
+    killTree: "taskkill",
+    authNote:
+      "复用本机 Open Design 登录态与数据目录（%APPDATA%\\Open Design\\namespaces\\<namespace>；不接受 --user-data-dir）；检测到未开启 CDP 的既有实例时需用户先关闭该实例",
+    executableDiscovery: {
+      // 普通安装（非 MSIX）：D 盘相对路径优先（实测安装于 D:\\Open Design），
+      // 再回退注册表卸载信息与标准目录。可执行名含空格，按完整名精确匹配。
+      dirs: [
+        "{PROGRAMFILES}/Open Design",
+        "{PROGRAMFILES(X86)}/Open Design",
+        "{LOCALAPPDATA}/Programs/Open Design",
+        "{LOCALAPPDATA}/Open Design",
+        "/Applications/Open Design.app/Contents/MacOS",
+        "{HOME}/Applications/Open Design.app/Contents/MacOS",
+      ],
+      fileNames: process.platform === "darwin" ? ["Open Design"] : ["Open Design.exe"],
+      fallbackCommand: undefined,
+      preferredDrives: ["D:"],
+      relativePaths: ["Open Design/Open Design.exe"],
+      installRelativeExe: [],
+      scanRoots: [],
+    },
+    gui: {
+      ...ZCODE_SETUP_DEFAULTS,
+      // 端口基准 9889：实测已占用的基准为 traework 9222 / zcode 9333 / codex 9333 /
+      // kimicode 9666 / qoder 9777（qoder 区段 9777-9796），9889-9898 与它们均不重叠。
+      cdpPort: 9889,
+      cdpPortAuto: true,
+      cdpPortRange: 10,
+      exeArgs: ["--remote-debugging-port=<port>"],
+      windowMode: "reuse",
+      // Electron 冷启动 + 内置 151 个设计系统与 sidecar 进程启动，实测偏慢
+      launchTimeoutMs: 90_000,
+      pollIntervalMs: 3_000,
+      stableRounds: 4,
+      idleTimeoutMs: 10 * 60_000,
+      stallTimeoutMs: 5 * 60_000,
+      cancelWaitMs: 15_000,
+      cdpSendTimeoutMs: 15_000,
+      progressIntervalMs: 30_000,
+      modelSwitch: true,
+      // modeSwitch 走 Open Design 自己的「设计方向」菜单（与 TraeWork 的 Work/Code/Design 无关）
+      modeSwitch: true,
+      freshSession: true,
+      selectors: {},
+      modelRequired: true,
+      activation: "spawn",
+      defaultAutoFixRounds: 2,
+    },
+    opendesign: {
+      // 只对接已真机取证的版本；其他版本 fail-closed（见 instance.versionGateError）
+      supportedVersions: { win32: ["0.24.1"] },
+      directionLabels: {
+        prototype: "原型",
+        document: "文档",
+        clone: "网站复刻",
+      },
+    },
+    note: "Open Design 桌面端（Electron，官方安装包，实测 0.24.1）：主进程强制把 Electron userData 设到 %APPDATA%\\Open Design\\namespaces\\<namespace>\\user-data，且 --user-data-dir 开关会被覆盖，因此不做「专属 userData 实例」；进程级单实例锁意味着用户已开着实例时无法另起受管实例，策略为「复用优先 → 自启 → 转 needs_user 请用户关闭旧实例」。设计方向只支持原型/文档/网站复刻。详见 docs/opendesign-cdp.md",
   },
 };
 

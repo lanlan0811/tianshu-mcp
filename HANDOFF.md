@@ -9,6 +9,31 @@
 
 ---
 
+### Open Design GUI 适配器 · 阶段 P0 交接（0.6.8，2026-09-26）
+
+- **范围**：新增内置 agent `opendesign`（`driver=gui` / `adapter=opendesign-gui`）的**安装发现 + 实例接管 + CDP 探测**；
+  界面驱动（P1 选择器采集 → P2 目录绑定 → P3 模型/设计系统 → P4 方向/输入/发送 → P5 运行检测 → P6 视觉验收与返修）**尚未实现**。
+- **完整计划**：`.dsh/plans/opendesign-gui-adapter-plan.md`（含 20 轮确认结论与 §7.1 真机实测修正）。
+- **真机事实**（详见 [docs/opendesign-cdp.md](docs/opendesign-cdp.md)）：
+  - 普通安装（非 MSIX）；`D:\Open Design\Open Design.exe`；产品版本与命名空间从 `<安装目录>\resources\open-design-config.json` 读（实测 `0.24.1` / `release-stable-win`）。
+  - **进程级单实例锁** + 主进程强制 `app.setPath("userData", …)` → `--user-data-dir` 会被覆盖，**不做**「专属 userData 受管实例」；策略为复用优先 → 自管启动 → `needs_user(close_existing_instance)`，**绝不 kill 用户进程**。
+  - **sidecar 陷阱**：daemon / web sidecar 也是同一 exe 的子进程（argv 带 `*.mjs`），实测 11 个同名进程只有 1 个真主进程。`rootOpenDesignProcesses()` 必须剔除它们，否则用户关窗后受管实例**永远起不来**。
+  - 端口基准原计划 9777，实测**已被 Qoder CN 占用**（区段 9777-9796）→ 改为 **9889**（区段 9889-9898）。
+  - 版本门禁用**产品版本**；CDP `/json/version` 的 `Browser` 是 **Electron 版本**（41.3.0），误用会阻断全部派发（已加回归测试）。
+- **本阶段刻意 fail-closed**：`selectors.ts` 仍是空占位，`run.ts` 在缺关键选择器时**硬失败 `not_implemented`** 并列出缺失键。
+  这是有意设计——派一个还没接上界面的适配器却报成功，会污染验收与返修记账。**P1 采集完选择器后**该门禁自然解除。
+- **接口变更**：新增 `run_task` 参数 `designDirection`（仅 Open Design；只支持「原型 / 文档 / 网站复刻」，其余显式拒绝，入口即拒）；
+  `designSystem` 对 Open Design 的语义是**设计系统名**。`mode` 刻意不复用（那是 TraeWork 的面板模式）。
+- **探针**：`npm run probe:opendesign`（`install` / `process` / `cdp` / `appconfig` / `anchors`），默认只读；`--launch` 才启动实例。
+  **跑 `cdp` / `anchors` 需先把现有 Open Design 窗口关掉**（未开调试端口的实例无法接管，探针会如实报告）。
+- **测试**：新增 34 用例（`test/unit/opendesign-{discovery,model}.test.ts`），全量 **1173 passed / 12 skipped**（105 文件）；
+  `typecheck` / `eslint src test scripts` / `check:stdio`（dist 与 src 各 8/8）全绿。
+  **新增用例不依赖本机安装 Open Design**（用注入 + 临时目录），符合「新增用例不得依赖本机 GUI agent」的既有教训。
+- **下一步（P1）**：关掉现有窗口后 `node scripts/probe-opendesign.mjs anchors --launch`，
+  把收敛出的稳定选择器写回 `src/agents/opendesign/selectors.ts`，并补 `dom.ts` 表达式与 layoutGuard。
+
+---
+
 ### 真机取证补记（2026-09-25，issue #19~#22）
 
 按计划文档 `.claude/plans/issue-18-22-plan.md` 的「交付后待办」，本轮把 issue #19~#22 的真机记录补齐，
