@@ -86,6 +86,45 @@
 
 ---
 
+## [0.8.0] - 2026-10-06
+
+本版为**两个 agent 恢复语义修复的累积发布**：TraeWork 的跨模式项目绑定兜底被移除（issue #35），
+ZCode 恢复轮不再静默改写会话权限（issue #30）。两者都没有新增功能或界面变化，只纠正「恢复既有
+会话时」的行为失真——都属**恢复语义必须忠于原会话**这条不变量的同一族问题。
+
+### 修复
+
+- **TraeWork 移除跨模式项目绑定兜底，失败保留目标模式（issue #35，#36）**：
+  `bindProject()` 在非 Work 模式绑定失败时，会**回落 Work 模式**完成绑定再切回目标模式。
+  该兜底在「各模式独立绑定」的语义下**结构性不可达**：Work 模式绑定的项目不继承给 Code / Design
+  模式，切回后项目即丢失，最终仍以失败收场，且把用户的原目标模式**静默改写**为 Work。
+  现移除整个兜底分支，非 Work 模式绑定失败即如实返回失败，**不改变用户请求的模式**。
+  修复前 `test/integration/traework-bind-fallback.test.ts` 两条行为用例如实失败
+  （`expected 'Work' to be 'Code'` / `expected 'Work' to be 'Design'`），恢复实现后通过。
+
+- **ZCode 恢复轮保留原会话权限（issue #30，#37）**：`continue_task` / `rework_task` 恢复原会话时，
+  `runZcodeTask` 先按 `ctx.resume.permissionMode` 求得权限，但发送前又用
+  `gui.defaultPermissionMode` **无条件覆盖**它——原会话权限被静默改回 profile 默认值，
+  且随后以该值强制切换界面、回读，`session.permissionMode` 回执随之失真。
+  现 `permission` 改为 `const`（全文件仅此一处取值），**仅在记录缺失时回落 profile 默认值**；
+  权限回读失败时报错文本携带**实际目标权限**（原先固定显示「完全访问」，会误导排查）。
+
+### 验证
+
+- TraeWork：`vitest run traework` 15 文件 / 139 用例通过；回退 `session.ts` 到基线可复现两条失败。
+- ZCode：三个相关测试文件 85 用例通过；仅回退 `src/agents/zcode/run.ts` 到基线再跑，
+  新增用例 5 failed / 3 passed，失败点即被测层（`fake.permission` 期望「受限访问」实得「完全访问」）。
+- `tsc --noEmit` / ESLint `--max-warnings 0` / `git diff --check` 通过。
+- **ZCode 侧使用假 CDP 集成测试，未做真机验证**（PR #37 声明的边界，本版沿用）。
+
+### 已知限制
+
+- ZCode 权限保留修复仅有假 CDP 集成测试覆盖，缺真机（真实 ZCode 3.14.x）复现。
+- 全量 `vitest run` 中 `test/integration/zcode-rework-loop.test.ts` 存在**等待终态超时的时序 flake**，
+  在 base master 上同样复现，与本版两个修复无关。
+
+---
+
 ## [0.7.10] - 2026-10-06
 
 ### 修复

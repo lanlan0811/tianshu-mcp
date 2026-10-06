@@ -125,6 +125,56 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.8.0] - 2026-10-06
+
+A cumulative release of **two agent resume-semantics fixes**: TraeWork's cross-mode project-binding
+fallback is removed (issue #35), and ZCode resume rounds no longer silently rewrite the session's
+permission (issue #30). Neither adds features or UI changes — both correct distorted behaviour when
+*resuming an existing session*, and both belong to the same family: **resuming must stay faithful to
+the original session**.
+
+### Fixed
+
+- **TraeWork: removed the cross-mode project-binding fallback; failures keep the target mode
+  (issue #35, #36)**: when binding in a non-Work mode failed, `bindProject()` would **fall back to
+  Work mode** to complete the binding and then switch back. Under "each mode binds independently",
+  that fallback is **structurally unreachable**: a project bound in Work mode is not inherited by
+  Code / Design, so switching back loses it — the round still ends in failure, while the user's
+  requested mode was **silently rewritten** to Work. The whole fallback branch is now removed; a
+  non-Work bind failure returns an honest failure and **never changes the requested mode**. Before
+  the fix, two behaviour tests in `test/integration/traework-bind-fallback.test.ts` failed faithfully
+  (`expected 'Work' to be 'Code'` / `expected 'Work' to be 'Design'`); they pass after it.
+
+- **ZCode: resume rounds preserve the original session permission (issue #30, #37)**: when
+  `continue_task` / `rework_task` resumed an existing session, `runZcodeTask` first derived the
+  permission from `ctx.resume.permissionMode` but then **unconditionally overwrote** it with
+  `gui.defaultPermissionMode` before dispatch — silently reverting the session permission to the
+  profile default, then forcing that value onto the UI and reading it back, so the reported
+  `session.permissionMode` was distorted too. `permission` is now `const` (the only assignment site in
+  the file) and falls back to the profile default **only when no record exists**; on a read-back
+  mismatch the error now carries the **actual target permission** (it previously always said
+  "完全访问", which misled diagnosis).
+
+### Verification
+
+- TraeWork: `vitest run traework` — 15 files / 139 tests pass; reverting `session.ts` reproduces the
+  two failures.
+- ZCode: three related test files — 85 tests pass; reverting only `src/agents/zcode/run.ts` yields
+  5 failed / 3 passed on the new cases, failing exactly at the layer under test (`fake.permission`
+  expected "受限访问", got "完全访问").
+- `tsc --noEmit` / ESLint `--max-warnings 0` / `git diff --check` pass.
+- **The ZCode side uses a fake-CDP integration test and has not been verified on a real machine**
+  (the boundary declared in PR #37; carried over here).
+
+### Known limitations
+
+- The ZCode permission-preservation fix is covered only by fake-CDP integration tests; no real-machine
+  (actual ZCode 3.14.x) reproduction.
+- In the full `vitest run`, `test/integration/zcode-rework-loop.test.ts` has a **timing flake waiting
+  for a terminal state**, reproduced on base master too and unrelated to these two fixes.
+
+---
+
 ## [0.7.10] - 2026-10-06
 
 ### Fixed
