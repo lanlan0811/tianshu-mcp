@@ -41,6 +41,19 @@ export interface OpenDesignPollState {
   stable: number;
   /** 空闲计时起点（0 = 未开始计时） */
   idleSince: number;
+  /**
+   * 本轮是否曾观测到权威运行信号（issue #31）。
+   *
+   * 文本+产物双稳定**只在曾观测到运行信号后**才作为完成证据——`stop`/`sendStarting`
+   * 选择器漂移时，界面会「看起来全静止」而任务其实仍在进行；此时若仅凭 stableRounds 判完成，
+   * 就会在 stableRounds × pollInterval（默认约 12s）后把进行中的任务误判成成功，直接进入验收/返修链。
+   * 与 Codex 的 `sawRunning` 门对齐。
+   *
+   * **产物指纹变化不计入运行信号**：`artifactSignature` 是「静止判据的底料」，不是活性信号——
+   * `run.ts` 的 `fetchArtifactForSummary` 在 finished 终态**之后**仍会写文件，
+   * 把它当运行信号会让「已完成但正在搬产物」永远判不了完成。
+   */
+  sawRunning: boolean;
 }
 
 export type OpenDesignPollKind =
@@ -68,7 +81,7 @@ export function pollFingerprint(poll: OpenDesignPoll): string {
 }
 
 export function initialOpenDesignState(): OpenDesignPollState {
-  return { hash: "", stable: 0, idleSince: 0 };
+  return { hash: "", stable: 0, idleSince: 0, sawRunning: false };
 }
 
 /** 末段提问文本的最大长度（只用于 pendingQuestion，防止把整篇回复当问题） */
@@ -137,7 +150,7 @@ export function judgeOpenDesignPoll(
       const question = detectQuestion(poll, previous);
       return {
         kind: "needs_user",
-        state: { hash, stable: 0, idleSince: 0 },
+        state: { hash, stable: 0, idleSince: 0, sawRunning: true },
         evidence: `${evidence}+stall`,
         question:
           question ??
@@ -145,7 +158,7 @@ export function judgeOpenDesignPoll(
             `agent 可能在等待用户确认或长时间静默。请回到 Open Design 窗口确认后调用 continue_task。`,
       };
     }
-    return { kind: "running", state: { hash, stable: 0, idleSince: 0 }, evidence };
+    return { kind: "running", state: { hash, stable: 0, idleSince: 0, sawRunning: true }, evidence };
   }
 
   // 无运行信号：停滞计时作废
@@ -153,14 +166,24 @@ export function judgeOpenDesignPoll(
 
   // 2) 失败态：界面明确给出失败文案 —— 不得判完成
   if (poll.errorText?.trim())
-    return { kind: "failed", state: { hash, stable: 0, idleSince: 0 }, evidence };
+    return {
+      kind: "failed",
+      state: { hash, stable: 0, idleSince: 0, sawRunning: previous.sawRunning },
+      evidence,
+    };
 
   // 3) 提问（无运行信号 + 文本刚变化 + 空输入框 + 问号结尾）→ 本轮是「暂停」而非「完成」
   const question = detectQuestion(poll, previous);
   if (question)
-    return { kind: "needs_user", state: { hash, stable: 0, idleSince: 0 }, evidence, question };
+    return {
+      kind: "needs_user",
+      state: { hash, stable: 0, idleSince: 0, sawRunning: previous.sawRunning },
+      evidence,
+      question,
+    };
 
   // 4) 文本 + 产物双稳定累计；任一变即清零
+  const sawRunning = previous.sawRunning;
   const stable = hash === previous.hash && poll.conversationText.trim() ? previous.stable + 1 : 0;
   const idleSince = stable >= stableRounds ? previous.idleSince || now : 0;
 
@@ -168,18 +191,21 @@ export function judgeOpenDesignPoll(
   if (now >= taskDeadline)
     return {
       kind: "timeout",
-      state: { hash, stable, idleSince },
+      state: { hash, stable, idleSince, sawRunning },
       evidence: `${evidence}+deadline`,
     };
 
   if (idleSince && now - idleSince >= idleTimeoutMs)
-    return { kind: "idle_timeout", state: { hash, stable, idleSince }, evidence };
+    return { kind: "idle_timeout", state: { hash, stable, idleSince, sawRunning }, evidence };
 
   // 6) 无运行信号 + 双稳定 ≥ stableRounds + 无错误 → 完成
-  if (stable >= stableRounds && poll.conversationText.trim())
-    return { kind: "finished", state: { hash, stable, idleSince }, evidence };
+  //
+  // issue #31：以上仅在**曾观测到运行信号**后成立。否则「全静止」可能只是 stop/sendStarting
+  // 选择器漂移造成的假象——此时不得判完成，只允许走上面的 idle_timeout。
+  if (sawRunning && stable >= stableRounds && poll.conversationText.trim())
+    return { kind: "finished", state: { hash, stable, idleSince, sawRunning }, evidence };
 
-  return { kind: "running", state: { hash, stable, idleSince }, evidence };
+  return { kind: "running", state: { hash, stable, idleSince, sawRunning }, evidence };
 }
 
 /**

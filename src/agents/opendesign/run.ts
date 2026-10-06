@@ -559,6 +559,8 @@ export async function runOpenDesignTask(args: RunOpenDesignArgs): Promise<AgentR
         result,
         onAbort: abortResult,
         noProject: !ctx.projectPath.trim(),
+        // issue #31：重观察轮的被观察 turn 此前已确认在运行，种子 sawRunning
+        sawRunningSeed: true,
       });
     }
 
@@ -797,6 +799,10 @@ export async function runOpenDesignTask(args: RunOpenDesignArgs): Promise<AgentR
       onAbort: abortResult,
       actualModel,
       noProject: !ctx.projectPath.trim(),
+      // issue #31：发送确认阶段观测到的运行信号（stop/sendStarting）是「本轮确实已启动」最可靠
+      // 的证据。观察循环可能因选择器漂移或 turn 已跑完而整段采不到信号，不带过来的话会把已启动
+      // 的任务误落 idle_timeout。
+      sawRunningSeed: Boolean(sent.evidence?.seenRunning),
       // 产物数据根：<namespaceRoot>/data（产物存储为 <dataRoot>/projects/<projectId>/）
       artifactDataRoot: namespaceRoot ? path.join(namespaceRoot, "data") : null,
     });
@@ -906,6 +912,12 @@ interface ObserveArgs {
   noProject?: boolean;
   /** 产物数据根（<namespaceRoot>/data）：终态后据此把设计稿取回项目目录，供视觉验收 */
   artifactDataRoot?: string | null;
+  /**
+   * 重观察轮种子（issue #31）：被观察的 turn 在恢复**之前**就已确认在运行。
+   * 不种 sawRunning 的话，「恢复后 turn 恰好已完成 → 观察期内从未见运行信号 → 判不了 finished
+   * → 白等 idleTimeoutMs 误落 idle_timeout」。与 codex/run.ts 的重观察种子同一理由。
+   */
+  sawRunningSeed?: boolean;
 }
 
 /**
@@ -915,6 +927,11 @@ interface ObserveArgs {
 async function observe(client: OpenDesignCdpClient, args: ObserveArgs): Promise<AgentRunResult> {
   const { ctx, deps, gui, opts, logger, startedAt, logFile, result } = args;
   let state: OpenDesignPollState = initialOpenDesignState();
+  if (args.sawRunningSeed) {
+    // issue #31：重观察轮的 turn 此前已确认在运行 —— 种子 sawRunning 规避
+    // 「turn 在恢复前已完成 → 从未见运行信号 → 判不了 finished → 误落 idle_timeout」。
+    state = { ...state, sawRunning: true };
+  }
   const stallSince = { since: 0 };
   let lastProgress = 0;
   let runningReported = false;

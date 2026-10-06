@@ -61,6 +61,20 @@ export interface MinimaxPollState {
   hash: string;
   stable: number;
   idleSince: number;
+  /**
+   * 本轮是否曾观测到权威运行信号（issue #31）。
+   *
+   * 文本稳定**只在曾观测到运行信号后**才作为完成证据——`stop-button` 选择器漂移时，
+   * 界面会「看起来静止」而任务其实仍在进行；此时若仅凭 stableRounds 判完成，就会在
+   * stableRounds × pollInterval（默认约 12s）后把进行中的任务误判成成功，直接进入验收/返修链。
+   * 与 Codex 的 `sawRunning` 门对齐。
+   *
+   * 注意（本 driver 的特殊性）：`stopVisible` 依赖的 `[data-testid="stop-button"]` 来自产物常量
+   * 提取、真机未复验（见文件头「待复验」）。若该 testid 实际不存在，本门会让 MiniMax
+   * **每个任务**都收敛为 idle_timeout → 需人工介入（fail-closed：可 continue_task 恢复，
+   * 远好于误判成功）。这是与 `hasRunSignal` 注释一致的「有意的慢而不错」。
+   */
+  sawRunning: boolean;
 }
 
 /** 停止按钮可见期间「文本最后一次变化」的时刻（0 = 未在计时）。可变对象由调用方跨轮持有。 */
@@ -80,7 +94,7 @@ export function hashText(text: string): string {
 }
 
 export function initialMinimaxState(): MinimaxPollState {
-  return { hash: "", stable: 0, idleSince: 0 };
+  return { hash: "", stable: 0, idleSince: 0, sawRunning: false };
 }
 
 /** 末段提问文本的最大长度（只用于 pendingQuestion，防止把整篇回复当问题） */
@@ -176,14 +190,14 @@ export function judgeMinimaxPoll(
   if (poll.userGateVisible)
     return {
       kind: "needs_user",
-      state: { hash, stable: 0, idleSince: 0 },
+      state: { hash, stable: 0, idleSince: 0, sawRunning: previous.sawRunning },
       evidence,
       question: poll.question?.trim(),
     };
   if (poll.question?.trim())
     return {
       kind: "needs_user",
-      state: { hash, stable: 0, idleSince: 0 },
+      state: { hash, stable: 0, idleSince: 0, sawRunning: previous.sawRunning },
       evidence,
       question: poll.question.trim(),
     };
@@ -195,11 +209,11 @@ export function judgeMinimaxPoll(
     if (now - stallSince.since >= stallTimeoutMs)
       return {
         kind: "needs_user",
-        state: { hash, stable: 0, idleSince: 0 },
+        state: { hash, stable: 0, idleSince: 0, sawRunning: true },
         evidence: `${evidence}+stall`,
         question: `MiniMax Code 停止按钮持续可见且对话内容已停滞约 ${Math.round(stallTimeoutMs / 1000)}s：agent 可能在等待用户确认或长时间静默。请回到 MiniMax Code 窗口确认后调用 continue_task。`,
       };
-    return { kind: "running", state: { hash, stable: 0, idleSince: 0 }, evidence };
+    return { kind: "running", state: { hash, stable: 0, idleSince: 0, sawRunning: true }, evidence };
   }
 
   // 无运行信号：停滞计时作废。
@@ -207,17 +221,25 @@ export function judgeMinimaxPoll(
 
   // 3) 失败态：界面明确给出失败文案或（配置的）重试按钮 —— 不得判完成。
   if (poll.retryVisible || poll.errorText?.trim())
-    return { kind: "failed", state: { hash, stable: 0, idleSince: 0 }, evidence };
+    return {
+      kind: "failed",
+      state: { hash, stable: 0, idleSince: 0, sawRunning: previous.sawRunning },
+      evidence,
+    };
 
   // 4) 文本稳定累计；达到 stableRounds 才开始空闲计时，文本一变立刻清零。
+  const sawRunning = previous.sawRunning;
   const stable = hash === previous.hash && poll.assistantText.trim() ? previous.stable + 1 : 0;
   const idleSince = stable >= stableRounds ? previous.idleSince || now : 0;
   if (idleSince && now - idleSince >= idleTimeoutMs)
-    return { kind: "idle_timeout", state: { hash, stable, idleSince }, evidence };
+    return { kind: "idle_timeout", state: { hash, stable, idleSince, sawRunning }, evidence };
 
   // 5) 无运行信号 + 文本稳定 ≥ stableRounds + 无错误 → 完成。
-  if (stable >= stableRounds && poll.assistantText.trim())
-    return { kind: "finished", state: { hash, stable, idleSince }, evidence };
+  //
+  // issue #31：以上仅在**曾观测到运行信号**后成立。否则「文本静止」可能只是 stop-button
+  // 选择器漂移造成的假象——此时不得判完成，只允许走上面的 idle_timeout。
+  if (sawRunning && stable >= stableRounds && poll.assistantText.trim())
+    return { kind: "finished", state: { hash, stable, idleSince, sawRunning }, evidence };
 
-  return { kind: "running", state: { hash, stable, idleSince }, evidence };
+  return { kind: "running", state: { hash, stable, idleSince, sawRunning }, evidence };
 }

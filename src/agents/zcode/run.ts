@@ -27,7 +27,7 @@ import {
   isUnboundTriggerText,
   type ZcodeProjectItem,
 } from "./project.js";
-import { judgeZcodePoll, type ZcodePollState } from "./liveness.js";
+import { initialZcodeState, judgeZcodePoll, type ZcodePollState } from "./liveness.js";
 import {
   ZcodeCdpClient,
   CdpDisconnectedError,
@@ -277,6 +277,16 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
   const started = Date.now(),
     { ctx, resolved, opts, logFile } = args,
     baseDeps = { ...DEFAULT_DEPS, ...args.deps };
+  /**
+   * 发送确认阶段观测到的**真实运行信号**（issue #31）。只认 stop/loading/activeTool，
+   * 不含「对话文本发生变化」——后者不是运行信号，不能作为完成判定的前置证据。
+   *
+   * 声明在函数级：发送确认块是独立作用域，观察循环在它之外，二者只能通过函数级变量传递。
+   * 发送阶段（点击发送后的有界观察窗口）是「本轮确实已启动」最可靠的证据来源；选择器漂移、
+   * 或 turn 在观察循环开始前就跑完时，观察循环可能整段都采不到运行信号——不带过来的话，
+   * 已启动的任务会被误落 idle_timeout。
+   */
+  let sawRunningAtSend = false;
   const gui = guiOf(resolved);
   const { logger, close } = fileLogger(logFile, opts.logger);
   const budget = new ZcodeBudget(
@@ -1255,6 +1265,9 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
         if (opts.signal?.aborted) return result({ killed: true, endReason: "aborted" });
         await cdp.sendMessage();
         let seenMessage = before.includes(marker);
+        // issue #31：发送确认阶段观测到的真实运行信号（stop/loading/activeTool），
+        // 供观察循环种子 sawRunning —— 见下方 sawRunningAtSend 的说明。
+
         let seenStateChange = false;
         let seenRunning = false;
         let markedSession: Awaited<ReturnType<ZcodeCdpClient["sessionForMarker"]>> = undefined;
@@ -1281,6 +1294,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
           seenMessage ||= after.includes(marker);
           seenStateChange ||= !input.includes(marker);
           seenRunning ||= polled.stopVisible || polled.loading || polled.activeTool;
+          sawRunningAtSend = sawRunningAtSend || polled.stopVisible || polled.loading || polled.activeTool;
           if (polled.assistantText && polled.assistantText !== beforePoll.assistantText)
             seenRunning = true;
           // eslint-disable-next-line no-await-in-loop
@@ -1322,8 +1336,13 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
 
     budget.finishSetup();
     const deadline = started + ctx.taskTimeoutMs;
-    let state: ZcodePollState = { hash: "", stable: 0, idleSince: 0 },
+    let state: ZcodePollState = initialZcodeState(),
       lastProgress = 0;
+    // issue #31：发送确认阶段（点击发送后的有界观察窗口）是「本轮任务确实已启动」最可靠的
+    // 证据来源。选择器漂移、或 turn 在观察循环开始前就跑完时，观察循环可能整段都采不到运行
+    // 信号 —— 若不把发送阶段的信号带过来，已启动的任务会被误落 idle_timeout。
+    // 注意只认**真实运行信号**（stop/loading/activeTool），不含「文本发生变化」。
+    if (sawRunningAtSend) state = { ...state, sawRunning: true };
     for (;;) {
       if (opts.signal?.aborted) return result({ killed: true, endReason: "aborted" });
       if (Date.now() >= deadline)

@@ -399,6 +399,12 @@ interface KimicodeObserveArgs {
   session: () => NonNullable<AgentRunResult["session"]>;
   /** 发送前基线：失败文案的「本轮新增」判据（返修轮必须带，否则会读到上一轮的陈旧失败文案） */
   baselineError: string;
+  /**
+   * 重观察轮种子（issue #31）：被观察的 turn 在恢复**之前**就已确认在运行。
+   * 不种 sawRunning 的话，「恢复后 turn 恰好已完成 → 观察期内从未见运行信号 → 判不了 finished
+   * → 白等 idleTimeoutMs 误落 idle_timeout」。与 codex/run.ts 的重观察种子同一理由。
+   */
+  sawRunningSeed?: boolean;
   /** 取消：尽力点停止按钮并如实回报 guiStop */
   onAbort: () => Promise<AgentRunResult>;
 }
@@ -413,6 +419,11 @@ interface KimicodeObserveArgs {
 async function observeKimicode(args: KimicodeObserveArgs): Promise<AgentRunResult> {
   const { cdp, deps, gui, opts, logger, deadline, result, session } = args;
   let state = initialKimicodeState();
+  if (args.sawRunningSeed) {
+    // issue #31：重观察轮的 turn 此前已确认在运行 —— 种子 sawRunning 规避
+    // 「turn 在恢复前已完成 → 从未见运行信号 → 判不了 finished → 误落 idle_timeout」。
+    state = { ...state, sawRunning: true };
+  }
   const stallSince = { since: 0 };
   let lastProgress = 0;
   for (;;) {
@@ -808,6 +819,8 @@ export async function runKimicodeTask(args: RunKimicodeArgs): Promise<AgentRunRe
         result,
         session: () => sessionMeta({ id: sessionId, title: sessionTitle }),
         baselineError: "",
+        // issue #31：重观察轮的被观察 turn 此前已确认在运行，种子 sawRunning
+        sawRunningSeed: true,
         onAbort: () => abortResult(sessionMeta({ id: sessionId, title: sessionTitle })),
       });
     }
@@ -1142,6 +1155,10 @@ export async function runKimicodeTask(args: RunKimicodeArgs): Promise<AgentRunRe
       result,
       session: () => sessionMeta({ id: sessionId, title: sessionTitle }),
       baselineError,
+      // issue #31：发送确认阶段观测到的运行信号（stop/sendStarting）是「本轮确实已启动」
+      // 最可靠的证据。观察循环可能因选择器漂移或 turn 已跑完而整段采不到信号，
+      // 不带过来的话会把已启动的任务误落 idle_timeout。
+      sawRunningSeed: seenRunning,
       onAbort: () => abortResult(sessionMeta({ id: sessionId, title: sessionTitle })),
     });
   } catch (e) {
