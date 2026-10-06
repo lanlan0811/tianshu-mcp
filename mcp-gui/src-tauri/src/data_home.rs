@@ -161,7 +161,10 @@ mod tests {
             validate_task_id("tsk_20260926135200_d4e5f6").expect("合法"),
             "tsk_20260926135200_d4e5f6"
         );
-        assert_eq!(validate_task_id("vfy_2026-09-26_x1").expect("合法"), "vfy_2026-09-26_x1");
+        assert_eq!(
+            validate_task_id("vfy_2026-09-26_x1").expect("合法"),
+            "vfy_2026-09-26_x1"
+        );
         assert_eq!(validate_task_id("a-b_c9").expect("合法"), "a-b_c9");
         // 前后空白被 trim 后仍然合法
         assert_eq!(validate_task_id("  tsk_1  ").expect("trim 后合法"), "tsk_1");
