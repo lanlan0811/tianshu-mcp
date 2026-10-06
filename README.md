@@ -251,8 +251,8 @@ run_task(projectPath=D:/xxx/my-app, task="…任务书…", agentId=codex,
 | agentId | driver / adapter | status | 说明 |
 |---|---|---|---|
 | `codex` | `gui` / `codex-gui` | **ready**（macOS 为 `research`） | Codex 桌面端 GUI（Windows：MSIX COM 激活 + CDP；macOS：spawn .app + CDP）；支持 `model` / `reasoningLevel` / `planDoc` / `designSystem`；等待用户确认、取消与重派护栏均已真机验证 |
-| `zcode` | `gui` / `zcode-gui` | **ready**（Windows 真机闭环；macOS 未验证） | CDP GUI adapter；支持无项目派发、`allowCreateProject` 与 `reasoningLevel`（档位集合**随模型变化**，越权在**发送前**报错）；**v0.7.4 适配 3.14.x 的路径契约缺席**（绑定判据改为「路径优先、无路径渠道时按显示名 + 全局同名消歧」，同名即 fail-closed）；**v0.7.6 修掉绑定死锁**（侧边栏 `workspace-item-*` 滚出视口仍被采集 → 唯一可信的菜单渠道被短路）、**运行期 CDP 断连的恢复入口**（重连观察一次、绝不重发，失败落 `needs_user(setup_recovery)`）与**两级模型菜单**（provider 分组须 hover 才渲染子项） |
-| `traework` | `gui` / `traework-gui` | **ready** | CDP 驱动 TRAE SOLO CN 桌面 UI；支持 `mode`（Work / Code / Design，三种模式各自维护独立项目绑定）；三种面板模式真机验证通过 |
+| `zcode` | `gui` / `zcode-gui` | **ready**（Windows 真机闭环；macOS 未验证） | CDP GUI adapter；支持无项目派发、`allowCreateProject` 与 `reasoningLevel`（档位集合**随模型变化**，越权在**发送前**报错）；**v0.7.4 适配 3.14.x 的路径契约缺席**（绑定判据改为「路径优先、无路径渠道时按显示名 + 全局同名消歧」，同名即 fail-closed）；**v0.7.6 修掉绑定死锁**（侧边栏 `workspace-item-*` 滚出视口仍被采集 → 唯一可信的菜单渠道被短路）、**运行期 CDP 断连的恢复入口**（重连观察一次、绝不重发，失败落 `needs_user(setup_recovery)`）与**两级模型菜单**（provider 分组须 hover 才渲染子项）；**v0.8.0 恢复轮保留原会话权限**（issue #30：`continue_task` / `rework_task` 不再被 profile 默认值静默覆盖） |
+| `traework` | `gui` / `traework-gui` | **ready** | CDP 驱动 TRAE SOLO CN 桌面 UI；支持 `mode`（Work / Code / Design，三种模式各自维护独立项目绑定）；三种面板模式真机验证通过；**v0.8.0 移除跨模式项目绑定兜底**（issue #35：非 Work 模式绑定失败不再回落 Work 并静默改写目标模式，失败即如实返回） |
 | `kimicode` | `gui` / `kimicode-gui` | **ready**（macOS 为 `research`） | Kimi Code 桌面端（Electron）；**双渲染进程**（主窗口 + `Kimi Browser Overlay` 浮层承载模型 / 档位 / 模式菜单）；工作区以完整路径绑定；支持 `model` / `reasoningLevel`，**不支持 `mode`**，且**不支持无项目派发** |
 | `qoder` | `gui` / `qoder-gui` | Windows 真机闭环通过；macOS **research** | 仅 Qoder CN；必须提供已有 `projectPath` 与可读 `planDoc`；`modelSource=default\|custom` 消除同名模型歧义，思考等级经「模型管理」保存为全局偏好并回读 |
 | `opendesign` | `gui` / `opendesign-gui` | **ready**（macOS 为 `research`） | Open Design 桌面端 GUI；选择器取自产品自身 Web 前端的 `data-testid` 钩子，12 步执行链全部接线，并接入验收 → 自动返修 → 再验收闭环；它是唯一带「产物信号」（文件 mtime / 大小指纹）的 driver |
@@ -372,6 +372,7 @@ run_task(projectPath=D:/xxx/my-app, task="…任务书…", agentId=codex,
 | 加固与可观测 | 0.6.x | 技能自装加固（0.6.0）、GUI 选择器漂移修复（0.6.2）、细粒度事件流、结构化修复指令、dryRun、验收配置三级继承、终态通知 |
 | Open Design | 0.7.x | Open Design 桌面端适配（0.7.1）、ZCode 3.14.x 绑定契约修复（0.7.4） |
 | MiniMax Code | 0.7.8 | 第七个 GUI agent 接入（0.7.8）；真机取证修正三处结构假设（二级子菜单 / 集合随模型变化 / 项目创建两步），新增 `contextWindow` 参数与只读诊断探针 |
+| 恢复语义修正 | 0.8.0 | TraeWork 移除跨模式项目绑定兜底（#35：兜底结构性不可达且静默改写目标模式）；ZCode 恢复轮保留原会话权限（#30：发送前无条件覆盖默认值已移除） |
 | 日志台 GUI | `gui-v*`（独立线） | `mcp-gui/` 本地只读日志台（Tauri 2.x + Vue 3），独立版本与 tag，**不随 MCP 主包发布** |
 
 > 完整逐版记录见 [CHANGELOG.md](CHANGELOG.md)，交接状态与排障手册见 [HANDOFF.md](HANDOFF.md)，工程质量口径见 [ARCHITECTURE.md](ARCHITECTURE.md)。
