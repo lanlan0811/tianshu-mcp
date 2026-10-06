@@ -28,7 +28,19 @@ fn as_optional_string(v: &Value, key: &str) -> Option<String> {
 /// - `req.full == true`：读**全量**（阶段甘特需要从头看到尾），解析逻辑**与窗口模式共用同一段代码**，
 ///   只有「取文本的方式」不同；全量读取失败时退回尾部窗口，不把整页打空。
 pub fn read_events(home: &Path, req: &ReadEventsRequest) -> ReadEventsResult {
-    let path = home.join("tasks").join(&req.task_id).join("task.jsonl");
+    // 任务 ID 先过字符白名单：非法 / 越界 ID 与「文件缺失」同口径，如实返回空窗口，
+    // 而不是去读数据目录之外的文件。（修复前此处是裸 `join`。）
+    let Ok(dir) = crate::data_home::task_dir(home, &req.task_id) else {
+        return ReadEventsResult {
+            events: Vec::new(),
+            total_bytes: 0,
+            loaded_from: 0,
+            loaded_to: 0,
+            bad_lines: 0,
+            loaded_count: 0,
+        };
+    };
+    let path = dir.join("task.jsonl");
     let window_bytes = req.window_bytes.unwrap_or_else(tail::default_window);
 
     let window = if req.full {
@@ -264,6 +276,89 @@ mod tests {
         );
         assert_eq!(full.bad_lines, 0);
         assert_eq!(full.total_bytes, body.len() as u64);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// 越界防护（issue #32）：含 `..` 的 task_id **不得**读到数据目录之外的事件流。
+    ///
+    /// 修复前该用例为 RED：裸 join 会读到 `<home>/../outside/evil/task.jsonl`。
+    #[test]
+    fn read_events_rejects_escape() {
+        let base = std::env::temp_dir().join("tianshu-gui-events-escape-test");
+        let _ = std::fs::remove_dir_all(&base);
+        let home = base.join("home");
+        std::fs::create_dir_all(home.join("tasks/tsk_ok")).expect("建数据目录");
+        // 数据目录之外放一份「有辨识度」的事件流
+        let outside = base.join("outside/evil");
+        std::fs::create_dir_all(&outside).expect("建外部目录");
+        std::fs::write(
+            outside.join("task.jsonl"),
+            "{\"ts\":\"t1\",\"event\":\"SECRET-OUTSIDE\",\"state\":\"running\"}\n",
+        )
+        .expect("写外部事件流");
+
+        let res = read_events(
+            &home,
+            &ReadEventsRequest {
+                data_home: home.to_string_lossy().to_string(),
+                task_id: "../../outside/evil".to_string(),
+                limit: None,
+                window_bytes: None,
+                full: true, // 用全量读，确保不是「窗口恰好没覆盖」造成的假绿
+            },
+        );
+        assert!(res.events.is_empty(), "越界 task_id 必须返回空事件");
+        assert_eq!(res.total_bytes, 0);
+        assert!(
+            !res.events.iter().any(|e| e.event == "SECRET-OUTSIDE"),
+            "绝不能读到数据目录之外的事件内容"
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// 绝对路径注入同样必须被挡
+    #[test]
+    fn read_events_rejects_absolute_path() {
+        let home = std::env::temp_dir().join("tianshu-gui-events-abs-test");
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(home.join("tasks/tsk_ok")).expect("建目录");
+        let res = read_events(
+            &home,
+            &ReadEventsRequest {
+                data_home: home.to_string_lossy().to_string(),
+                task_id: "/etc".to_string(),
+                limit: None,
+                window_bytes: None,
+                full: true,
+            },
+        );
+        assert!(res.events.is_empty());
+        assert_eq!(res.total_bytes, 0);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// 反证用例：合法 ID 照常读到事件（修复不得误伤）
+    #[test]
+    fn legit_task_id_still_reads_events() {
+        let home = std::env::temp_dir().join("tianshu-gui-events-legit-test");
+        let _ = std::fs::remove_dir_all(&home);
+        write_jsonl(
+            &home,
+            "tsk_20260926135200_d4e5f6",
+            "{\"ts\":\"t1\",\"event\":\"created\",\"state\":\"queued\"}\n",
+        );
+        let res = read_events(
+            &home,
+            &ReadEventsRequest {
+                data_home: home.to_string_lossy().to_string(),
+                task_id: "tsk_20260926135200_d4e5f6".to_string(),
+                limit: None,
+                window_bytes: None,
+                full: true,
+            },
+        );
+        assert_eq!(res.events.len(), 1);
+        assert_eq!(res.events[0].event, "created");
         let _ = std::fs::remove_dir_all(&home);
     }
 }

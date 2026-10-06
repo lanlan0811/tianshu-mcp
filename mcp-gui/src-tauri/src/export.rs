@@ -8,7 +8,7 @@ use std::path::Path;
 
 use zip::write::SimpleFileOptions;
 
-use crate::data_home::resolve_rel;
+use crate::data_home::{resolve_rel, task_dir};
 use crate::models::{ExportFileRequest, ExportResult, ExportTaskZipRequest};
 
 fn is_heavy_log(name: &str) -> bool {
@@ -38,7 +38,9 @@ pub fn export_file(home: &Path, req: &ExportFileRequest) -> Result<ExportResult,
 
 /// 把整个任务目录打包为 zip
 pub fn export_task_zip(home: &Path, req: &ExportTaskZipRequest) -> Result<ExportResult, String> {
-    let task_dir = home.join("tasks").join(&req.task_id);
+    // 任务 ID 先过字符白名单：越界 / 非法 ID 一律拒绝，绝不打包数据目录之外的内容。
+    // （修复前此处是裸 `join`，`..` 可上溯穿透下方的 `is_dir` 闸门。）
+    let task_dir = task_dir(home, &req.task_id)?;
     if !task_dir.is_dir() {
         return Err(format!("任务目录不存在：{}", req.task_id));
     }
@@ -166,5 +168,78 @@ mod tests {
         assert!(is_heavy_log("verify-0.log"));
         assert!(!is_heavy_log("report-0.md"));
         assert!(!is_heavy_log("task.jsonl"));
+    }
+
+    /// 越界防护（issue #32）：task_id 含 `..` 时**不得**打包数据目录之外的内容。
+    ///
+    /// 该用例在修复前为 RED：裸 join 会解析到 `<home>/../outside/evil`，
+    /// 且其 `is_dir()` 为真，从而穿透 `export.rs` 的目录闸门并把目录外文件打进 zip。
+    #[test]
+    fn export_task_zip_rejects_escape() {
+        let base = std::env::temp_dir().join("tianshu-gui-zip-escape-test");
+        let _ = std::fs::remove_dir_all(&base);
+        let home = base.join("home");
+        std::fs::create_dir_all(home.join("tasks/tsk_ok")).expect("建数据目录");
+        // 数据目录「之外」放一份敏感文件（相对 home/tasks 需上溯两级）
+        std::fs::create_dir_all(base.join("outside/evil")).expect("建外部目录");
+        std::fs::write(base.join("outside/evil/secret.json"), "SECRET").expect("写敏感文件");
+
+        let target = base.join("out.zip");
+        let res = export_task_zip(
+            &home,
+            &ExportTaskZipRequest {
+                data_home: home.to_string_lossy().to_string(),
+                task_id: "../../outside/evil".to_string(),
+                target_path: target.to_string_lossy().to_string(),
+                exclude_heavy_logs: false,
+            },
+        );
+        assert!(res.is_err(), "含 .. 的 task_id 必须被拒绝");
+        // 且不得产出压缩包（失败即无副作用）
+        assert!(!target.is_file(), "被拒绝时不应创建压缩包");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// 绝对路径注入必须被拒绝
+    #[test]
+    fn export_task_zip_absolute_path_rejected() {
+        let home = std::env::temp_dir().join("tianshu-gui-zip-abs-test");
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(home.join("tasks/tsk_ok")).expect("建目录");
+        let target = home.join("out.zip");
+        let res = export_task_zip(
+            &home,
+            &ExportTaskZipRequest {
+                data_home: home.to_string_lossy().to_string(),
+                task_id: "/etc".to_string(),
+                target_path: target.to_string_lossy().to_string(),
+                exclude_heavy_logs: false,
+            },
+        );
+        assert!(res.is_err(), "绝对路径 task_id 必须被拒绝");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// 反证用例：合法 task_id 的行为**逐项不变**（修复不得误伤正常路径）
+    #[test]
+    fn legit_task_id_still_works() {
+        let home = std::env::temp_dir().join("tianshu-gui-zip-legit-test");
+        let _ = std::fs::remove_dir_all(&home);
+        make_task(&home);
+        let target = home.join("ok.zip");
+        let res = export_task_zip(
+            &home,
+            &ExportTaskZipRequest {
+                data_home: home.to_string_lossy().to_string(),
+                task_id: "tsk_zip".to_string(),
+                target_path: target.to_string_lossy().to_string(),
+                exclude_heavy_logs: true,
+            },
+        )
+        .expect("合法 ID 必须照常打包");
+        assert_eq!(res.excluded, 1);
+        assert!(res.bytes > 0);
+        assert!(target.is_file());
+        let _ = std::fs::remove_dir_all(&home);
     }
 }

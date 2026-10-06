@@ -28,10 +28,12 @@ fn count_of(v: &Value, key: &str) -> i64 {
 
 /// 读取基线摘要；文件缺失 / 损坏时返回 `present = false` 的默认值。
 pub fn read_baseline(home: &Path, req: &BaselineRequest) -> BaselineInfo {
-    let path = home
-        .join("tasks")
-        .join(req.task_id.trim())
-        .join("baseline.json");
+    // 任务 ID 先过字符白名单：非法 / 越界 ID 与「文件缺失」同口径 —— 如实给出
+    // `present = false`，而不是去读数据目录之外的文件。（修复前此处是裸 `join`。）
+    let Ok(dir) = crate::data_home::task_dir(home, &req.task_id) else {
+        return BaselineInfo::default();
+    };
+    let path = dir.join("baseline.json");
     let text = match std::fs::read_to_string(&path) {
         Ok(text) => text,
         Err(_) => return BaselineInfo::default(),
@@ -132,6 +134,64 @@ mod tests {
         assert!(!info.is_repo);
         // 已给计数的写法也被接受
         assert_eq!(info.dirty_files_count, 3);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// 越界防护（issue #32）：含 `..` 的 task_id **不得**读到数据目录之外。
+    ///
+    /// 修复前该用例为 RED：裸 join 会读到 `<home>/../outside/evil/baseline.json`。
+    /// 断言不仅看 `present`，还直接检查**敏感字段有没有被读进来** —— 避免「恰好没读到」
+    /// 被误当作「防线生效」。
+    #[test]
+    fn read_baseline_rejects_escape() {
+        let base = std::env::temp_dir().join("tianshu-gui-baseline-escape-test");
+        let _ = std::fs::remove_dir_all(&base);
+        let home = base.join("home");
+        std::fs::create_dir_all(home.join("tasks/tsk_ok")).expect("建数据目录");
+        // 数据目录之外放一份「有辨识度」的基线
+        let outside = base.join("outside/evil");
+        std::fs::create_dir_all(&outside).expect("建外部目录");
+        std::fs::write(
+            outside.join("baseline.json"),
+            r#"{"isRepo":true,"head":"SECRET-OUTSIDE","dirty":true}"#,
+        )
+        .expect("写外部基线");
+
+        let info = read_baseline(&home, &req("../../outside/evil"));
+        assert!(!info.present, "越界 task_id 必须视为「无基线」");
+        assert_ne!(
+            info.head.as_deref(),
+            Some("SECRET-OUTSIDE"),
+            "绝不能读到数据目录之外的基线内容"
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// 绝对路径注入同样必须被挡
+    #[test]
+    fn read_baseline_rejects_absolute_path() {
+        let home = std::env::temp_dir().join("tianshu-gui-baseline-abs-test");
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(home.join("tasks/tsk_ok")).expect("建目录");
+        let info = read_baseline(&home, &req("/etc"));
+        assert!(!info.present);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// 反证用例：合法 ID 照常读到基线（修复不得误伤）
+    #[test]
+    fn legit_task_id_still_reads_baseline() {
+        let home = std::env::temp_dir().join("tianshu-gui-baseline-legit-test");
+        let _ = std::fs::remove_dir_all(&home);
+        write_baseline(
+            &home,
+            "tsk_20260926135200_d4e5f6",
+            r#"{"isRepo":true,"head":"abc","dirtyFiles":["x"]}"#,
+        );
+        let info = read_baseline(&home, &req("tsk_20260926135200_d4e5f6"));
+        assert!(info.present);
+        assert_eq!(info.head.as_deref(), Some("abc"));
+        assert_eq!(info.dirty_files_count, 1);
         let _ = std::fs::remove_dir_all(&home);
     }
 }

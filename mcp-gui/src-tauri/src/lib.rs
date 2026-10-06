@@ -250,6 +250,8 @@ async fn read_events(
     state: State<'_, AppState>,
     req: ReadEventsRequest,
 ) -> Result<ReadEventsResult, String> {
+    // 第一道闸门：非法 task_id 直接报错（模块层 task_dir 再兜一道，防未来漏加）
+    data_home::validate_task_id(&req.task_id)?;
     let home = home_of(&state);
     Ok(event_stream::read_events(&home, &req))
 }
@@ -274,10 +276,8 @@ async fn read_baseline(
     state: State<'_, AppState>,
     req: BaselineRequest,
 ) -> Result<BaselineInfo, String> {
-    if req.task_id.trim().is_empty() {
-        // 任务 ID 缺失是调用方错误：明确报错，而不是回一份「没有基线」的默认值
-        return Err("任务 ID 不能为空".to_string());
-    }
+    // 任务 ID 缺失或含非法字符都是调用方错误：明确报错，而不是回一份「没有基线」的默认值
+    data_home::validate_task_id(&req.task_id)?;
     Ok(baseline::read_baseline(&home_of(&state), &req))
 }
 
@@ -374,6 +374,8 @@ async fn read_report(
     state: State<'_, AppState>,
     req: ReadReportRequest,
 ) -> Result<ReadReportResult, String> {
+    // 第一道闸门：与 `resolve_rel` 的越界防护同口径，另加 ID 字符白名单（ARCHITECTURE §16.10）
+    data_home::validate_task_id(&req.task_id)?;
     let home = home_of(&state);
     let rel = report_rel_path(&req.task_id, req.round, &req.kind)?;
     let abs = data_home::resolve_rel(&home, &rel)?;
@@ -407,6 +409,8 @@ async fn export_task_zip(
     state: State<'_, AppState>,
     req: ExportTaskZipRequest,
 ) -> Result<ExportResult, String> {
+    // 第一道闸门：非法 task_id 不进入打包流程（模块层 task_dir 再兜一道）
+    data_home::validate_task_id(&req.task_id)?;
     let home = home_of(&state);
     export::export_task_zip(&home, &req)
 }

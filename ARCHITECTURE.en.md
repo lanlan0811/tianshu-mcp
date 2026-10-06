@@ -1071,7 +1071,7 @@ build**. The `GUI` workflow also triggers on the two truth files, so TS-side dri
 
 | Module | Responsibility |
 |---|---|
-| `data_home.rs` | data-home resolution (`TIANSHU_MCP_HOME` → `~/.tianshu-mcp`), validation, **relative-path escape guards** |
+| `data_home.rs` | data-home resolution (`TIANSHU_MCP_HOME` → `~/.tianshu-mcp`), validation, **relative-path escape guards** (`resolve_rel`), **task-id character allowlist and safe directory joining** (`validate_task_id` / `task_dir`, issue #32) |
 | `scanner.rs` | `tasks/` scan + tolerant `task.json` parsing + artifact round aggregation + filtering/sorting |
 | `event_stream.rs` | `task.jsonl` parsing (bad lines skipped but counted) and event classification |
 | `tail.rs` | byte-window reads (tail window / arbitrary ranges), same semantics as `core/bytes.ts` |
@@ -1241,8 +1241,10 @@ From `gui-v0.1.1-beta.3` the app handles `tianshu://task/<taskId>`. Each link in
 **Parsing rules (external input, closed here)**: only `tianshu://task/<id>` is accepted; the host is compared
 **case-insensitively** (the URL spec only lowercases the scheme); the id must match `[A-Za-z0-9_-]` (it ends up in a
 `tasks/<id>/…` path); anything containing `..` / `%2e` is **rejected outright** (URL normalisation erases `..` and cannot
-be reversed, so rather than guessing a different id the link is reported as unrecognised); unrecognised links produce an
-**honest UI notice** and are never dropped silently.
+be reversed, so rather than guessing a different id the link is reported as unrecognised); **the same allowlist is
+enforced down in the Rust command layer** (`data_home.rs::validate_task_id`, issue #32) — `read_events` /
+`read_baseline` / `read_report` / `export_task_zip` validate before joining paths and do **not** rely on the frontend
+`TASK_ID_RE`; unrecognised links produce an **honest UI notice** and are never dropped silently.
 
 **Fallback**: if cold-start routing turns out not to work on a platform, the hot path stays and the platform difference is
 documented honestly in `docs/gui-log-viewer`; the difference is **never hidden** to look uniformly supported.

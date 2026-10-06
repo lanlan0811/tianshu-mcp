@@ -1018,7 +1018,7 @@ Rust 侧需要重写一份「状态枚举 / 事件词表」用于事件分类，
 
 | 模块 | 职责 |
 |---|---|
-| `data_home.rs` | 数据目录解析（`TIANSHU_MCP_HOME` → `~/.tianshu-mcp`）、合法性校验、**相对路径越界防护** |
+| `data_home.rs` | 数据目录解析（`TIANSHU_MCP_HOME` → `~/.tianshu-mcp`）、合法性校验、**相对路径越界防护**（`resolve_rel`）、**任务 ID 字符白名单与安全目录拼装**（`validate_task_id` / `task_dir`，issue #32） |
 | `scanner.rs` | `tasks/` 扫描 + `task.json` 容错解析 + 产物轮次聚合 + 筛选 / 排序 |
 | `event_stream.rs` | `task.jsonl` 解析（坏行跳过但计数）与事件分类 |
 | `tail.rs` | 字节窗口读取（尾部窗口 / 任意区间），与前端 `core/bytes.ts` 同口径 |
@@ -1167,6 +1167,8 @@ Rust 侧字段一律 `#[serde(default)]`，旧调用方不传不报错。
 **解析规则（外部输入，按此收口）**：只接受 `tianshu://task/<id>`；host 比对**统一小写**（URL 只保证 scheme 小写化）；
 ID 走字符白名单 `[A-Za-z0-9_-]`（ID 会拼进 `tasks/<id>/…` 路径）；含 `..` / `%2e` 的写法**直接拒绝**
 （URL 归一化会把 `..` 消掉，归一化后无法还原原样，与其静默猜成另一个 ID 不如判为无法识别）；
+**同一白名单已下沉到 Rust 命令层**（`data_home.rs::validate_task_id`，issue #32）——`read_events` /
+`read_baseline` / `read_report` / `export_task_zip` 四条命令先过白名单再拼路径，**不依赖前端 `TASK_ID_RE`**；
 无法识别的链接在界面上**如实提示**，不静默丢弃。
 
 **降级预案**：若某平台冷启动路由不通，保留热启动路径并在 `docs/gui-log-viewer` 如实记录平台差异；
