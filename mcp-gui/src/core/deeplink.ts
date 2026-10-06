@@ -43,7 +43,16 @@ export function parseDeepLink(url: string): DeepLinkTarget | null {
   // `tianshu://task/tsk_1` 的路径是 `/tsk_1`；allow 末尾斜杠产生的空段
   const segments = parsed.pathname.split("/").filter((seg) => seg !== "");
   if (segments.length !== 1) return null;
-  const taskId = decodeURIComponent(segments[0] as string);
+  // `decodeURIComponent` 对**外部可控**的畸形转义抛 `URIError`（`%zz`、`%`、`%80` 等），
+  // 而本函数的契约是「其余一律返回 null」（见文件头）。深链的入队侧不做业务判断
+  // （`lib.rs` 的 `queue_deeplinks` 只入队），故畸形输入必然走到这里——必须就地收口：
+  // 解码失败即「无法识别」，交由调用方如实提示，绝不上抛。
+  let taskId: string;
+  try {
+    taskId = decodeURIComponent(segments[0] as string);
+  } catch {
+    return null;
+  }
   if (!TASK_ID_RE.test(taskId)) return null;
 
   return { view: "task", taskId };

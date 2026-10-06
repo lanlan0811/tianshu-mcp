@@ -1262,7 +1262,11 @@ From `gui-v0.1.1-beta.3` the app handles `tianshu://task/<taskId>`. Each link in
 **Parsing rules (external input, closed here)**: only `tianshu://task/<id>` is accepted; the host is compared
 **case-insensitively** (the URL spec only lowercases the scheme); the id must match `[A-Za-z0-9_-]` (it ends up in a
 `tasks/<id>/…` path); anything containing `..` / `%2e` is **rejected outright** (URL normalisation erases `..` and cannot
-be reversed, so rather than guessing a different id the link is reported as unrecognised); **the same allowlist is
+be reversed, so rather than guessing a different id the link is reported as unrecognised); **malformed percent-encoding is
+reported as unrecognised (returns `null`) and a failed decode is never rethrown** (issue #33: `decodeURIComponent` throws
+`URIError` on externally controlled malformed escapes such as `%zz` / `%` / `%80`, whereas `parseDeepLink`'s contract is
+"everything else returns `null`"; throwing would break the await chain in `App.vue` and kill the deep-link subscription);
+**the same allowlist is
 enforced down in the Rust command layer** (`data_home.rs::validate_task_id`, issue #32) — `read_events` /
 `read_baseline` / `read_report` / `export_task_zip` validate before joining paths and do **not** rely on the frontend
 `TASK_ID_RE`; unrecognised links produce an **honest UI notice** and are never dropped silently.

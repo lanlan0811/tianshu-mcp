@@ -54,6 +54,43 @@ describe("A8b 深链解析", () => {
     expect(firstDeepLinkTarget([])).toBeNull();
   });
 
+  it("畸形百分号编码不抛错，按「无法识别」返回 null（issue #33）", () => {
+    for (const bad of [
+      // ① 转义格式非法：不是合法的 %XX 序列
+      "tianshu://task/%zz",
+      "tianshu://task/%",
+      "tianshu://task/%z",
+      "tianshu://task/%2",
+      "tianshu://task/%%",
+      "tianshu://task/%C3%28",
+      "tianshu://task/%E0%A4%A",
+      // ② 格式合法但解码结果非合法 UTF-8（孤立续接字节 / 非法序列）
+      "tianshu://task/%80",
+      "tianshu://task/%ED%A0%80",
+      "tianshu://task/%FF",
+    ]) {
+      // 契约（文件头）：其余一律返回 null，不抛错。深链是外部输入，畸形转义必然走到解析层。
+      expect(() => parseDeepLink(bad), bad).not.toThrow();
+      expect(parseDeepLink(bad), bad).toBeNull();
+    }
+  });
+
+  it("畸形链接不阻断同批合法链接（issue #33）", () => {
+    // 现状：畸形链接抛错会中断整批，后面那条合法链接一起被吞掉
+    expect(firstDeepLinkTarget(["tianshu://task/%zz", "tianshu://task/tsk_2"])?.taskId).toBe("tsk_2");
+    // 全畸形批：如实返回「无可识别目标」，而不是抛错
+    expect(firstDeepLinkTarget(["tianshu://task/%zz"])).toBeNull();
+  });
+
+  it("解码顺序不变量：先解码、再判白名单（issue #33 修复不得改变既有语义）", () => {
+    // 合法转义 → 解码后才落在白名单内：必须仍能通过。
+    // 若把 try/catch 放到白名单之后、或改成「先校验原串」，这条会从绿转红。
+    expect(parseDeepLink("tianshu://task/tsk%5F1")).toEqual({ view: "task", taskId: "tsk_1" });
+    // 解码结果落在白名单之外：仍为 null（顺序不变则结果不变）
+    expect(parseDeepLink("tianshu://task/a%2Fb")).toBeNull();
+    expect(parseDeepLink("tianshu://task/tsk%5C1")).toBeNull();
+  });
+
   it("事件名与协议名与 Rust / tauri.conf 约定一致", () => {
     expect(DEEPLINK_EVENT).toBe("gui://deeplink");
     expect(DEEPLINK_SCHEME).toBe("tianshu");

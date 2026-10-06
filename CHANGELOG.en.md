@@ -8,6 +8,56 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.1.1-beta.5] — 2026-10-07 — mcp-gui independent line
+
+> This entry records a **bug-fix release** of the GUI `0.1.1` line (issue #33); **the MCP main package is untouched**.
+> Hardening the deep-link parser against malformed percent-encoding: a failed `decodeURIComponent` is no longer rethrown.
+> **No new features, no UI changes**, but there **is one user-visible behaviour change** (a malformed deep link now produces
+> an honest notice instead of failing silently).
+
+### Fixed
+
+- **Deep-link parsing no longer throws `URIError` on malformed percent-encoding (issue #33)**: `parseDeepLink` in
+  `core/deeplink.ts` called `decodeURIComponent` **bare**, while the function's own contract (stated in its header) is
+  "everything else returns `null` (no guessing, no loose matching)". A deep link is **externally constructible input**
+  (the protocol can be triggered by any web page or script), and a malformed escape such as `tianshu://task/%zz` throws
+  `URIError` — **the implementation contradicted its contract**. The fix wraps the decode in `try/catch`: on failure it
+  reports "unrecognised" by returning `null` and lets the caller surface an honest notice. The existing order — **decode
+  first, then check the allowlist** — is preserved verbatim.
+- **Both classes of malformed input are covered** (classified by this round's probes): ① malformed escape sequences
+  (`%zz` / `%` / `%z` / `%2` / `%%` / `%C3%28` / `%E0%A4%A`); ② syntactically valid but decoding to invalid UTF-8
+  (`%80` / `%FF` / `%ED%A0%80`) — **both throw**, so covering only the `%zz` example from the issue would have been
+  insufficient.
+
+### Behaviour changes
+
+- **A malformed deep link now produces an honest notice instead of failing silently, and no longer disables deep-link
+  handling for the whole session.** Measured before the fix: once `await drainDeepLinkQueue()` in `App.vue` threw, the
+  `subscribeDeepLinks(...)` call right after it **never executed** — a single malformed link mixed into the queue at cold
+  start meant **no deep link would ever be received again for that session**; and `setError` was called **0 times**, so the
+  user saw no notice at all. After the fix the malformed link lands in the `invalid` list, driving the existing notice
+  path, and the subscription is established normally. **This is a genuinely user-visible fix** (unlike `0.1.1-beta.4`,
+  which was pure defence-in-depth).
+- **A valid link in the same batch is no longer swallowed by a malformed one**: `["tianshu://task/%zz", "tianshu://task/tsk_2"]`
+  goes from "whole batch aborts" to "skips the malformed one and selects `tsk_2`".
+
+### Tests
+
+- Frontend **172 passed** (15 files; baseline 169 + 3 new groups); `check:schema` / `typecheck` / `lint` all green.
+- New cases cover: "does not throw + returns `null`" for 10 malformed inputs (both classes); a malformed link not blocking
+  the rest of the batch; and the **decode-order invariant** (`tsk%5F1` → `tsk_1` still passes, `a%2Fb` / `tsk%5C1` still
+  rejected) — guarding against a fix that would reverse "decode first, then check the allowlist".
+- **Rollback self-check**: reverting the fix to the bare call turns the 2 new cases red again (`2 failed | 6 passed`) —
+  proof the tests have discriminating power rather than passing vacuously.
+
+### Documentation
+
+- Added `docs/release-gui-v0.1.1-beta.5.md` + `.en.md`; `ARCHITECTURE.md` / `.en.md` §16.10 and
+  `docs/gui-log-viewer.md` / `.en.md` §3.11 now state that "malformed percent-encoding is treated as unrecognised and a
+  failed decode is never rethrown".
+
+---
+
 ## [0.1.1-beta.4] — 2026-10-06 — mcp-gui independent line
 
 > This section records the **security-hardening release** of the GUI's independent `0.1.1` line (issue #32); **the MCP

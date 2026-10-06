@@ -244,7 +244,10 @@ The event-stream toolbar gains a **List / Stages** segmented control:
   `UnsupportedPlatform`, which is expected);
 - Only `tianshu://task/<id>` is accepted, and the id must match `[A-Za-z0-9_-]` (a deep link is external input and the id
   ends up in a file path); anything containing `..` / `%2e` is **rejected outright** (URL normalisation erases `..`, so
-  after normalisation there is no way to tell what the original was); unrecognised links produce an **honest UI notice**;
+  after normalisation there is no way to tell what the original was); **malformed percent-encoding** (e.g. `%zz`, `%80`)
+  is likewise treated as unrecognised and reported honestly — a failed decode returns "unrecognised" and is **never
+  rethrown** (throwing would break the deep-link subscription that follows, see issue #33); unrecognised links produce an
+  **honest UI notice**;
 - **Platform differences**: Windows / Linux register a system protocol handler (cold start works); on macOS the plugin
   reports system-level registration as unsupported, so **the hot path is authoritative** — the difference is documented
   rather than glossed over.
