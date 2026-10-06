@@ -718,6 +718,106 @@ function depsFor(fake: FakeZcode): Partial<ZcodeRunDeps> {
   };
 }
 
+describe("ZCode 恢复权限（issue #30）", () => {
+  it("恢复权限回读不一致时停止派发并报告目标权限", async () => {
+    const project = await makeTmpRoot("zcode-resume-permission-mismatch");
+    cleanup.push(project);
+    const fake = new (class extends FakeZcode {
+      override async text(key: string) {
+        return key === "permissionValue" ? "完全访问" : super.text(key);
+      }
+    })(project);
+    const result = await runZcodeTask({
+      ctx: {
+        ...ctx(project),
+        resume: {
+          kind: "continue",
+          sendMessage: true,
+          message: "继续任务",
+          sessionId: "session-1",
+          permissionMode: "受限访问",
+        },
+      },
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.endReason).toBe("permission_unknown");
+    expect(result.error).toContain("受限访问");
+    expect(fake.sent).toBe(0);
+  });
+
+  it.each([
+    ["continue", "受限访问"],
+    ["continue", "完全访问"],
+    ["rework", "受限访问"],
+    ["rework", "完全访问"],
+  ] as const)("%s 保留记录权限，界面初始为 %s", async (kind, currentPermission) => {
+    const project = await makeTmpRoot("zcode-resume-permission");
+    cleanup.push(project);
+    const selections: string[] = [];
+    const fake = new (class extends FakeZcode {
+      override async clickExact(key: string, value: string) {
+        if (key === "permissionOption") selections.push(value);
+        return super.clickExact(key, value);
+      }
+    })(project);
+    fake.permission = currentPermission;
+    const result = await runZcodeTask({
+      ctx: {
+        ...ctx(project),
+        resume: {
+          kind,
+          sendMessage: true,
+          message: "继续任务",
+          sessionId: "session-1",
+          permissionMode: "受限访问",
+        },
+      },
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.ok).toBe(true);
+    expect(fake.permission).toBe("受限访问");
+    expect(selections).toEqual(currentPermission === "受限访问" ? [] : ["受限访问"]);
+    expect(result.session?.permissionMode).toBe("受限访问");
+    expect(result.session?.id).toBe("session-1");
+    expect(fake.sent).toBe(1);
+  });
+
+  it.each(["initial", "continue", "rework"] as const)(
+    "%s 没有记录权限时采用 profile 默认值",
+    async (kind) => {
+      const project = await makeTmpRoot("zcode-default-permission");
+      cleanup.push(project);
+      const fake = new FakeZcode(project);
+      const result = await runZcodeTask({
+        ctx: {
+          ...ctx(project),
+          resume: kind === "initial" ? undefined : {
+            kind,
+            sendMessage: true,
+            message: "继续任务",
+            sessionId: "session-1",
+          },
+        },
+        resolved: resolved({ defaultPermissionMode: "受限访问" }),
+        opts: opts(),
+        logFile: path.join(project, "agent.log"),
+        deps: depsFor(fake),
+      });
+      expect(result.ok).toBe(true);
+      expect(fake.permission).toBe("受限访问");
+      expect(result.session?.permissionMode).toBe("受限访问");
+      expect(fake.sent).toBe(1);
+    },
+  );
+});
+
 describe("ZCode 假 CDP 单轮", () => {
   it("continue_task 在原会话问题卡片精确选项并不发送普通聊天消息", async () => {
     const project = await makeTmpRoot("zcode-resume-question");

@@ -471,7 +471,8 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
       });
 
     let session = activeSession;
-    let permission = ctx.resume?.permissionMode ?? gui.defaultPermissionMode ?? "完全访问";
+    // 恢复轮沿用已记录的会话权限；仅在缺失记录时回落 profile 默认值。
+    const permission = ctx.resume?.permissionMode ?? gui.defaultPermissionMode ?? "完全访问";
     let answeredQuestion = false;
     /**
      * 运行期 CDP 断连的恢复位（issue #27）：单次 evaluate 超时或端点抖动不等于 CDP 已死。
@@ -1190,7 +1191,6 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
           logger.info(`[zcode] 思考档位已切换为「${spec.level}」`);
         }
       }
-      permission = gui.defaultPermissionMode ?? "完全访问";
       if (!exactUiName(await cdp.text("permissionValue"), permission)) {
         if (!(await cdp.click("permissionTrigger")))
           return result({
@@ -1210,7 +1210,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
       if (!exactUiName(await cdp.text("permissionValue"), permission))
         return result({
           hardFailure: true,
-          error: "权限模式回读不是完全访问",
+          error: `权限模式回读与目标权限不一致：${permission}`,
           endReason: "permission_unknown",
         });
 
