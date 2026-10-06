@@ -72,6 +72,35 @@ export interface OrchestrateResult {
   reason?: string;
 }
 
+/**
+ * agent 侧异常结束、实例已保留的 endReason 集合。
+ *
+ * 这些情形下**必须**落 `needs_attention`（非终态、可 continue_task 恢复），
+ * 绝不能进入项目验收链——否则「从未观测到运行信号」的任务会被当成成功派发的结果去验收。
+ */
+export const AGENT_ABORT_END_REASONS = ["idle_timeout", "task_timeout", "cdp_disconnected"] as const;
+
+/**
+ * 在这些 endReason 下应转 needs_attention 的适配器集合。
+ *
+ * issue #31：旧判定把 agent 名硬编码为 `zcode || codex`，导致 kimicode/minimax/opendesign
+ * 的 idle_timeout 因 `autoVerify` 默认为 true 而绕过下方两个 `!autoVerify` 出口，直接去做验收。
+ * 这里与 `ARCHITECTURE.md §8.4` 的 endReason 产出表对齐：会产出上述 endReason 的 driver 才在集合内。
+ */
+export const AGENT_ABORT_PARKING_AGENTS = ["zcode", "codex", "kimicode", "minimax", "opendesign"] as const;
+
+/** 该 agent 在该 endReason 下是否应转 needs_attention（非终态、可恢复） */
+export function shouldParkAsNeedsAttention(
+  agentId: string,
+  endReason: string | undefined,
+): boolean {
+  if (!endReason) return false;
+  return (
+    (AGENT_ABORT_PARKING_AGENTS as readonly string[]).includes(agentId) &&
+    (AGENT_ABORT_END_REASONS as readonly string[]).includes(endReason)
+  );
+}
+
 export class TaskOrchestrator {
   private done = false;
 
@@ -277,12 +306,11 @@ export class TaskOrchestrator {
           await store.updateStatus(meta, "needs_user", meta.lastMessage, "needs_user");
           return { status: "needs_user", meta, summary: meta.lastMessage };
         }
-        if (
-          (meta.agentId === "zcode" || meta.agentId === "codex") &&
-          ["idle_timeout", "task_timeout", "cdp_disconnected"].includes(runRes.endReason ?? "")
-        ) {
-          const label = meta.agentId === "codex" ? "Codex" : "ZCode";
-          const message = runRes.error ?? `${label} 执行中止：${runRes.endReason}`;
+        // issue #31：这几种 endReason 表示「agent 侧异常结束、实例已保留」，必须落
+        // needs_attention（非终态、可 continue_task 恢复），**不得**进入项目验收链。
+        if (shouldParkAsNeedsAttention(meta.agentId, runRes.endReason)) {
+          // 文案优先用 runRes.error（各 driver 已自带 agent 名与具体原因），避免在此重复硬编码映射。
+          const message = runRes.error ?? `${meta.agentId} 执行中止：${runRes.endReason}`;
           meta.lastMessage = message;
           meta.errorType = runRes.endReason === "task_timeout" ? "timeout" : "agent_failed";
           await store.updateStatus(meta, "needs_attention", message);

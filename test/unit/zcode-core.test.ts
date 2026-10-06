@@ -416,7 +416,7 @@ describe("ZCode 运行信号", () => {
   it("权威运行信号覆盖回复静止", () => {
     const v = judgeZcodePoll(
       { ...base, stopVisible: true },
-      { hash: "abc", stable: 99, idleSince: 1 },
+      { hash: "abc", stable: 99, idleSince: 1, sawRunning: true },
       2,
       100,
       1000,
@@ -426,7 +426,7 @@ describe("ZCode 运行信号", () => {
   it("问题优先进入 needs_user", () => {
     const v = judgeZcodePoll(
       { ...base, question: "请选择方案" },
-      { hash: "", stable: 0, idleSince: 0 },
+      { hash: "", stable: 0, idleSince: 0, sawRunning: true },
       2,
       100,
     );
@@ -435,7 +435,7 @@ describe("ZCode 运行信号", () => {
   });
   it("回复连续稳定且空输入框可编辑时完成，不要求禁用的发送按钮可用", () => {
     const completed = { ...base, sendEnabled: false };
-    const first = judgeZcodePoll(completed, { hash: "", stable: 0, idleSince: 0 }, 2, 1000, 10);
+    const first = judgeZcodePoll(completed, { hash: "", stable: 0, idleSince: 0, sawRunning: true }, 2, 1000, 10);
     const second = judgeZcodePoll(completed, first.state, 2, 1000, 20);
     const third = judgeZcodePoll(completed, second.state, 2, 1000, 30);
     expect(third.kind).toBe("finished");

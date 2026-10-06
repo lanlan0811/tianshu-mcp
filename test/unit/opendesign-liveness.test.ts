@@ -33,7 +33,7 @@ function judge(
 
 describe("Open Design 运行检测：运行信号", () => {
   it("停止按钮可见 = 运行中，且清零稳定/空闲计时（长思考不得判完成）", () => {
-    const prev: OpenDesignPollState = { hash: "x", stable: 9, idleSince: 1 };
+    const prev: OpenDesignPollState = { hash: "x", stable: 9, idleSince: 1, sawRunning: true };
     const stall: OpenDesignStallSince = { since: 0 };
     const v = judge(poll({ stopVisible: true }), prev, stall);
     expect(v.kind).toBe("running");
@@ -48,6 +48,7 @@ describe("Open Design 运行检测：运行信号", () => {
       hash: pollFingerprint(poll({ conversationText: text })),
       stable: 0,
       idleSince: 0,
+      sawRunning: true,
     };
     const stall: OpenDesignStallSince = { since: 1_000 };
     const v = judge(
@@ -67,6 +68,7 @@ describe("Open Design 运行检测：运行信号", () => {
       hash: pollFingerprint(poll({ conversationText: "旧" })),
       stable: 0,
       idleSince: 0,
+      sawRunning: true,
     };
     judge(poll({ stopVisible: true, conversationText: "新" }), prev, stall, 1_000 + STALL_MS);
     // 文本变了 → stallSince 被刷新为 now，因此本轮不判 needs_user
@@ -75,10 +77,12 @@ describe("Open Design 运行检测：运行信号", () => {
 });
 
 describe("Open Design 运行检测：完成与超时", () => {
-  it("无运行信号 + 指纹连续稳定达 stableRounds → finished", () => {
+  it("曾观测到运行信号 + 指纹连续稳定达 stableRounds → finished", () => {
     const text = "设计稿已生成完成";
     const p = poll({ conversationText: text });
-    let state = initialOpenDesignState();
+    // issue #31：完成判定要求「曾观测到运行信号」。sawRunning: true 代表此前见过 stop 按钮；
+    // 本用例只关心「信号消失后稳定 N 轮 → finished」，故起点用初始态派生（hash 为空）。
+    let state: OpenDesignPollState = { ...initialOpenDesignState(), sawRunning: true };
     const base = 1_000_000;
     // 第 1 轮建立基线（stable=0），之后每轮 +1；达到 stableRounds 才判 finished
     const seen: string[] = [];
@@ -93,7 +97,7 @@ describe("Open Design 运行检测：完成与超时", () => {
 
   it("文本在变 → 稳定计数归零，绝不判完成", () => {
     const stall: OpenDesignStallSince = { since: 0 };
-    let state: OpenDesignPollState = { hash: "", stable: 0, idleSince: 0 };
+    let state: OpenDesignPollState = { hash: "", stable: 0, idleSince: 0, sawRunning: true };
     for (const text of ["第一段", "第二段", "第三段"]) {
       const v = judge(poll({ conversationText: text }), state, stall);
       state = v.state;
@@ -107,7 +111,7 @@ describe("Open Design 运行检测：完成与超时", () => {
     const p = poll({ conversationText: text });
     const fp = pollFingerprint(p);
     const now = 5_000_000;
-    const prev: OpenDesignPollState = { hash: fp, stable: STABLE_ROUNDS, idleSince: now - IDLE_MS };
+    const prev: OpenDesignPollState = { hash: fp, stable: STABLE_ROUNDS, idleSince: now - IDLE_MS, sawRunning: true };
     const v = judge(p, prev, { since: 0 }, now);
     expect(v.kind).toBe("idle_timeout");
   });
@@ -140,6 +144,7 @@ describe("Open Design 运行检测：产物信号", () => {
       hash: pollFingerprint(before),
       stable: STABLE_ROUNDS,
       idleSince: now - IDLE_MS,
+      sawRunning: true,
     };
     const v = judge(after, prev, { since: 0 }, now);
     // 指纹变了 → 稳定计数归零 → 仍判运行中
@@ -153,6 +158,7 @@ describe("Open Design 运行检测：产物信号", () => {
       hash: pollFingerprint(p),
       stable: STABLE_ROUNDS - 1,
       idleSince: 0,
+      sawRunning: true,
     };
     const v = judge(p, prev, { since: 0 }, 1_000_000);
     expect(v.kind).toBe("finished");
@@ -188,14 +194,14 @@ describe("Open Design 运行检测：产物信号", () => {
 
 describe("Open Design 运行检测：失败态与提问", () => {
   it("界面给出失败文案 → failed（绝不判完成）", () => {
-    const prev: OpenDesignPollState = { hash: "x", stable: 9, idleSince: 1 };
+    const prev: OpenDesignPollState = { hash: "x", stable: 9, idleSince: 1, sawRunning: true };
     const v = judge(poll({ errorText: "生成失败：模型不可用" }), prev, { since: 0 });
     expect(v.kind).toBe("failed");
   });
 
   it("提问检测：无运行信号 + 空输入框 + 文本刚变化 + 问号结尾", () => {
     const text = "请问你希望用哪种配色方案？";
-    const prev: OpenDesignPollState = { hash: "different", stable: 0, idleSince: 0 };
+    const prev: OpenDesignPollState = { hash: "different", stable: 0, idleSince: 0, sawRunning: true };
     const v = judge(poll({ conversationText: text, inputText: "" }), prev, { since: 0 });
     expect(v.kind).toBe("needs_user");
     expect(v.question).toContain("配色方案");
@@ -203,7 +209,7 @@ describe("Open Design 运行检测：失败态与提问", () => {
 
   it("输入框非空时不判提问（用户正在写，别抢判）", () => {
     const text = "请问你希望用哪种配色方案？";
-    const prev: OpenDesignPollState = { hash: "different", stable: 0, idleSince: 0 };
+    const prev: OpenDesignPollState = { hash: "different", stable: 0, idleSince: 0, sawRunning: true };
     const v = judge(poll({ conversationText: text, inputText: "我来回答" }), prev, { since: 0 });
     expect(v.kind).not.toBe("needs_user");
   });
@@ -216,12 +222,12 @@ describe("Open Design 运行检测：失败态与提问", () => {
 
   it("文本未变化时不判提问（同一段问句不反复判成新提问）", () => {
     const p = poll({ conversationText: "要哪个？" });
-    const prev: OpenDesignPollState = { hash: pollFingerprint(p), stable: 1, idleSince: 0 };
+    const prev: OpenDesignPollState = { hash: pollFingerprint(p), stable: 1, idleSince: 0, sawRunning: true };
     expect(detectQuestion(p, prev)).toBeUndefined();
   });
 
   it("问句不以问号结尾时不判提问（保守：宁漏判不误判）", () => {
-    const prev: OpenDesignPollState = { hash: "different", stable: 0, idleSince: 0 };
+    const prev: OpenDesignPollState = { hash: "different", stable: 0, idleSince: 0, sawRunning: true };
     expect(detectQuestion(poll({ conversationText: "请选择配色。" }), prev)).toBeUndefined();
   });
 });

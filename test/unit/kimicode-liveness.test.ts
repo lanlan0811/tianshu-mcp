@@ -104,8 +104,10 @@ describe("Kimi Code 完成判定", () => {
     expect(second.state.stable).toBe(1);
   });
 
-  it("无运行信号且文本稳定达 stableRounds → finished", () => {
-    let state = initialKimicodeState();
+  it("曾观测到运行信号 + 文本稳定达 stableRounds → finished", () => {
+    // issue #31：完成判定要求「曾观测到运行信号」。sawRunning: true 代表此前见过 stop 按钮；
+    // 本用例只关心「信号消失后稳定 N 轮 → finished」，故起点用初始态派生（hash 为空）。
+    let state: KimicodePollState = { ...initialKimicodeState(), sawRunning: true };
     // 首轮对话文本从空到有：哈希变化，稳定轮从 0 起算（绝不把首帧当稳定）。
     let verdict = round(poll({ assistantText: "回复" }), state, { since: 0 }, 1);
     expect(verdict.kind).toBe("running");
@@ -217,7 +219,9 @@ describe("Kimi Code 页面隐藏", () => {
     );
     expect(running.kind).toBe("running");
     expect(running.evidence).toContain("page_hidden");
-    let state = initialKimicodeState();
+    // issue #31：完成判定要求「曾观测到运行信号」，起点用初始态派生并显式置真
+    // （pageHidden 不改变判定，只作为证据输出）。
+    let state: KimicodePollState = { ...initialKimicodeState(), sawRunning: true };
     let verdict = round(poll({ pageHidden: true, assistantText: "回复" }), state, { since: 0 }, 1, {
       stableRounds: 1,
     });
@@ -235,7 +239,7 @@ describe("Kimi Code 页面隐藏", () => {
 
 /** 有基线的跨轮状态（提问检测要求「有基线且本轮文本已变化」） */
 function baseline(text: string): KimicodePollState {
-  return { hash: hashText(text), stable: 0, idleSince: 0 };
+  return { hash: hashText(text), stable: 0, idleSince: 0, sawRunning: true };
 }
 
 describe("Kimi Code 提问检测（保守判据，待真机验证）", () => {

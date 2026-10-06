@@ -55,7 +55,7 @@ describe("MiniMax Code 运行判定", () => {
   });
 
   it("有运行信号 → running，且**清零**稳定轮（长思考不得被提前判完成）", () => {
-    const prev = { hash: hashText("思考中"), stable: 99, idleSince: 1 };
+    const prev = { hash: hashText("思考中"), stable: 99, idleSince: 1, sawRunning: true };
     const v = judgeMinimaxPoll(
       poll({ stopVisible: true, assistantText: "思考中" }),
       prev,
@@ -70,7 +70,7 @@ describe("MiniMax Code 运行判定", () => {
   });
 
   it("文本变化但未达 stableRounds → running（静止不足以判完成）", () => {
-    const prev = { hash: hashText("a"), stable: 3, idleSince: 0 };
+    const prev = { hash: hashText("a"), stable: 3, idleSince: 0, sawRunning: true };
     const v = judgeMinimaxPoll(
       poll({ assistantText: "a" }),
       prev,
@@ -86,7 +86,7 @@ describe("MiniMax Code 运行判定", () => {
   });
 
   it("未达 stableRounds（差一轮）→ running", () => {
-    const prev = { hash: hashText("a"), stable: 2, idleSince: 0 };
+    const prev = { hash: hashText("a"), stable: 2, idleSince: 0, sawRunning: true };
     const v = judgeMinimaxPoll(
       poll({ assistantText: "a" }),
       prev,
@@ -101,7 +101,7 @@ describe("MiniMax Code 运行判定", () => {
 
   it("文本稳定达 stableRounds 且空闲超时 → idle_timeout", () => {
     const hash = hashText("done");
-    const prev = { hash, stable: 5, idleSince: Date.now() - 700_000 };
+    const prev = { hash, stable: 5, idleSince: Date.now() - 700_000, sawRunning: true };
     const v = judgeMinimaxPoll(
       poll({ assistantText: "done" }),
       prev,
@@ -113,9 +113,10 @@ describe("MiniMax Code 运行判定", () => {
     expect(v.kind).toBe("idle_timeout");
   });
 
-  it("文本稳定达 stableRounds 且空闲未超时 → finished", () => {
+  it("曾观测到运行信号 + 文本稳定达 stableRounds 且空闲未超时 → finished", () => {
     const hash = hashText("done");
-    const prev = { hash, stable: 5, idleSince: Date.now() };
+    // issue #31：完成判定要求「曾观测到运行信号」。sawRunning: true 代表此前见过 stop-button。
+    const prev = { hash, stable: 5, idleSince: Date.now(), sawRunning: true };
     const v = judgeMinimaxPoll(
       poll({ assistantText: "done" }),
       prev,
@@ -128,7 +129,7 @@ describe("MiniMax Code 运行判定", () => {
   });
 
   it("空文本即使稳定也**不得**判完成", () => {
-    const prev = { hash: hashText(""), stable: 99, idleSince: 0 };
+    const prev = { hash: hashText(""), stable: 99, idleSince: 0, sawRunning: true };
     const v = judgeMinimaxPoll(poll(), prev, 4, 600_000, 300_000, { since: 0 });
     expect(v.kind).toBe("running");
   });
@@ -160,7 +161,7 @@ describe("MiniMax Code 运行判定", () => {
   it("停止按钮恒可见 + 文本停滞超 stall → needs_user（打破死锁）", () => {
     const v = judgeMinimaxPoll(
       poll({ stopVisible: true, assistantText: "同一段" }),
-      { hash: hashText("同一段"), stable: 0, idleSince: 0 },
+      { hash: hashText("同一段"), stable: 0, idleSince: 0, sawRunning: true },
       4,
       600_000,
       300_000,
@@ -206,14 +207,14 @@ describe("MiniMax Code 提问检测（保守启发式，默认关闭）", () => 
 
   it("withDetectedQuestion：未配置 userGate → 不启用（默认不判 agent_question）", () => {
     const raw = poll({ assistantText: "要继续吗？" });
-    const out = withDetectedQuestion(raw, { hash: hashText("旧"), stable: 0, idleSince: 0 }, {});
+    const out = withDetectedQuestion(raw, { hash: hashText("旧"), stable: 0, idleSince: 0, sawRunning: true }, {});
     expect(out.question).toBeUndefined();
   });
 
   it("detectQuestion：无运行信号 + 输入框空 + 文本已变化 + 问句结尾 → 命中", () => {
     const q = detectQuestion(
       poll({ assistantText: "请确认是否继续？" }),
-      { hash: hashText("前一段"), stable: 0, idleSince: 0 },
+      { hash: hashText("前一段"), stable: 0, idleSince: 0, sawRunning: true },
     );
     expect(q).toBe("请确认是否继续？");
   });
@@ -224,6 +225,7 @@ describe("MiniMax Code 提问检测（保守启发式，默认关闭）", () => 
         hash: hashText("旧"),
         stable: 0,
         idleSince: 0,
+        sawRunning: true,
       }),
     ).toBeUndefined();
   });
@@ -234,6 +236,7 @@ describe("MiniMax Code 提问检测（保守启发式，默认关闭）", () => 
         hash: hashText("旧"),
         stable: 0,
         idleSince: 0,
+        sawRunning: true,
       }),
     ).toBeUndefined();
   });
@@ -251,6 +254,7 @@ describe("MiniMax Code 提问检测（保守启发式，默认关闭）", () => 
         hash: hashText(text),
         stable: 0,
         idleSince: 0,
+        sawRunning: true,
       }),
     ).toBeUndefined();
   });
@@ -261,6 +265,7 @@ describe("MiniMax Code 提问检测（保守启发式，默认关闭）", () => 
         hash: hashText("旧"),
         stable: 0,
         idleSince: 0,
+        sawRunning: true,
       }),
     ).toBeUndefined();
   });
