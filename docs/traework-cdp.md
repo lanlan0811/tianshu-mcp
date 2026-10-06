@@ -70,8 +70,9 @@ run_task({
 > **为什么第 4 步在绑定之前？** 实测（2026-09-08）：TraeWork 的 Work/Code/Design **各自维护独立的项目绑定**，
 > 切换模式会把输入栏项目换成该模式上次使用的项目。因此必须先切模式、再在目标模式里绑定项目。
 >
-> **非 Work 模式的兜底**：若在目标模式（Code/Design）绑定失败，会自动**回落 Work 模式重试一次**，
-> 成功后再切回目标模式并复核项目仍在；两次都失败才报错（错误信息含两种模式各自的原因）。
+> **目标模式内绑定**：若在目标模式（Work/Code/Design）绑定失败，直接返回该次失败，
+> **不跨模式重试**。Work 绑定不会建立 Code/Design 的绑定，回落 Work 还会改变当前模式与 Work 侧项目。
+> 原生对话框的点击与等待策略保持不变；移除跨模式兜底不代表原生弹窗唤起可靠性已修复（issue #35）。
 >
 > **模式识别优先级**：显式 `mode` 参数 > 任务书文本 > `Work`。
 > 文本识别支持「切换Work模式 / 切换到 Code 模式 / use design mode / 工作模式 / 代码模式 / 设计模式」等中英混写。
@@ -240,7 +241,7 @@ UI 升级导致选择器失效时，**无需改代码**——在 `gui.selectors`
 | **中文路径写入后变成 `D:Traes-bind-test`** | SendKeys / 剪贴板受控制台代码页影响，CJK 与反斜杠被吞 | 改用 Win32 **`WM_SETTEXT`**（句柄由 UIA 提供）直接写编辑框，CJK 完全可靠 |
 | **确认按钮点不动 / 点到了文件列表项** | `AutomationId="1"` 不唯一——文件列表行也用 0/1/2…；确认按钮是 Pane 且无 InvokePattern | 用 **AutomationId=1 且 ControlType=Pane** 组合定位，再取矩形坐标点击 |
 | **PowerShell 输出中文变乱码** | 控制台代码页不是 UTF-8 | 脚本内**只用 ASCII 输出**，Node 侧 `localizeDialogMessage()` 映射回中文 |
-| **`mode=Code` 时绑定失败** | 非 Work 模式下「选择文件夹」链路不稳定 | `bindProject` 失败后**回落 Work 重试一次**，成功再切回目标模式 |
+| **`mode=Code/Design` 绑定失败后回落 Work** | 各模式独立绑定，Work 绑定不会建立目标模式的绑定 | `bindProject` **只在目标模式内尝试**，失败直接返回；原生弹窗唤起可靠性另行处理（issue #35） |
 | **路径写进编辑框了，但点确认后对话框不关** | MCP 传的是 `normPath()` 规范化路径（`d:/a/b` 小写盘符 + 正斜杠），**原生选择器不接受**该形式 | 写入前用 `toNativeWindowsPath()` 转成 `D:\a\b`；写入后用 `WM_GETTEXT` 回读校验，失败不点确认 |
 | **上次失败的对话框残留，新任务写到旧窗口上** | `findFolderDialog()` 只要发现任意匹配窗口就返回 true | 绑定前 `closeStaleFolderDialogs()` 先关闭遗留对话框；探测到的 hwnd 贯穿传给写入脚本，只操作同一窗口 |
 | **长时间思考时约 36 秒被误判完成** | 旧稳定兜底把 DOM 静态直接当完成，且只检查字面「思考中」 | 停止按钮/task-tail loading 优先；稳定轮数改为启动 10 分钟空闲计时 |

@@ -392,39 +392,12 @@ export async function bindProject(
   projectPath: string,
   opts: SessionUiOptions & { mode?: TraeworkMode; dialogWaitTimeoutMs?: number },
 ): Promise<BindProjectResult> {
-  const { selectors, logger } = opts;
   const wantMode = opts.mode ?? "Work";
 
-  const first = await bindProjectOnce(cdp, projectPath, { ...opts, mode: wantMode });
-  if (first.bound || wantMode === "Work") return first;
-
-  // 兜底（实测 2026-09-08）：「选择文件夹」相关 UI 在非 Work 模式下可能不出现/不稳定
-  // （失败任务 mode=Code 时下拉底部按钮点击后原生对话框未弹出）。回落 Work 完成绑定，
-  // 再切回目标模式；仅重试一次，避免无限循环。
-  logger.warn(`[traework] 在 ${wantMode} 模式绑定失败（${first.message}），回落 Work 模式重试一次`);
-  const inWork = await bindProjectOnce(cdp, projectPath, { ...opts, mode: "Work" });
-  if (!inWork.bound) {
-    // 把两次失败信息都带出来，便于定位
-    return {
-      bound: false,
-      method: inWork.method,
-      message: `${wantMode} 模式失败（${first.message}）；Work 模式亦失败（${inWork.message}）`,
-    };
-  }
-  // 切回目标模式
-  const backOk = await ensureMode(cdp, wantMode, { selectors, logger, sleep: opts.sleep });
-  if (!backOk) {
-    logger.warn(`[traework] Work 模式绑定成功，但切回 ${wantMode} 模式失败`);
-  }
-  const stillBound = await readBoundProject(cdp, selectors);
-  if (!stillBound || !matchProjectItem({ name: stillBound, subtitle: "" }, projectPath)) {
-    return {
-      bound: false,
-      method: "failed",
-      message: `Work 模式绑定成功但切回 ${wantMode} 后项目丢失（当前：${stillBound || "空"}）`,
-    };
-  }
-  return { bound: true, method: inWork.method, message: `${inWork.message}（经 Work 模式兜底，已切回 ${wantMode}）` };
+  // Work/Code/Design 各自维护独立的项目绑定（run.ts 的模式切换约束）。
+  // Work 绑定不会建立目标模式的绑定，跨模式重试还会改变当前模式与 Work 侧项目。
+  // 因此仅在目标模式内尝试，失败直接返回，不以 Work 绑定作为补救（issue #35）。
+  return bindProjectOnce(cdp, projectPath, { ...opts, mode: wantMode });
 }
 
 /** 单次绑定尝试（在指定模式下） */

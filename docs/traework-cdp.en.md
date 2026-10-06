@@ -72,9 +72,11 @@ Execution sequence (mapping the 8 requested steps):
 > **each keep an independent project binding** — switching modes replaces the input bar's project with
 > whatever that mode last used. So the mode must be switched first, then the project bound inside it.
 >
-> **Fallback for non-Work modes**: if binding fails in the target mode (Code/Design), the driver
-> **falls back to Work once**, then switches back to the target mode and re-verifies the project is still
-> bound. Only if both attempts fail does it report an error (including the reason from each mode).
+> **Binding inside the target mode**: if binding fails in the target mode (Work/Code/Design), the driver
+> returns that failure directly and **does not retry in another mode**. Binding in Work does not establish
+> a Code/Design binding; switching to Work also changes the active mode and may change its project binding.
+> Native-dialog click and wait behavior is unchanged. Removing the cross-mode fallback does not fix
+> native-dialog activation reliability (issue #35).
 >
 > **Mode resolution priority**: explicit `mode` parameter > task text > `Work`.
 > Text detection accepts mixed Chinese/English phrasing ("switch to Code mode", "use design mode", "工作模式", "代码模式", "设计模式", …).
@@ -255,7 +257,7 @@ user's own running TraeWork instance (data intact, restarted). They are now hard
 | **CJK path became `D:Traes-bind-test`** | SendKeys/clipboard are mangled by the console code page (CJK and backslashes dropped) | Write the path via Win32 **`WM_SETTEXT`** (handle from UIA) — fully reliable for CJK |
 | **Confirm button not clickable / clicked a file row** | `AutomationId="1"` is not unique — list rows also use 0/1/2…; the confirm control is a Pane with no InvokePattern | Locate by **AutomationId=1 AND ControlType=Pane**, then click its bounding rect |
 | **PowerShell output garbled for Chinese** | Console code page is not UTF-8 | Emit **ASCII-only** from the script and map back to Chinese via `localizeDialogMessage()` |
-| **Binding fails with `mode=Code`** | The "select folder" path is unreliable outside Work mode | `bindProject` **falls back to Work once**, then switches back to the target mode |
+| **A failed `mode=Code/Design` binding falls back to Work** | Modes have independent bindings; binding in Work does not establish the target-mode binding | `bindProject` **only attempts binding in the target mode** and returns a failure directly; native-dialog activation reliability is a separate follow-up (issue #35) |
 | **Path written into the edit box, but confirm does not close the dialog** | The MCP passes a `normPath()`-normalized path (`d:/a/b` - lowercase drive, forward slashes), which the **native picker rejects** | Convert via `toNativeWindowsPath()` to `D:\a\b`; verify with `WM_GETTEXT` read-back and never click confirm on mismatch |
 | **A stale dialog from a previous failure gets written to** | `findFolderDialog()` returns true on *any* matching window | `closeStaleFolderDialogs()` runs before binding; the detected hwnd is passed into the write script so only that window is touched |
 | **Long thinking was declared complete after ~36 seconds** | The old stability fallback treated an unchanged DOM as completion and only checked the literal thinking placeholder | Stop button/task-tail loading now win; stable rounds start a ten-minute idle timer |
