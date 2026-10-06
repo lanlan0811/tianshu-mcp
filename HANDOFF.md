@@ -1,5 +1,32 @@
 # HANDOFF.md — 项目交接说明
 
+> **本轮（0.8.0 → 0.8.1）交付**：修复 **issue #31**「ZCode / Kimi Code / Open Design 完成判定缺少
+> 『曾观测到运行信号』门」（**同时补上 issue 未列出的第五个违反点 MiniMax Code**）。
+> 缺陷本质：四个 driver 的 `finished` 判据只看 `stable >= stableRounds`，不要求本轮见过运行信号；
+> 停止按钮 / loading 选择器漂移时界面「看起来静止」，进行中的任务会在
+> `stableRounds × pollInterval`（默认约 12s）后被误判成功并进入验收/返修链。
+> - **RED 复现**（`.rivet/scratch/issue31-red.ts`，已转正为单测后清理）：加门前四 driver 第 5 轮判
+>   `finished`，Codex 对照组全程 `pending`。
+> - **代码**：四个 `liveness.ts` 的 `PollState` 加 `sawRunning`（运行分支置真、其余透传、`finished` 加门）；
+>   三个 `run.ts` 在 `reobserve` 轮种子 `sawRunning: true`（照 `codex/run.ts` 既有做法，规避「恢复后 turn
+>   已完成 → 判不了 finished → 误落 idle_timeout」）；`fix-loop.ts` 抽出
+>   `shouldParkAsNeedsAttention()` 并把白名单扩到五个 GUI driver。
+> - **为什么必须改 fix-loop（本 issue 的实质增量）**：原白名单只含 `zcode`/`codex`，其余三个 driver 的
+>   `idle_timeout` 因 `autoVerify` 默认为 `true` 而绕过两个 `!autoVerify` 出口，**仍会进项目验收链**——
+>   只加门的话，用户可见行为只是「仍进验收，但迟了 10 分钟」。
+> - **两处偏离 issue 建议**（已在 CHANGELOG 与 issue 答复中说明）：① Open Design 的产物指纹
+>   （`artifactSignature`）**不**计入运行信号——它在 `finished` 终态后仍会写文件（`fetchArtifactForSummary`）；
+>   ② MiniMax 的 `stopVisible` 依赖的 testid 真机未复验，加门后若采不到会**每个任务**都走 `idle_timeout`
+>   → `needs_attention`（有意的 fail-closed：可 `continue_task` 恢复，而误判成功不可逆）。
+> - **测试**：新增 `test/unit/liveness-running-gate.test.ts`（12 例，跨 driver 契约）+ 
+>   `test/unit/fix-loop-abort-parking.test.ts`（5 例）；全量 unit **93 文件 / 1261 用例通过**；
+>   `tsc --noEmit` / ESLint `--max-warnings 0` 通过。
+> - **边界**：本版为纯函数与编排层修复，**未做真机验证**；四个 driver 的选择器采集层未改动。
+>
+> **HANDOFF 快照的历史断层**：下方快照最早停在 `0.7.7`，而仓库实际已发布 `0.8.0`（含 issue #35/#30 恢复
+> 语义修复与 mcp-gui `gui-v0.1.1-beta.4`）。本次未回填 0.7.8–0.8.0 的中间快照——那些版本的逐条记录以
+> CHANGELOG.md 为准，此处只补本轮。
+>
 > **交接快照：2026-10-01 · 已发布版本 `0.7.7`（tag `v0.7.7` + npm `tianshu-mcp@0.7.7`）。**
 > **本轮（0.7.6 → 0.7.7）交付**：新增**阻塞等待原语** `wait_task` / `wait_any`（**issue #28**，功能请求 P6）——
 > 工具面 **11 → 13**（`read` 族 +2，纯只读、免审批）。诉求：`run_task` 秒回 `taskId` 后**调用方没有任何方式等到任务结束**，

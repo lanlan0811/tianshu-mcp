@@ -657,6 +657,23 @@ DOM 完成标志出现（"由AI生成" 等）                      → 判定完
 
 **这是踩出来的**：早期版本把「静态约 36 秒」当作完成，导致长思考被提前判完成。现在的原则是**运行信号绝对优先于完成标志**。ZCode 额外以「composer 输入框重新可用」作为权威完成判据（`inputEnabled`）。
 
+> **「曾观测到运行信号」是完成判定的前置门（issue #31）**：上述第 3 档（`stableRounds`）**只在
+> 本轮曾观测到运行信号之后**才成立。实现上各 driver 的 `PollState` 携带 `sawRunning`，`finished`
+> 判据形如 `sawRunning && stable >= stableRounds && …`。没有它，停止按钮 / loading 选择器漂移时
+> 界面会「看起来静止」，进行中的任务会在 `stableRounds × pollInterval`（默认约 12s）后被误判成功
+> 并进入验收/返修链 —— 那正是第 4 档（`idle_timeout`）本该接住的场景。
+> 各 driver 的运行信号集合：Codex `stopVisible`、ZCode `stopVisible/loading/activeTool`、
+> Kimi Code `stopVisible/sendStarting`、MiniMax Code `stopVisible`、Open Design `stopVisible/sendStarting`。
+> **Open Design 的产物指纹（`artifactSignature`）不计入运行信号**：它是静止判据的底料，且
+> `fetchArtifactForSummary` 在 `finished` 终态之后仍会写文件。
+> 另外，`reobserve`（`user_confirmation` 恢复）轮会**种子** `sawRunning`：被观察的 turn 在恢复前
+> 已确认在运行，不种子会导致「恢复后 turn 恰好已完成 → 判不了 finished → 误落 idle_timeout」。
+>
+> 配套地，`idle_timeout`（以及 `task_timeout` / `cdp_disconnected`）在 `fix-loop` 中一律转
+> `needs_attention`（非终态、可 `continue_task` 恢复），**不得进入项目验收链** ——
+> 判定谓词见 `shouldParkAsNeedsAttention()`。仅加门而不做这一步，误判只是从
+> `reply_stable`（进验收）变成 `idle_timeout`（因 `autoVerify` 默认为 `true` 仍进验收）。
+
 ### 8.4 `endReason` 与 `needsUserKind` 取值表
 
 `endReason`（每个 agent 实际产出的取值，按适配器代码归纳）：

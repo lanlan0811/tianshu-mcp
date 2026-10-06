@@ -703,6 +703,27 @@ Idle for idleTimeoutMs (default 10 min)                               → idle_t
 
 **This was learned the hard way.** An earlier version treated "static for about 36 seconds" as completion, which prematurely completed long thinking phases. The rule now is that **the run signal absolutely outranks the completion marker**. ZCode additionally treats "the composer input is enabled again" as the authoritative completion criterion (`inputEnabled`).
 
+> **"A run signal was observed" is a precondition of completion (issue #31)**: the third tier above
+> (`stableRounds`) only holds **after a run signal was observed in this run**. In practice each driver's
+> `PollState` carries `sawRunning` and the `finished` criterion reads
+> `sawRunning && stable >= stableRounds && …`. Without it, when the stop-button / loading selectors drift
+> the UI *looks* static, so a running task is misjudged as successful after
+> `stableRounds × pollInterval` (≈12s by default) and enters the acceptance / rework chain — exactly the
+> case the fourth tier (`idle_timeout`) is meant to absorb.
+> Run-signal sets per driver: Codex `stopVisible`; ZCode `stopVisible/loading/activeTool`; Kimi Code
+> `stopVisible/sendStarting`; MiniMax Code `stopVisible`; Open Design `stopVisible/sendStarting`.
+> **Open Design's artifact fingerprint (`artifactSignature`) is not a run signal**: it is the substrate of
+> the stillness verdict, and `fetchArtifactForSummary` keeps writing files after the `finished` terminal
+> state. Also, `reobserve` rounds (`user_confirmation` recovery) **seed** `sawRunning`, because the
+> observed turn was already confirmed running before the recovery — without the seed, "the turn finished
+> right before recovery → `finished` unreachable → a bogus `idle_timeout`" would follow.
+>
+> Correspondingly, `idle_timeout` (along with `task_timeout` / `cdp_disconnected`) is always parked as
+> `needs_attention` in `fix-loop` (a non-terminal status recoverable via `continue_task`) and **must not
+> enter the project acceptance chain** — the predicate is `shouldParkAsNeedsAttention()`. Adding the gate
+> alone would only turn the misjudgement from `reply_stable` (acceptance) into `idle_timeout` (still
+> acceptance, since `autoVerify` defaults to `true`).
+
 ### 8.4 `endReason` and `needsUserKind` value tables
 
 `endReason`:

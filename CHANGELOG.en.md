@@ -125,6 +125,85 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.8.1] - 2026-10-06
+
+This release fixes a **completion-verdict false positive** (issue #31): the `finished` verdict of four
+drivers — ZCode / Kimi Code / MiniMax Code / Open Design — lacked the "a run signal was actually observed"
+precondition. When the stop-button / loading selectors drift, a task that is **still running** was
+misjudged as successful after `stableRounds × pollInterval` (≈12s by default) and sent straight into the
+acceptance / rework chain. This release aligns those four drivers with Codex (which has had that gate from
+the start) and closes the **second half** of the misjudgement's consequence chain.
+
+### Fixed
+
+- **Added the "observed a run signal" gate to four drivers' completion verdicts (issue #31)**:
+  - `src/agents/zcode/liveness.ts`: run signal = `stopVisible || loading || activeTool`
+  - `src/agents/kimicode/liveness.ts`: run signal = `stopVisible || sendStarting`
+  - `src/agents/minimax/liveness.ts`: run signal = `stopVisible`
+  - `src/agents/opendesign/liveness.ts`: run signal = `stopVisible || sendStarting`
+  Each `PollState` gains `sawRunning`; the running branch sets it, all other construction sites propagate
+  it, and the `finished` branch becomes `sawRunning && stable >= stableRounds && …`. **A run signal that
+  is never observed may only converge to `idle_timeout`** (abnormal end, instance kept) — matching the
+  existing `ARCHITECTURE.md` §8.3 flowchart. This is the **implementation catching up to the documented
+  contract**, not a new semantic.
+
+- **`fix-loop` now actually parks these drivers' abnormal ends as `needs_attention` (issue #31, second
+  half of the chain)**: the old allowlist covered only `zcode` / `codex`; the other three drivers'
+  `idle_timeout` slipped past `src/loop/fix-loop.ts`'s two `!autoVerify` exits because `autoVerify`
+  defaults to `true`, and **still entered the project acceptance chain** — i.e. a task that never showed a
+  run signal was merely accepted as a successful result 10 minutes later. The verdict is now an
+  independently testable pure function, `shouldParkAsNeedsAttention()`, and all five wired GUI drivers
+  land on `needs_attention` (a non-terminal status recoverable via `continue_task`).
+
+- **Seeded `sawRunning` on reobserve rounds (issue #31)**: `user_confirmation` recovery reconnects to
+  **observe only, sending nothing**, and the observed turn was already confirmed running **before** the
+  recovery. The three drivers now seed `sawRunning: true` on reobserve rounds, following the existing
+  `codex/run.ts` approach, to avoid "the turn finished before recovery → no run signal seen during
+  observation → `finished` is unreachable → wasted `idleTimeoutMs` landing on `idle_timeout`". ZCode has
+  no `reobserve` path (`continue + !sendMessage` still re-sends the task brief), so it needs no seed.
+
+- **Run signals observed during send confirmation are now passed to the observation loop (issue #31, a
+  same-family defect found during implementation)**: the send-confirmation loop (the bounded observation
+  window after clicking send) already calls `poll()` and accumulates run signals into each driver's
+  `seenRunning`, but that variable was **only used for the "was the send confirmed" judgement and never
+  passed to the observation loop**. With the gate in place, if selectors drift or the turn finishes before
+  the observation loop starts, the loop sees no run signal at all → a started task can never be judged
+  complete → a bogus `idle_timeout`. Yet the send-confirmation phase is precisely the **most reliable
+  evidence** that "this round really started". The four drivers now carry that signal into the observation
+  loop via `ObserveArgs.sawRunningSeed`. ZCode's `seenRunning` also folds in "the conversation text
+  changed" (not a run signal), so a separate `sawRunningAtSend` accumulates only genuine signals.
+  > This defect was surfaced by integration tests (`test/integration/zcode-flow.test.ts` went 39/81 failing
+  > with the gate, versus 81/81 green at baseline HEAD). **It sits one layer deeper than the issue
+  > describes**: the issue only mentions the missing gate, while the transfer path for the evidence the
+  > gate needs was also missing.
+
+### Rejected suggestion and known trade-off
+
+- **Open Design artifact-fingerprint changes are not counted as a run signal** (the tail of the issue's
+  "OD's …artifact changes" suggestion is not adopted): `artifactSignature` is the *substrate of the
+  stillness verdict*, while `opendesign/run.ts`'s `fetchArtifactForSummary` keeps writing files
+  **after** the `finished` terminal state; treating it as a run signal would make "already finished but
+  still moving artifacts" never completable.
+- **MiniMax Code's degradation risk (known, accepted)**: its `stopVisible` relies on
+  `[data-testid="stop-button"]`, extracted from product artifacts and **not re-verified on a real machine**
+  (see the "to be re-verified" note at the top of `minimax/liveness.ts`). If that testid does not actually
+  exist, then with the gate in place every MiniMax task converges to `idle_timeout` → `needs_attention`.
+  This is intentional fail-closed behaviour: `needs_attention` is recoverable via `continue_task`, whereas
+  a false success is irreversible.
+
+### Verification
+
+- Cross-driver contract test `test/unit/liveness-running-gate.test.ts` (12 cases): covers "no run signal
+  observed at all → must not return `finished`" (four drivers + a Codex control), "after a run signal was
+  observed, completion still works" (regression surface), and the reobserve seed. RED reproduction: before
+  the gate, the four drivers returned `finished` on round 5 while the Codex control stayed `pending`
+  throughout.
+- `test/unit/fix-loop-abort-parking.test.ts` (5 cases): the three newly included drivers' `idle_timeout`
+  is inside the `needs_attention` set, and successful terminal states never fall into that branch.
+- Full unit run: **93 files / 1261 cases passing**; `tsc --noEmit` and ESLint `--max-warnings 0` pass.
+- **This release is a pure-function and orchestration-layer fix with no real-machine verification**: the
+  run-signal collection layer (selectors) of the four drivers is untouched; see the MiniMax note above.
+
 ## [0.8.0] - 2026-10-06
 
 A cumulative release of **two agent resume-semantics fixes**: TraeWork's cross-mode project-binding
