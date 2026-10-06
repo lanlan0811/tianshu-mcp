@@ -8,6 +8,67 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.1.1-beta.4] — 2026-10-06 — mcp-gui independent line
+
+> This section records the **security-hardening release** of the GUI's independent `0.1.1` line (issue #32); **the MCP
+> package is untouched**. It moves the task-id character allowlist from frontend deep-link parsing down into the
+> **Rust command and module layers**, closing the path-joining in four commands. **No new features, no UI changes**:
+> user-visible behaviour matches `0.1.1-beta.3`.
+
+### Fixed
+
+- **Escape validation for `task_id` in four Log Viewer commands (issue #32)**: `read_events` / `read_baseline` /
+  `export_task_zip` joined task ids **directly** into `tasks/<id>/…` without going through the module's own escape
+  guard `resolve_rel`, contradicting the `ARCHITECTURE.md` §16.10 statement that ids go through the `[A-Za-z0-9_-]`
+  allowlist. The same defence line had different conventions per command, so **integrity depended on each caller
+  remembering** and a newly added command would not inherit the protection. The fix is **one central choke point**:
+  `data_home.rs` gains `validate_task_id` (the allowlist, matching the frontend `TASK_ID_RE` in `core/deeplink.ts` and
+  §16.10) plus `task_dir` (validates, then joins `tasks/<id>`) as the single entry point from a bare task id to a path;
+  the three modules switch to `task_dir` (**defence in depth**); all four commands gain a first-line check in the
+  command layer (`lib.rs`) — besides the three named in the issue, **`read_report` is included too** (it used
+  `resolve_rel` and did not escape, but likewise lacked the character allowlist). **An assumption disproved while
+  verifying**: the existing `if !task_dir.is_dir()` check in `export_task_zip` was treated as an effective guard, but
+  measurement showed `is_dir` evaluates to true with `..` in the task id, piercing the gate (**a guard existing is not
+  the same as a guard working**); the allowlist now rejects the input **before any path is built**.
+- **Attacked surface covered**: path traversal (`../../outside/evil` / `..` / `../..`), backslash traversal
+  (`..\..\evil`, **Windows only**), absolute paths (`/etc/passwd` / `C:/Windows`), NTFS alternate data streams
+  (`tsk_1:secret`), Windows-illegal characters (`tsk*1` / `tsk?1` / `tsk|1`), whitespace and dots (`tsk 1` / `tsk.1` /
+  empty), and Unicode homoglyphs (fullwidth `tsk＿1` / Cyrillic `tаsk_1`) — five vectors escaped before the fix and all
+  are rejected after it, with **zero false rejections of legitimate ids**. The check is **byte-by-byte** rather than a
+  regex: no new `regex` dependency, and ASCII-only naturally excludes homoglyphs, Windows-illegal path characters and
+  alternate data streams.
+
+### Changed
+
+- **`read_baseline` now returns an error instead of a default value for an illegal id**: the command **already** used
+  `Err` to report a missing task id (`lib.rs`), and an illegal character is the same class of caller error that silent
+  degradation would hide. A normal UI path **cannot** supply an illegal id (`selectedTaskId` comes from real directory
+  names returned by `list_tasks`; deep links have their own frontend allowlist), so **user-visible behaviour is
+  effectively unchanged**; every frontend consumer already catches errors (all six call sites verified — the
+  `readBaseline` sites use `try/catch` + `setError`, and `exportTaskZip`'s `Err` is caught by `doExport()` in
+  `WorkspacePage.vue`).
+
+### Tests
+
+- Frontend **169 passed** (15 files); `check:schema` (including `GUI version consistent (0.1.1-beta.4)`) / `typecheck` /
+  `lint` all green.
+- **This machine has no MSVC linker** (`link.exe` is shadowed by Git Bash coreutils; the Windows SDK ships no `Lib/`),
+  so `cargo test` / `clippy` still go to `gui.yml`. Instead this change was verified by **really compiling and running
+  the Rust code via `rustc --target wasm32-unknown-unknown`** (`std::path` is pure logic and the wasm32 target ships
+  `rust-lld`, so no MSVC is needed): **46 passed / 0 failed**, with the verified function bodies **extracted from the
+  on-disk source** by the harness; a **mutation test** (removing the allowlist turned 17 assertions red) proves the
+  suite has discriminating power.
+- New Rust unit tests: `data_home.rs` (allowlist and `task_dir` path-boundary cases), plus escape RED cases, absolute
+  path rejection and legitimate-id counter-proofs in `export.rs` / `baseline.rs` / `event_stream.rs`.
+
+### Docs
+
+- Added `docs/release-gui-v0.1.1-beta.4.md` + `.en.md`; `ARCHITECTURE.md` / `.en.md` §16.3 records the new
+  `data_home.rs` responsibility and §16.10 notes that the same allowlist is now enforced in the Rust command layer and
+  does **not** rely on the frontend `TASK_ID_RE`.
+
+---
+
 ## [0.1.1-beta.3] — 2026-10-02 — mcp-gui independent line
 
 > This section records the **third and final pre-release batch** of the GUI's independent `0.1.1` line; **the MCP package

@@ -7,6 +7,33 @@
 
 ---
 
+## [0.1.1-beta.4] — 2026-10-06 — mcp-gui 独立版本线
+
+> 本段记录 GUI 独立版本线 `0.1.1` 的**安全加固版**（issue #32）；**MCP 主包零改动**。
+> 把任务 ID 的字符白名单从前端深链下沉到 **Rust 命令层与模块层**，收口四条命令的路径拼装。
+> **无新增功能、无界面变化**，用户可见行为与 `0.1.1-beta.3` 一致。
+
+### 修复
+
+- **日志台四条命令的 `task_id` 补齐越界校验（issue #32）**：`read_events` / `read_baseline` / `export_task_zip` 在拼接 `tasks/<任务>/…` 时对任务 ID **直接 `join`**，未走同模块的越界校验 `resolve_rel`，与 `ARCHITECTURE.md` §16.10「ID 走字符白名单 `[A-Za-z0-9_-]`」的自述矛盾——同一条防线在各命令上口径不一，**完整性依赖调用方自觉**，新增命令不会自动继承防护。修法为**单点收口**：`data_home.rs` 新增 `validate_task_id`（白名单，与前端 `core/deeplink.ts` 的 `TASK_ID_RE` 及 §16.10 同口径）与 `task_dir`（先过白名单再拼 `tasks/<id>`），作为「裸任务 ID → 路径」的唯一入口；三个模块改用 `task_dir`（**防御深度**）；命令层（`lib.rs`）四条命令加第一道校验——除 issue 点名的三条外，**一并纳入 `read_report`**（它走 `resolve_rel` 本不逃逸，但同样缺字符白名单，同属口径不一致）。**验证中推翻的假设**：`export_task_zip` 原有的 `if !task_dir.is_dir()` 曾被当作有效防线，实测 `task_id` 含 `..` 时 `is_dir` 为真、闸门被穿透（**存在闸门 ≠ 闸门有效**），现由白名单在**拼路径之前**拦下。
+- **覆盖的攻击面**：路径穿越（`../../outside/evil` / `..` / `../..`）、反斜杠穿越（`..\..\evil`，**仅 Windows 生效**）、绝对路径（`/etc/passwd` / `C:/Windows`）、NTFS 备用数据流（`tsk_1:secret`）、Windows 非法字符（`tsk*1` / `tsk?1` / `tsk|1`）、空白与点号（`tsk 1` / `tsk.1` / 空串）、Unicode 同形字（全角下划线 `tsk＿1` / 西里尔 `tаsk_1`）——修复前 5 条确凿逃逸，修复后全部拒绝；**合法 ID 零误伤**。用**逐字节判定**而非正则：不引入 `regex` 依赖，ASCII-only 天然排除同形字、Windows 非法路径字符与备用数据流。
+
+### 行为变更
+
+- **`read_baseline` 对非法 ID 由「回默认值」改为「报错」**：该命令**本就用 `Err` 表达「任务 ID 缺失」**（`lib.rs`），非法字符属同类调用方错误，静默降级会掩盖 bug。正常界面路径**不可能**传入非法 ID（`selectedTaskId` 来自 `list_tasks` 的真实目录名，深链另有前端白名单），故**用户可见行为 ≈ 0**；前端 `readBaseline` 调用点已有 `try/catch` + `setError` 兜底，`exportTaskZip` 的 `Err` 由 `WorkspacePage.vue` 的 `doExport()` 捕获（已核对全部 6 个调用点）。
+
+### 测试
+
+- 前端 **169 passed**（15 文件），`check:schema`（含 `GUI 版本号一致（0.1.1-beta.4）`）/ `typecheck` / `lint` 全绿。
+- **Rust 侧本机无 MSVC 链接器**（`link.exe` 被 Git Bash coreutils 遮蔽，Windows SDK 无 `Lib/`），故 `cargo test` / `clippy` 仍交 `gui.yml`；本次改用 **`rustc --target wasm32-unknown-unknown` 真实编译并执行**（`std::path` 为纯逻辑，wasm32 目标自带 `rust-lld`，无需 MSVC）：**46 passed / 0 failed**，被验证函数体由脚本从磁盘源码**现场抽取**；另做**变异测试**（移除白名单 → 17 项断言转红）证明测试有辨别力。
+- 新增 Rust 单测：`data_home.rs`（`validate_task_id` 白名单 / `task_dir` 路径边界 4 项），`export.rs` / `baseline.rs` / `event_stream.rs` 各补越界 RED 用例 + 绝对路径拒绝 + 合法 ID 反证。
+
+### 文档
+
+- 新增 `docs/release-gui-v0.1.1-beta.4.md` + `.en.md`；`ARCHITECTURE.md` / `.en.md` §16.3 补 `data_home.rs` 的新增职责、§16.10 补「同一白名单已下沉到 Rust 命令层，不依赖前端 `TASK_ID_RE`」。
+
+---
+
 ## [0.1.1-beta.3] — 2026-10-02 — mcp-gui 独立版本线
 
 > 本段记录 GUI 独立版本线 `0.1.1` 的**第三个（最后一个）预发布批次**；**MCP 主包零改动**。
