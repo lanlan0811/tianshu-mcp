@@ -26,6 +26,7 @@
 
 - 前端 **169 passed**（15 文件），`check:schema`（含 `GUI 版本号一致（0.1.1-beta.4）`）/ `typecheck` / `lint` 全绿。
 - **Rust 侧本机无 MSVC 链接器**（`link.exe` 被 Git Bash coreutils 遮蔽，Windows SDK 无 `Lib/`），故 `cargo test` / `clippy` 仍交 `gui.yml`；本次改用 **`rustc --target wasm32-unknown-unknown` 真实编译并执行**（`std::path` 为纯逻辑，wasm32 目标自带 `rust-lld`，无需 MSVC）：**46 passed / 0 failed**，被验证函数体由脚本从磁盘源码**现场抽取**；另做**变异测试**（移除白名单 → 17 项断言转红）证明测试有辨别力。
+- **`cargo fmt --check` 本机可用**（rustfmt 不需要链接器，只有 `clippy` / `test` 需要）——首次推 tag 时 CI 的 `Rust format / clippy / tests` 在 windows 腿失败，根因是新增单测里一处 `assert_eq!` 超 100 字符宽度；本机 `cargo fmt --check` 可复现同一 diff，`cargo fmt` 修正后重跑通过。**教训**：不要因为链接器缺失就跳过全部 Rust 门禁，`fmt` 与 `--emit=metadata` 类型检查都不受影响。
 - 新增 Rust 单测：`data_home.rs`（`validate_task_id` 白名单 / `task_dir` 路径边界 4 项），`export.rs` / `baseline.rs` / `event_stream.rs` 各补越界 RED 用例 + 绝对路径拒绝 + 合法 ID 反证。
 
 ### 文档

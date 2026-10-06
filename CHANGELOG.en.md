@@ -58,6 +58,10 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
   `rust-lld`, so no MSVC is needed): **46 passed / 0 failed**, with the verified function bodies **extracted from the
   on-disk source** by the harness; a **mutation test** (removing the allowlist turned 17 assertions red) proves the
   suite has discriminating power.
+- **`cargo fmt --check` does work locally** (rustfmt needs no linker; only `clippy` / `test` do) — the first tag push
+  failed the `Rust format / clippy / tests` step on the Windows leg because one new `assert_eq!` exceeded the 100-column
+  limit; the same diff was reproducible locally with `cargo fmt --check`, and `cargo fmt` fixed it. **Lesson**: do not
+  skip every Rust gate just because the linker is missing — `fmt` and `--emit=metadata` type checking are unaffected.
 - New Rust unit tests: `data_home.rs` (allowlist and `task_dir` path-boundary cases), plus escape RED cases, absolute
   path rejection and legitimate-id counter-proofs in `export.rs` / `baseline.rs` / `event_stream.rs`.
 
