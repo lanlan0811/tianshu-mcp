@@ -112,6 +112,31 @@ export const AcceptanceConfigSchema = PartialAcceptanceConfigSchema.extend({
 });
 export type AcceptanceConfig = z.infer<typeof AcceptanceConfigSchema>;
 
+/**
+ * `acceptanceOverride` 的**线上声明形态**（v0.8.4 schema 瘦身）。
+ *
+ * 为何不直接用 `PartialAcceptanceConfigSchema`：它的 `visual` 内联了完整的
+ * `VisualConfigSchema`（9579 字符），而 MCP 下**每个工具的 inputSchema 独立序列化**、
+ * 跨工具无法用 `$ref` 共享——`run_task` 与 `verify_task` 各内联一份，实测使
+ * `tools/list` 达 35581 字符（两份 acceptanceOverride 子树合计 24679，占 69.4%）。
+ *
+ * 本形态只声明**字段骨架**，`visual` 转为不透明对象（字段细节见 docs/acceptance-config.md）。
+ * **校验不因此放松**：handler 入口用 `PartialAcceptanceConfigSchema` 严格复核，
+ * 非法输入仍 fail-closed（见 `parseAcceptanceOverride`）。
+ *
+ * 注意 不要在此处引入 `z.discriminatedUnion` / `.refine()`：实测这两者经 SDK 序列化后
+ * 线上会退化成 `{"type":"object","properties":{}}`，参数信息全部丢失
+ * （`test/protocol` 与 `test/integration/verify-params.test.ts` 有断言守着）。
+ */
+export const AcceptanceOverrideWireSchema = z.object({
+  checks: z.array(AcceptanceCheckSchema).optional(),
+  /** 不透明对象：字段细节见 docs/acceptance-config.md；handler 内严格校验 */
+  visual: z.record(z.unknown()).optional(),
+  requireChanges: z.boolean().optional(),
+  verifyConcurrency: z.number().optional(),
+});
+export type AcceptanceOverrideWire = z.infer<typeof AcceptanceOverrideWireSchema>;
+
 export const RunTaskParamsSchema = z.object({
   /**
    * 项目绝对路径。**省略** = 无项目模式（issue #12）：目前仅 ZCode 支持——任务在其 `default`
@@ -201,6 +226,15 @@ export const RunTaskParamsSchema = z.object({
 });
 export type RunTaskParams = z.infer<typeof RunTaskParamsSchema>;
 
+/**
+ * `run_task` 的**线上声明形态**（v0.8.4 schema 瘦身）：与 {@link RunTaskParamsSchema}
+ * 逐字段同构，仅把 `acceptanceOverride` 换成骨架形态以减少 `tools/list` 体积。
+ * 两者靠类型断言锁定同构（见文件末尾的 `_RunTaskWireMatchesParams`）。
+ */
+export const RunTaskWireSchema = RunTaskParamsSchema.extend({
+  acceptanceOverride: AcceptanceOverrideWireSchema.optional(),
+});
+
 /** query_task 返回的细粒度事件条数默认值（issue #18） */
 export const QUERY_TASK_EVENT_LIMIT_DEFAULT = 10;
 
@@ -257,6 +291,11 @@ export const VerifyTaskParamsSchema = z.object({
   acceptanceOverride: PartialAcceptanceConfigSchema.optional(),
 });
 export type VerifyTaskParams = z.infer<typeof VerifyTaskParamsSchema>;
+
+/** `verify_task` 的**线上声明形态**（v0.8.4 schema 瘦身）：语义同 {@link RunTaskWireSchema}。 */
+export const VerifyTaskWireSchema = VerifyTaskParamsSchema.extend({
+  acceptanceOverride: AcceptanceOverrideWireSchema.optional(),
+});
 
 export const ReworkTaskParamsSchema = z.object({
   taskId: z.string().min(1),
@@ -761,3 +800,46 @@ export type ProjectsFile = z.infer<typeof ProjectsFileSchema>;
 
 /* 项目内 .tianshu-mcp/acceptance.json 的 schema 定义见文件上方（须早于 RunTaskParamsSchema，
    因为 run_task/verify_task 的 acceptanceOverride 参数引用它）。 */
+
+/* ---------------- 线上 schema 同构锁定（v0.8.4） ---------------- */
+
+/**
+ * 编译期锁定：线上 wire schema 与严格 schema 的**字段集必须完全同构**，
+ * 唯一允许的差异是 `acceptanceOverride` 的形态（严格 → 骨架）。
+ *
+ * 为什么用 `Equals<>` 而不是条件类型别名：条件类型落到 `never` 时 TypeScript **不报错**，
+ * 那样的"锁"是假的。v0.8.4 实施时对假锁做过反证（注入多余字段后 typecheck 仍通过），
+ * 才改成下面这种**会真的报错**的写法——`Equals<A,B>` 不等时为 `false`，
+ * 赋给 `: true` 立即触发 TS2322。
+ */
+type Equals<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
+  ? true
+  : false;
+
+// 1) 非 acceptanceOverride 字段：双向等价（多一个/少一个/改类型都会红）
+type RunTaskWireFields = Omit<z.infer<typeof RunTaskWireSchema>, "acceptanceOverride">;
+type RunTaskStrictFields = Omit<RunTaskParams, "acceptanceOverride">;
+type VerifyTaskWireFields = Omit<z.infer<typeof VerifyTaskWireSchema>, "acceptanceOverride">;
+type VerifyTaskStrictFields = Omit<VerifyTaskParams, "acceptanceOverride">;
+
+/**
+ * 锁具：`false` 会让整个类型别名非法，而**在类型位置引用它**（见下方
+ * `WireSchemaParityLock`）即触发真实编译错误——反证已验证（注入多余字段 → TS2322）。
+ * 用类型别名而非 `const`，避免产生运行期无用变量（lint 会拦）。
+ */
+type Assert<T extends true> = T;
+
+type RunTaskFieldParity = Assert<Equals<RunTaskWireFields, RunTaskStrictFields>>;
+type VerifyTaskFieldParity = Assert<Equals<VerifyTaskWireFields, VerifyTaskStrictFields>>;
+
+// 2) 骨架形态的字段集必须**恰好**是这 4 个（加字段意味着线上体积回升，须显式改这里）
+type WireOverrideKeys = keyof AcceptanceOverrideWire;
+type OverrideKeysExact = Assert<
+  Equals<WireOverrideKeys, "checks" | "visual" | "requireChanges" | "verifyConcurrency">
+>;
+
+export type WireSchemaParityLock = [
+  RunTaskFieldParity,
+  VerifyTaskFieldParity,
+  OverrideKeysExact,
+];

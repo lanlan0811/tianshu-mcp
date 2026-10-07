@@ -164,3 +164,104 @@ describe("R4 baselineRef", () => {
     expect(ok.res.isError).toBe(false);
   }, 60_000);
 });
+
+describe("acceptanceOverride 校验独立于线上 schema（v0.8.4 陷阱防护）", () => {
+  // 背景：run_task / verify_task 的线上 inputSchema 曾完整内联 PartialAcceptanceConfigSchema
+  // （含 9579 字符的 VisualConfigSchema），使 tools/list 达 35581 字符。v0.8.4 起换成骨架形态
+  // （AcceptanceOverrideWireSchema）→ 实测降到 11717 字符。
+  //
+  // 关键风险：骨架形态里 `visual` 是 `z.record(z.unknown())`（不透明），因此
+  // **`visual` 内部的字段级非法只能由 handler 下沉校验拦住**——wire/SDK 层放行它们。
+  // 下面这组用例专门打这个缝隙，并断言错误**来源是下沉层**（而非 SDK 的 -32602），
+  // 以保证「移除下沉校验」真的会让测试变红。
+  //
+  // 反证记录：实施时曾用 `checks: [{name:"t"}]` 做断言，结果移除下沉校验后测试仍绿——
+  // 因为 wire 形态保留了 checks 的完整 AcceptanceCheckSchema，是 SDK 层拦的。故改用 visual 缝隙。
+  const SINK_ONLY_CASES: [string, Record<string, unknown>][] = [
+    ["visual.browser 类型错", { visual: { browser: "bogus" } }],
+    ["visual.enabled 是字符串", { visual: { enabled: "yes" } }],
+    ["visual.pages 不是数组", { visual: { pages: "nope" } }],
+  ];
+
+  for (const [label, bad] of SINK_ONLY_CASES) {
+    it(`verify_task 由 handler 下沉层拒绝：${label}`, async () => {
+      const proj = await makeGitProject("good");
+      tempDirs.push(proj);
+      const r = await callTool(ts.client, "verify_task", {
+        projectPath: proj,
+        acceptanceOverride: bad,
+      });
+      expect(r.res.isError, `坏输入「${label}」必须被拒`).toBe(true);
+      // 断言来源：必须由 handler 下沉层拒绝。若退化为 SDK 的 -32602 说明骨架又被收紧，
+      // 若完全没有错误信息则说明下沉校验被移除（fail-open 回归）。
+      expect(r.text, `「${label}」应由 handler 下沉层拒绝（acceptanceOverride 参数不合法）`)
+        .toContain("acceptanceOverride 参数不合法");
+      expect(r.text, `「${label}」不应由 SDK 层拒绝——那说明骨架形态意外收紧了`).not.toContain(
+        "-32602",
+      );
+    }, 60_000);
+  }
+
+  // 补充：wire 层仍守着 `checks`（骨架保留了完整 AcceptanceCheckSchema），
+  // 这层拒绝由 SDK 发出——两条防线各自有效，都写进断言。
+  it("checks 的字段级非法由 SDK/wire 层拒绝（骨架仍保留 checks 完整校验）", async () => {
+    const proj = await makeGitProject("good");
+    tempDirs.push(proj);
+    const r = await callTool(ts.client, "verify_task", {
+      projectPath: proj,
+      acceptanceOverride: { checks: [{ name: "t" }] },
+    });
+    expect(r.res.isError).toBe(true);
+  }, 60_000);
+
+  it("合法的 acceptanceOverride 仍被接受（未被过度收紧）", async () => {
+    const proj = await makeGitProject("good");
+    tempDirs.push(proj);
+    await writePlaybook(proj, { playbook: "good" });
+    await fsp.writeFile(path.join(proj, "done.txt"), "PASS\n", "utf8");
+    const r = await callTool(ts.client, "verify_task", {
+      projectPath: proj,
+      acceptanceOverride: { requireChanges: false },
+    });
+    expect(r.res.isError, "合法输入不应被拒").toBeFalsy();
+  }, 60_000);
+
+  it("run_task 同样由 handler 下沉层拒绝 visual 内部非法（同一不变量）", async () => {
+    const proj = await makeGitProject("good");
+    tempDirs.push(proj);
+    const r = await callTool(ts.client, "run_task", {
+      projectPath: proj,
+      task: "t",
+      agentId: "stub",
+      acceptanceOverride: { visual: { enabled: "yes" } },
+    });
+    expect(r.res.isError, "run_task 的坏 acceptanceOverride 必须被拒").toBe(true);
+    expect(r.text, "run_task 也应由下沉层拒绝").toContain("acceptanceOverride 参数不合法");
+  }, 60_000);
+});
+
+describe("线上 inputSchema 契约（防 discriminatedUnion/refine 空 schema 陷阱）", () => {
+  // 实测：z.discriminatedUnion / .refine() 经 SDK 序列化后线上变成
+  // {"type":"object","properties":{}}——参数信息全部丢失，宿主 LLM 看不到任何字段。
+  //
+  // 注意：`get_profiles` 用 `z.object({})`，它**本来就没有参数**，空 properties 是正确形态。
+  // 故本断言排除「设计上无参」的工具，其余工具必须暴露非空 properties。
+  const NO_PARAM_TOOLS = new Set(["get_profiles"]);
+
+  it("除无参工具外，每个工具的线上 inputSchema 都必须暴露非空 properties", async () => {
+    const { tools } = await ts.client.listTools();
+    expect(tools.length).toBeGreaterThan(0);
+    for (const t of tools) {
+      const props = (t.inputSchema as { properties?: Record<string, unknown> } | undefined)
+        ?.properties;
+      const count = props ? Object.keys(props).length : 0;
+      if (NO_PARAM_TOOLS.has(t.name)) {
+        expect(count, `${t.name} 被列为无参工具，但它的 schema 现在有参数了——请更新 NO_PARAM_TOOLS`)
+          .toBe(0);
+        continue;
+      }
+      expect(count, `${t.name} 的线上 schema 参数为空（检出 discriminatedUnion/refine 陷阱）`)
+        .toBeGreaterThan(0);
+    }
+  }, 60_000);
+});

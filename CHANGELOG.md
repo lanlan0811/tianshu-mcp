@@ -7,6 +7,38 @@
 
 ---
 
+## [0.8.4] — 2026-10-07
+
+> **工具面瘦身版**：`run_task` / `verify_task` 的 `acceptanceOverride` 线上声明改为骨架形态，
+> `tools/list` 从 **35581 → 11717 字符（−67.1%）**。工具名、参数集、校验语义**全部不变**——
+> 这是纯上下文开销优化，对调用方无破坏性。
+
+### 变更
+
+- **`acceptanceOverride` 线上 schema 骨架化**。该参数内联的是 `PartialAcceptanceConfigSchema`（11005 字符，其中 `VisualConfigSchema` 独占 9579），而 MCP 下**每个工具的 `inputSchema` 独立序列化**、跨工具无法用 `$ref` 共享——`run_task` 与 `verify_task` 各内联一份，两份子树合计 **24679 字符（占工具面 69.4%）**。现改为 `AcceptanceOverrideWireSchema`（`src/config/schema.ts`）：`checks` 保留完整 `AcceptanceCheckSchema`，`visual` 转为不透明 `z.record(z.unknown())`，其余两个标量字段不变。`visual` 的字段级细节见 docs/acceptance-config.md。
+- **新增校验下沉层**（关键，非可选）。此前**线上 `inputSchema` 是 `acceptanceOverride` 的唯一校验层**——两个 handler 内都只有 `rawArgs as XxxParams` 类型断言、无 parse。骨架化使 `visual` 变成不透明对象后，其内部字段的非法输入（如 `visual.enabled: "yes"`）会**穿透 SDK 层直达 handler**。故在 `runTaskHandler` / `verifyTaskHandler` 入口新增 `validateAcceptanceOverride()`，用严格 schema 复核；非法输入仍 fail-closed。
+
+### 测试
+
+- **反证验证的防回归用例**（`test/integration/verify-params.test.ts`）：新增 4 条专打「只有下沉层能拦」的缝隙（`visual` 内部字段非法），并**断言错误来源是 handler 下沉层**（文案含 `acceptanceOverride 参数不合法`、且不含 SDK 的 `-32602`）。另 1 条锁定 `checks` 仍由 wire/SDK 层拒绝——两条防线各自有效。
+  - **RED→GREEN 反证**：临时移除两处下沉校验 → 精确 **4 条变红**（其余 8 条仍绿），证明用例有真实辨别力，而非依赖 SDK 的偶然拦截。
+  - 实施中曾用 `checks: [{name:"t"}]` 做断言，结果移除下沉校验后测试**仍全绿**——根因是 wire 形态保留了 `checks` 的完整校验，实际是 SDK 层拦的。改用 `visual` 缝隙后才获得真实覆盖。
+- **线上 schema 契约测试**：新增「除设计上无参的 `get_profiles` 外，每个工具的线上 `inputSchema.properties` 必须非空」。这条锁定 `.refine()` / `z.discriminatedUnion` 陷阱——实测这两者经 SDK 序列化后线上退化为 `{"type":"object","properties":{}}`，参数信息**全部丢失**。
+- **编译期同构锁**（`src/config/schema.ts` 的 `WireSchemaParityLock`）：wire schema 与严格 schema 的字段集必须双向等价，骨架字段集必须恰为 4 个。用 `Equals<>` + `Assert<T extends true>` 实现；**该锁经过反证**（注入多余字段 → TS2322）。注：早先用条件类型别名写的版本**不会报错**（`never` 不触发编译错误），反证后才改成现在这种真会拦的写法。
+- 全量测试见下节「验证」。
+
+### 验证
+
+- **实测体积**：`tools/list` 35581 → **11717 字符（−67.1%）**；工具数仍为 **13**。逐工具：`run_task` 14435 → 2503，`verify_task` 13366 → 1434，其余 11 个工具零变化。
+- `tsc --noEmit` / `eslint --max-warnings 0` 全绿。
+
+### 已知限制
+
+- **`visual` 不再是自描述字段**：宿主 LLM 从线上 schema 只看到一个不透明对象，看不到 `viewports` / `pages` / `defaults` 等内部字段名。功能不受影响（传参与校验完全不变），但需要看字段细节时得查 docs/acceptance-config.md。这是换取 67% 体积下降的直接代价。
+- **未走第二步（工具合并）**：本轮**不改任何工具名**、不合并工具。计划文档 §4 描述的 13 → 8 合并（`manage_task` / `query_info` 等）未实施——那一步收益仅约 2000–4000 字符（占被削部分的零头），却要动协议测试、GUI 镜像、44 处运行时文案四个面。留待后续版本按需评估。
+
+---
+
 ## [0.8.3] — 2026-10-07
 
 > **缺陷修复版（issue #38，承接 #35 遗留项）**：TraeWork 的下拉底部点击改由**副作用驱动**，

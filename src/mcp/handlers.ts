@@ -33,6 +33,7 @@ import {
   QUERY_TASK_EVENT_LIMIT_DEFAULT,
   WAIT_TASK_TIMEOUT_MAX_MS,
   clampWaitTimeout,
+  PartialAcceptanceConfigSchema,
 } from "../config/schema.js";
 import { toAcceptanceDef, type DataHome } from "../config/store.js";
 import type { TaskManager } from "../tasks/task-manager.js";
@@ -344,6 +345,10 @@ function runTaskHandler(
   const { manager, dataHome, logger } = ctx;
   return async (rawArgs) => {
     const args = rawArgs as RunTaskParams;
+    // v0.8.4：线上 inputSchema 把 acceptanceOverride 声明为骨架形态（省 tools/list 体积），
+    // 故此处用严格 schema 复核——该参数过去由线上 schema 独家把关，不能因瘦身而放宽。
+    const overrideErr = validateAcceptanceOverride(args.acceptanceOverride);
+    if (overrideErr) return errorResult(overrideErr);
     // 无项目模式（issue #12）：省略 projectPath 时不做目录校验与项目登记，
     // 待解析出最终 agent 之后再判断它是否支持无项目。
     if (args.projectPath === undefined) {
@@ -729,6 +734,30 @@ function queryTaskHandler(ctx: AppContext): Handler {
   };
 }
 
+/* ---------------- acceptanceOverride 下沉校验（v0.8.4 schema 瘦身） ---------------- */
+
+/**
+ * 严格校验 `acceptanceOverride`，返回错误文本或 null。
+ *
+ * **为什么需要它**：`run_task` / `verify_task` 的线上 `inputSchema` 从 v0.8.4 起
+ * 把 `acceptanceOverride` 声明为**骨架形态**（`AcceptanceOverrideWireSchema`，为省
+ * `tools/list` 体积）——而此前**线上 schema 是该参数的唯一校验层**（handler 内
+ * 只有 `rawArgs as XxxParams` 类型断言）。若不同时在这里复核，非法输入会 fail-open
+ * 直达业务层。本函数即那次变更的"校验下沉"落点。
+ *
+ * 严格形态 `PartialAcceptanceConfigSchema` 仍会拒绝所有非法输入（含 `visual` 的字段级
+ * 非法），因为骨架只是**放宽了声明**，不是放宽了校验。
+ */
+function validateAcceptanceOverride(value: unknown): string | null {
+  if (value === undefined) return null;
+  const parsed = PartialAcceptanceConfigSchema.safeParse(value);
+  if (parsed.success) return null;
+  const detail = parsed.error.issues
+    .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
+    .join("; ");
+  return `acceptanceOverride 参数不合法 — ${detail}`;
+}
+
 /* ---------------- 等待原语（issue #28） ---------------- */
 
 /** 停点后的后续动作指引：终态 → 取报告；needs_user → continue 后再次 wait。 */
@@ -1051,6 +1080,9 @@ function verifyTaskHandler(ctx: AppContext, idempotency: IdempotencyIndex): Hand
   const { manager, dataHome, store } = ctx;
   return async (rawArgs) => {
     const args = rawArgs as VerifyTaskParams;
+    // v0.8.4：同 run_task —— 线上声明已骨架化，严格校验在此兜底（幂等预检之前）。
+    const overrideErr = validateAcceptanceOverride(args.acceptanceOverride);
+    if (overrideErr) return errorResult(overrideErr);
     const key = args.idempotencyKey;
     const digest = key === undefined ? undefined : await verifyIdempotencyDigest(args);
     // 幂等预检放在昂贵步骤（基线采集、命令执行）之前

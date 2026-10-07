@@ -8,6 +8,39 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.8.4] — 2026-10-07
+
+> **Tool-surface slimming release**: `run_task` / `verify_task` now declare `acceptanceOverride`
+> in a skeleton form, cutting `tools/list` from **35,581 → 11,717 characters (−67.1%)**.
+> Tool names, parameter sets and validation semantics are **all unchanged** — this is a pure
+> context-overhead optimisation with no breakage for callers.
+
+### Changed
+
+- **`acceptanceOverride` wire schema slimmed to a skeleton.** That parameter inlined `PartialAcceptanceConfigSchema` (11,005 chars, of which `VisualConfigSchema` alone accounts for 9,579); under MCP **each tool's `inputSchema` is serialised independently** and `$ref` cannot be shared across tools — so `run_task` and `verify_task` each inlined a full copy, together **24,679 chars (69.4% of the entire tool surface)**. It is now `AcceptanceOverrideWireSchema` (`src/config/schema.ts`): `checks` keeps the full `AcceptanceCheckSchema`, `visual` becomes an opaque `z.record(z.unknown())`, and the two scalar fields are unchanged. Field-level details for `visual` live in docs/acceptance-config.en.md.
+- **Added a validation sink layer** (critical, not optional). Previously the **wire `inputSchema` was the *only* validation layer for `acceptanceOverride`** — both handlers merely cast with `rawArgs as XxxParams`, with no parse. Once `visual` turned opaque, invalid inner fields (e.g. `visual.enabled: "yes"`) would **pass straight through the SDK layer into the handler**. Hence `validateAcceptanceOverride()` now runs at the entry of `runTaskHandler` / `verifyTaskHandler`, re-checking with the strict schema; invalid input still fails closed.
+
+### Tests
+
+- **Regression cases verified by counter-proof** (`test/integration/verify-params.test.ts`): four new cases target the "sink-only" gap (`visual` inner field violations) and **assert the error *originates* from the handler sink** (message contains `acceptanceOverride 参数不合法` and does *not* contain the SDK's `-32602`). One more case pins that `checks` is still rejected at the wire/SDK layer — both lines of defence hold independently.
+  - **RED→GREEN counter-proof**: temporarily removing both sink checks turned exactly **4 cases red** (the other 8 stayed green), proving the cases have real discriminating power rather than relying on incidental SDK interception.
+  - During implementation, `checks: [{name:"t"}]` was first used as the probe; removing the sink left the tests **fully green** — because the wire form keeps `checks`' complete validation, so the SDK was doing the rejecting. Only after switching to the `visual` gap did the tests gain real coverage.
+- **Wire-schema contract test**: added "every tool except the by-design parameterless `get_profiles` must expose non-empty `inputSchema.properties`". This pins the `.refine()` / `z.discriminatedUnion` trap — measured: both serialise to `{"type":"object","properties":{}}` on the wire, **losing all parameter information**.
+- **Compile-time parity lock** (`WireSchemaParityLock` in `src/config/schema.ts`): the wire and strict schemas must be mutually equivalent in field set, and the skeleton must contain exactly four fields. Implemented via `Equals<>` + `Assert<T extends true>`; **the lock was counter-proofed** (injecting a stray field → TS2322). Note: an earlier version written with conditional type aliases **did not error at all** (`never` triggers no compile failure) — only after the counter-proof was it rewritten into a form that genuinely blocks.
+- Full test results in "Verification" below.
+
+### Verification
+
+- **Measured size**: `tools/list` 35,581 → **11,717 characters (−67.1%)**; tool count still **13**. Per tool: `run_task` 14,435 → 2,503, `verify_task` 13,366 → 1,434, the other 11 tools unchanged.
+- `tsc --noEmit` / `eslint --max-warnings 0` both green.
+
+### Known limitations
+
+- **`visual` is no longer self-describing**: host LLMs see only an opaque object on the wire, without the inner field names (`viewports` / `pages` / `defaults`, …). Functionality is unaffected (arguments and validation are identical), but field details now require docs/acceptance-config.en.md. That is the direct price paid for the 67% size reduction.
+- **Step two (tool merging) not taken**: this release **renames no tools** and merges none. The 13 → 8 merge described in §4 of the plan (`manage_task` / `query_info`, …) was not implemented — that step yields only ~2,000–4,000 characters (a fraction of what was cut here) while touching four surfaces: protocol tests, the GUI mirror, and 44 runtime strings. Deferred to a future release if warranted.
+
+---
+
 ## [0.8.3] — 2026-10-07
 
 > **Bug-fix release (issue #38, follow-up to #35)**: TraeWork's dropdown-footer click is now
