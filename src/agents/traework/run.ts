@@ -341,7 +341,7 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
         return stop(
           "setup_failed",
           `模式切换失败：无法切换到 ${target.mode} 模式（当前面板可能不可用）`,
-          { hardFailure: true },
+          { hardFailure: true, errorType: "setup_failed" },
         );
       }
     }
@@ -367,6 +367,7 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
     if (!bound.bound) {
       return stop("setup_failed", `项目文件夹绑定失败（${bound.method}）：${bound.message}`, {
         hardFailure: true,
+        errorType: "setup_failed",
       });
     }
     logger.info(`[traework] 项目已绑定（模式 ${target.mode}）：${bound.message}`);
@@ -378,14 +379,14 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
       return stop(
         "setup_failed",
         `绑定项目后面板模式变为 ${afterMode}（期望 ${target.mode}），已中止以免在错误模式下开发`,
-        { hardFailure: true },
+        { hardFailure: true, errorType: "setup_failed" },
       );
     }
     if (!afterBound || !matchProjectItem({ name: afterBound, subtitle: "" }, ctx.projectPath)) {
       return stop(
         "setup_failed",
         `项目绑定校验失败（输入栏：${afterBound || "空"}，期望 ${projectBasename(ctx.projectPath)}）`,
-        { hardFailure: true },
+        { hardFailure: true, errorType: "setup_failed" },
       );
     }
 
@@ -399,7 +400,10 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
             : sw.reason === "not_found"
               ? `下拉中未找到模型「${ctx.model}」${sw.available?.length ? `（可用：${sw.available.join("、")}）` : ""}`
               : `模型切换后验证不一致（${sw.model}）`;
-        return stop("setup_failed", `模型切换失败：${detail}`, { hardFailure: true });
+        return stop("setup_failed", `模型切换失败：${detail}`, {
+          hardFailure: true,
+          errorType: "setup_failed",
+        });
       }
     } else if (ctx.model) {
       logger.info(`[traework] profile.gui.modelSwitch=false，忽略指定模型「${ctx.model}」`);

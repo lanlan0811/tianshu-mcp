@@ -5,6 +5,8 @@
  * 位置调用 opts.onEvent，验证编排器「只落盘、不解释」的接线以及快照同步。
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { TaskStore } from "../../src/tasks/task-store.js";
 import { TaskOrchestrator } from "../../src/loop/fix-loop.js";
 import { AgentAdapterRegistry } from "../../src/agents/registry.js";
@@ -36,7 +38,11 @@ const FAKE_ID = "fake-gui";
 /** 只实现 run() 的假适配器：模拟 codex/traework 在关键节点上报事件 */
 class FakeEventAdapter implements AgentAdapter {
   readonly id = FAKE_ID;
-  constructor(private readonly emitKinds: string[]) {}
+  constructor(
+    private readonly emitKinds: string[],
+    /** 可选：模拟 hardFailure 及适配器对失败性质的自我归类（issue #38 问题 B） */
+    private readonly failure?: { error: string; errorType?: "spawn" | "setup_failed" },
+  ) {}
 
   buildInvocation(): SpawnInvocation {
     throw new Error("fake-gui 不通过 spawn 执行");
@@ -51,6 +57,22 @@ class FakeEventAdapter implements AgentAdapter {
     for (const kind of this.emitKinds) {
       await emit(kind as never, `detail:${kind}`, { round: ctx.round });
     }
+    if (this.failure) {
+      return {
+        ok: false,
+        exitCode: null,
+        timeout: false,
+        killed: false,
+        error: this.failure.error,
+        durationMs: 1,
+        logFile: ctx.taskDir + "/agent-0.log",
+        endReason: "setup_failed",
+        keptInstance: true,
+        hardFailure: true,
+        // 未声明时省略该字段，走编排器的安全缺省
+        ...(this.failure.errorType ? { errorType: this.failure.errorType } : {}),
+      };
+    }
     return {
       ok: true,
       exitCode: 0,
@@ -64,7 +86,10 @@ class FakeEventAdapter implements AgentAdapter {
   }
 }
 
-async function fixture(emitKinds: string[]) {
+async function fixture(
+  emitKinds: string[],
+  failure?: { error: string; errorType?: "spawn" | "setup_failed" },
+) {
   const home = await makeTmpRoot("fix-loop-events");
   roots.push(home);
   const logger = new Logger(null, "error");
@@ -79,7 +104,7 @@ async function fixture(emitKinds: string[]) {
   const registry = new AgentAdapterRegistry(async () => ({ [FAKE_ID]: profile }), logger);
   // 先注册自定义适配器：ensureAdapterFor 对「非内置 GUI 类」的既有实例不做替换，
   // 因此自定义 run() 执行面会被保留下来。
-  registry.register(FAKE_ID, new FakeEventAdapter(emitKinds));
+  registry.register(FAKE_ID, new FakeEventAdapter(emitKinds, failure));
 
   const meta: TaskMeta = {
     taskId: "tsk_fake_events",
@@ -176,5 +201,53 @@ describe("TaskOrchestrator 的 onEvent 接线（issue #18）", () => {
 
     const res = await orchestrator.run();
     expect(res.status).toBe("succeeded");
+  });
+});
+
+describe("hardFailure 的失败分类细化（issue #38 问题 B）", () => {
+  it("适配器声明 setup_failed → 终态 errorType=setup_failed，且不再被映射成 spawn", async () => {
+    const { store, meta, orchestrator } = await fixture([], {
+      error: "项目文件夹绑定失败（failed）：下拉未命中且底部「选择文件夹」未成功唤起原生对话框",
+      errorType: "setup_failed",
+    });
+
+    const res = await orchestrator.run();
+    expect(res.status).toBe("failed");
+    expect(meta.errorType).toBe("setup_failed");
+
+    // 落盘快照同样携带细分归类（GUI/洞察消费的是 task.json）
+    const snap = JSON.parse(await fs.readFile(path.join(store.dir(meta.taskId), "task.json"), "utf8"));
+    expect(snap.errorType).toBe("setup_failed");
+    expect(snap.status).toBe("failed");
+  });
+
+  it("适配器未声明 errorType → 缺省仍为 spawn，且文案保持「agent 基础设施失败」（I6 回归锁）", async () => {
+    const { store, meta, orchestrator } = await fixture([], {
+      error: "未找到 TraeWork 可执行文件",
+      // 故意不传 errorType：非 traework 的 6 个 agent 均走这条路径，行为必须逐字不变
+    });
+
+    const res = await orchestrator.run();
+    expect(res.status).toBe("failed");
+    expect(meta.errorType).toBe("spawn");
+    expect(meta.lastMessage).toContain("agent 基础设施失败");
+    expect(meta.lastMessage).toContain("未找到 TraeWork 可执行文件");
+
+    const snap = JSON.parse(await fs.readFile(path.join(store.dir(meta.taskId), "task.json"), "utf8"));
+    expect(snap.errorType).toBe("spawn");
+    void store;
+  });
+
+  it("setup_failed 的终态文案点明「setup 阶段失败」，读者无需读日志即可判断失败性质", async () => {
+    const { meta, orchestrator } = await fixture([], {
+      error: "项目文件夹绑定失败（failed）：无法展开「选择文件夹」下拉",
+      errorType: "setup_failed",
+    });
+
+    await orchestrator.run();
+    expect(meta.lastMessage).toContain("setup 阶段失败");
+    expect(meta.lastMessage).not.toContain("agent 基础设施失败");
+    // 原始 error 文本必须保留，供宿主定位细节
+    expect(meta.lastMessage).toContain("无法展开「选择文件夹」下拉");
   });
 });

@@ -177,6 +177,7 @@ export interface TaskMeta {
   errorType?:
     | "timeout"
     | "spawn"
+    | "setup_failed"
     | "agent_failed"
     | "verify_failed"
     | "cancelled"

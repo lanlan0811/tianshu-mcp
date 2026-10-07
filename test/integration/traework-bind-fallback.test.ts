@@ -128,6 +128,9 @@ describe("bindProject 的目标模式内绑定（issue #35）", () => {
     expect(r.hardFailure).toBe(true);
     // 绑定是 mode-scoped：失败即在目标模式内如实失败，不再回落 Work（issue #35）
     expect(r.error).toContain("项目文件夹绑定失败");
+    // issue #38 问题 B：逻辑性 setup 失败必须自归类为 setup_failed，
+    // 不能被 fix-loop 统一映射成 spawn（语义＝进程拉起失败，会把读者引向环境排查）
+    expect(r.errorType).toBe("setup_failed");
     expect(state.mode).toBe(mode);
     expect(state.boundProject).toBeNull();
     expect(closeDialogs).toHaveBeenCalledTimes(1);

@@ -94,6 +94,16 @@ export interface AgentRunResult {
   durationMs: number;
   logFile: string;
   hardFailure?: boolean; // 基础设施/认证等错误，不进入验收/返修
+  /**
+   * 适配器对 hardFailure 失败性质的自我归类（issue #38）。
+   *
+   * - `spawn`：进程/安装/CDP 等基础设施失败（默认，未声明时编排器按此处理）
+   * - `setup_failed`：setup 阶段的**逻辑性**失败（模式未就绪、项目未绑定、模型不可用…），
+   *   重试或换环境不会成功，不应被读日志的人当成环境问题反复重试
+   *
+   * 缺省不传即保持既有行为（`spawn`）；只有确实握有失败性质的适配器才显式声明。
+   */
+  errorType?: "spawn" | "setup_failed";
   /** GUI agent 的结构化结束原因（如 completion_mark / idle_no_completion / timeout） */
   endReason?: string;
   /** GUI 实例是否因任务未真正完成而被保留 */

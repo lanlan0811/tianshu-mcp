@@ -318,10 +318,14 @@ export class TaskOrchestrator {
         }
 
         if (runRes.hardFailure) {
+          // issue #38：失败性质由适配器声明（runRes.errorType），编排器不反推。
+          // 缺省 `spawn` 保持既有行为——未声明分类的 adapter 逐字不变。
+          const errorType = runRes.errorType ?? "spawn";
+          const headline = errorType === "setup_failed" ? "setup 阶段失败" : "agent 基础设施失败";
           return this.finish(
             "failed",
-            "spawn",
-            `agent 基础设施失败：${runRes.error ?? "未知"}（日志 ${runRes.logFile}）`,
+            errorType,
+            `${headline}：${runRes.error ?? "未知"}（日志 ${runRes.logFile}）`,
           );
         }
         if (runRes.timeout) {
