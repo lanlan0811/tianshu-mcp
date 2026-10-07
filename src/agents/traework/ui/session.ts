@@ -307,73 +307,151 @@ async function openProjectDropdown(
 }
 
 /**
+ * footer 点击实际生效的执行方式（issue #38）：用于日志与测试断言，
+ * 取代旧实现里误导性的「点击=选择器」（旧日志把弱信号写成成功）。
+ */
+export type FooterClickVia = "坐标" | "选择器" | "文本" | "none";
+
+/**
+ * 坐标点击（第一级）占用的探测预算比例（issue #38）。
+ *
+ * 生产 20s × 0.30 = 6s，按本机实测的单次原生窗口探测成本（1.0–4.8s，见
+ * `.rivet/plans/issue-38-*.md` 的实测表）折算 ≈ **1–4 次探测**。取值为工程估算，
+ * 需真机校准；比例切分同时让测试注入的短预算自动得到对应窗口，无需双常量。
+ */
+export const FOOTER_FIRST_ATTEMPT_SHARE = 0.3;
+
+/**
+ * 单次原生窗口探测的最小墙钟成本估计（issue #38 本机实测下限 1.0s，中位约 1.5s，最坏 4.8s）。
+ *
+ * `waitDialogAppeared` 用它做「剩余预算还够不够再探一次」的判断：不够就直接返回，
+ * 避免每级末尾多溢出一次「sleep + 探测」（真机实测曾把 20s 预算跑成 28.2s）。
+ */
+const MIN_PROBE_COST_MS = 1_000;
+
+/** 测试专用导出别名：@internal 仅供单测驱动三级阶梯，生产代码不调用 */
+export { clickDropdownFooter as clickDropdownFooterForTest };
+
+/**
  * 点下拉底部「选择文件夹」→ 唤起原生对话框。
  *
  * 实测踩坑（2026-09-08）：`element.click()` 对某些 DirectUI 按钮不会真正触发原生
  * 弹窗（点击「成功」但对话框没出现），旧实现只看点击返回值就返回 true，导致下游
- * 「等待原生对话框超时」这一误导性错误。现在**点击后必须确认原生对话框真的出现**，
- * 并把该对话框的 hwnd 返回给调用方，保证后续写入操作的是同一个窗口。
+ * 「等待原生对话框超时」这一误导性错误。
+ *
+ * 修复（issue #38 问题 A）：**重试决策改由副作用驱动**——判定依据是「原生对话框是否
+ * 出现」，而不是任何 click 调用的返回值。执行方式按可靠性降序排成三级阶梯
+ * （坐标点击 → 语义键 DOM → 文本兜底），每级有独立有界探测窗，失败必升级。
+ *
+ * 不变量：
+ * - 返回 `clicked=true` ⟺ 已观测到原生对话框出现（与 click 返回值无关）。
+ * - 总探测预算 ≤ `dialogWaitTimeoutMs`（点击动作自身开销单列，量级 ms）。
+ * - 每级探测窗口 ≥ 单次原生窗口探测的实测成本（见 FOOTER_FIRST_ATTEMPT_SHARE）。
+ *
+ * @internal 导出仅供单测驱动（`clickDropdownFooterForTest`）。
  */
-async function clickDropdownFooter(
+export async function clickDropdownFooter(
   cdp: TraeworkCdpClient,
   opts: SessionUiOptions & { dialogWaitTimeoutMs?: number },
-): Promise<{ clicked: boolean; hwnd: number }> {
+): Promise<{ clicked: boolean; hwnd: number; via: FooterClickVia }> {
   const { logger } = opts;
+  const sleep = opts.sleep ?? defaultSleep;
+  const budget = opts.dialogWaitTimeoutMs ?? 20_000;
+  const deadline = Date.now() + budget;
 
-  // 1) 先按语义键点击（cascadeFooterButton 等）
-  const byKey = await cdp.click("cascadeMenuFooter", opts.selectors);
-  // 2) 文本兜底：扩大到 role=button 与 footer 容器内的可点击元素
-  const byText = byKey
-    ? false
-    : await cdp.evaluate<boolean>(`(function(){
-        const inFooter = [...document.querySelectorAll('[class*="cascadeFooter"] *, [class*="cascadeMenu"] *')];
-        const pool = inFooter.length ? inFooter : [...document.querySelectorAll('button,[role="button"],div,span,a')];
-        const btn = pool.find(e => {
-          const t = (e.textContent || '').trim();
-          const r = e.getBoundingClientRect();
-          return t === '选择文件夹' && r.width > 0 && r.height > 0;
-        });
-        if (!btn) return false;
-        btn.click();
+  // 阶梯按「执行方式可靠性」降序：
+  // ① 坐标点击 = 真实鼠标事件（#35 真机实测多次稳定弹出）
+  // ② 语义键 DOM click = 弱信号（对 DirectUI 按钮会「返回成功却不弹窗」）
+  // ③ 文本兜底 = 扩大到 footer 容器内的可点击元素
+  const ladder: Array<{ via: FooterClickVia; fire: () => Promise<boolean> }> = [
+    {
+      via: "坐标",
+      fire: async () => {
+        const pos = await cdp.center("cascadeMenuFooter", opts.selectors);
+        if (!pos) return false;
+        await cdp.clickAt(pos.x, pos.y);
         return true;
-      })()`);
+      },
+    },
+    { via: "选择器", fire: () => cdp.click("cascadeMenuFooter", opts.selectors) },
+    { via: "文本", fire: () => clickFooterByText(cdp) },
+  ];
 
-  if (!byKey && !byText) {
-    logger.warn("[traework] 未找到下拉底部「选择文件夹」按钮（选择器与文本兜底均未命中）");
-    return { clicked: false, hwnd: 0 };
+  for (const [i, step] of ladder.entries()) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    const fired = await step.fire().catch(() => false);
+    if (!fired) continue;
+    // I3：首级窗口按比例切分（生产 20s × 0.30 = 6s，按实测探测成本 1.0–4.8s 折算 ≈ 1–4 次探测）；
+    // 其余各级用掉剩余预算。总探测 ≤ 预算，不膨胀。
+    const left = deadline - Date.now();
+    if (left <= 0) break;
+    const window = i === 0 ? Math.min(left, Math.ceil(budget * FOOTER_FIRST_ATTEMPT_SHARE)) : left;
+    const appeared = await waitDialogAppeared(window, sleep);
+    if (appeared) {
+      logger.info(`[traework] 原生「选择文件夹」对话框已弹出（hwnd=${appeared.hwnd}，方式=${step.via}）`);
+      return { clicked: true, hwnd: appeared.hwnd, via: step.via };
+    }
+    logger.warn(`[traework] 「${step.via}」点击后原生对话框未在 ${window}ms 内出现，升级到下一级`);
   }
 
-  // 3) 关键：确认原生对话框真的被唤起（避免「点了但没弹」被当成成功）
-  const appeared = await waitDialogAppeared(opts.dialogWaitTimeoutMs ?? 20_000, opts.sleep ?? defaultSleep);
-  if (!appeared) {
-    // 记录当前下拉 DOM 快照，便于诊断选择器漂移
-    const snapshot = await cdp
-      .evaluateString(`(function(){
-        const nodes = [...document.querySelectorAll('[class*="cascade"]')].slice(0, 12)
-          .map(e => String(e.className).slice(0, 80) + ' | ' + (e.textContent || '').trim().slice(0, 30));
-        return JSON.stringify(nodes);
-      })()`)
-      .catch(() => "");
-    logger.warn(`[traework] 已点击「选择文件夹」但原生对话框未出现（点击=${byKey ? "选择器" : "文本"}）；下拉 DOM 快照: ${snapshot || "n/a"}`);
-    return { clicked: false, hwnd: 0 };
-  }
-  logger.info(`[traework] 原生「选择文件夹」对话框已弹出（hwnd=${appeared.hwnd}）`);
-  return { clicked: true, hwnd: appeared.hwnd };
+  // 阶梯耗尽：记录下拉 DOM 快照，便于诊断选择器漂移
+  const snapshot = await cdp
+    .evaluateString(`(function(){
+      const nodes = [...document.querySelectorAll('[class*="cascade"]')].slice(0, 12)
+        .map(e => String(e.className).slice(0, 80) + ' | ' + (e.textContent || '').trim().slice(0, 30));
+      return JSON.stringify(nodes);
+    })()`)
+    .catch(() => "");
+  logger.warn(`[traework] 三级点击阶梯均未唤起原生对话框；下拉 DOM 快照: ${snapshot || "n/a"}`);
+  return { clicked: false, hwnd: 0, via: "none" };
 }
 
-/** 点击 footer 后等待原生对话框出现（脚本内轮询，单次 PowerShell 调用） */
+/** 文本兜底：在 footer / 下拉容器内按文本「选择文件夹」找到可点击元素并 click */
+async function clickFooterByText(cdp: TraeworkCdpClient): Promise<boolean> {
+  return cdp.evaluate<boolean>(`(function(){
+    const inFooter = [...document.querySelectorAll('[class*="cascadeFooter"] *, [class*="cascadeMenu"] *')];
+    const pool = inFooter.length ? inFooter : [...document.querySelectorAll('button,[role="button"],div,span,a')];
+    const btn = pool.find(e => {
+      const t = (e.textContent || '').trim();
+      const r = e.getBoundingClientRect();
+      return t === '选择文件夹' && r.width > 0 && r.height > 0;
+    });
+    if (!btn) return false;
+    btn.click();
+    return true;
+  })()`);
+}
+
+/**
+ * 点击 footer 后等待原生对话框出现。
+ *
+ * 成本模型（issue #38 实测修正）：这是 **Node 侧循环**，每次迭代调用
+ * `findFolderDialog()` 都**新起一个 PowerShell 进程**（本机实测 1.0–4.8s，中位约 1.5s）。
+ * 因此每轮探测实际成本 ≈ 探测耗时 + `sleep(1500)` ≈ **2.5–6.3s**，20s 预算只够约
+ * 3–8 次探测。调用方必须按此折算窗口（见 `FOOTER_FIRST_ATTEMPT_SHARE`），
+ * 不可假设「预算内可以频繁轮询」。
+ */
 async function waitDialogAppeared(
   timeoutMs: number,
   sleep: (ms: number) => Promise<void>,
 ): Promise<FolderDialogInfo | null> {
   const deadline = Date.now() + timeoutMs;
+  // 至少允许一次探测：窗口比单次探测成本还短时（测试注入短预算、或首级按比例切分后的
+  // 小窗口），不能因为「剩余 < MIN_PROBE_COST_MS」而一次都不探——那会让该级点击虽已发生
+  // 却被判失败，白白降级到更不可靠的下一级（回归：A-core 的坐标点击首级被跳过）。
+  let probed = false;
   for (;;) {
+    if (probed && deadline - Date.now() < MIN_PROBE_COST_MS) return null;
     // eslint-disable-next-line no-await-in-loop
     const d = await findFolderDialog();
+    probed = true;
     if (d.found && d.hwnd > 0) return { hwnd: d.hwnd, windowTitle: d.windowTitle, processName: d.processName };
-    if (Date.now() >= deadline) return null;
+    const remain = deadline - Date.now();
+    if (remain <= 0) return null;
+    // sleep 不越过窗口边界：旧实现的固定 `sleep(1500)` 会在窗口末尾再吃满 1.5s。
     // eslint-disable-next-line no-await-in-loop
-    await sleep(1_500);
+    await sleep(Math.min(1_500, remain));
   }
 }
 
@@ -451,7 +529,11 @@ async function bindProjectOnce(
   await closeStaleFolderDialogs(logger).catch(() => 0);
   const footer = await clickDropdownFooter(cdp, opts);
   if (!footer.clicked) {
-    return { bound: false, method: "failed", message: "下拉未命中且底部「选择文件夹」未成功唤起原生对话框" };
+    return {
+      bound: false,
+      method: "failed",
+      message: "下拉未命中且底部「选择文件夹」未成功唤起原生对话框（三级点击阶梯均未生效）",
+    };
   }
   // 把刚弹出的对话框 hwnd 传下去，保证写入的是同一个窗口（避免写到遗留对话框）
   const picked = await pickFolderViaNativeDialog(projectPath, { logger, hwnd: footer.hwnd });

@@ -53,6 +53,19 @@ export interface FakeDomState {
   livenessSequence?: Array<{ stopVisible: boolean; tailLoading: boolean; thinkingStream: boolean }>;
   /** 探针调用时可注入的错误（模拟 CDP 断开） */
   livenessError?: Error;
+  /**
+   * 下拉底部「选择文件夹」按钮：哪一级点击才真正唤起原生对话框（issue #38）。
+   *
+   * 真机事实（#35 实测）：`element.click()` 会「返回 true 却不唤起原生弹窗」（间歇），
+   * 而 CDP 真实鼠标事件（`Input.dispatchMouseEvent`，等价 `clickAt`）稳定弹出。
+   * - `"coordinate"`：坐标点击（clickAt）成功、DOM click 失败 —— 核心回归场景
+   * - `"dom"`：DOM 语义键 click 成功
+   * - `"text"`：只有文本兜底 click 成功
+   * - `"never"`：三级全失败（默认，保持既有用例行为）
+   */
+  footerDialogOpensOn: "coordinate" | "dom" | "text" | "never";
+  /** 原生对话框当前是否已打开（footer 按上面的方式点击后被置位） */
+  folderDialogOpen: boolean;
 }
 
 export function makeFakeState(over: Partial<FakeDomState> = {}): FakeDomState {
@@ -71,6 +84,8 @@ export function makeFakeState(over: Partial<FakeDomState> = {}): FakeDomState {
     mode: "Work",
     pendingMode: null,
     liveness: { stopVisible: false, tailLoading: false, thinkingStream: false },
+    footerDialogOpensOn: "never",
+    folderDialogOpen: false,
     ...over,
   };
 }
@@ -176,6 +191,8 @@ export class FakeCdpClient {
     if (key === "projectButton") return { x: 100, y: 100 };
     if (key === "modelTrigger") return { x: 200, y: 200 };
     if (key === "newTask") return { x: 50, y: 50 };
+    // 下拉底部「选择文件夹」：坐标 (400,400)（issue #38 的坐标点击优先路径）
+    if (key === "cascadeMenuFooter") return { x: 400, y: 400 };
     return null;
   }
 
@@ -188,6 +205,12 @@ export class FakeCdpClient {
     }
     if (key === "projectButton") {
       this.state.openDropdown = "project";
+      return true;
+    }
+    // 语义键 DOM click 命中 footer：只有配置为 "dom" 时才真正唤起原生对话框。
+    // 其余情况**返回 true 但不置位** —— 这正是 #35 记录的「点击返回成功却无副作用」。
+    if (key === "cascadeMenuFooter") {
+      if (this.state.footerDialogOpensOn === "dom") this.state.folderDialogOpen = true;
       return true;
     }
     return true;
@@ -228,6 +251,13 @@ export class FakeCdpClient {
     // 模型触发器（x=200）
     if (x === 200) {
       this.state.openDropdown = "model";
+      return;
+    }
+    // 下拉底部「选择文件夹」（x=400，issue #38）：坐标点击＝真实鼠标事件。
+    // 只有配置为 "coordinate" 时才唤起原生对话框；其余配置下**点击发生但无副作用**
+    // —— 用于验证「阶梯必须按副作用升级，而不是按点击返回值判定」。
+    if (x === 400) {
+      if (this.state.footerDialogOpensOn === "coordinate") this.state.folderDialogOpen = true;
       return;
     }
     // 项目下拉项（y = 100 + idx*30）
