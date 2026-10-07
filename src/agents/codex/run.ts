@@ -24,7 +24,13 @@ import type {
 import type { GuiProfile } from "../../config/schema.js";
 import { makeEmitter, type AgentEventEmitter } from "../agent-events.js";
 import { mkdirp } from "../../util/fs.js";
-import { parseCodexModel, exactUiName, parseTriggerValue, type NormalizedLevel } from "./model.js";
+import {
+  parseCodexModel,
+  exactUiName,
+  resolveTriggerReadback,
+  type NormalizedLevel,
+  type TriggerValue,
+} from "./model.js";
 import { matchCodexProject, projectBasename } from "./project.js";
 import { judgeCodexPoll, initialCodexState, type CodexPoll, type CodexPollState } from "./liveness.js";
 import { CodexCdpClient, CdpDisconnectedError, CdpUnavailableError } from "./cdp.js";
@@ -687,12 +693,15 @@ async function ensureModelAndLevel(
 ): Promise<{ ok: boolean; error?: string; endReason?: string }> {
   // 新建会话/切换项目后输入框工具条会重渲染，刚绑定时模型 chip 可能短暂为空；
   // 先等回读稳定，避免把「正在渲染」误判成「模型不符」而多余地翻菜单（甚至失败）。
-  let triggerValue = parseTriggerValue(await waitStableTrigger(cdp, deps, 6_000));
+  // issue #34：回读走结构化读取（模型名取专用节点），不再拿 innerText 整串当模型名。
+  let triggerValue = await waitStableTrigger(cdp, deps, 6_000, logger);
   const matches = (): boolean =>
     exactUiName(triggerValue.model, spec.model) &&
     (!spec.level || triggerValue.level === spec.level);
   if (matches()) {
-    logger.info(`[codex] 模型/等级回读已匹配，复用 ${triggerValue.model}${triggerValue.level ? ` ${triggerValue.level}` : ""}`);
+    logger.info(
+      `[codex] 模型/等级回读已匹配，复用 ${triggerValue.model}${triggerValue.level ? ` ${triggerValue.level}` : ""}（来源 ${triggerValue.source}）`,
+    );
     return { ok: true };
   }
   if (!gui.modelSwitch) {
@@ -744,10 +753,10 @@ async function ensureModelAndLevel(
     // eslint-disable-next-line no-await-in-loop
     await deps.sleep(500);
     // eslint-disable-next-line no-await-in-loop
-    triggerValue = parseTriggerValue(await waitStableTrigger(cdp, deps, 5_000));
+    triggerValue = await waitStableTrigger(cdp, deps, 5_000, logger);
     if (matches()) return { ok: true };
   }
-  const finalValue = parseTriggerValue(await waitStableTrigger(cdp, deps, 4_000));
+  const finalValue = await waitStableTrigger(cdp, deps, 4_000, logger);
   return {
     ok: false,
     endReason: "model_mismatch",
@@ -759,31 +768,46 @@ async function ensureModelAndLevel(
  * 思考强度滑块档位映射（真机实测 26.903.x，aria-valuemin=0 / max=4）：
  *   0=轻度 1=中 2=高 3=极高 4=极高
  * 归一等级 → 官方档位（高=2，与界面「高」标签一致）。
+ *
+ * issue #34 复测（26.930.4958.0）：本版滑块为 **4 档**（aria-valuemax=3），
+ * 档位 ↔ `data-selected-reasoning-effort` 实测 0=low / 1=medium / 2=high / 3=xhigh。
+ * `high=2` 在新版式下**依然成立**，故本表值不变；若某版本再改档位数，
+ * `setReasoningSlider` 的 `aria-valuenow` 精确比对会在设置后立刻发现（fail-closed）。
  */
 const LEVEL_SLIDER_STOP: Record<NormalizedLevel, number> = { low: 0, medium: 1, high: 2 };
 
 /**
- * 等待模型触发器回读稳定：UI 重渲染期间可能出现空文本，连续两次读到相同的非空值才返回。
- * 超时则返回最后一次读到的值（由调用方判定是否匹配）。
+ * 等待模型触发器回读稳定（issue #34：结构化回读 + 兜底解析）。
+ *
+ * 稳定判据是**解析后的模型名**非空且与上轮相同 —— 不再用原始 innerText 比较：
+ * 档位条轮播层会随动画改变 innerText，但模型名与档位并未变化，拿整串比会永不稳定。
+ *
+ * 超时返回最后一次读到的值（由调用方判定是否匹配）。
+ * **读到空模型名时不判不符** —— `resolveTriggerReadback` 返回 `{ model: "" }` 表示
+ * 「本次未读到」（渲染中途），调用方据此等待而非落 `model_mismatch`。
  */
 async function waitStableTrigger(
   cdp: CodexCdpClient,
   deps: CodexRunDeps,
   timeoutMs: number,
-): Promise<string> {
+  logger: AgentRunLogger,
+): Promise<TriggerValue> {
   const deadline = Date.now() + timeoutMs;
-  let last = "";
+  let last: TriggerValue = { model: "", source: "innerText" };
   let stableHits = 0;
   while (Date.now() < deadline) {
     // eslint-disable-next-line no-await-in-loop
-    const text = (await cdp.modelTriggerText()).trim();
-    if (text && text === last) {
+    const read = await cdp.modelTriggerReadback();
+    // eslint-disable-next-line no-await-in-loop
+    const value = resolveTriggerReadback(read);
+    if (value.mismatch) logger.warn(`[codex] ${value.mismatch}`);
+    if (value.model && value.model === last.model && value.level === last.level) {
       stableHits += 1;
-      if (stableHits >= 1) return text;
+      if (stableHits >= 1) return value;
     } else {
       stableHits = 0;
     }
-    last = text;
+    last = value;
     // eslint-disable-next-line no-await-in-loop
     await deps.sleep(250);
   }

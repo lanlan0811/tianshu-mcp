@@ -5,7 +5,7 @@
  * 结构选择器兜底，故本客户端统一走 selectors.ts 的 resolve 逻辑，并支持 profile 覆盖。
  */
 import { TraeworkCdpClient, CdpDisconnectedError, CdpUnavailableError } from "../traework/cdp/client.js";
-import { type CodexSelectorKey, resolveFnSource, specArgs } from "./selectors.js";
+import { type CodexSelectorKey, cssCandidates, resolveFnSource, specArgs } from "./selectors.js";
 import { visibleLabelsExpr, normalizeLabels } from "../gui-diagnostics.js";
 
 export { CdpDisconnectedError, CdpUnavailableError };
@@ -17,6 +17,24 @@ export interface CodexProjectItem {
   startChatLabel?: string;
   /** 「<name> 的项目操作」用的 aria-label */
   actionsLabel?: string;
+}
+
+/**
+ * 模型触发器的结构化回读值（issue #34）。
+ * 触发器按钮同时承载「模型名」与「思考等级」，且档位条 9 层轮播全在 DOM 里
+ * （仅当前档 opacity:1，其余 opacity:0 但 display:block）——读 innerText 整串必然污染模型名。
+ */
+export interface CodexModelTriggerReadback {
+  /** 模型名；空串表示本次未读到（调用方按「未知」等待，不得据此判不符） */
+  model: string;
+  /** 当前档位 token（属性值如 `medium`，或界面文案如 `中`） */
+  levelToken?: string;
+  /** 界面文案侧的档位（`.sr-only`），仅用于与 `levelToken` 交叉核对不一致 */
+  levelTextToken?: string;
+  /** 本次读到的来源：attrs=权威属性 / nodes=结构节点 / innerText=整串兜底 */
+  source: "attrs" | "nodes" | "innerText";
+  /** 原始 innerText（保留供诊断与兜底切分） */
+  raw: string;
 }
 
 export interface CodexPoll {
@@ -380,28 +398,61 @@ export class CodexCdpClient {
     return { clicked: true, count: found.count, available: found.available };
   }
 
-  /** 读取当前模型/思考等级触发器文本（限定输入框作用域，排除菜单栏与模式切换器） */
-  async modelTriggerText(): Promise<string> {
-    return (
-      (await this.evaluate<string>(
-        this.withResolve(
-          `${this.visibleFilter}
-           const els=__codexResolve(${specArgs("modelTrigger", this.selectors)}).filter(vis);
-           // 输入框同一组还有 本地/分支/权限 三个非模型 chip，按 aria-label 与已知文案剔除
-           const known=['选择聊天的运行位置','切换分支','更改权限','Local','Branch','Permissions'];
-           const norm=(s)=>(s||'').normalize('NFKC').trim().replace(/\\s+/g,' ').toLocaleLowerCase();
-           const knownSet=known.map(norm);
-           const pick=els.find((e)=>{
-             const aria=norm(e.getAttribute('aria-label')||'');
-             if(knownSet.indexOf(aria)>=0)return false;
-             const t=(e.innerText||'').trim();
-             if(/^(本地|Local|master|main|完全访问|Full access)$/i.test(t))return false;
-             return true;
-           });
-           return pick?((pick.innerText||'').trim()):'';`,
-        ),
-      )) || ""
+  /**
+   * 读取当前模型/思考等级触发器（限定输入框作用域，排除菜单栏与模式切换器）。
+   *
+   * issue #34：**不能读 `button.innerText` 整串** —— 真机 26.930 实测该按钮内除模型名外
+   * 还有整条思考等级条（9 层轮播全在 DOM，仅当前档 `opacity:1`，其余 `opacity:0` 但
+   * `display:block`，故 `innerText` 照收）：`6 Luna 中 无 极低 轻度 中 高 极高 Max Ultra 持续`。
+   * 旧实现把它当模型名 → `exactUiName` 恒假 → 三轮后 `model_mismatch`（阻断全部 Codex 派发）。
+   *
+   * 改为三层回退读**结构**：
+   *   ① `attrs`：`[data-codex-intelligence-trigger]` 的 `data-selected-reasoning-effort`
+   *      + 其内 `[class*=ModelPickerTriggerModelText]`（权威机器可读值）
+   *   ② `nodes`：模型名节点 + `[class*=ModelPickerTriggerEffortLabel] .sr-only`（只含当前档）
+   *   ③ `innerText`：整串（老版式/布局漂移的兜底，交 `parseTriggerValue` 切分）
+   * 三者全空返回 `model: ""`，调用方按「未读到」等待，不得据此判不符（见 run.ts waitStableTrigger）。
+   */
+  async modelTriggerReadback(): Promise<CodexModelTriggerReadback> {
+    const raw = await this.evaluate<Partial<CodexModelTriggerReadback> | null>(
+      this.withResolve(
+        `${this.visibleFilter}
+         const els=__codexResolve(${specArgs("modelTrigger", this.selectors)}).filter(vis);
+         // 输入框同一组还有 本地/分支/权限 三个非模型 chip，按 aria-label 与已知文案剔除
+         const known=['选择聊天的运行位置','切换分支','更改权限','Local','Branch','Permissions'];
+         const norm=(s)=>(s||'').normalize('NFKC').trim().replace(/\\s+/g,' ').toLocaleLowerCase();
+         const knownSet=known.map(norm);
+         const pick=els.find((e)=>{
+           const aria=norm(e.getAttribute('aria-label')||'');
+           if(knownSet.indexOf(aria)>=0)return false;
+           const t=(e.innerText||'').trim();
+           if(/^(本地|Local|master|main|完全访问|Full access)$/i.test(t))return false;
+           return true;
+         });
+         if(!pick)return {model:'',source:'innerText',raw:''};
+         const rawText=(pick.innerText||'').trim();
+         // 作用域限定在 pick 之内：菜单展开时页面别处可能有同名节点，全局解析会取错归属
+         const pickCss=${JSON.stringify(cssCandidates("modelTriggerModelText", this.selectors))};
+         const effortCss=${JSON.stringify(cssCandidates("modelTriggerEffortLabel", this.selectors))};
+         const firstText=(list)=>{for(const s of list){try{const n=pick.querySelector(s);if(n){const t=(n.textContent||'').trim();if(t)return t}}catch(_){}}return ''};
+         const modelNode=firstText(pickCss);
+         const effortText=firstText(effortCss);
+         const effortAttr=(pick.getAttribute('data-selected-reasoning-effort')||'').trim();
+         const levelToken=effortAttr||effortText;
+         // 模型名节点可读 → ① 权威（有属性钩子）/ ② 结构节点
+         // 两条来源并存时都带回，由调用方核对不一致（issue #34 一致性契约）
+         if(modelNode)return {model:modelNode,levelToken:levelToken,levelTextToken:effortText,source:effortAttr?'attrs':'nodes',raw:rawText};
+         // ③ 兜底：整串交 parseTriggerValue 切分（老版式 / 类名漂移）
+         return {model:'',levelToken:effortText||effortAttr,levelTextToken:effortText,source:'innerText',raw:rawText};`,
+      ),
     );
+    return {
+      model: raw?.model ?? "",
+      levelToken: raw?.levelToken || undefined,
+      levelTextToken: raw?.levelTextToken || undefined,
+      source: raw?.source ?? "innerText",
+      raw: raw?.raw ?? "",
+    };
   }
 
   /** 读取当前权限模式文本（切换前回读） */

@@ -47,6 +47,8 @@ export type CodexSelectorKey =
   | "sourceFolderArea"
   | "createProjectButton"
   | "modelTrigger"
+  | "modelTriggerModelText"
+  | "modelTriggerEffortLabel"
   | "reasoningSlider"
   | "modelMenuItem"
   | "menuItem"
@@ -207,13 +209,40 @@ export const CODEX_SELECTORS: Record<CodexSelectorKey, CodexSelectorSpec> = {
     verifiedVersion: "26.915.x",
     note: "模型+思考等级菜单触发器；限定在输入框作用域内，排除顶部菜单栏与模式切换器",
   },
+  modelTriggerModelText: {
+    // issue #34：触发器按钮内**模型名**的专用节点。真机实测（26.930.4958.0）：
+    //   button[data-codex-intelligence-trigger]
+    //   ├─ span[class*=ModelPickerTriggerModelText]     ← 本键：只含「6 Luna」
+    //   └─ span[class*=ModelPickerTriggerEffortLabel]   ← 档位（含 9 层轮播，见下键）
+    // 读它而不是 button.innerText —— 后者会把整条思考等级条一并读出（issue #34 根因）。
+    // 类名基名稳定、哈希后缀会变（与仓内既有 Codex 键同一约定）。
+    primary: '[class*="ModelPickerTriggerModelText"]',
+    fallbacks: ['[data-codex-intelligence-trigger] span:first-child'],
+    verifiedVersion: "26.930.x",
+    note: "模型触发器内的模型名节点（真机 26.930 实测；读它而不是 button.innerText 整串）",
+  },
+  modelTriggerEffortLabel: {
+    // issue #34：触发器按钮内**当前档位**的无障碍文本。真机实测（26.930.4958.0）：
+    //   span[class*=ModelPickerTriggerEffortLabel]
+    //   ├─ span.sr-only                    ← 本键：只含当前档（如「中」）
+    //   └─ span[class*=...EffortViewport]  ← 9 层轮播：无/极低/轻度/中/高/极高/Max/Ultra/持续
+    //      （仅当前档 opacity:1，其余 opacity:0 但 display:block → innerText 照收）
+    // 故必须**优先 .sr-only**：回退项本身 textContent 仍含全部 9 个档位。
+    primary: '[class*="ModelPickerTriggerEffortLabel"] .sr-only',
+    fallbacks: ['[data-codex-intelligence-trigger] [class*="EffortLabel"] > span:first-child'],
+    verifiedVersion: "26.930.x",
+    note: "模型触发器内的当前档位无障碍文本（.sr-only 只含当前档，轮播层全档位在其之后）",
+  },
   reasoningSlider: {
-    // 真机实测（26.903.x）：思考强度是**滑块**（不是菜单项），
-    // 5 档 aria-valuemin=0 / aria-valuemax=4，标签依次 轻度/中/高/极高/极高。
+    // 真机实测（26.903.x）：思考强度是**滑块**（不是菜单项），5 档
+    // （aria-valuemin=0 / aria-valuemax=4，标签 轻度/中/高/极高/极高）。
+    // issue #34 复测（26.930.4958.0）：本版为 **4 档**（aria-valuemax=3），
+    // 档位 ↔ `data-selected-reasoning-effort` 实测 0=low / 1=medium / 2=high / 3=xhigh；
+    // `LEVEL_SLIDER_STOP` 的 high=2 在新版式下仍成立（见 run.ts 注释）。
     // 位于模型菜单内，用左右方向键调节；必须精确比较，避免「高」误命中「极高」。
     primary: '[role="slider"]',
     fallbacks: ['[role="menu"] input[type="range"]', 'input[type="range"]'],
-    verifiedVersion: "26.903.x",
+    verifiedVersion: "26.903.x（26.930 复测 4 档）",
     note: "模型菜单里的思考强度滑块（用方向键调节，aria-valuenow 表示档位）",
   },
   modelMenuItem: {

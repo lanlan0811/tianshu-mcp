@@ -11,7 +11,7 @@ import { AgentProfileSchema } from "../../src/config/schema.js";
 import type { AgentRunOptions, ResolvedAgent, TaskContext } from "../../src/agents/adapter.js";
 import { makeTmpRoot, rmrf, gitInitAndCommit } from "../test-utils.js";
 import { Logger } from "../../src/util/log.js";
-import { CdpDisconnectedError } from "../../src/agents/codex/cdp.js";
+import { CdpDisconnectedError, type CodexModelTriggerReadback } from "../../src/agents/codex/cdp.js";
 
 const logger = new Logger(null, "error");
 const cleanup: string[] = [];
@@ -171,8 +171,19 @@ class FakeCodex {
     if (key === "sourceFolderArea") return path.basename(this.projectPath);
     return "";
   }
-  async modelTriggerText() {
-    return this.level === "high" ? `${this.model} 高` : `${this.model} ${this.level}`;
+  /**
+   * 结构化回读（issue #34）：与生产 `CodexCdpClient.modelTriggerReadback()` 同形。
+   * 假客户端模拟「attrs」来源（权威属性 + 模型名节点），这正是真机 26.930 的形态；
+   * `innerText` 兜底路径由单测覆盖（codex-core.test.ts 的 resolveTriggerReadback 组）。
+   */
+  async modelTriggerReadback(): Promise<CodexModelTriggerReadback> {
+    return {
+      model: this.model,
+      levelToken: this.level,
+      levelTextToken: this.level === "high" ? "高" : "中",
+      source: "attrs",
+      raw: `${this.model}\n${this.level}`,
+    };
   }
   async permissionText() {
     return this.permission;
@@ -289,6 +300,43 @@ function depsFor(fake: FakeCodex, over: Partial<CodexRunDeps> = {}): Partial<Cod
 }
 
 describe("Codex 假 CDP 单轮流程", () => {
+  /**
+   * issue #34 回归：真机 26.930 的触发器按钮把整条思考等级条也放进 innerText
+   * （9 层轮播，仅当前档 opacity:1，其余 opacity:0 但 display:block）。
+   * 本类模拟「结构化节点与属性钩子都读不到、只剩污染 innerText」的最坏情形，
+   * 验证兜底切分仍能取出正确模型名与等级，不再误落 model_mismatch。
+   */
+  class PollutedInnerTextCodex extends FakeCodex {
+    override async modelTriggerReadback(): Promise<CodexModelTriggerReadback> {
+      // 首段=模型名，次段=当前档（与 this.level 一致，模拟「已匹配」的静息态），
+      // 其后是整条 9 层轮播 —— 旧实现会把整串当模型名。
+      const currentLevelText = this.level === "high" ? "高" : "中";
+      return {
+        model: "",
+        source: "innerText",
+        raw: `${this.model}\n${currentLevelText}\n无\n极低\n轻度\n中\n高\n极高\nMax\nUltra\n持续`,
+      };
+    }
+  }
+
+  it("issue #34：触发器回读混入整条等级条（仅剩 innerText 兜底）仍不误判 model_mismatch", async () => {
+    const project = await makeTmpRoot("codex-issue34");
+    cleanup.push(project);
+    const fake = new PollutedInnerTextCodex(project, true);
+    const result = await runCodexTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.ok).toBe(true);
+    expect(result.endReason).toBe("reply_stable");
+    expect(fake.sent).toBe(1);
+    // 模型名未被等级条污染：若整串被当型号，会走换模型分支并最终 model_mismatch
+    expect(fake.model).toBe("GPT-5.6 Sol");
+  });
+
   it("既有项目：绑定 → 选模型/等级 → 强制权限 → 发送一次 → 完成", async () => {
     const project = await makeTmpRoot("codex-existing");
     cleanup.push(project);

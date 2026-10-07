@@ -39,6 +39,9 @@ import {
   parseTriggerValue,
   levelTokenMatches,
   extractLevelToken,
+  levelFromEffortToken,
+  levelFromTriggerToken,
+  resolveTriggerReadback,
 } from "../../src/agents/codex/model.js";
 import { judgeCodexPoll, initialCodexState } from "../../src/agents/codex/liveness.js";
 import {
@@ -407,6 +410,102 @@ describe("Codex 模型与思考等级", () => {
     expect(exactUiName("完全访问", "完全访问")).toBe(true);
     expect(exactUiName("GPT-5.6  Sol", "gpt-5.6 sol")).toBe(true);
     expect(exactUiName("完全访问", "只读")).toBe(false);
+  });
+
+  /* issue #34 回归组：触发器回读混入整条思考等级条 */
+
+  it("真机 26.930 形态：innerText 混入整条等级条时不得把整串当型号（issue #34）", () => {
+    // 真机实测回读（Codex 26.930.4958.0，模型触发器 button.innerText）：
+    // 「模型名 + 当前档位 + 9 个轮播层档位词」。轮播层 opacity:0 但 display:block，
+    // innerText 照收；旧正则要求以等级词结尾，此处以「持续」结尾 → 整串被当型号。
+    const real = "6 Luna\n中\n无\n极低\n轻度\n中\n高\n极高\nMax\nUltra\n持续";
+    expect(parseTriggerValue(real)).toEqual({ model: "6 Luna", level: "medium" });
+  });
+
+  it("等级条轮播层的全部档位词都不得进入模型名（issue #34）", () => {
+    for (const tail of ["无", "极低", "轻度", "Max", "Ultra", "持续", "中", "高", "极高"]) {
+      expect(parseTriggerValue(`6 Luna\n中\n${tail}`).model).toBe("6 Luna");
+    }
+  });
+
+  it("levelFromEffortToken：data-selected-reasoning-effort → NormalizedLevel（issue #34）", () => {
+    expect(levelFromEffortToken("low")).toBe("low");
+    expect(levelFromEffortToken("medium")).toBe("medium");
+    expect(levelFromEffortToken("high")).toBe("high");
+    // 滑块本版第 3 档 = xhigh，超出 codex 归一范围（NormalizedLevel 仅三档）——不猜
+    expect(levelFromEffortToken("xhigh")).toBeUndefined();
+    expect(levelFromEffortToken("")).toBeUndefined();
+    expect(levelFromEffortToken(undefined)).toBeUndefined();
+  });
+
+  it("等级条混入时仍保留 level 语义（issue #34）", () => {
+    expect(parseTriggerValue("6 Luna\n高\n无\n极低\n轻度\n中\n高\n极高\nMax\nUltra\n持续")).toEqual({
+      model: "6 Luna",
+      level: "high",
+    });
+  });
+
+  it("levelFromTriggerToken：属性枚举 id 与界面文案都能归一（issue #34）", () => {
+    expect(levelFromTriggerToken("medium")).toBe("medium");
+    expect(levelFromTriggerToken("中")).toBe("medium");
+    expect(levelFromTriggerToken("轻度")).toBe("low");
+    expect(levelFromTriggerToken("高")).toBe("high");
+    expect(levelFromTriggerToken("xhigh")).toBeUndefined();
+    expect(levelFromTriggerToken(undefined)).toBeUndefined();
+  });
+
+  it("resolveTriggerReadback：结构化来源直接取模型名，不再碰整串（issue #34）", () => {
+    // ① 权威属性来源（真机 26.930 形态）
+    expect(
+      resolveTriggerReadback({
+        model: "6 Luna",
+        levelToken: "medium",
+        levelTextToken: "中",
+        source: "attrs",
+        raw: "6 Luna\n中\n无\n极低\n轻度\n中\n高\n极高\nMax\nUltra\n持续",
+      }),
+    ).toEqual({ model: "6 Luna", level: "medium", source: "attrs" });
+
+    // ② 结构节点来源（无属性钩子的版式）
+    expect(
+      resolveTriggerReadback({
+        model: "6 Luna",
+        levelToken: "中",
+        levelTextToken: "中",
+        source: "nodes",
+        raw: "6 Luna\n中",
+      }),
+    ).toEqual({ model: "6 Luna", level: "medium", source: "nodes" });
+  });
+
+  it("resolveTriggerReadback：属性与界面文案不一致时以属性为准并回报 mismatch（issue #34）", () => {
+    const got = resolveTriggerReadback({
+      model: "6 Luna",
+      levelToken: "high",
+      levelTextToken: "中",
+      source: "attrs",
+      raw: "6 Luna\n中",
+    });
+    expect(got.model).toBe("6 Luna");
+    expect(got.level).toBe("high");
+    expect(got.mismatch).toContain("high");
+    expect(got.mismatch).toContain("medium");
+  });
+
+  it("resolveTriggerReadback：innerText 来源走兜底切分（issue #34）", () => {
+    expect(
+      resolveTriggerReadback({
+        model: "",
+        source: "innerText",
+        raw: "6 Luna\n中\n无\n极低\n轻度\n中\n高\n极高\nMax\nUltra\n持续",
+      }),
+    ).toEqual({ model: "6 Luna", level: "medium", source: "innerText" });
+  });
+
+  it("resolveTriggerReadback：三来源全空 → 模型名为空，调用方按未知处理（issue #34）", () => {
+    const got = resolveTriggerReadback({ model: "", source: "innerText", raw: "" });
+    expect(got.model).toBe("");
+    expect(got.level).toBeUndefined();
   });
 });
 
