@@ -23,9 +23,10 @@ import { TraeworkGuiAdapter } from "../../src/agents/traework/adapter.js";
 import { type TraeworkRunDeps } from "../../src/agents/traework/run.js";
 import { normPath } from "../../src/util/path.js";
 import { makeBuildCtx } from "../../src/mcp/context.js";
-import type { AgentRunLogger, AgentRunResult, ResolvedAgent, TaskContext } from "../../src/agents/adapter.js";
+import { Logger } from "../../src/util/log.js";
+import type { AgentRunResult, ResolvedAgent, TaskContext } from "../../src/agents/adapter.js";
 
-const silentLogger: AgentRunLogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
+const silentLogger = new Logger(null, "error");
 const cleanup: string[] = [];
 
 function makeGuiProfile() {
