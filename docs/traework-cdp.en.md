@@ -75,8 +75,11 @@ Execution sequence (mapping the 8 requested steps):
 > **Binding inside the target mode**: if binding fails in the target mode (Work/Code/Design), the driver
 > returns that failure directly and **does not retry in another mode**. Binding in Work does not establish
 > a Code/Design binding; switching to Work also changes the active mode and may change its project binding.
-> Native-dialog click and wait behavior is unchanged. Removing the cross-mode fallback does not fix
-> native-dialog activation reliability (issue #35).
+> The native-dialog click strategy is now a **side-effect-driven three-tier ladder** (issue #38):
+> coordinate click (real mouse event) → semantic-key DOM click → text fallback, each tier with its own
+> bounded probe window and a mandatory escalation on failure. Success is judged solely by "the native
+> dialog actually appeared" — never by a click's return value. Removing the cross-mode fallback and fixing
+> native-dialog activation reliability are two separate matters (issue #35 fixed the former, #38 the latter).
 >
 > **Mode resolution priority**: explicit `mode` parameter > task text > `Work`.
 > Text detection accepts mixed Chinese/English phrasing ("switch to Code mode", "use design mode", "工作模式", "代码模式", "设计模式", …).
@@ -252,7 +255,9 @@ user's own running TraeWork instance (data intact, restarted). They are now hard
 | New instance: no elements found | CDP port ready before DOM rendered | `waitForUi()` waits for the chat input (up to 60 s) |
 | Bound project still re-selected | The placeholder class disappears once bound | `readBoundProject()` reads the input-bar text and reuses it |
 | Killed the user's TraeWork | `taskkill /T` killed the process tree, hitting the user instance | See §6: reuse-first + command-line check + no `/T` |
-| **Clicked "选择文件夹" but got "waiting for native dialog timed out"** | `element.click()` returned true yet the native popup never appeared; old code trusted the click result | After clicking, **confirm the dialog actually appeared** (`findFolderDialog()`); otherwise log a dropdown DOM snapshot and fail loudly |
+| **Clicked "选择文件夹" but got "waiting for native dialog timed out"** | `element.click()` returned true yet the native popup never appeared — that `true` only means "element exists and is visible", **not that the side effect took hold** (intermittent for DirectUI buttons) | See the next row: the three-tier ladder (issue #38) judges by "did the native dialog appear" and **never trusts the click return value** |
+| **`element.click()` returns success without opening the popup, wasting the full 20 s** | The retry decision used the wrong input signal: "click returned true" was taken as success, so the coordinate fallback was reachable only when `evaluate` threw; no remediation ran meanwhile | **Side-effect-driven three-tier ladder** (issue #38): ① coordinate click `clickAt` (real mouse event) → ② semantic-key DOM click → ③ text fallback. Each tier has its own bounded probe window (first tier = budget × 0.30) and failure must escalate. Total probe budget ≤ `dialogWaitTimeoutMs` — no inflation |
+| **"Narrow the wait to 2–3 s" would make the coordinate click look like a failure** | A single `findFolderDialog()` measures **1.0–4.8 s** (PowerShell cold start + `EnumWindows`); each round ≈ probe + `sleep(1500)` = 2.5–6.3 s. A 2–3 s window allows only 0–1 probes | Keep the 20 s budget but **split it proportionally** (first tier 6 s ≈ 1–4 probes). `waitDialogAppeared` is a **Node-side loop** (a fresh PowerShell per iteration), not a "single in-script call" — the comment has been corrected |
 | **Dialog detection "timed out" although the dialog was open** | PowerShell cold start is ~4.5–6 s; old code polled from Node every 800 ms, so a 15 s budget allowed only ~2 probes | Poll **inside a single PowerShell call** (400 ms interval) and raise the budget to 30 s |
 | **CJK path became `D:Traes-bind-test`** | SendKeys/clipboard are mangled by the console code page (CJK and backslashes dropped) | Write the path via Win32 **`WM_SETTEXT`** (handle from UIA) — fully reliable for CJK |
 | **Confirm button not clickable / clicked a file row** | `AutomationId="1"` is not unique — list rows also use 0/1/2…; the confirm control is a Pane with no InvokePattern | Locate by **AutomationId=1 AND ControlType=Pane**, then click its bounding rect |

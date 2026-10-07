@@ -237,7 +237,10 @@ Progress is **persisted, never pushed**: GUI adapters report on the `gui.progres
 - **Active**: `queued, running, verify_start, fixing`.
 - **`needs_user` is neither active nor terminal** — it can be resumed to `queued` by `continue_task`, or cancelled. This is the host-visible form of a GUI agent waiting for a human.
 - `TRANSITIONS` enumerates legal moves explicitly; `TaskStore.updateStatus` additionally guards that "a terminal state can only be re-entered by an explicit continue/rework".
-- `errorType`: `timeout | spawn | agent_failed | verify_failed | cancelled | interrupted | agent_unresolved | internal`.
+- `errorType`: `timeout | spawn | setup_failed | agent_failed | verify_failed | cancelled | interrupted | agent_unresolved | internal`.
+  (`setup_failed` = **logical** failure during setup (mode not ready / project unbound / model unavailable) —
+  retrying or changing environments will not help; `spawn` = infrastructure failure (process/install/CDP).
+  Declared by the adapter via `AgentRunResult.errorType`; the orchestrator defaults to `spawn`.)
 
 ### 5.2 Persistence and crash recovery
 

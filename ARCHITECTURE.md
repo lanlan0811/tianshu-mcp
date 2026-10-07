@@ -228,7 +228,9 @@ resolveDataHome → Logger → DataHome(BUILTIN_PROFILES) → init()
 - **活动态**：`queued, running, verify_start, fixing`。
 - **`needs_user` 既非活动态也非终态**——它可被 `continue_task` 恢复到 `queued`，也可被取消。这是 GUI agent 等待人工介入时的宿主可见形态。
 - 转移表 `TRANSITIONS` 显式枚举合法迁移；`TaskStore.updateStatus` 额外守卫「终态只能由显式 continue/rework 重新进入」。
-- `errorType`：`timeout | spawn | agent_failed | verify_failed | cancelled | interrupted | agent_unresolved | internal`。
+- `errorType`：`timeout | spawn | setup_failed | agent_failed | verify_failed | cancelled | interrupted | agent_unresolved | internal`。
+  （`setup_failed`＝setup 阶段的**逻辑性**失败（模式未就绪/项目未绑定/模型不可用），重试换环境不会成功；
+  `spawn`＝进程/安装/CDP 等基础设施失败。由适配器在 `AgentRunResult.errorType` 自归类，编排器缺省按 `spawn`。）
 
 ### 5.2 持久化与崩溃恢复
 

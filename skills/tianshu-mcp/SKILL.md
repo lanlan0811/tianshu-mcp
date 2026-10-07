@@ -323,7 +323,7 @@ meta 的 `needsUserKind` 给出等待类型，`pendingQuestion` 给出问题原�
 | `task_timeout`（`errorType=timeout`） | 任务级超时 | 大任务调大 `taskTimeoutMs`；或拆小任务 |
 | `aborted`（`errorType=cancelled`/`interrupted`） | 被取消 / 中断 | 按 §6 处理 |
 
-`errorType` 取值：`timeout` / `spawn` / `agent_failed` / `verify_failed` / `cancelled` / `interrupted` / `agent_unresolved` / `internal`。
+`errorType` 取值：`timeout` / `spawn` / `setup_failed` / `agent_failed` / `verify_failed` / `cancelled` / `interrupted` / `agent_unresolved` / `internal`。
 
 工具层面的**参数拒绝**（不是任务终态）也会直接报错，常见的有：`allowCreateProject` 非 ZCode、`mode` 非 traework、`modelSource` 非 qoder、`极高/最大/关闭思考` 非 qoder（minimax 例外，它接受）、`contextWindow` 非 minimax、Qoder 缺 `planDoc` 或计划文件不可读、无项目模式传 `autoVerify=true`。
 

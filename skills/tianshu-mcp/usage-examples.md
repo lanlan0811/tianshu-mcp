@@ -392,7 +392,7 @@ wait_any(taskIds=[tsk_a, tsk_b, tsk_c], timeoutMs=50000)
 | `ok` | 是否成功（**仅 `status=succeeded` 时为 true**） |
 | `status` | `queued`/`running`/`verify_start`/`fixing`/`needs_user`/`succeeded`/`failed`/`needs_attention`/`cancelled`/`interrupted` |
 | `message` | 状态摘要 / 失败原因，**最先读** |
-| `errorType` | 失败归类：`timeout`/`spawn`/`agent_failed`/`verify_failed`/`cancelled`/`interrupted`/`agent_unresolved`/`internal` |
+| `errorType` | 失败归类：`timeout`/`spawn`/`setup_failed`/`agent_failed`/`verify_failed`/`cancelled`/`interrupted`/`agent_unresolved`/`internal` |
 | `agentEndReason` | agent 侧结束原因（硬失败定位主用，取值见 §5） |
 | `lastRunSignal` | 最近一次运行观察到的信号（GUI 完成标志/空闲判定依据） |
 | `needsUserKind` | `needs_user` 时的等待类型（六类，见 §8） |
