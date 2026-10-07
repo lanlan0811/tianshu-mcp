@@ -8,6 +8,36 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.8.3] — 2026-10-07
+
+> **Bug-fix release (issue #38, follow-up to #35)**: TraeWork's dropdown-footer click is now
+> **side-effect driven** instead of trusting a click's return value and then idling for the full 20 s;
+> logical setup failures are no longer misreported as `errorType=spawn`.
+
+### Fixed
+
+- **Footer click now uses a side-effect-driven three-tier ladder (issue #38, problem A)**. `cdp.click()` returning `true` only means "the element exists and is visible" — it does **not** mean the native popup was raised, which is an intermittent fact for DirectUI buttons (measured in #35). The old implementation took that as success, then idled out the whole `dialogWaitTimeoutMs` (20 s) before failing, with **no remediation in between**. The criterion is now "did the native dialog actually appear", and execution methods are ordered by reliability: ① coordinate click `clickAt` (real mouse event) → ② semantic-key DOM click → ③ text fallback. Each tier has its own bounded probe window (first tier = budget × 0.30) and must escalate on failure.
+- **Total probe budget no longer inflates.** The first live-hardware run measured **28183 ms** against a 20 s budget — the cause was `waitDialogAppeared` checking the deadline **after** probing, so every tier overflowed by "one probe + a fixed `sleep(1500)`". Fix: check the remaining budget **before** probing (`MIN_PROBE_COST_MS`; a single probe measures 1.0–4.8 s on this machine), keep `sleep` inside the window boundary, but always allow one probe per tier (otherwise the coordinate first tier gets skipped under a short budget — a regression `A-core` caught immediately). Post-fix live measurement: **19213 ms ≤ 20000 ms**.
+- **Failure classification refined: logical setup failures no longer land on `spawn` (issue #38, problem B)**. `spawn` means "process failed to launch", yet the original symptom in #35 — a **deterministically failing** logical defect (project unbound in Code mode) — was reported as `spawn`, steering log readers toward environment retries. `AgentRunResult` now carries an optional `errorType?: "spawn" | "setup_failed"` declared **by the adapter**; `fix-loop` uses `runRes.errorType ?? "spawn"` (byte-identical default, so the other six agents are unaffected), and terminal copy splits into "setup 阶段失败" / "agent 基础设施失败". TraeWork's five logical `hardFailure` points (mode switch / project binding / post-bind mode change / bind verification / model switch) are tagged `setup_failed`; missing executable and `cdp_lost` stay `spawn` (genuine infrastructure).
+- **Two comments that contradicted the implementation were corrected**: `cdp.click()`'s return-value semantics (weak signal — callers needing the side effect must re-check) and `waitDialogAppeared`'s cost model (a **Node-side loop** spawning a fresh PowerShell per iteration, not a "single in-script call" — that inverted cost model was the source of the "20 s is enough" misjudgement).
+
+### Tests
+
+- **Reverse control (RED→GREEN)**:
+  - Problem B: baseline 4 failed (`expected undefined to be 'setup_failed'` / copy `agent 基础设施失败`) → 12 passed after the fix, plus a **regression lock** asserting "an undeclared `errorType` still lands on `spawn` with the『agent 基础设施失败』copy".
+  - Problem A: `A-budget-real` in `traework-footer-click.test.ts` was confirmed discriminating by **reverting the fix** — the old implementation probes **12 times** (an unbounded loop per tier), the new one **3 times**.
+- **Live-hardware verification (mandatory DoD item)**: TraeWork CN `1.107.1` (CDP 9222, mode=Code) — success path **`via=坐标`, 5938 ms, hwnd=14616800** (control: the old implementation idled the full 20 s in the same scenario); budget path **19213 ms ≤ 20000 ms**.
+- Full suite **1629 passed / 1 failed → all green after the fix** (the one failure was this round's comments using `⚠️`, tripping `protocol-text.test.ts`'s emoji gate — fixed); `mcp-gui` 172 passed; `tsc` / `lint --max-warnings 0` green.
+
+### Known limitations
+
+- The intermittent "DOM click fires but no dialog appears" phenomenon itself was **not reproduced on live hardware** — the fake-CDP cases pin the **decision logic** (side-effect driven vs return-value driven), while live verification covers **the actual click method and timing after the fix**. No claim is made that the original intermittent rate was reproduced.
+- **The third tier (text fallback) receives only ~34 ms** under the current default budget (the second tier consumes all the remainder). Preserving all three tiers properly would require splitting the second tier proportionally too; not changed in this round (the issue's DoD — "coordinate-first + no more 20 s idle" — is met).
+- **`center("cascadeMenuFooter")` still returns coordinates when the dropdown is not open** (a fallback selector matches a persistent element), so a coordinate click may land on nothing and burn the first-tier window. The three-tier fallback makes this non-fatal; tightening the selector is left for later.
+- Problem B was not verified on live hardware in isolation (it would require changing the user's workspace binding state); its logic is covered by assertions at both the adapter and orchestrator layers.
+
+---
+
 ## [0.8.2] — 2026-10-07
 
 > **Bug-fix release (issue #34)**: the Codex model-trigger readback no longer mistakes the whole

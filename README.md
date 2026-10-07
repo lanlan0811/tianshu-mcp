@@ -375,8 +375,8 @@ run_task(projectPath=D:/xxx/my-app, task="…任务书…", agentId=codex,
 | 恢复语义修正 | 0.8.0 | TraeWork 移除跨模式项目绑定兜底（#35：兜底结构性不可达且静默改写目标模式）；ZCode 恢复轮保留原会话权限（#30：发送前无条件覆盖默认值已移除） |
 | 完成判定加固 | 0.8.1 | 四个 driver（ZCode / Kimi Code / MiniMax Code / Open Design）补上「曾观测到运行信号」门（#31：选择器漂移时不再把进行中的任务误判成功）；`fix-loop` 让这三者的异常结束真正转 `needs_attention` 而非进验收链 |
 | Codex 模型回读 | 0.8.2 | 模型触发器回读改读结构（#34：真机按钮的 `innerText` 混入整条思考等级条——9 层轮播仅当前档 `opacity:1`，其余 `display:block`——旧实现整串当型号 → 三轮后 `model_mismatch`，阻断全部带 `model` 的 Codex 派发）；三层回退（权威属性 → 结构节点 → innerText 兜底），`matches()` 判据未动 |
+| TraeWork 绑定链路 | 0.8.3 | footer 点击改「副作用驱动三级阶梯」（#38：`element.click()` 返回 true ≠ 原生弹窗已唤起——旧实现据此白等满 20s 无补救；现以「对话框是否出现」为判据、坐标点击优先，真机 20s → 5.9s）；总探测预算不再膨胀（检测点移到探测前，真机 28.2s → 19.2s）；逻辑性 setup 失败不再落 `errorType=spawn`（新增 `setup_failed`，由适配器自归类，其余 6 个 agent 零行为变化） |
 | 日志台 GUI | `gui-v*`（独立线） | `mcp-gui/` 本地只读日志台（Tauri 2.x + Vue 3），独立版本与 tag，**不随 MCP 主包发布** |
-
 > 完整逐版记录见 [CHANGELOG.md](CHANGELOG.md)，交接状态与排障手册见 [HANDOFF.md](HANDOFF.md)，工程质量口径见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
 ## 日志台 GUI
