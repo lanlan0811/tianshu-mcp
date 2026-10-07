@@ -81,10 +81,47 @@ A separate profile **loses no data**: projects, sessions and auth live in `~/.co
 | `createProjectButton` | `[role="dialog"] form button:last-of-type` | The `<h2>` title shares the text; prefer interactive elements |
 | `projectItem` | `button[aria-label$="的项目操作"]` | Project name taken from the label prefix |
 | `modelTrigger` | `button[aria-haspopup="menu"]`, **scoped to the composer + menubar excluded** | see below |
+| `modelTriggerModelText` | `[class*="ModelPickerTriggerModelText"]` | The **model name** node inside the trigger (issue #34: read this, not the whole `button.innerText`) |
+| `modelTriggerEffortLabel` | `[class*="ModelPickerTriggerEffortLabel"] .sr-only` | The trigger's **current effort** accessibility text; `EffortLabel` itself contains all 9 steps in its `textContent`, so `.sr-only` must win |
 | `permissionTrigger` | `button[aria-label="更改权限"]` | text e.g. "完全访问" |
 | `messageArea` | `[class*="MainContentSurface"]` | Text-stability fallback; **never bare `main`/`#root`** (they include nav chrome) |
 
 **Real-hardware pitfall (fixed)**: the top menu bar (File/Edit/View/Help) also carries `aria-haspopup="menu"`; without exclusion `modelTrigger` matched the menubar. Selectors therefore support `excludes` (`[role="menubar"]`, `header`), and the CDP layer additionally picks the bottom trigger by "text looks like a model". Verified on hardware: it resolves to `GPT-5.6 Sol 高`.
+
+### Model-trigger readback: read structure, not the whole string (issue #34)
+
+Measured on Codex `26.930.4958.0`, the model trigger's DOM is:
+
+```
+button[data-codex-intelligence-trigger]        ← identity hook + data-selected-reasoning-effort
+├─ span[class*=ModelPickerTriggerModelText]     ← "6 Luna"    ← the only correct source of the model name
+└─ span[class*=ModelPickerTriggerEffortLabel]
+   ├─ span.sr-only                              ← "中"        ← current effort (only one)
+   └─ span[class*=…EffortViewport]/…Layers/
+      └─ 9 × span[class*=…EffortText]           ← 无/极低/轻度/中/高/极高/Max/Ultra/持续
+```
+
+All 9 carousel layers **live in the DOM**; only the current one has `opacity:1`, the rest are `opacity:0`
+**but still `display:block`** — so `button.innerText` reads
+`6 Luna 中 无 极低 轻度 中 高 极高 Max Ultra 持续`.
+The old implementation required the text to end with a level word (here it ends with `持续`) → no match →
+**the whole string became the model name** → `exactUiName()` always false → `model_mismatch` after three
+rounds, blocking every Codex dispatch that specified `model`.
+
+`modelTriggerReadback()` now falls back through three tiers, reading **the current value itself**
+(decoupled from how many steps exist):
+
+| Priority | Source | Hardware evidence |
+|---|---|---|
+| ① `attrs` | `[data-codex-intelligence-trigger]`'s `data-selected-reasoning-effort` + the model-name node inside it | measured `medium` |
+| ② `nodes` | model-name node + `…EffortLabel .sr-only` | measured `.sr-only` text `中` |
+| ③ `innerText` | the raw string → split by `parseTriggerValue` (legacy layout / class-name drift fallback) | legacy layouts |
+
+Companion contracts: when the two effort sources disagree, **the attribute wins** and the mismatch is
+reported via `warn`; all three sources empty means "not read this time", so the caller waits and **must not**
+report `model_mismatch` from it; the stability predicate compares the **parsed model name** (the raw text is
+changed continuously by the carousel animation). The `matches()` predicate itself is untouched — only the
+data fed to it was fixed.
 
 Multilingual: every key ships bilingual candidates (`texts` / `ariaLabels`) plus a structural fallback; `gui.selectors` (semantic key → selector) hot-patches UI drift at runtime.
 

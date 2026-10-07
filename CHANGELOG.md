@@ -7,6 +7,34 @@
 
 ---
 
+## [0.8.2] — 2026-10-07
+
+> **缺陷修复版（issue #34）**：Codex 模型触发器回读不再把整条思考等级条当成模型名。
+> 该缺陷在真机 `26.917.8434` / `26.930.4958.0` 上**阻断全部带 `model` 的 Codex 派发**。
+
+### 修复
+
+- **模型触发器回读改读结构，不再读 `innerText` 整串（issue #34）**。真机 `26.930.4958.0` 实测：模型触发器按钮内除模型名外还有**整条思考等级条**——档位轮播的 9 层全部在 DOM 里（`无/极低/轻度/中/高/极高/Max/Ultra/持续`），仅当前档 `opacity:1`，其余 `opacity:0` **但 `display:block`**，故 `innerText` 会把整条一并读出。旧实现要求文本以等级词结尾，实际以「持续」结尾 → 整串被当型号 → `exactUiName()` 恒假 → 三轮后判 `model_mismatch`（失败发生在发送任务书之前，`autoFixRounds` 形同虚设）。
+- **修法是读结构而非放宽正则**：正则方案必须枚举全部档位词，产品每加一档就再破一次，且无法区分「型号里含档位词」与「混入的档位条」。新实现改为三层回退——① 权威属性 `data-codex-intelligence-trigger` + `data-selected-reasoning-effort`；② 结构节点 `[class*=ModelPickerTriggerModelText]` + `[class*=ModelPickerTriggerEffortLabel] .sr-only`；③ `innerText` 整串（老版式兜底，交 `parseTriggerValue` 切分）。读到的是**当前值本身**，与档位数量解耦。
+- **`matches()` 判据一个字未改**——修的是喂给它的数据，不是判据本身。两条档位来源不一致时以属性为准并 `warn` 如实回报；三来源全空表示「本次未读到」，调用方等待而非据此判 `model_mismatch`。
+- **稳定判据同步修正**：`waitStableTrigger` 原先比较原始文本，而档位条轮播动画会让它**永不稳定**；现改为比较**解析后的模型名**。
+- **顺带修正一处过期注释**：真机 `26.930` 的思考强度滑块为 **4 档**（`aria-valuemax=3`，0=low / 1=medium / 2=high / 3=xhigh），文档与注释里的「5 档 / max=4」是 `26.903` 版式。`LEVEL_SLIDER_STOP` 的 `high=2` 在新版式下**依然成立**，实现未改。
+
+### 测试
+
+- **真机复验（生产实现）**：`modelTriggerReadback()` 在真实 Codex `26.930.4958.0` 上返回 `{model:"6 Luna", levelToken:"medium", source:"attrs"}`，模型名与面板一致（修复前整串为 `6 Luna 中 无 极低 … 持续`）。
+- 新增 **10** 条单测（`codex-core.test.ts`）+ **1** 条端到端用例（`codex-flow.test.ts`），覆盖真机串兜底切分、结构化优先、双来源不一致取权威、三来源全空不误判、`levelFromEffortToken` 映射表（含 `xhigh` 明确不猜）。
+- **反转自检**：把 `parseTriggerValue` 回滚为旧正则后 6 条新用例重新变红，恢复后全绿——证明测试有辨别力。
+- 全量 **1621 passed / 12 skipped**（131 文件）；`mcp-gui` 172 passed；`tsc` / `lint` 全绿。
+
+### 已知限制
+
+- **档位词集合随版本变化**：issue 报告串以「最高」结尾，本机 `26.930` 实测为「Max」。这是选择「读结构」而非「枚举档位词」的直接理由。
+- **`xhigh` 不归一**：`NormalizedLevel` 只有 low/medium/high 三档，`levelFromTriggerToken("xhigh")` 返回 `undefined`（明确不猜）。
+- 结构化读取依赖类名**基名**（哈希后缀会变），与仓内既有全部 Codex 选择器同一约定；漂移时可用 `gui.selectors` 热修复。
+
+---
+
 ## [0.1.1-beta.5] — 2026-10-07 — mcp-gui 独立版本线
 
 > 本段记录 GUI 独立版本线 `0.1.1` 的**缺陷修复版**（issue #33）；**MCP 主包零改动**。

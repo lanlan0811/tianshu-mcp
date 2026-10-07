@@ -88,12 +88,44 @@ CDP 调试端口只有在**专属 user-data-dir** 下才会开启：
 | `createProjectButton` | `[role="dialog"] form button:last-of-type` | 标题 `<h2>` 同名，须优先可交互元素 |
 | `projectItem` | `button[aria-label$="的项目操作"]` | 按前缀提取项目名 |
 | `modelTrigger` | `button[aria-haspopup="menu"]`，**作用域=输入框容器 + 排除菜单栏** | 见下 |
+| `modelTriggerModelText` | `[class*="ModelPickerTriggerModelText"]` | 触发器内的**模型名**节点（issue #34：读它，不读 `button.innerText` 整串） |
+| `modelTriggerEffortLabel` | `[class*="ModelPickerTriggerEffortLabel"] .sr-only` | 触发器内的**当前档位**无障碍文本；`EffortLabel` 本身 `textContent` 含全部 9 个档位，必须优先 `.sr-only` |
 | `permissionTrigger` | `button[aria-label="更改权限"]` | 文本如「完全访问」 |
 | `messageArea` | `[class*="MainContentSurface"]` | 用于文本稳定兜底；**不可用裸 `main`/`#root`**（会混入导航壳） |
 
 **真机踩坑（已修复）**：顶部菜单栏（文件/编辑/视图/帮助）同样带 `aria-haspopup="menu"`，
 若不做排除，`modelTrigger` 会误命中菜单栏。故选择器支持 `excludes`（`[role="menubar"]`、`header`），
 并在 CDP 层再按「文本含模型特征」挑选底部触发器。真机验证：解析结果为 `GPT-5.6 Sol 高`。
+
+### 模型触发器回读：读结构，不读整串（issue #34）
+
+真机 `26.930.4958.0` 实测，模型触发器的 DOM 是：
+
+```
+button[data-codex-intelligence-trigger]        ← 身份钩子 + data-selected-reasoning-effort
+├─ span[class*=ModelPickerTriggerModelText]     ← 「6 Luna」   ← 模型名唯一正确来源
+└─ span[class*=ModelPickerTriggerEffortLabel]
+   ├─ span.sr-only                              ← 「中」       ← 当前档（只含一个）
+   └─ span[class*=…EffortViewport]/…Layers/
+      └─ 9 × span[class*=…EffortText]           ← 无/极低/轻度/中/高/极高/Max/Ultra/持续
+```
+
+9 层轮播**全部在 DOM 里**，仅当前档 `opacity:1`，其余 `opacity:0` **但 `display:block`** ——
+因此 `button.innerText` 会读出 `6 Luna 中 无 极低 轻度 中 高 极高 Max Ultra 持续`。
+旧实现要求文本以等级词结尾（此处以「持续」结尾）→ 不匹配 → **整串被当型号** →
+`exactUiName()` 恒假 → 三轮后 `model_mismatch`，阻断全部带 `model` 的 Codex 派发。
+
+`modelTriggerReadback()` 改为三层回退，读到的是**当前值本身**（与档位数量解耦）：
+
+| 优先级 | 来源 | 真机证据 |
+|---|---|---|
+| ① `attrs` | `[data-codex-intelligence-trigger]` 的 `data-selected-reasoning-effort` + 其内模型名节点 | 实测 `medium` |
+| ② `nodes` | 模型名节点 + `…EffortLabel .sr-only` | 实测 `.sr-only` 文本 `中` |
+| ③ `innerText` | 整串 → `parseTriggerValue` 切分（老版式 / 类名漂移兜底） | 兼容旧版式 |
+
+配套契约：两条档位来源不一致时**以属性为准**并 `warn` 回报；三来源全空 = 「本次未读到」，
+调用方等待而**不得**据此判 `model_mismatch`；稳定判据比较**解析后的模型名**（原始文本会被轮播动画持续改变）。
+`matches()` 判据本身未改 —— 修的是喂给它的数据。
 
 多语言：每个键提供中英双语候选（`texts` / `ariaLabels`）+ 结构选择器兜底；
 运行期可用 `gui.selectors`（语义键 → 选择器）热修复 UI 漂移。

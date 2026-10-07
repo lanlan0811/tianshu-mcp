@@ -8,6 +8,35 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.8.2] — 2026-10-07
+
+> **Bug-fix release (issue #34)**: the Codex model-trigger readback no longer mistakes the whole
+> reasoning-effort strip for the model name. On real hardware (`26.917.8434` / `26.930.4958.0`) this
+> defect **blocked every Codex dispatch that specified `model`**.
+
+### Fixed
+
+- **Model-trigger readback reads structure instead of the whole `innerText` (issue #34)**. Measured on Codex `26.930.4958.0`: the trigger button carries not just the model name but the **entire reasoning-effort strip** — all 9 carousel layers live in the DOM (`无/极低/轻度/中/高/极高/Max/Ultra/持续`), only the current one has `opacity:1` while the rest are `opacity:0` **but still `display:block`**, so `innerText` picks them all up. The old regex required the text to *end* with a level word; it actually ended with `持续` → the whole string was taken as the model name → `exactUiName()` was always false → `model_mismatch` after three rounds (before the task brief was ever sent, making `autoFixRounds` a no-op).
+- **Read structure, don't loosen the regex**: a regex approach would have to enumerate every level word, and would break again each time the product adds one — it also cannot distinguish "the model name contains a level word" from "a level strip leaked in". The new implementation falls back through three sources: ① authoritative attributes `data-codex-intelligence-trigger` + `data-selected-reasoning-effort`; ② structural nodes `[class*=ModelPickerTriggerModelText]` + `[class*=ModelPickerTriggerEffortLabel] .sr-only`; ③ the raw `innerText` (legacy-layout fallback, split by `parseTriggerValue`). What it reads is **the current value itself**, decoupled from how many steps exist.
+- **The `matches()` predicate was not touched** — only the data fed to it. When the two level sources disagree, the attribute wins and the mismatch is reported via `warn`; when all three are empty the value means "not read this time" and the caller waits instead of reporting `model_mismatch`.
+- **Stability predicate corrected too**: `waitStableTrigger` used to compare raw text, which the carousel animation keeps changing forever; it now compares the **parsed model name**.
+- **One stale comment corrected**: the reasoning slider on `26.930` has **4 steps** (`aria-valuemax=3`; 0=low / 1=medium / 2=high / 3=xhigh) — the "5 steps / max=4" note came from `26.903`. `LEVEL_SLIDER_STOP`'s `high=2` still holds on the new layout; no implementation change.
+
+### Tests
+
+- **Real-hardware re-verification (production implementation)**: `modelTriggerReadback()` against a live Codex `26.930.4958.0` returns `{model:"6 Luna", levelToken:"medium", source:"attrs"}` — the model name matches the panel (before the fix the raw string was `6 Luna 中 无 极低 … 持续`).
+- **10** new unit cases (`codex-core.test.ts`) + **1** end-to-end case (`codex-flow.test.ts`), covering the real-device string fallback, structure-over-innerText precedence, authoritative-source-wins on conflict, empty-sources-don't-misfire, and the `levelFromEffortToken` mapping (with `xhigh` explicitly not guessed).
+- **Reversal self-check**: reverting `parseTriggerValue` to the old regex turns 6 new cases red again; restoring makes them green — the tests have discriminating power.
+- Full suite **1621 passed / 12 skipped** (131 files); `mcp-gui` 172 passed; `tsc` / `lint` green.
+
+### Known limitations
+
+- **The level-word set drifts across versions**: the issue's string ends with `最高`, while `26.930` ends with `Max`. This is exactly why "read structure" was chosen over "enumerate level words".
+- **`xhigh` is not normalized**: `NormalizedLevel` only has low/medium/high, so `levelFromTriggerToken("xhigh")` returns `undefined` (explicitly not guessed).
+- Structural reads depend on class **base names** (hash suffixes change), the same convention every existing Codex selector in this repo already follows; drift can be hot-fixed via `gui.selectors`.
+
+---
+
 ## [0.1.1-beta.5] — 2026-10-07 — mcp-gui independent line
 
 > This entry records a **bug-fix release** of the GUI `0.1.1` line (issue #33); **the MCP main package is untouched**.

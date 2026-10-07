@@ -103,7 +103,7 @@
 > 验收中发现并修掉「更新后旧版本不消失」（GUI `0.1.0-beta.4`），已发布并完成真机端到端复现——详见下方「升级路径修复」小节与 `docs/issue-25-gui-real-machine-record.md`。
 > **issue #18~#22 五项增强已全部交付**（v0.6.3~v0.6.7，每版各自完整发布），**五个 issue 均已回复并关闭**（2026-09-24）。
 > **#18~#22 的真机记录已全部补齐**（2026-09-25）：见 [issue #19/#20/#21/#22 真机记录](docs/issue-19-22-real-machine-record.md) 与 [issue #18/#19/#21 真机记录](docs/issue-18-21-real-machine-record.md)；各 issue 另附真机证据补充评论。
-> **⚠️ 仍有一条会阻断全部 Codex 派发的适配器缺陷**（`26.917.9434` 模型触发器回读混入整条思考等级条 → `model_mismatch`），尚未修复、建议单开 issue，详见下方「真机取证补记」与记录文件 §5。
+> **✅ 此前那条会阻断全部 Codex 派发的适配器缺陷已修复**（`26.917.9434` / `26.930.4958.0` 模型触发器回读混入整条思考等级条 → `model_mismatch`），随 **v0.8.2** 交付（issue #34），详见下方「真机取证补记」与记录文件 §5。
 > **✅ Open Design 真机链路已跑通（2026-09-28）**：先前「主线程停在启动期、CDP 接不上」的阻塞已定位并修复 ——
 > 根因是**固定 `--remote-debugging-port` 被不承载窗口的 launcher 进程抢占并驻留**，真窗口进程绑定失败后
 > `/json/list` 恒为 `[]`（端口连得上却无 page target）。改用 `=0`（各拿随机端口）+ 按 `DevToolsActivePort`
@@ -709,13 +709,18 @@
 
 - **取证脚本**：`.claude/plans/rm19.mjs` / `rm20.mjs` / `rm21.mjs` / `rm22.mjs`（`.claude/` 受 `.gitignore` 忽略，故意不入库）。
   **要复跑请先读记录文件各节的「复现要点」** —— 脚本依赖 scratch 数据目录（`%TEMP%\tianshu-rm*`）+ `dist/` 构建产物。
-- **⚠️ 本轮新发现：Codex 模型回读缺陷（阻断全部 codex 派发，尚未修复）**。`26.917.9434`（`26.917.8451` 同样复现）下模型触发器的
-  `innerText` 混入整条思考等级条（实测回读 `6 Luna 中 无 极低 轻度 中 高 极高 最高 Ultra 持续`），
-  `parseTriggerValue()` 要求文本以「低/中/高」结尾才能分离等级，此处以「持续」结尾 → 整串被当作型号 →
-  `exactUiName()` 必然为假 → 三轮后判 `model_mismatch`。**这是本轮 #19/#21 取证的实际阻塞点**，
-  取证时在 scratch 数据目录用「克隆内置 profile + 只改 `gui.modelSwitch=false`」绕开
-  （运行时日志如实打印 `[codex] profile.gui.modelSwitch=false，忽略指定模型`）；**属取证规避，不是修复**，
-  内置 profile 仍为 `modelSwitch: true`、产品行为未改。**建议单开 issue 跟踪**，修好后上面两个规避可撤掉。
+- **✅ 已修复（v0.8.2，issue #34）：Codex 模型回读缺陷**。`26.917.9434`（`26.917.8451` 同样复现）下模型触发器的
+  `innerText` 混入整条思考等级条（实测回读 `6 Luna 中 无 极低 轻度 中 高 极高 Max Ultra 持续`；issue 报告版为「最高」，本机 26.930 为「Max」——
+  **档位词集合随版本变化**，这正是选择「读结构」而非「枚举档位词」的理由）。
+  `parseTriggerValue()` 旧实现要求文本以「低/中/高」结尾才能分离等级，此处以「持续」结尾 → 整串被当作型号 →
+  `exactUiName()` 必然为假 → 三轮后判 `model_mismatch`。**这是此前 #19/#21 取证的实际阻塞点**（当时用
+  「克隆内置 profile + 只改 `gui.modelSwitch=false`」绕开，属**取证规避**）。
+  **修法**：`modelTriggerText()` → `modelTriggerReadback()`，三层回退读结构 —— ① 权威属性
+  `data-codex-intelligence-trigger` + `data-selected-reasoning-effort`；② 结构节点
+  `[class*=ModelPickerTriggerModelText]` + `[class*=ModelPickerTriggerEffortLabel] .sr-only`；
+  ③ `innerText` 整串（兜底，交 `parseTriggerValue` 切分）。`matches()` 判据未改。
+  真机复验（生产实现）：`{model:"6 Luna", levelToken:"medium", source:"attrs"}` 与面板一致。
+  **上述 `modelSwitch=false` 规避已可撤掉**，内置 profile 的 `modelSwitch: true` 行为已恢复可用。
 - **型号名继续漂移**：`26.917.9434` 的可用候选为 `默认 推荐模型集、6 Astra、6 Sol、6 Luna`
   （此前文档示例里的 `5.6 Terra`、更早的 `GPT-5.6 Sol` 均已不存在）。适配器 fail-closed 并回显候选，
   行为符合设计；文档「以面板/错误回显为准」的写法依然正确。
@@ -829,7 +834,7 @@
 - **真机记录（✅ 已于 2026-09-25 补齐）**：用真实 Codex GUI 构造必然 typecheck 失败的任务（`autoVerify` + `autoFixRounds=1`），
   已取得**前后对比**：第 0 轮 `[FAIL]` → `repairDirectives` 精确给出 `src/app.ts:13` / `:17`（与两处真实缺陷一致）→
   2.5 节进返修计划 → 第 1 轮 `[PASS]`。见 [issue #19~#22 真机记录](docs/issue-19-22-real-machine-record.md) §1 与 issue #19 的真机证据补充评论。
-  注：该次取证受下方「真机取证补记」里的 Codex 模型回读缺陷阻塞，需在 scratch profile 里绕开才跑得动。
+  注：该次取证当时受 Codex 模型回读缺陷阻塞（已随 v0.8.2 修复，见上方「真机取证补记」），当时需在 scratch profile 里绕开才跑得动。
 - **发布实测**：CI 四平台 **22/22 全绿**（`a977a66`）；`release.yml` 成功并生成 GitHub Release（`v0.6.4`，正文 9786 字符）；Gitee 发行版经 `scripts/gitee-release.mjs 0.6.4 0.6.3` 更新成功；npm `latest` 已为 **v0.6.4**（240 文件）。**issue #19 尚未关闭**：同 #18，本机无 GitHub 写权限令牌，需维护者回复并关闭。
 
 ### 0.6.3 开发交接（细粒度事件流，issue #18）
