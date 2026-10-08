@@ -3,7 +3,7 @@
  * Kimi Code 真机冒烟脚本（手动运行，不入 CI）。
  *
  * 用途：在已安装并已登录 Kimi Code 的机器上，经真实 MCP 工具面（run_task → query_task →
- * continue_task）驱动完整闭环，用于验收 GUI adapter 的实例接管、工作区绑定、模型/档位选择、
+ * manage_task(action=continue)）驱动完整闭环，用于验收 GUI adapter 的实例接管、工作区绑定、模型/档位选择、
  * 任务发送、运行检测、自动验收与返修。
  *
  * 护栏（与 scripts/smoke-zcode.mjs 一致）：必须显式传 --confirm-send、--model、--task 三者齐全才发送；
@@ -65,7 +65,7 @@ if (
 ) {
   process.stderr.write(
     "用法: node scripts/smoke-kimicode.mjs --confirm-send --model <模型名> --task <任务> [--project <绝对路径>] [--reasoning-level <Low|High|Max|on|off>] [--auto-verify] [--auto-fix-rounds <0-10>] [--answer <续答>] [--cancel-after-ms <毫秒>] [--timeout-ms <毫秒>] [--home <数据目录>]\n" +
-      "  --cancel-after-ms：任务进入 running 后等待该毫秒数再调用 cancel_task，用于验证取消真停路径。\n",
+      "  --cancel-after-ms：任务进入 running 后等待该毫秒数再调用 manage_task(action=cancel)，用于验证取消真停路径。\n",
   );
   process.exit(2);
 }
@@ -127,15 +127,15 @@ try {
       meta.lastRunSignal === "stop_button"
     ) {
       cancelled = true;
-      const res = await call(client, "cancel_task", { taskId, reason: "smoke cancel validation" });
-      if (res.result.isError) throw new Error(`cancel_task 失败：${res.text}`);
+      const res = await call(client, "manage_task", { taskId, action: "cancel", reason: "smoke cancel validation" });
+      if (res.result.isError) throw new Error(`manage_task(action=cancel) 失败：${res.text}`);
       process.stdout.write(`${JSON.stringify({ event: "cancel-requested", taskId, text: res.text })}\n`);
       previous = "";
       continue;
     }
     if (meta.status === "needs_user" && answer && !continued) {
-      const resumed = await call(client, "continue_task", { taskId, message: answer });
-      if (resumed.result.isError) throw new Error(`continue_task 失败：${resumed.text}`);
+      const resumed = await call(client, "manage_task", { taskId, action: "continue", message: answer });
+      if (resumed.result.isError) throw new Error(`manage_task(action=continue) 失败：${resumed.text}`);
       continued = true;
       previous = "";
       process.stdout.write(

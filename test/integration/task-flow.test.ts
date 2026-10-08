@@ -173,7 +173,7 @@ describe("verify_task 手动验收（独立工具）", () => {
   }, 60_000);
 });
 
-describe("cancel_task", () => {
+describe("manage_task(action=cancel)", () => {
   it("排队中任务可取消（同项目串行队列队尾）", async () => {
     // 全新项目：A 占用串行队列，B 排队，取消 B
     const busy = await makeGitProject("good");

@@ -244,9 +244,19 @@ describe("线上 inputSchema 契约（防 discriminatedUnion/refine 空 schema �
   // 实测：z.discriminatedUnion / .refine() 经 SDK 序列化后线上变成
   // {"type":"object","properties":{}}——参数信息全部丢失，宿主 LLM 看不到任何字段。
   //
-  // 注意：`get_profiles` 用 `z.object({})`，它**本来就没有参数**，空 properties 是正确形态。
-  // 故本断言排除「设计上无参」的工具，其余工具必须暴露非空 properties。
-  const NO_PARAM_TOOLS = new Set(["get_profiles"]);
+  // 注意：设计上无参数的工具用 `z.object({})`，空 properties 是**正确**形态，需排除。
+  // v0.9.0 后原 `get_profiles`（唯一无参工具）已并入 `query_info`（有参），故当前名单为空——
+  // 保留机制以备将来新增无参工具，但绝不留已不存在的名字（否则白名单静默失效）。
+  const NO_PARAM_TOOLS = new Set<string>([]);
+
+  it("无参工具白名单不含已不存在的工具（防止白名单漂移成死代码）", async () => {
+    const { tools } = await ts.client.listTools();
+    const names = new Set(tools.map((t) => t.name));
+    for (const n of NO_PARAM_TOOLS) {
+      expect(names.has(n), `无参工具白名单里的 ${n} 已不在工具面上——请从 NO_PARAM_TOOLS 移除`)
+        .toBe(true);
+    }
+  }, 60_000);
 
   it("除无参工具外，每个工具的线上 inputSchema 都必须暴露非空 properties", async () => {
     const { tools } = await ts.client.listTools();

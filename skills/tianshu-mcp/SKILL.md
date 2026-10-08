@@ -222,10 +222,10 @@ meta 的 `needsUserKind` 给出等待类型，`pendingQuestion` 给出问题原�
 - **视觉阻塞任务**调 `manage_task(action="rework")` 会**先只重新验收、不启动 agent、不消耗返修轮次**：通过即结束，仍阻塞则回到 `needs_attention`，只有出现真实缺陷才启动返修。
 - **`needs_attention`（验收失败）** 的返修才真正回到 agent，`feedback` 会作为追加指示。
 - **硬失败（`failed` + `errorType=spawn`）** 不是“agent 没做好”，重试前先按 §9 修环境。
-- **`running` 卡死**才用 `cancel_task`：CLI agent 终止进程树；GUI agent 尽力点击界面停止并等待空闲（有界超时），取消文案会如实标注 GUI 侧是否已停。
+- **`running` 卡死**才用 `manage_task(action="cancel")`：CLI agent 终止进程树；GUI agent 尽力点击界面停止并等待空闲（有界超时），取消文案会如实标注 GUI 侧是否已停。
   **标注“未确认停止”时不要重派同项目任务**——窗口内可能仍在跑，重派护栏也会以 `instance_busy` 拒绝。
 - **`needs_user` 状态下取消**：run 协程已退出、CDP 已断开，MCP 无法再点 GUI 停止按钮，文案会提示人工检查。
-- **`interrupted` + `guiStopUnconfirmed=true`（server 退出 / 宿主 EOF / 重启归档）**：`tianshu-mcp` 对 GUI 进程没有所有权，**“编排器已停”不等于“窗口里的任务已停”**。先让用户人工打开对应窗口确认没有还在跑的 turn，再调 `cancel_task(taskId, reason="已人工核对窗口无残留运行")` 清除待确认标记（终态仍是 `interrupted`），**之后**才可安全重派同项目任务。详见 `usage-examples.md` §9.5.1。
+- **`interrupted` + `guiStopUnconfirmed=true`（server 退出 / 宿主 EOF / 重启归档）**：`tianshu-mcp` 对 GUI 进程没有所有权，**“编排器已停”不等于“窗口里的任务已停”**。先让用户人工打开对应窗口确认没有还在跑的 turn，再调 `manage_task(action="cancel", taskId, reason="已人工核对窗口无残留运行")` 清除待确认标记（终态仍是 `interrupted`），**之后**才可安全重派同项目任务。详见 `usage-examples.md` §9.5.1。
 - **幂等重放不是新任务**：`run_task` 命中同一 `idempotencyKey` 时返回的是**原任务**（含终态），响应文本以「幂等重放：」开头、meta 带 `idempotencyReplay: "hit"`；不要把它当成本次新派单，也不要据此认为又要等一轮。终态任务要继续推进用 `manage_task(action="rework")`，或换一条新 key 重新派单。
 
 汇报纪律：**不要反复空转重试**。多次仍不过或不可修时，如实汇报 `errorType`/`agentEndReason`、失败 check 与输出尾部、变更清单，并给建议（人工看报告 / 换 agent / 缩小任务）。
@@ -324,7 +324,7 @@ meta 的 `needsUserKind` 给出等待类型，`pendingQuestion` 给出问题原�
 | `design_system_mismatch` | opendesign 设计系统搜索/点选后回读不一致 | 核对 `designSystem` 传的名字与界面实际条目后重派 |
 | `permission_unknown` | 权限模式未确认（如 ZCode 未开「完全访问」） | 让用户在 agent 内切好权限模式 |
 | `cdp_disconnected` | CDP 连接断开且未能恢复 | 让用户关掉冲突实例；重试 |
-| `instance_busy` | 同项目/同实例已有未停止的运行（重派护栏） | 先 `cancel_task` 并**确认 GUI 已停**，或等其自行结束 |
+| `instance_busy` | 同项目/同实例已有未停止的运行（重派护栏） | 先 `manage_task(action="cancel")` 并**确认 GUI 已停**，或等其自行结束 |
 | `session_lost` | zcode/kimicode/qoder/minimax 找不到原会话锚点 | 用**新任务**重派，不要指望恢复原会话 |
 | `input_mismatch` / `send_unknown` | 发送前回读不一致 / 发送结果无法确认（**绝不自动重发**） | 人工看窗口状态，必要时 `manage_task(action="continue")` 或重派 |
 | `idle_timeout` | GUI 长时间静止且无完成标志（现场已保留） | 看窗口里 agent 是否真的卡住；必要时 `manage_task(action="continue")` 或取消 |

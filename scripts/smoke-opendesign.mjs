@@ -120,8 +120,8 @@ try {
       previous = signature;
     }
     if (meta.status === "needs_user" && answer && !continued) {
-      const resumed = await call(client, "continue_task", { taskId, message: answer });
-      if (resumed.result.isError) throw new Error(`continue_task 失败：${resumed.text}`);
+      const resumed = await call(client, "manage_task", { taskId, action: "continue", message: answer });
+      if (resumed.result.isError) throw new Error(`manage_task(action=continue) 失败：${resumed.text}`);
       continued = true;
       previous = "";
       process.stdout.write(

@@ -59,7 +59,7 @@ async function readTaskArtifacts(taskId: string): Promise<string> {
   return parts.join("\n");
 }
 
-describe("rework_task 的 repairHint（issue #19）", () => {
+describe("manage_task(action=rework) 的 repairHint（issue #19）", () => {
   it("repairHint 以【结构化修复提示】块进入下一轮任务书", async () => {
     const taskId = await runFailingTask();
 
@@ -102,10 +102,17 @@ describe("rework_task 的 repairHint（issue #19）", () => {
   it("repairHint 超长（>4000 字符）被协议层拒绝", async () => {
     const taskId = await runFailingTask();
     const res = await ts.client.callTool({
-      name: "rework_task",
-      arguments: { taskId, repairHint: "x".repeat(4001) },
+      name: "manage_task",
+      arguments: { taskId, action: "rework", repairHint: "x".repeat(4001) },
     });
     expect(res.isError).toBe(true);
+    // 断言错误**来源**是 repairHint 越界，而非「工具不存在」/「枚举非法」等其它拒绝路径。
+    // 缺少这条时，工具名写错（如 v0.9.0 前的 `rework_task`）也会因 isError=true 而假绿。
+    const text = (res.content as Array<{ type: string; text?: string }>)
+      .map((c) => c.text ?? "")
+      .join("\n");
+    expect(text).toMatch(/repairHint/i);
+    expect(text).toMatch(/4000|too_big|at most/i);
   }, 60_000);
 });
 
