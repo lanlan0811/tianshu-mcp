@@ -99,6 +99,51 @@ describe("ZCode real CDP expressions against DOM", () => {
       normalizeZcodeModelSelection({ display: "current", currentValue: "%broken" }),
     ).toThrow(/编码/);
   });
+  /**
+   * 回归锁：`data-model-current-value` 的模型名段**自身可能含冒号**（2026-10-08 真机）。
+   *
+   * 属性格式是 `custom:<provider>:<urlencoded-model>`；旧实现用
+   * `decodeURIComponent(v).split(":").at(-1)` 取模型名，假设模型名不含冒号。
+   * 真机实测（ZCode 3.14.4.7912）OpenRouter 的免费模型后缀就是 `:free`：
+   *
+   *   data-model-current-value = custom:openrouter:inclusionai%2Fling-3.0-flash-sante%3Afree
+   *   解码后                    = custom:openrouter:inclusionai/ling-3.0-flash-sante:free
+   *   split(":").at(-1)        = "free"                        ← 被截断
+   *   可见标签                   = OpenRouter/inclusionai/ling-3.0-flash-sante:free
+   *   modelName(可见标签)        = inclusionai/ling-3.0-flash-sante:free
+   *
+   * 两者不等 → 抛「ZCode 当前模型属性与可见标签冲突」，**当前选中此类模型时适配器完全不可用**。
+   */
+  it("parses currentValue whose model name itself contains a colon (OpenRouter ':free' suffix)", () => {
+    // 真机原值（ZCode 3.14.4.7912，OpenRouter/inclusionai/ling-3.0-flash-sante:free）
+    const real = {
+      display: "OpenRouter/inclusionai/ling-3.0-flash-sante:free",
+      ariaLabel: "OpenRouter/inclusionai/ling-3.0-flash-sante:free",
+      visibleLabel: "OpenRouter/inclusionai/ling-3.0-flash-sante:free",
+      title: "",
+      currentValue: "custom:openrouter:inclusionai%2Fling-3.0-flash-sante%3Afree",
+      ambiguous: false,
+    };
+    expect(normalizeZcodeModelSelection(real)).toEqual({
+      display: "OpenRouter/inclusionai/ling-3.0-flash-sante:free",
+      internal: "inclusionai/ling-3.0-flash-sante:free",
+    });
+  });
+  it("still parses provider-scoped values without a colon in the model name (cline)", () => {
+    // 真机原值（ZCode 3.14.4.7912，cline-pass/deepseek-v4.1-flash）——不得被上一条修复破坏
+    const real = {
+      display: "cline/cline-pass/deepseek-v4.1-flash",
+      ariaLabel: "cline/cline-pass/deepseek-v4.1-flash",
+      visibleLabel: "cline/cline-pass/deepseek-v4.1-flash",
+      title: "",
+      currentValue: "custom:new-provider-2:cline-pass%2Fdeepseek-v4.1-flash",
+      ambiguous: false,
+    };
+    expect(normalizeZcodeModelSelection(real)).toEqual({
+      display: "cline/cline-pass/deepseek-v4.1-flash",
+      internal: "cline-pass/deepseek-v4.1-flash",
+    });
+  });
   it("reads and clicks the primary despite add/move/detach buttons", async () => {
     const { client, send, document } = fixture(`${primary}${row}
       <button aria-label="添加项目">添加</button><button aria-label="移动项目分区">移动</button>
