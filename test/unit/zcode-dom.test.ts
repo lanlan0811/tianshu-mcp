@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { parseHTML } from "linkedom";
 import { runInNewContext } from "node:vm";
 import { ZcodeCdpClient } from "../../src/agents/zcode/cdp.js";
-import { normalizeZcodeModelSelection } from "../../src/agents/zcode/model.js";
+import {
+  normalizeZcodeModelSelection,
+  uiModelNameMatches,
+} from "../../src/agents/zcode/model.js";
 
 function fixture(html: string, overrides: Record<string, string> = {}) {
   const { document } = parseHTML(`<html><body>${html}</body></html>`);
@@ -143,6 +146,39 @@ describe("ZCode real CDP expressions against DOM", () => {
       display: "cline/cline-pass/deepseek-v4.1-flash",
       internal: "cline-pass/deepseek-v4.1-flash",
     });
+  });
+  /**
+   * 回归锁：显示名带 **UI 分组前缀**时，回读匹配必须剥一层前缀再比（2026-10-08 真机）。
+   *
+   * 真机 3.14.4.7912：选中后 display=`cline/cline-pass/deepseek-v4.1-flash`
+   * （`.composer-provider-prefix` = `cline/`，是**分组显示名**），
+   * internal=`cline-pass/deepseek-v4.1-flash`（纯模型名）。
+   *
+   * 分组显示名与 `供应商/模型` 参数段**没有对应关系**：该模型所属分组显示名是 `cline`
+   * （testid `...registry-provider:new-provider-2`），而用户按面板传的参数段是 `cline-pass`。
+   * 修复前回读只认完整候选串 → display 三候选全不中 → 判 `model_mismatch`，
+   * 尽管模型已成功切换（供应商回退 + hover 分组 + 精确选中全部走通）。
+   */
+  it("matches a display label carrying a UI group prefix (single strip, both forms)", () => {
+    const candidates = ["deepseek-v4.1-flash", "cline-pass/deepseek-v4.1-flash", "cline-pass"];
+    // 带前缀的 display：剥一层后命中完整串
+    expect(uiModelNameMatches("cline/cline-pass/deepseek-v4.1-flash", candidates)).toBe(true);
+    // 不带前缀的形态仍直接命中（回归）
+    expect(uiModelNameMatches("cline-pass/deepseek-v4.1-flash", candidates)).toBe(true);
+    expect(uiModelNameMatches("deepseek-v4.1-flash", candidates)).toBe(true);
+    // 大小写/空白仍按 exactUiName 归一
+    expect(uiModelNameMatches("  CLINE/Cline-Pass/DeepSeek-V4.1-Flash  ", candidates)).toBe(true);
+  });
+  it("does not loosen matching: unrelated names and empty values stay rejected", () => {
+    const candidates = ["deepseek-v4.1-flash", "cline-pass/deepseek-v4.1-flash", "cline-pass"];
+    // 前缀里是**别的**模型 → 必须仍不匹配（剥前缀不是无条件放行）
+    expect(uiModelNameMatches("cline/other-model", candidates)).toBe(false);
+    expect(uiModelNameMatches("openrouter/inclusionai/ling-3.0-flash-sante:free", candidates)).toBe(
+      false,
+    );
+    expect(uiModelNameMatches("", candidates)).toBe(false);
+    expect(uiModelNameMatches("   ", candidates)).toBe(false);
+    expect(uiModelNameMatches("cline/", candidates)).toBe(false);
   });
   it("reads and clicks the primary despite add/move/detach buttons", async () => {
     const { client, send, document } = fixture(`${primary}${row}

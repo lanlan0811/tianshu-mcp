@@ -131,8 +131,11 @@ ZCode 专用可选布尔，只影响**有项目模式**：
 |---|---|---|
 | **当前选中「模型名自带冒号」的模型时适配器完全不可用**：任何 `run_task` 都在模型回读阶段抛 `ZCode 当前模型属性与可见标签冲突` | `data-model-current-value` 的格式是 `custom:<provider>:<urlencoded-model>`，旧实现用 `decodeURIComponent(v).split(":").at(-1)` 取模型名，**假设模型名不含冒号**。真机反例：OpenRouter 免费模型后缀就是 `:free`——`custom:openrouter:inclusionai%2Fling-3.0-flash-sante%3Afree` 解码后末段被切成 `free`，与可见标签 `inclusionai/ling-3.0-flash-sante:free` 不符 | `model.ts` 改为**按 `<kind>:<provider>:` 前缀剥离**（只切前两段，第三段整段保留），与属性格式一一对应；剥离结果与可见标签一致才采信，否则回退旧逻辑参与校验（不放宽冲突检测）。回归锁：`test/unit/zcode-dom.test.ts` |
 | **`model="cline-pass/deepseek-v4.1-flash"` 报 `model_unavailable`**（错误里却列出供应商候选含 `cline`） | 面板把 `cline-pass/deepseek-v4.1-flash` 当作**一个整体模型名**（斜杠属于名字），所属分组显示名是 `cline`。而 `供应商/模型` 约定把入参切成 provider=`cline-pass`、model=`deepseek-v4.1-flash`——**两段都匹配不上**（分组名是 `cline`；模型项显示的是完整串） | `run.ts` 三处联动：① 供应商精确匹配失败时，**枚举可见分组逐个 hover** 并试匹配模型名；② 模型匹配值优先用**完整原始串**（`provider/model` 拼回），再退到 `spec.model`；③ 回读校验接受三种形态（完整串 / 仅 model 段 / 仅 provider 段）。回归锁：`test/integration/zcode-flow.test.ts` 的「provider 段与面板分组名不一致」用例 |
+| **切换成功后仍判 `model_mismatch`**（`display=cline/cline-pass/deepseek-v4.1-flash，internal=cline-pass/deepseek-v4.1-flash`）——供应商回退与模型选中都已走通，却被回读校验判死 | 面板的**可见标签把分组显示名拼在模型名前**（`.composer-provider-prefix` = `cline/`）。分组显示名与 `供应商/模型` 参数段**没有对应关系**（分组 `cline` ≠ 参数段 `cline-pass`），旧回读只认完整候选串，故带前缀的 display 三候选全不中 | 新增 `uiModelNameMatches()`（`model.ts`）：先精确命中，失败则**剥一层** `首段/` 前缀再比；`run.ts` 的等待条件与最终校验共用它。只剥一层——多剥会把结构上不相关的名字算命中。回归锁：`test/unit/zcode-dom.test.ts` 两条（命中 + 反证不越界） |
 
-> **教训**：ZCode 的模型标识有两套语义——**面板显示名**（用户看到的，可能自带 `/` 与 `:`）与 **`供应商/模型` 参数约定**（适配器按斜杠切分）。二者不总是一致，任何一处按约定硬切都会在特定模型上 fail-closed。
+> **教训**：ZCode 的模型标识有**三套语义**——**面板可见标签**（可能带 `分组名/` 前缀）、**面板分组显示名**（`cline`，与参数段无关）、**`供应商/模型` 参数约定**（适配器按斜杠切分）。三者互不推导，任何一处按约定硬切或硬比都会在特定模型上 fail-closed。
+>
+> **测试夹具的陷阱**：集成测试的假件 `selection()` 若返回干净串，就比真机宽松——第三个缺陷正是**直到真机冒烟才暴露**（夹具里全绿）。夹具必须复刻真机原值（含 `cline/` 前缀），否则回读校验类的缺陷在 CI 里永远是假绿。
 
 ## 真机证据状态（2026-09-11）
 

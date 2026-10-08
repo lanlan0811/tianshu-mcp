@@ -13,6 +13,7 @@ import { mkdirp } from "../../util/fs.js";
 import {
   parseZcodeModel,
   exactUiName,
+  uiModelNameMatches,
   ZcodeModelReadbackError,
   ZcodeReasoningLevelError,
   assertZcodeLevelSupported,
@@ -1067,10 +1068,17 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
           try {
             last = await cdp!.selection("modelValue");
             error = undefined;
+            /**
+             * 等待条件与下方最终校验共用同一套匹配规则（uiModelNameMatches）——
+             * 面板 display 可能带 UI 分组前缀（`cline/cline-pass/...`），
+             * 只用 exactUiName 会永远等不到稳定值，把成功的切换拖成回读超时。
+             */
             if (
               !waitForExpected ||
-              ((exactUiName(last.display, spec.model) ||
-                exactUiName(last.display, `${spec.provider}/${spec.model}`)) &&
+              (uiModelNameMatches(last.display, [
+                spec.model,
+                `${spec.provider}/${spec.model}`,
+              ]) &&
                 exactUiName(last.internal, spec.model))
             )
               return last;
@@ -1093,8 +1101,12 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
        * 真机 2026-10-08（ZCode 3.14.4.7912）实测：选中后 display 与 internal 都是完整串。
        */
       const modelNameCandidates = [spec.model, `${spec.provider}/${spec.model}`, spec.provider];
-      const nameMatches = (value: string) =>
-        modelNameCandidates.some((c) => exactUiName(value, c));
+      /**
+       * 匹配走 uiModelNameMatches：真机 display 会把**分组显示名**拼在模型名前
+       * （`cline/cline-pass/deepseek-v4.1-flash`），而分组名与 provider 参数段无对应关系，
+       * 不能靠 provider 推导，只能剥一层前缀再比。internal 是纯模型名，直比即可。
+       */
+      const nameMatches = (value: string) => uiModelNameMatches(value, modelNameCandidates);
       const modelMatches = () =>
         nameMatches(modelValue.display) && nameMatches(modelValue.internal);
       if (!modelMatches()) {

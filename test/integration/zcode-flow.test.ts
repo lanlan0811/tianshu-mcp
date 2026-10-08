@@ -546,6 +546,18 @@ class MismatchedProviderNameZcode extends FakeZcode {
   hoveredProviders: string[] = [];
   /** 面板分组只有这两个（显示名与「模型 id 前缀」不同） */
   private readonly groups = ["cline", "OpenRouter"];
+  /**
+   * 真机 3.14.4.7912 原值：可见标签把 **UI 分组前缀**拼在模型名前
+   * （`.composer-provider-prefix` = `cline/`），而 `internal` 是纯模型名。
+   * 夹具必须复刻这一点——早期夹具返回干净串，比真机宽松，导致回读校验的
+   * 前缀缺陷在集成测试里假绿（真机实测：display 带前缀 → 三候选全不中 → model_mismatch）。
+   */
+  override async selection() {
+    return {
+      display: this.model ? `cline/${this.model}` : "",
+      internal: this.model,
+    };
+  }
   override async clickExact(key: string, value: string, mode?: string) {
     if (key === "providerOption") {
       if (mode !== "hover") return { clicked: false, count: 0, available: this.groups };

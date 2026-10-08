@@ -165,6 +165,27 @@ export function exactUiName(a: string, b: string): boolean {
   );
 }
 
+/**
+ * 回读值与期望模型的匹配——直接精确命中候选，或**剥离一层 UI 分组前缀**后再命中。
+ *
+ * 面板的可见标签会把**分组显示名**拼在模型名前（真机 3.14.4.7912 实测：
+ * display=`cline/cline-pass/deepseek-v4.1-flash`，internal=`cline-pass/deepseek-v4.1-flash`）。
+ * 分组显示名与「供应商/模型」参数段**没有对应关系**——该模型所属分组显示名是 `cline`
+ * （testid `...registry-provider:new-provider-2`），而用户按面板传的参数段是 `cline-pass`，
+ * 所以不能靠 provider 段推导前缀，只能按「首段 + `/`」结构剥离。
+ *
+ * 只剥**一层**：真机结构就是「分组名 / 模型名」两层，剥一层即可对齐参数段；
+ * 迭代剥离会把 `a/b/c` 一路退化成 `c`，让结构上不相关的名字也算命中。
+ */
+export function uiModelNameMatches(value: string, candidates: string[]): boolean {
+  const raw = value?.trim() ?? "";
+  if (!raw) return false;
+  if (candidates.some((c) => exactUiName(raw, c))) return true;
+  const slash = raw.indexOf("/");
+  if (slash < 0) return false;
+  const tail = raw.slice(slash + 1).trim();
+  return !!tail && candidates.some((c) => exactUiName(tail, c));
+}
 export function normalizeZcodeModelSelection(raw: ZcodeModelSelectionRaw): {
   display: string;
   internal: string;
