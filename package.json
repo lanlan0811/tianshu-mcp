@@ -49,6 +49,7 @@
     "docs/qoder-evidence",
     "scripts/smoke-zcode.mjs",
     "scripts/smoke-traework.mjs",
+    "scripts/smoke-codex.mjs",
     "scripts/prepare-zcode-fixture.mjs",
     "README.md",
     "README.en.md",
@@ -96,7 +97,8 @@
     "fixture:zcode": "node scripts/prepare-zcode-fixture.mjs",
     "pack:check": "npm pack --dry-run",
     "evidence:visual:windows": "node scripts/evidence-visual-windows.mjs",
-    "probe:minimax": "node scripts/probe-minimax.mjs"
+    "probe:minimax": "node scripts/probe-minimax.mjs",
+    "smoke:codex": "node scripts/smoke-codex.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.15.0",
