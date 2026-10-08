@@ -606,6 +606,9 @@ describe("ZCode 思考档位契约（issue #27）", () => {
 
   it("选项只在菜单展开时挂载：按需点开读一次，读完立刻关闭", async () => {
     const { client, send, document } = fixture(tierTrigger);
+    // 点击判据要求「该点命中目标自身」——真机上可见的触发器必然命中自己，
+    // 夹具默认的 elementFromPoint 会返回 null（那是给「被遮挡」场景用的），此处按真机语义指向触发器。
+    pointAt(document, '[data-testid="chat-thought-level-select-trigger"]');
     send.mockImplementation(async (_method: string, params?: { type?: string }) => {
       if (params?.type === "mousePressed") {
         document.body.insertAdjacentHTML("beforeend", tierOptions);
@@ -743,6 +746,65 @@ describe("ZCode 权限菜单契约（真机 3.14.3）", () => {
     const result = await client.clickExact("permissionOption", "完全访问");
     expect(result.clicked).toBe(true);
     expect(result.available).toContain("完全访问");
+  });
+});
+
+/**
+ * 通用 `click()` 的可点性判据（真机 3.14.4.7912，2026-10-08）。
+ *
+ * 真机复现：`conversation-new-task` 挂在滚动容器底部（y=2474，视口高 640），宽高都 >0
+ * 但**在视口外**——旧实现向视口外发合成鼠标事件，Chromium 直接丢弃，而函数返回 true，
+ * 形成假成功。3 轮新建任务冒烟**每轮**都打出
+ * 「顶部新建任务按钮未建立草稿（clicked=true）；回退侧栏新建任务按钮」，
+ * 全靠侧栏回退兜底才没失败。
+ */
+describe("ZCode 通用点击的可点性判据（视口与遮挡）", () => {
+  const offscreen = '<button data-testid="conversation-new-task" data-top="2474">新建</button>';
+  const inView = '<button data-testid="task-new-button" data-top="56">新建</button>';
+
+  it("视口外的目标是不可点的：返回 false 且不发鼠标事件", async () => {
+    const { client, send, document } = fixture(offscreen);
+    // 夹具 rect 的 top 由 data-top 决定、y 恒为 0，故用 y 表达「越界」：
+    // 让 getBoundingClientRect 报告一个视口外的坐标（真机 y=2474 > innerHeight=1000）。
+    const btn = document.querySelector('[data-testid="conversation-new-task"]')!;
+    Object.assign(btn, {
+      getBoundingClientRect: () => ({
+        x: 211,
+        y: 2474,
+        left: 211,
+        top: 2474,
+        width: 24,
+        height: 24,
+        right: 235,
+        bottom: 2498,
+      }),
+    });
+    pointAt(document, '[data-testid="conversation-new-task"]');
+    const clicked = await client.click("newTask");
+    expect(clicked).toBe(false);
+    // 关键断言：不能发出任何鼠标事件——假成功的本质就是事件发出去了但被丢弃。
+    expect(send.mock.calls.filter((c) => c[0] === "Input.dispatchMouseEvent")).toHaveLength(0);
+  });
+
+  it("视口内且命中自身的目标可点，事件发到元素中心", async () => {
+    const { client, send, document } = fixture(inView);
+    pointAt(document, '[data-testid="task-new-button"]');
+    const clicked = await client.click("newTaskSidebar");
+    expect(clicked).toBe(true);
+    const presses = send.mock.calls.filter(
+      (c) => c[0] === "Input.dispatchMouseEvent" && (c[1] as { type?: string })?.type === "mousePressed",
+    );
+    expect(presses).toHaveLength(1);
+    expect(presses[0]![1]).toMatchObject({ x: 50, y: 66 });
+  });
+
+  it("被别的元素盖住的目标不可点（命中校验不通过）", async () => {
+    const { client, send, document } = fixture(inView);
+    // elementFromPoint 指向无关节点 → 该点不属于目标子树。
+    document.elementFromPoint = () => document.body as never;
+    const clicked = await client.click("newTaskSidebar");
+    expect(clicked).toBe(false);
+    expect(send.mock.calls.filter((c) => c[0] === "Input.dispatchMouseEvent")).toHaveLength(0);
   });
 });
 

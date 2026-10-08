@@ -253,13 +253,43 @@ describe("ZCode 安装与模型", () => {
     });
     await rmrf(root);
   });
+  /**
+   * 回归锁：模型名自身含 `/` 时参数为三段式——**必须解析成功**（2026-10-08 真机）。
+   *
+   * 真机 3.14.4.7912 的 openrouter 分组下挂着 `inclusionai/ling-3.0-flash-sante:free`
+   * （testid `chat-model-select-item-custom:openrouter:inclusionai%2F...%3Afree`），
+   * 用户按面板分组 + 模型显示名传参即 `openrouter/inclusionai/ling-3.0-flash-sante:free`。
+   *
+   * 旧实现要求 `split("/").length === 2` → 直接拒绝 → **该模型完全无法派单**
+   * （连参数校验都过不了，报「应为 供应商/模型」）。
+   * 切分基准改为**首个 `/`**：之前是 provider、之后整段是 model，与面板两个字段一一对应。
+   */
+  it("按首个斜杠切分 供应商/模型，模型名可含斜杠（真机 openrouter 三段式）", () => {
+    // 真机原值
+    expect(parseZcodeModel("openrouter/inclusionai/ling-3.0-flash-sante:free")).toEqual({
+      provider: "openrouter",
+      model: "inclusionai/ling-3.0-flash-sante:free",
+    });
+    // 面板显示名的大小写形态同样接受
+    expect(parseZcodeModel("OpenRouter/inclusionai/ling-3.0-flash-sante:free")).toEqual({
+      provider: "OpenRouter",
+      model: "inclusionai/ling-3.0-flash-sante:free",
+    });
+    // 多段仍然全归 model（不截断）
+    expect(parseZcodeModel("A/B/C")).toEqual({ provider: "A", model: "B/C" });
+    expect(parseZcodeModel("a/b/c/d")).toEqual({ provider: "a", model: "b/c/d" });
+    // 边界仍拒绝：缺任一段都不算合法
+    expect(() => parseZcodeModel("deepseek-flash")).toThrow(/供应商\/模型/);
+    expect(() => parseZcodeModel("/x")).toThrow(/格式错误/);
+    expect(() => parseZcodeModel("x/")).toThrow(/格式错误/);
+    expect(() => parseZcodeModel("x/   ")).toThrow(/格式错误/);
+  });
   it("严格解析 供应商/模型", () => {
     expect(parseZcodeModel("DeepSeek/deepseek-flash")).toEqual({
       provider: "DeepSeek",
       model: "deepseek-flash",
     });
     expect(() => parseZcodeModel("deepseek-flash")).toThrow(/供应商\/模型/);
-    expect(() => parseZcodeModel("A/B/C")).toThrow(/格式错误/);
   });
   it("模型回读移除动态无障碍标签并优先使用当前模型属性", () => {
     expect(

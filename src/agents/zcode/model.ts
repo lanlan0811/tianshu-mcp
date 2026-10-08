@@ -144,15 +144,33 @@ export interface ZcodeModelSelectionRaw {
   ambiguous?: boolean;
 }
 
+/**
+ * 解析 `供应商/模型` 参数。
+ *
+ * **按首个 `/` 切分**，不是按「恰好两段」切——模型名自身可能带斜杠，
+ * 于是参数必然出现三段甚至更多（真机 3.14.4.7912 实测，2026-10-08）：
+ *
+ *   openrouter 分组下挂的模型显示名是 `inclusionai/ling-3.0-flash-sante:free`
+ *   （面板 testid `chat-model-select-item-custom:openrouter:inclusionai%2F...%3Afree`），
+ *   用户按「面板分组 + 模型显示名」传参即 `openrouter/inclusionai/ling-3.0-flash-sante:free`。
+ *
+ * 旧实现 `parts.length !== 2` 直接拒绝 → 该模型**完全无法派单**（连参数校验都过不了）。
+ * 因为分组名（provider）与模型名（model）在面板上是两个独立字段、且模型名可含 `/`，
+ * 「第一个 `/` 之前是 provider、之后整段是 model」才是与面板结构一一对应的切分。
+ * 前一个缺陷同源：`cline-pass/deepseek-v4.1-flash` 的斜杠也属于模型名，
+ * 只是它恰好两段所以旧解析没暴露。
+ */
 export function parseZcodeModel(value: string | undefined, level?: string): ZcodeModelSpec {
   if (!value) throw new Error("ZCode 必须指定 model，格式为 供应商/模型");
-  const parts = value.split("/");
-  if (parts.length !== 2 || !parts[0]!.trim() || !parts[1]!.trim())
+  const slash = value.indexOf("/");
+  const provider = slash > 0 ? value.slice(0, slash).trim() : "";
+  const model = slash > 0 ? value.slice(slash + 1).trim() : "";
+  if (!provider || !model)
     throw new Error(`ZCode model 格式错误：${value}（应为 供应商/模型）`);
   const normalized = normalizeZcodeReasoningLevel(level);
   return {
-    provider: parts[0]!.trim(),
-    model: parts[1]!.trim(),
+    provider,
+    model,
     level: normalized.level,
     unsupportedLevel: normalized.unsupported,
   };

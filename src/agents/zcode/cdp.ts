@@ -214,6 +214,17 @@ export class ZcodeCdpClient {
       )) || ""
     );
   }
+  /**
+   * 通用点击：发事件前必须确认目标**真正可点**——在视口内、且该点命中目标自身或其后代。
+   *
+   * 真机 3.14.4.7912 实测（2026-10-08）：`conversation-new-task` 挂在页面滚动容器底部
+   * （y=2474，视口高 640），宽高都 >0 所以旧判据认为「可见」，于是向**视口外**发鼠标事件——
+   * Chromium 直接丢弃，但函数返回 true，形成**假成功**：调用方以为点了，实际页面纹丝不动
+   * （3 轮冒烟每轮都出现「顶部新建任务按钮未建立草稿（clicked=true）」）。
+   *
+   * 与 `probeProjectTrigger` 同一套判据（视口裁剪 + elementFromPoint 命中校验）：
+   * 多匹配、视口外、被遮挡一律返回 false，让调用方走回退分支而不是空等。
+   */
   async click(key: ZcodeSelectorKey): Promise<boolean> {
     if (key === "projectTrigger") {
       // 与等待共用同一就绪判据：多匹配、不可见、禁用、被遮挡一律不算就绪，不发鼠标事件。
@@ -223,7 +234,23 @@ export class ZcodeCdpClient {
       return true;
     }
     const point = await this.evaluate<{ x: number; y: number } | null>(
-      `(function(){for(const s of ${candidateExpr(key, this.selectors)}){for(const e of document.querySelectorAll(s)){const r=e.getBoundingClientRect();if(r.width&&r.height)return {x:r.left+r.width/2,y:r.top+r.height/2}}}return null})()`,
+      `(function(){
+        const vw = innerWidth, vh = innerHeight;
+        for(const s of ${candidateExpr(key, this.selectors)}){
+          for(const e of document.querySelectorAll(s)){
+            const r=e.getBoundingClientRect();
+            if(!(r.width&&r.height))continue;
+            const x=r.left+r.width/2, y=r.top+r.height/2;
+            // 视口外：合成事件会被丢弃，不能当作可点击。
+            if(x<0||y<0||x>vw||y>vh)continue;
+            // 该点必须命中目标自身或其后代；被别的东西盖住不算可点。
+            const hit=document.elementFromPoint(x,y);
+            if(!hit||!(hit===e||e.contains(hit)))continue;
+            return {x,y};
+          }
+        }
+        return null;
+      })()`,
     );
     if (!point) return false;
     await this.clickAt(point.x, point.y);
