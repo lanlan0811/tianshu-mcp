@@ -51,7 +51,8 @@ describe("TraeWork 取消路径不变量", () => {
   it("click() 必须坐标点击优先、DOM click 兜底，且不因元素不支持 click 而抛错", () => {
     const src = fs.readFileSync(CLIENT_TS, "utf8");
     const body = /async click\(key: SelectorKey[\s\S]*?\n  \}/.exec(src)?.[0];
-    expect(body, "未找到 click() 实现").toBeTruthy();
+    // 显式收窄：expect().toBeTruthy() 不改变类型，tsc 仍视 body 为可选
+    if (!body) throw new Error("未找到 click() 实现");
     // 顺序：clickAt（坐标）出现在 e.click()（DOM）之前
     const iCoord = body.indexOf("clickAt(");
     const iDom = body.indexOf(".click()");
