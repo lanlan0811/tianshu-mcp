@@ -1,6 +1,6 @@
 {
   "name": "tianshu-mcp",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "天枢 × AI-Agent 编排 MCP server —— 驱动 Codex、TraeWork、ZCode、Kimi Code、Qoder CN 与 Open Design 完成项目开发、验收、失败返修与再验收闭环。",
   "type": "module",
   "license": "Apache-2.0",
