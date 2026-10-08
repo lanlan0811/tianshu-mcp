@@ -375,7 +375,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
         endReason: "needs_user",
         needsUserKind: "close_existing_instance",
         pendingQuestion:
-          "检测到未开启 CDP 的 ZCode 实例。请保存工作并手动关闭所有 ZCode 窗口，然后调用 continue_task 确认。",
+          "检测到未开启 CDP 的 ZCode 实例。请保存工作并手动关闭所有 ZCode 窗口，然后调用 manage_task 确认。",
         progressSummary: "等待用户关闭既有 ZCode 实例",
       });
     if (!inst.ready)
@@ -387,7 +387,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
       return result({
         endReason: "needs_user",
         needsUserKind: "login_required",
-        pendingQuestion: "请在 ZCode 窗口中完成登录或引导，然后调用 continue_task 确认。",
+        pendingQuestion: "请在 ZCode 窗口中完成登录或引导，然后调用 manage_task 确认。",
         session: {
           boundProjectPath: ctx.projectPath,
           provider: spec.provider,
@@ -493,7 +493,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
      * agent 仍在写产物，MCP 却因一次 poll 失败把任务判死」。
      */
     let reconnected = false;
-    /** 已确认发出的会话身份：随断连一起交回，用户 continue_task 时能回到原会话观察。 */
+    /** 已确认发出的会话身份：随断连一起交回，用户 manage_task 时能回到原会话观察。 */
     const sessionEvidence = (): AgentRunResult["session"] => ({
       id: session.id,
       title: session.title,
@@ -784,7 +784,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
         return result({
           endReason: "needs_user",
           needsUserKind: "setup_recovery",
-          pendingQuestion: `${confirmed.reason}。请在 ZCode 中切换到未绑定项目的新会话（default 工作区）后调用 continue_task；不会向其它项目发送任务。`,
+          pendingQuestion: `${confirmed.reason}。请在 ZCode 中切换到未绑定项目的新会话（default 工作区）后调用 manage_task；不会向其它项目发送任务。`,
           session: {
             id: session.id,
             title: session.title,
@@ -863,7 +863,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
           error: `项目同名或路径重复，无法消歧：${ctx.projectPath}`,
           endReason: "project_ambiguous",
           needsUserKind: "setup_recovery",
-          pendingQuestion: "项目路径存在歧义，请在 ZCode 中确认目标项目后调用 continue_task。",
+          pendingQuestion: "项目路径存在歧义，请在 ZCode 中确认目标项目后调用 manage_task。",
         });
       let projectBound = false;
       if (matched.item) {
@@ -875,7 +875,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
             error: `项目绑定重试时目标项目无法唯一匹配：${ctx.projectPath}；${await describeBinding()}`,
             endReason: "project_mismatch",
             needsUserKind: "setup_recovery",
-            pendingQuestion: "项目绑定尚未确认，请在 ZCode 中确认目标项目后调用 continue_task。",
+            pendingQuestion: "项目绑定尚未确认，请在 ZCode 中确认目标项目后调用 manage_task。",
           });
         if (!projectBound && !binding.unclickable)
           return result({
@@ -883,7 +883,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
             error: `ZCode 项目绑定有限重试均未生效：${ctx.projectPath}；${await describeBinding()}`,
             endReason: "project_mismatch",
             needsUserKind: "setup_recovery",
-            pendingQuestion: "项目绑定尚未确认，请在 ZCode 中确认目标项目后调用 continue_task。",
+            pendingQuestion: "项目绑定尚未确认，请在 ZCode 中确认目标项目后调用 manage_task。",
           });
         // 目标项就在列表里、却一次点击都没真正落下去（issue #27 的幽灵项/不可达项）：
         // 继续重试是徒劳，但也不该直接判死——交给下面的导入路径兜底；
@@ -1021,7 +1021,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
               endReason: selected.needsPermission ? "needs_user" : "setup_failed",
               needsUserKind: selected.needsPermission ? "system_permission" : undefined,
               pendingQuestion: selected.needsPermission
-                ? "请为 ZCode/System Events 授予 Accessibility 权限后调用 continue_task 确认。"
+                ? "请为 ZCode/System Events 授予 Accessibility 权限后调用 manage_task 确认。"
                 : undefined,
               error: selected.needsPermission ? undefined : selected.message,
               hardFailure: !selected.needsPermission,
@@ -1052,7 +1052,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
             : `ZCode 项目绑定回读与 projectPath 不一致，有限幂等重试均失败：${ctx.projectPath}；${await describeBinding()}`,
           endReason: "project_mismatch",
           needsUserKind: "setup_recovery",
-          pendingQuestion: "项目绑定尚未确认，请在 ZCode 中确认目标项目后调用 continue_task。",
+          pendingQuestion: "项目绑定尚未确认，请在 ZCode 中确认目标项目后调用 manage_task。",
         });
       logger.info(`[zcode] 项目绑定回读通过：${ctx.projectPath}`);
       await cdp.dismissMenus();
@@ -1416,7 +1416,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
           e instanceof ZcodeSetupPause && e.needsPermission
             ? "system_permission"
             : "setup_recovery",
-        pendingQuestion: `${msg}。请在 ZCode 中确认目标项目 ${ctx.projectPath}，处理后调用 continue_task；原任务已保留。`,
+        pendingQuestion: `${msg}。请在 ZCode 中确认目标项目 ${ctx.projectPath}，处理后调用 manage_task；原任务已保留。`,
         progressSummary: "自动恢复未能完成，等待处理后继续原任务",
       });
     if (e instanceof ZcodeBudgetError)
@@ -1433,7 +1433,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
       return result({
         endReason: "needs_user",
         needsUserKind: "setup_recovery",
-        pendingQuestion: `${msg}。${diagnosis}。请检查 ZCode 客户端后调用 continue_task 继续观察原任务（不会重发任务）。`,
+        pendingQuestion: `${msg}。${diagnosis}。请检查 ZCode 客户端后调用 manage_task 继续观察原任务（不会重发任务）。`,
         session: e.session,
         progressSummary: "ZCode 运行期 CDP 断连，已保留现场并等待处理",
       });

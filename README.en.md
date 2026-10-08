@@ -68,9 +68,9 @@ Codex · TraeWork · ZCode · Kimi Code · Qoder CN · Open Design · MiniMax Co
         target project workspace ← git repo + tests + .tianshu-mcp/
 ```
 
-- **13 MCP tools** — `run_task / continue_task / query_task / list_tasks / get_task_report / cancel_task / verify_task / rework_task / get_profiles / wait_task / wait_any`, plus `prepare_visual_baseline / approve_visual_baseline` for visual acceptance.
+- **8 MCP tools** (consolidated from 13 by domain as of v0.9.0) — `run_task / query_task / manage_task / verify_task / query_info / wait_task`, plus `prepare_visual_baseline / approve_visual_baseline` for visual acceptance. Merge map: `cancel_task`+`continue_task`+`rework_task` → `manage_task`; `list_tasks`+`get_task_report`+`get_profiles` → `query_info`; `wait_any` → `wait_task` (enhanced).
 - **Async contract — long tasks never block `tools/call`** — `run_task` returns a `taskId` immediately, then `wait_task` blocks until a stop point (terminal status or `needs_user`), or `query_task` polls; progress is persisted, never pushed, so the caller always sees "the last fact written to disk".
-- **Wait primitives (issue #28)** — `wait_task(taskId)` / `wait_any(taskIds)` return in a single call once a task reaches a **stop point** (terminal status or `needs_user`), designed for turn-driven callers: dispatch with `run_task` and wait for the result within the same turn, no hand-rolled polling. Read-only; timeouts or interruptions never affect the task itself.
+- **Wait primitive (issue #28; consolidated in v0.9.0)** — `wait_task(taskId)` or `wait_task(taskIds)` returns in a single call once a task reaches a **stop point** (terminal status or `needs_user`), designed for turn-driven callers: dispatch with `run_task` and wait for the result within the same turn, no hand-rolled polling. Read-only; timeouts or interruptions never affect the task itself.
 - **Objective acceptance, fail-closed** — automated command checks plus programmatic code analysis, all relative to the **git baseline captured before work started**, and the server **never auto-commits / stashes / rolls back**. A test check that exits 0 with zero executed tests, or a git project with zero net changes, fails rather than passing green.
 - **Rework loop** — automatic rework (`autoFixRounds`) plus manual `rework_task`; failure reasons are parsed into **directly executable actions** and fed back to the agent, and exhausted rounds become `needs_attention` awaiting a Tianshu verdict.
 - **Six GUI execution surfaces (CDP)** — each agent uses an isolated CDP flow to drive its desktop UI and reports fine-grained events at key nodes, so `query_task` can tell "the agent is working" apart from "stuck on a dialog waiting for a human".
@@ -126,7 +126,7 @@ The shape of this project is not a free design: it was forced by a handful of **
 
 ## Core features
 
-- **Async dispatch and waiting** — `run_task` returns a `taskId` immediately; `wait_task` blocks until a task reaches a stop point (terminal status or `needs_user`) and `wait_any` waits for the first of a group; use `query_task` for progress detail — status / progress / log tail / recent fine-grained events (`eventLimit`, 1..50, default 10). See [wait primitives](docs/wait-task.en.md).
+- **Async dispatch and waiting** — `run_task` returns a `taskId` immediately; `wait_task` blocks until a task reaches a stop point (terminal status or `needs_user`) — single task via `taskId`, group via `taskIds` (waits for the first); use `query_task` for progress detail — status / progress / log tail / recent fine-grained events (`eventLimit`, 1..50, default 10). See [wait primitives](docs/wait-task.en.md).
 - **Objective acceptance engine** — automated command checks (typecheck/lint/test/build, skipped when absent, plus tech-stack derivation) plus programmatic code analysis (changed-file list / diffstat / suspicious signals such as TODO, debugger, secret-like patterns), all relative to the **git baseline**; command checks run **bounded-parallel** by default (`verifyConcurrency`, default 2, range 1–4; `1` makes them fully serial).
 - **Three fail-closed guards** — a test check fails when its output reports zero executed tests even if the exit code is 0; git projects must produce changes relative to the baseline by default (pure analysis tasks opt out with `"requireChanges": false` in `.tianshu-mcp/acceptance.json`); a round cancelled at any point yields `passed=false`.
 - **Three-level acceptance config inheritance** (issue #20) — `<data-dir>/acceptance.default.json` (global fallback) → `<project>/.tianshu-mcp/acceptance.json` (project override) → the `acceptanceOverride` argument (transient task override, never written to disk). Inspect the effective configuration with `tianshu-mcp config acceptance <projectPath> [--task <id>]`. See the [acceptance config spec](docs/acceptance-config.en.md).
@@ -187,7 +187,7 @@ In Tianshu, go to **Settings → MCP servers → Add** and fill in the fields be
 > - The server ID is the tool prefix: with `tianshu-mcp` the tools are `mcp__tianshu-mcp__run_task` and the other 12.
 > - Arguments are space-separated with **no quotes**; in local development replace `<absolute-repo-path>` with a real absolute path.
 > - The UI has no environment-variable field; to override the data directory, use the `config.json` route below to set `TIANSHU_MCP_HOME`.
-> - Once the connection succeeds you are done; a new session shows all 13 tools.
+> - Once the connection succeeds you are done; a new session shows all 8 tools (as of v0.9.0).
 
 ### Or edit config.json (environment variables supported)
 
@@ -222,21 +222,16 @@ run_task(projectPath=D:/xxx/my-app, task="…task brief…", agentId=codex,
 
 ## Tool surface
 
-13 tools, split into three capability families: `read` (read/query, no side effects), `write` (side effects, all requiring approval), and `execute` (runs project-side commands without changing source; currently only `verify_task`, still approval-free).
+8 tools (consolidated from 13 by domain as of v0.9.0), split into three capability families: `read` (read/query, no side effects), `write` (side effects, all requiring approval), and `execute` (runs project-side commands without changing source; currently only `verify_task`, still approval-free).
 
 | Tool | Capability / approval | Purpose |
 |---|---|---|
 | `run_task` | write + approval | Dispatch work (optionally with auto-verify / auto-rework), returning a `taskId` asynchronously; optional `idempotencyKey`, `acceptanceOverride` and `dryRun` |
-| `continue_task` | write + approval | Resume a `needs_user` session (ZCode / Codex / Kimi Code / Qoder CN / MiniMax Code each have their own resume semantics) |
 | `query_task` | read | Poll status / progress / log tail / recent fine-grained events (optional `eventLimit`) |
-| `list_tasks` | read | Filtered list of historical tasks |
-| `get_task_report` | read | Full text of one round's acceptance report (`report.md`) |
-| `cancel_task` | write + approval | Cancel a running task: CLI agents kill the process tree; GUI agents best-effort click stop over CDP and wait boundedly within `gui.cancelWaitMs` (default 15s); for a terminal GUI task it doubles as the manual confirmation entry |
+| `manage_task` | write + approval | Task lifecycle management; `action` picks one of three: `cancel` cancels a running task (CLI agents kill the process tree; GUI agents best-effort click stop over CDP and wait boundedly within `gui.cancelWaitMs`, default 15s; for a terminal GUI task it doubles as the manual confirmation entry), optional `reason`; `continue` resumes a `needs_user` session (ZCode / Codex / Kimi Code / Qoder CN / MiniMax Code each have their own resume semantics), `message` required; `rework` manual rework (feeds the failure report back to the same agent), optional `feedback` / `repairHint` (up to 4000 chars). **Contains destructive actions** |
 | `verify_task` | execute (no source changes, approval-free) | Run acceptance once against a task or a project path. It runs configured commands and may produce build artifacts, so its MCP `readOnlyHint` is `false` — but it **changes no source and still needs no approval**; optional `idempotencyKey` |
-| `wait_task` | read | Block until one task reaches a stop point (terminal status or `needs_user`) or the timeout elapses; `timeoutMs` defaults to 50000, caps at 600000 — call again after a timeout to keep waiting. Read-only, harmless |
-| `wait_any` | read | Block until the first of a group (1..20) reaches a stop point, in array order; returns that task's snapshot plus the current status of every task. Validates all ids exist, failing if any is missing |
-| `rework_task` | write + approval | Manual rework (feeds the failure report back to the same agent); optional `repairHint` (≤4000 chars) |
-| `get_profiles` | read | Show agent adapters and executable discovery results |
+| `query_info` | read | Unified info lookup; `type` picks one of three: `tasks` filtered list of historical tasks (filterable by `projectPath` / `status`; `limit` defaults to 50, caps at 200); `report` full text of one round's acceptance report (0-based `round`, defaults to the latest); `profiles` agent adapters and executable discovery results |
+| `wait_task` | read | Block until a task reaches a stop point (terminal status or `needs_user`) or the timeout elapses. Single task: pass `taskId`; batch: pass `taskIds` (1..20, all validated to exist, failing if any is missing) and wait for the first in array order, returning its snapshot plus every task's current status. `timeoutMs` defaults to 50000, caps at 600000 — call again after a timeout to keep waiting. Read-only, harmless |
 | `prepare_visual_baseline` | write + approval | Capture or import a reference image and produce a candidate and summary for review |
 | `approve_visual_baseline` | write + approval | After review, validate the summary and write the baseline and approval record |
 
@@ -301,7 +296,7 @@ The built-in `codex` drives the desktop GUI; if you would rather not depend on G
 
 | Capability | Meaning | Approval | Tools |
 |---|---|---|---|
-| `read` | read/query only, no side effects | none | `query_task` / `list_tasks` / `get_task_report` / `get_profiles` / `wait_task` / `wait_any` |
+| `read` | read/query only, no side effects | none | `query_task` / `query_info` / `wait_task` |
 | `write` | has side effects | required | `run_task` / `continue_task` / `cancel_task` / `rework_task` / the two visual baseline tools |
 | `execute` | runs project-side commands, changes no source | none | `verify_task` |
 

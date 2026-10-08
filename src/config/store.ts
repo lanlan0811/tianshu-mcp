@@ -215,7 +215,7 @@ export class DataHome {
     this._profilesCache = null;
   }
 
-  /** 供 get_profiles / adapter resolve 使用：返回一份 profile（含内置合并） */
+  /** 供 query_info(type=profiles) / adapter resolve 使用：返回一份 profile（含内置合并） */
   async getProfile(id: string): Promise<AgentProfile | undefined> {
     const all = await this.loadProfiles();
     return all[id];

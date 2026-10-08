@@ -45,7 +45,7 @@ describe('Qoder public tools and objective acceptance loop',()=>{
     const meta=parseMeta(r.text).meta!;expect(meta.taskId).toBeTruthy();
     const final=await waitForTerminal(f.client,String(meta.taskId));
     expect(final.status,JSON.stringify(final)).toBe('succeeded');expect(rounds.map(c=>c.round)).toEqual([0,1]);expect(rounds[0]?.modelSource).toBe('custom');
-    const report=await callTool(f.client,'get_task_report',{taskId:meta.taskId});expect(report.text).toContain('done-marker');
+    const report=await callTool(f.client,'query_info',{type:'report',taskId:meta.taskId});expect(report.text).toContain('done-marker');
   });
   it('honors the configured repair limit rather than claiming success',async()=>{
     const f=await setup();let runs=0;
@@ -68,7 +68,7 @@ describe('Qoder public tools and objective acceptance loop',()=>{
     const first=await callTool(f.client,'run_task',{projectPath:f.project,agentId:'qoder',task:'implement',planDoc:'plan.md'});
     const taskId=String(parseMeta(first.text).meta?.taskId);
     expect((await waitForTerminal(f.client,taskId)).status).toBe('succeeded');
-    await callTool(f.client,'rework_task',{taskId,feedback:'补充边界说明'});
+    await callTool(f.client,'manage_task',{taskId,action:'rework',feedback:'补充边界说明'});
     expect((await waitForTerminal(f.client,taskId)).status).toBe('succeeded');expect(rounds).toEqual([0,1]);
   });
   it('does not run objective verification or repair when GUI requests approval',async()=>{

@@ -7,6 +7,82 @@
 
 ---
 
+## [0.9.0] — 2026-10-08
+
+> **工具面合并版（BREAKING）**：13 个 MCP 工具按域合并为 **8 个**。工具名有增减，调用方式改变——
+> 升级前请对照下方迁移表改调用方（技能文档 `skills/tianshu-mcp/` 与 README 工具表已同步）。
+
+### 破坏性变更（BREAKING）
+
+**13 → 8：三组合并，视觉基准保持独立**
+
+| 原工具 | 新调用方式 |
+|---|---|
+| `cancel_task(taskId, reason?)` | `manage_task(taskId, action="cancel", reason?)` |
+| `continue_task(taskId, message)` | `manage_task(taskId, action="continue", message)` |
+| `rework_task(taskId, feedback?, repairHint?)` | `manage_task(taskId, action="rework", feedback?, repairHint?)` |
+| `list_tasks(projectPath?, status?, limit?)` | `query_info(type="tasks", projectPath?, status?, limit?)` |
+| `get_task_report(taskId, round?)` | `query_info(type="report", taskId, round?)` |
+| `get_profiles()` | `query_info(type="profiles")` |
+| `wait_any(taskIds, timeoutMs?)` | `wait_task(taskIds, timeoutMs?)`（批量模式） |
+| `wait_task(taskId, timeoutMs?)` | `wait_task(taskId, timeoutMs?)`（**调用方式不变**） |
+| `run_task` / `query_task` / `verify_task` | 不变 |
+| `prepare_visual_baseline` / `approve_visual_baseline` | **不合并**（保持两个独立工具） |
+
+**为什么不合并视觉基准**：这组收益仅约 500 字符，而 `approve_visual_baseline` 的
+`candidateId` / `expectedDigest` / `approvalNote` 三个必填参数构成基准的**防篡改摘要核对闸门**
+（`src/visual/baselines.ts` 校验 `digest(content) !== expectedDigest` 即拒绝）。把三个 action
+塞进一个工具会让该闸门在参数层失去显式位置，风险与收益不成比例。
+
+### 变更
+
+- **`manage_task` 的分支约束在 handler 内校验**。合并后的 schema 是 plain `z.object`
+  （不能用 `z.discriminatedUnion`——实测它经 SDK 序列化后线上退化为
+  `{"type":"object","properties":{}}`，参数信息全丢）。因此：
+  - `action=continue` 要求 `message` 非空（原为 schema 层 `z.string().min(1)`）
+  - 分支专属字段按白名单 fail-closed：`action=cancel` 携带 `message` 会被明确拒绝，
+    而不是静默忽略
+- **`query_info` 同理**：`type=report` 要求 `taskId` 非空。
+  注意 `status` **保持自由字符串**（原 `list_tasks.status` 就是 `z.string().optional()`，
+  未收紧为枚举）；`limit` 上限 200、`round` 的 `.int().min(0)` 逐字保留。
+- **`wait_task` 的二选一约束在下沉层**：`taskId` 与 `taskIds` 必须且只能提供一个，
+  两者都缺或都给均报错。两个模式各自复用原有实现，因此**超时提示文案按模式保留**
+  （单任务回「请再次调用 wait_task 继续等待」，批量回「请再次调用 wait_task（传 taskIds 批量模式）继续等待」）。
+- **注解层**：`destructiveHint` 现由 `manage_task` 承载（MCP 注解是工具级、无法按 action 区分，
+  按「宁可过报不可漏报」标 true，工具描述里已写明「本工具含破坏性 action」）。
+  `readOnlyHint` / `openWorldHint` / `idempotentHint` 的推导规则未变。
+
+### 测试
+
+- 新增 `test/integration/tool-consolidation.test.ts`（21 例）：锁定三条不变量——
+  ① 工具面恰为 8 个且旧名全部消失；② 三个新工具的线上 `inputSchema` 必须暴露非空
+  `properties`（防 `discriminatedUnion` / `.refine()` 空 schema 陷阱）；
+  ③ 分支约束（必填降级、二选一、字段白名单）在下沉层仍 fail-closed。
+  **RED→GREEN**：实施前 11 failed / 10 passed → 实施后 21 passed。
+- `test/protocol/protocol.test.ts`：真值表由 13 行改为 8 行、工具名数组同步、
+  幂等提示否定清单同步。
+- `mcp-gui/test/capabilities.test.ts`：数量断言 13 → 8，新增新工具在列断言。
+- 全量见下节「验证」。
+
+### 验证
+
+- 工具面实测：`tools/list` **8 个工具**（由 13 合并）。
+- `check-schema-parity.mjs`：**MCP 工具面（前端镜像）（8 项）** 一致——真源 ↔ GUI 镜像 ↔ Rust 零漂移。
+- `mcp-gui` 测试 173 passed。
+- 其余门禁见发布说明 `docs/release-v0.9.0.md`。
+
+### 迁移提示
+
+- **技能文档已同步**：`skills/tianshu-mcp/SKILL.md` 与 `usage-examples.md` 的工具表、示例、
+  错误码处置全部改用新调用形式；该技能由 server 启动时幂等同步到
+  `~/.rivet/skills/tianshu-mcp/`，**旧副本不会因 npm 升级自动替换**——若你的安装清单
+  处于「需变更但未自动覆盖」状态，需按 `docs/agent-profiles.md` 的 `--approve-skill-update`
+  流程放行一次。
+- **运行时文案已同步**：`src/agents/**` 中 47 处「请调用 continue_task」类提示已改为
+  `manage_task(action="continue")` 形式，GUI 侧用户引导不会指向已删除的工具。
+
+---
+
 ## [0.8.4] — 2026-10-07
 
 > **工具面瘦身版**：`run_task` / `verify_task` 的 `acceptanceOverride` 线上声明改为骨架形态，

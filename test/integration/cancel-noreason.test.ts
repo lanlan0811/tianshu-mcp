@@ -54,7 +54,7 @@ describe("S1 无理由取消 → cancelled", () => {
     });
     const taskId = (parseMeta(text).meta!.taskId as string) ?? "";
     await new Promise((r) => setTimeout(r, 1200)); // 等进入 running
-    await callTool(ts.client, "cancel_task", { taskId }); // 不传 reason —— P1 复现场景
+    await callTool(ts.client, "manage_task", { action: "cancel", taskId }); // 不传 reason —— P1 复现场景
 
     const final = await waitForTerminal(ts.client, taskId, 15_000);
     expect(final.status).toBe("cancelled");
@@ -80,7 +80,7 @@ describe("S1 无理由取消 → cancelled", () => {
       projectPath: busy, agentId: "stub", task: "B 排队", autoVerify: false,
     });
     const bTask = (parseMeta(bText).meta!.taskId as string) ?? "";
-    await callTool(ts.client, "cancel_task", { taskId: bTask });
+    await callTool(ts.client, "manage_task", { action: "cancel", taskId: bTask });
     const q = await callTool(ts.client, "query_task", { taskId: bTask });
     expect(parseMeta(q.text).meta?.status).toBe("cancelled");
     const snap = snapshot(bTask);
@@ -108,7 +108,7 @@ describe("S1 无理由取消 → cancelled", () => {
       if (Date.now() - start > 20_000) throw new Error("未进入活动态");
       await new Promise((r) => setTimeout(r, 200));
     }
-    await callTool(ts.client, "cancel_task", { taskId });
+    await callTool(ts.client, "manage_task", { action: "cancel", taskId });
     const final = await waitForTerminal(ts.client, taskId, 20_000);
     // 用户取消（有 cancel_requested 事件）→ 必须 cancelled
     const evts = events(taskId);
@@ -154,10 +154,10 @@ describe("S1 无理由取消 → cancelled", () => {
     });
     const taskId = (parseMeta(text).meta!.taskId as string) ?? "";
     await new Promise((r) => setTimeout(r, 800));
-    await callTool(ts.client, "cancel_task", { taskId });
+    await callTool(ts.client, "manage_task", { action: "cancel", taskId });
     await waitForTerminal(ts.client, taskId, 15_000);
-    await callTool(ts.client, "cancel_task", { taskId }); // 再次取消
-    await callTool(ts.client, "cancel_task", { taskId }); // 三次
+    await callTool(ts.client, "manage_task", { action: "cancel", taskId }); // 再次取消
+    await callTool(ts.client, "manage_task", { action: "cancel", taskId }); // 三次
     const evts = events(taskId);
     const reqCount = evts.filter((l) => l.includes('"cancel_requested"')).length;
     const cancCount = evts.filter((l) => l.includes('"cancelled"')).length;

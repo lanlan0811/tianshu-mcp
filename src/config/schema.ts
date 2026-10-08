@@ -843,3 +843,70 @@ export type WireSchemaParityLock = [
   VerifyTaskFieldParity,
   OverrideKeysExact,
 ];
+
+/* ---------------- 工具合并 schema（v0.9.0，13 → 8） ---------------- */
+
+/**
+ * `manage_task` —— 合并 `cancel_task` + `continue_task` + `rework_task`。
+ *
+ * **为什么是 plain `z.object` 而非 `discriminatedUnion`**：实测 `z.discriminatedUnion`
+ * 经 SDK 序列化后线上退化为 `{"type":"object","properties":{}}`，参数信息全部丢失
+ * （详见文件上方 `AcceptanceOverrideWireSchema` 的说明）。因此分支约束只能下沉到 handler：
+ * - `action=continue` 要求 `message` 非空（原 `continue_task` 的 `z.string().min(1)`）
+ * - `action` 之外的字段按分支做白名单，多余字段 fail-closed
+ */
+export const ManageTaskParamsSchema = z.object({
+  taskId: z.string().min(1),
+  action: z.enum(["cancel", "continue", "rework"]),
+  /** `action=cancel`：取消原因（原 `cancel_task.reason`）。 */
+  reason: z.string().optional(),
+  /** `action=continue`：发给原会话的消息；**在 handler 内要求非空**（原为 schema 层必填）。 */
+  message: z.string().optional(),
+  /** `action=rework`：追加指示（原 `rework_task.feedback`）。 */
+  feedback: z.string().optional(),
+  /** `action=rework`：结构化修复提示，上限 4000 字符（原 `rework_task.repairHint`）。 */
+  repairHint: z.string().max(4000).optional(),
+});
+export type ManageTaskParams = z.infer<typeof ManageTaskParamsSchema>;
+
+/**
+ * `query_info` —— 合并 `list_tasks` + `get_task_report` + `get_profiles`。
+ *
+ * 分支约束同样下沉 handler：
+ * - `type=report` 要求 `taskId` 非空
+ * - `type` 之外的字段按分支白名单
+ *
+ * 注意 `status` **保持自由字符串**（原 `list_tasks.status` 就是 `z.string().optional()`，
+ * 收紧成枚举属未论证的语义变更）；`limit` 上限 200 与 `round` 的 `.int().min(0)` 逐字保留。
+ */
+export const QueryInfoParamsSchema = z.object({
+  type: z.enum(["tasks", "report", "profiles"]),
+  /** `type=tasks`：按项目路径过滤。 */
+  projectPath: AbsPath.optional(),
+  /** `type=tasks`：按状态过滤（自由字符串，与原 `list_tasks` 一致）。 */
+  status: z.string().optional(),
+  /** `type=tasks`：返回条数上限，默认 50、上限 200。 */
+  limit: z.number().int().positive().max(200).optional(),
+  /** `type=report`：目标任务 id；**在 handler 内要求非空**（原为 schema 层必填）。 */
+  taskId: z.string().min(1).optional(),
+  /** `type=report`：0-based 报告轮次；缺省返回最新。 */
+  round: z.number().int().min(0).optional(),
+});
+export type QueryInfoParams = z.infer<typeof QueryInfoParamsSchema>;
+
+/**
+ * `wait_task`（增强）—— 合并 `wait_task` + `wait_any`。
+ *
+ * 二选一约束（`taskId` 与 `taskIds` 恰有其一）**只能写在 handler 里**：
+ * `.refine()` 经 SDK 序列化后同样会退化成空 schema。`taskIds` 的 1..20 与
+ * `timeoutMs` 的正整数约束保留在 schema 层（这两条是**单字段**约束，不涉及跨字段）。
+ */
+export const WaitTaskMergedParamsSchema = z.object({
+  /** 单任务模式：等待该任务到停点。 */
+  taskId: z.string().min(1).optional(),
+  /** 批量模式：等待首个到停点者，1..20 个。开始前校验全部存在，缺一即报错。 */
+  taskIds: z.array(z.string().min(1)).min(1).max(WAIT_ANY_TASK_IDS_MAX).optional(),
+  /** 本次等待上限（ms）；缺省默认值，超上限被钳制并如实披露。 */
+  timeoutMs: z.number().int().positive().optional(),
+});
+export type WaitTaskMergedParams = z.infer<typeof WaitTaskMergedParamsSchema>;

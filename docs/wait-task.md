@@ -1,10 +1,10 @@
-# 阻塞等待原语：`wait_task` / `wait_any`（issue #28）
+# 阻塞等待原语：`wait_task`（issue #28；v0.9.0 合并 `wait_any`）
 
 英文版：wait-task.en.md
 
 `run_task` 是异步契约：秒回 `taskId`，不阻塞 `tools/call`。但目标调用方（天枢桌面端的 agent 会话）是**回合驱动**的——agent 只在收到用户消息的回合内执行，回合之间不运行，它**无法自行轮询**。于是在「回合驱动调用方 + 长任务」的组合下，工具面漏掉了任务完成时刻：过去每次任务完成都**必须人工发一条消息**触发查询。
 
-本能力补上这个空白：`wait_task` / `wait_any` 用**一次阻塞式只读调用**承载「等」这个动作，任务到达停点时返回，无需用户干预。
+本能力补上这个空白：`wait_task` 用**一次阻塞式只读调用**承载「等」这个动作，任务到达停点时返回，无需用户干预。单任务传 `taskId`，批量传 `taskIds`（等待数组顺序首个停者）——v0.9.0 起两个模式合并为一个工具。
 
 ## 一、为什么必须是「阻塞等待」
 
@@ -14,7 +14,7 @@
 
 ## 二、停点定义
 
-`wait_task` / `wait_any` 等待的「可返回点」是**停点**：
+`wait_task`（两种模式）等待的「可返回点」是**停点**：
 
 ```text
 isWaitSettled(status) = isTerminal(status) || status === "needs_user"
@@ -38,14 +38,16 @@ isWaitSettled(status) = isTerminal(status) || status === "needs_user"
 
 返回：文本（停点行 / 状态行 / 后续动作指引）+ meta 块，meta 含 `waitSettled`（是否到停点）与 `waitedMs`（实际等待时长）。
 
-### `wait_any(taskIds, timeoutMs?)`
+### 批量模式：`wait_task(taskIds, timeoutMs?)`
 
 阻塞等待**一组**任务中**数组顺序首个**到达停点者。
 
 | 入参 | 必填 | 说明 |
 |---|---|---|
 | `taskIds` | 是 | 1..20 个任务 id；开始前校验全部存在，**缺一即 fail-closed 报错并列出缺失 id** |
-| `timeoutMs` | 否 | 同 `wait_task` |
+| `timeoutMs` | 否 | 同单任务模式 |
+
+> 单任务模式与批量模式**必须且只能提供一个**：两者都缺或都给，会返回明确错误。
 
 返回：到达停点的那一个任务的快照 + meta 块，正文另列出**全部任务当前状态行**。
 
@@ -55,7 +57,7 @@ isWaitSettled(status) = isTerminal(status) || status === "needs_user"
 
 | 调用 | `timeoutMs` 取值 | 行为 |
 |---|---|---|
-| `wait_task` / `wait_any` | 省略 | 使用默认 `50000ms`（低于生态常见 60s 客户端超时，留序列化 / 往返余量） |
+| `wait_task`（两种模式） | 省略 | 使用默认 `50000ms`（低于生态常见 60s 客户端超时，留序列化 / 往返余量） |
 | 同上 | 传 ≤ 600000 | 按传入值等待 |
 | 同上 | 传 > 600000 | **钳制到 600000ms**，并在响应正文**如实写明**「已钳制到上限」 |
 | 同上 | 等待到期仍未到停点 | 返回**当前快照** + 「请再次调用本工具继续等待」指引（`waitSettled=false`） |
@@ -99,7 +101,7 @@ wait_task(taskId)          # 恢复后继续等（needs_user 可多次进入）
 ### 5.4 多任务先到者
 
 ```text
-wait_any(taskIds=[tsk_a, tsk_b, tsk_c], timeoutMs=50000)
+wait_task(taskIds=[tsk_a, tsk_b, tsk_c], timeoutMs=50000)   # 批量模式
   → 已有任务到达停点（等待 8 秒）：tsk_b —— 状态: [FAIL] 任务失败
      全部任务当前状态：…
 ```

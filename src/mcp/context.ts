@@ -70,7 +70,7 @@ export function makeBuildCtx(services: AppServices) {
 
 /**
  * GUI agent 的会话恢复块。
- * - zcode：需要显式回选原会话（sessionId/sessionTitle），轮次 > 0 或 continue_task 时启用。
+ * - zcode：需要显式回选原会话（sessionId/sessionTitle），轮次 > 0 或 manage_task 时启用。
  * - codex：实例与当前对话常驻，只需「复用同一会话」意图，无需回选 id。
  * - kimicode：与 zcode 同构（主窗口 URL + 侧栏都能定位会话），锚点用 kimicodeSession*；
  *   user_confirmation 恢复透传 reobserve（重连观察，不发送任何消息）。

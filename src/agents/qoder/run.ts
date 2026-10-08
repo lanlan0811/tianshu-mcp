@@ -78,7 +78,7 @@ export async function runQoderTask(args:{ctx:TaskContext;resolved:ResolvedAgent;
     const saved=await readJsonSafe<Checkpoint>(checkpointFile);
     checkpoint=saved??undefined;
     const instance=await d.ensureInstance(resolved.command,g,opts.logger,{signal,deadline:setupEnd});
-    if(instance.needsClose)return pause('close_existing_instance','Qoder CN 已打开但无法连接；请保存现场并手动关闭后 continue_task，MCP 不自动重启。');
+    if(instance.needsClose)return pause('close_existing_instance','Qoder CN 已打开但无法连接；请保存现场并手动关闭后 manage_task，MCP 不自动重启。');
     if(!instance.ready)throw new Error('qoder_instance_unavailable');
     c=d.createClient(instance.ready.port,Math.max(1,Math.min(g.cdpSendTimeoutMs,setupEnd-Date.now())),g.selectors);
     try { await c.connect(); } catch(error) {

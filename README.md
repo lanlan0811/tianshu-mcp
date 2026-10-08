@@ -68,9 +68,9 @@ Codex · TraeWork · ZCode · Kimi Code · Qoder CN · Open Design · MiniMax Co
         目标项目工作区            ← git 仓库 + 测试 + .tianshu-mcp/
 ```
 
-- **13 个 MCP 工具** —— `run_task / continue_task / query_task / list_tasks / get_task_report / cancel_task / verify_task / rework_task / get_profiles / wait_task / wait_any`，外加视觉验收的 `prepare_visual_baseline / approve_visual_baseline`。
+- **8 个 MCP 工具**（v0.9.0 起由 13 个按域合并）—— `run_task / query_task / manage_task / verify_task / query_info / wait_task`，外加视觉验收的 `prepare_visual_baseline / approve_visual_baseline`。合并映射：`cancel_task`+`continue_task`+`rework_task` → `manage_task`；`list_tasks`+`get_task_report`+`get_profiles` → `query_info`；`wait_any` → `wait_task`（增强）。
 - **异步契约，长任务不卡 `tools/call`** —— `run_task` 秒回 `taskId`，用 `wait_task` 阻塞等到停点（终态或 `needs_user`）、或用 `query_task` 轮询；进度只落盘、不推送，调用方看到的始终是「最后一次落盘的事实」。
-- **等待原语（issue #28）** —— `wait_task(taskId)` / `wait_any(taskIds)` 一次调用即等到任务到达**停点**（终态或 `needs_user`），专为回合驱动调用方设计：`run_task` 后在本回合内直接等结果，无需自行轮询；纯只读、超时/中断对任务本体零影响。
+- **等待原语（issue #28；v0.9.0 合并）** —— `wait_task(taskId)` 或 `wait_task(taskIds)` 一次调用即等到任务到达**停点**（终态或 `needs_user`），专为回合驱动调用方设计：`run_task` 后在本回合内直接等结果，无需自行轮询；纯只读、超时/中断对任务本体零影响。
 - **客观验收，fail-closed** —— 自动命令检查 + 程序化代码分析，全部相对动工前的 **git 基线**，**绝不自动 commit / stash / 回滚**；「测试退出码 0 但零用例」「git 项目零净变更」都判失败，杜绝假绿。
 - **失败返修闭环** —— 自动返修（`autoFixRounds`）+ 手动 `rework_task`；失败原因被解析为**可直接执行的动作**随计划喂回 agent，轮次耗尽转 `needs_attention` 等天枢裁决。
 - **六个 GUI 执行面（CDP）** —— 各 agent 使用隔离的 CDP 流程驱动桌面 UI，并在关键节点上报细粒度事件，`query_task` 因此能区分「agent 正在干活」与「卡在弹窗等人工介入」。
@@ -184,10 +184,10 @@ npm install -g tianshu-mcp
 | 命令 | `npx` | `node` |
 | 参数（空格分隔） | `-y tianshu-mcp` | `<仓库绝对路径>/dist/index.js` |
 
-> - 服务器 ID 即工具前缀：填 `tianshu-mcp` 后工具名为 `mcp__tianshu-mcp__run_task` 等 13 个。
+> - 服务器 ID 即工具前缀：填 `tianshu-mcp` 后工具名为 `mcp__tianshu-mcp__run_task` 等 8 个（v0.9.0 起）。
 > - 参数按空格分隔填写，**不要加引号**；本地开发模式请把 `<仓库绝对路径>` 换成真实绝对路径。
 > - 界面未提供环境变量输入框；如需自定义数据目录，改用下面的 `config.json` 方式设置 `TIANSHU_MCP_HOME`。
-> - 添加后连接成功即完成；新开会话即可看到 13 个工具。
+> - 添加后连接成功即完成；新开会话即可看到 8 个工具（v0.9.0 起）。
 
 ### 或改 config.json（可配环境变量）
 
@@ -205,7 +205,7 @@ npm install -g tianshu-mcp
 }
 ```
 
-新开会话后，工具面出现 `mcp__tianshu-mcp__run_task` 等 13 个工具。一次典型闭环：
+新开会话后，工具面出现 `mcp__tianshu-mcp__run_task` 等 8 个工具（v0.9.0 起）。一次典型闭环：
 
 ```text
 run_task(projectPath=D:/xxx/my-app, task="…任务书…", agentId=codex,
@@ -222,21 +222,16 @@ run_task(projectPath=D:/xxx/my-app, task="…任务书…", agentId=codex,
 
 ## 工具面
 
-13 个工具，按能力分为三族：`read`（读 / 查询，无副作用）、`write`（有副作用，全部需审批）、`execute`（执行项目侧命令但不改源码，当前仅 `verify_task`，仍免审批）。
+8 个工具（v0.9.0 起由 13 个按域合并），按能力分为三族：`read`（读 / 查询，无副作用）、`write`（有副作用，全部需审批）、`execute`（执行项目侧命令但不改源码，当前仅 `verify_task`，仍免审批）。
 
 | 工具 | 能力 / 审批 | 作用 |
 |---|---|---|
 | `run_task` | write + 审批 | 派活（可带自动验收 / 自动返修），异步返回 `taskId`；可选 `idempotencyKey`、`acceptanceOverride` 与 `dryRun` |
-| `continue_task` | write + 审批 | 恢复 `needs_user` 的原会话（ZCode / Codex / Kimi Code / Qoder CN / MiniMax Code 各有恢复语义） |
 | `query_task` | read | 轮询状态 / 进度 / 日志尾 / 最近细粒度事件（可选 `eventLimit`） |
-| `list_tasks` | read | 历史任务过滤列表 |
-| `get_task_report` | read | 某轮验收报告全文（`report.md`） |
-| `cancel_task` | write + 审批 | 取消运行中任务：CLI agent kill 进程树；GUI agent 经 CDP 尽力点停止并在 `gui.cancelWaitMs`（默认 15s）内有界等待；对已终态 GUI 任务兼任人工确认入口 |
+| `manage_task` | write + 审批 | 任务生命周期管理，`action` 三选一：`cancel` 取消运行中任务（CLI kill 进程树；GUI 经 CDP 尽力点停止并在 `gui.cancelWaitMs`（默认 15s）内有界等待；对已终态 GUI 任务兼任人工确认入口），可带 `reason`；`continue` 恢复 `needs_user` 的原会话（ZCode / Codex / Kimi Code / Qoder CN / MiniMax Code 各有恢复语义），`message` 必填；`rework` 手动返修（把失败报告喂回同一 agent），可选 `feedback` / `repairHint`（≤4000 字符）。**含破坏性 action** |
 | `verify_task` | execute（不改源码，免审批） | 对任务 / 项目路径做一次验收。会跑项目配置命令、可能产生构建产物，故 MCP `readOnlyHint` 为 `false`，但**不改源码、仍免审批**；可选 `idempotencyKey` |
-| `wait_task` | read | 阻塞等待单任务到达停点（终态或 `needs_user`）或超时；`timeoutMs` 缺省 50000、上限 600000，超时返回后再调一次继续等。纯只读、无害 |
-| `wait_any` | read | 阻塞等待一组任务（1..20）中数组顺序首个到达停点者；返回该任务快照 + 全部任务当前状态。校验全部 id 存在，缺一即报错 |
-| `rework_task` | write + 审批 | 手动返修（把失败报告喂回同一 agent）；可选 `repairHint`（≤4000 字符） |
-| `get_profiles` | read | 查看 agent 适配与可执行探测结果 |
+| `query_info` | read | 统一信息查询，`type` 三选一：`tasks` 历史任务过滤列表（可按 `projectPath` / `status` 过滤，`limit` 默认 50、上限 200）；`report` 某轮验收报告全文（`round` 0-based、缺省最新）；`profiles` 查看 agent 适配与可执行探测结果 |
+| `wait_task` | read | 阻塞等待任务到达停点（终态或 `needs_user`）或超时。单任务传 `taskId`；批量传 `taskIds`（1..20，校验全部存在、缺一即报错）等数组顺序首个停者，返回其快照 + 全部任务当前状态。`timeoutMs` 缺省 50000、上限 600000，超时返回后再调一次继续等。纯只读、无害 |
 | `prepare_visual_baseline` | write + 审批 | 截图或导入参考图，生成待审阅候选和摘要 |
 | `approve_visual_baseline` | write + 审批 | 用户审阅后校验摘要并写入基准与审批记录 |
 

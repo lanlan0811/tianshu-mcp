@@ -53,7 +53,7 @@ describe("R1 运行中任务取消持久化", () => {
     const taskId = (parseMeta(text).meta!.taskId as string) ?? "";
     // 等进入 running
     await new Promise((r) => setTimeout(r, 1200));
-    const c = await callTool(ts.client, "cancel_task", { taskId, reason: "R1 测试取消" });
+    const c = await callTool(ts.client, "manage_task", { action: "cancel", taskId, reason: "R1 测试取消" });
     const cMeta = parseMeta(c.text).meta;
     // cancel_task 是异步：此刻可能是 running（进程将被杀），也可能已落 cancelled
     expect(["cancelled", "running", "fixing", "verify_start", "queued"]).toContain(cMeta?.status);
@@ -84,7 +84,7 @@ describe("R1 运行中任务取消持久化", () => {
     });
     const taskId = (parseMeta(text).meta!.taskId as string) ?? "";
     await new Promise((r) => setTimeout(r, 1000));
-    await callTool(ts.client, "cancel_task", { taskId, reason: "持久化" });
+    await callTool(ts.client, "manage_task", { action: "cancel", taskId, reason: "持久化" });
     await waitForTerminal(ts.client, taskId, 15_000);
 
     // 关掉旧 server，用同一数据目录重建
@@ -108,9 +108,9 @@ describe("R1 运行中任务取消持久化", () => {
     });
     const taskId = (parseMeta(text).meta!.taskId as string) ?? "";
     await new Promise((r) => setTimeout(r, 800));
-    await callTool(ts.client, "cancel_task", { taskId, reason: "第一次" });
+    await callTool(ts.client, "manage_task", { action: "cancel", taskId, reason: "第一次" });
     await waitForTerminal(ts.client, taskId, 15_000);
-    const again = await callTool(ts.client, "cancel_task", { taskId, reason: "第二次" });
+    const again = await callTool(ts.client, "manage_task", { action: "cancel", taskId, reason: "第二次" });
     const q = await callTool(ts.client, "query_task", { taskId });
     expect(parseMeta(q.text).meta?.status).toBe("cancelled");
     void again;
@@ -138,7 +138,7 @@ describe("R1 验收中 / 自动返修中取消", () => {
       if (Date.now() - start > 20_000) throw new Error("任务未进入活动态");
       await new Promise((r) => setTimeout(r, 200));
     }
-    await callTool(ts.client, "cancel_task", { taskId, reason: "返修中取消" });
+    await callTool(ts.client, "manage_task", { action: "cancel", taskId, reason: "返修中取消" });
     const final = await waitForTerminal(ts.client, taskId, 20_000);
     expect(["cancelled", "interrupted"]).toContain(final.status);
     // 若进了 cancelled 则必须是 cancel_requested 驱动的终态；interrupted 仅在 server 关闭类场景

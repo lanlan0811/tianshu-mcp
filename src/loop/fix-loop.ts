@@ -75,7 +75,7 @@ export interface OrchestrateResult {
 /**
  * agent 侧异常结束、实例已保留的 endReason 集合。
  *
- * 这些情形下**必须**落 `needs_attention`（非终态、可 continue_task 恢复），
+ * 这些情形下**必须**落 `needs_attention`（非终态、可 manage_task 恢复），
  * 绝不能进入项目验收链——否则「从未观测到运行信号」的任务会被当成成功派发的结果去验收。
  */
 export const AGENT_ABORT_END_REASONS = ["idle_timeout", "task_timeout", "cdp_disconnected"] as const;
@@ -307,7 +307,7 @@ export class TaskOrchestrator {
           return { status: "needs_user", meta, summary: meta.lastMessage };
         }
         // issue #31：这几种 endReason 表示「agent 侧异常结束、实例已保留」，必须落
-        // needs_attention（非终态、可 continue_task 恢复），**不得**进入项目验收链。
+        // needs_attention（非终态、可 manage_task 恢复），**不得**进入项目验收链。
         if (shouldParkAsNeedsAttention(meta.agentId, runRes.endReason)) {
           // 文案优先用 runRes.error（各 driver 已自带 agent 名与具体原因），避免在此重复硬编码映射。
           const message = runRes.error ?? `${meta.agentId} 执行中止：${runRes.endReason}`;
@@ -569,12 +569,12 @@ export class TaskOrchestrator {
           continue;
         }
         if (maxRounds === 0) {
-          // 未开启自动返修：验收失败 → failed，天枢可手动 rework_task 或 verify_task 复查
-          const msg = `验收失败（第 ${round} 轮）。未开启自动返修。可用 rework_task(${meta.taskId}, feedback=失败摘要) 手动续修，或 get_task_report 查看报告后裁决。`;
+          // 未开启自动返修：验收失败 → failed，天枢可手动 manage_task(rework) 或 verify_task 复查
+          const msg = `验收失败（第 ${round} 轮）。未开启自动返修。可用 manage_task(${meta.taskId}, action="rework", feedback=失败摘要) 手动续修，或 query_info(type="report", taskId) 查看报告后裁决。`;
           return this.finish("failed", "verify_failed", `${msg}\n\n${verdict.summary}`);
         }
         // 自动返修轮次用尽 → needs_attention（待天枢裁决）
-        const msg = `验收失败，自动返修轮次已用尽（${meta.roundsUsed}/${maxRounds} 轮）。建议人工介入或调 rework_task 追加指示。`;
+        const msg = `验收失败，自动返修轮次已用尽（${meta.roundsUsed}/${maxRounds} 轮）。建议人工介入或调 manage_task(action="rework") 追加指示。`;
         meta.lastMessage = msg;
         await store.updateStatus(meta, "needs_attention", msg);
         return { status: "needs_attention", meta, summary: `${msg}\n\n${verdict.summary}` };

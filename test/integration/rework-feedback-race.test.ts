@@ -51,7 +51,7 @@ describe("rework 反馈竞态（R-REWORK-1）", () => {
       expect(failed.status).toBe("failed"); // fix-on-first 首轮写 FAIL
 
       // 立即 rework（不给收尾留时间，制造交错）
-      const rw = await callTool(ts.client, "rework_task", {
+      const rw = await callTool(ts.client, "manage_task", { action: "rework",
         taskId,
         feedback: "上一轮验收失败：done.txt 内容必须是 PASS。请修复。",
       });

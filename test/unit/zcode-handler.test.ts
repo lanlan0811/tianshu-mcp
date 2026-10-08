@@ -331,8 +331,11 @@ describe("无项目任务的验收入口语义", () => {
     expect(result.content[0]?.text).toMatch(/no_project/);
   });
 
-  it("get_task_report 对无项目任务说明不产生项目验收报告", async () => {
-    const result = await handlers(defaultMeta).get_task_report({ taskId: "tsk_default" });
+  it("query_info(type=report) 对无项目任务说明不产生项目验收报告", async () => {
+    const result = await handlers(defaultMeta).query_info({
+      type: "report",
+      taskId: "tsk_default",
+    });
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toMatch(/no_project/);
   });

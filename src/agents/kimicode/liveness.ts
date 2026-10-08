@@ -180,7 +180,7 @@ export function judgeKimicodePoll(
         kind: "needs_user",
         state: { hash, stable: 0, idleSince: 0, sawRunning: true },
         evidence: `${evidence}+stall`,
-        question: `Kimi Code 停止按钮持续可见且对话内容已停滞约 ${Math.round(stallTimeoutMs / 1000)}s：agent 可能在等待用户确认或长时间静默。请回到 Kimi Code 窗口确认后调用 continue_task。`,
+        question: `Kimi Code 停止按钮持续可见且对话内容已停滞约 ${Math.round(stallTimeoutMs / 1000)}s：agent 可能在等待用户确认或长时间静默。请回到 Kimi Code 窗口确认后调用 manage_task。`,
       };
     return { kind: "running", state: { hash, stable: 0, idleSince: 0, sawRunning: true }, evidence };
   }

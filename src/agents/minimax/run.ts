@@ -454,8 +454,8 @@ async function observeMinimax(args: MinimaxObserveArgs): Promise<AgentRunResult>
         endReason: "needs_user",
         needsUserKind: userConfirmation ? "user_confirmation" : "agent_question",
         pendingQuestion: userConfirmation
-          ? `${question ? `${question}\n` : ""}请在 MiniMax Code 窗口中处理该等待项后调用 continue_task(taskId, message=已处理说明) 恢复；恢复后仅重新接入观察，不会发送消息。`
-          : `${question ?? "MiniMax Code 正在等待用户输入"}。请调用 continue_task(taskId, message=回答内容) 提交回答：MCP 会把回答写进原会话，不会重发任务书。`,
+          ? `${question ? `${question}\n` : ""}请在 MiniMax Code 窗口中处理该等待项后调用 manage_task(taskId, action='continue', message=已处理说明) 恢复；恢复后仅重新接入观察，不会发送消息。`
+          : `${question ?? "MiniMax Code 正在等待用户输入"}。请调用 manage_task(taskId, action='continue', message=回答内容) 提交回答：MCP 会把回答写进原会话，不会重发任务书。`,
         session: session(),
         progressSummary: "MiniMax Code 等待用户处理",
       });
@@ -622,7 +622,7 @@ export async function runMinimaxTask(args: RunMinimaxArgs): Promise<AgentRunResu
         endReason: "needs_user",
         needsUserKind: "close_existing_instance",
         pendingQuestion:
-          "检测到未开启 CDP 的 MiniMax Code 实例。请保存工作并手动关闭所有 MiniMax Code 窗口，然后调用 continue_task 确认（不会自动结束你的进程）。",
+          "检测到未开启 CDP 的 MiniMax Code 实例。请保存工作并手动关闭所有 MiniMax Code 窗口，然后调用 manage_task 确认（不会自动结束你的进程）。",
         session: sessionMeta(),
         progressSummary: "等待用户关闭既有 MiniMax Code 实例",
       });
@@ -641,7 +641,7 @@ export async function runMinimaxTask(args: RunMinimaxArgs): Promise<AgentRunResu
         endReason: "needs_user",
         needsUserKind: "login_required",
         pendingQuestion:
-          "MiniMax Code 主窗口已连接，但消息输入框在观察期内始终未出现（通常意味着停在登录/引导页）。请在 MiniMax Code 中完成登录或引导，然后调用 continue_task 确认。",
+          "MiniMax Code 主窗口已连接，但消息输入框在观察期内始终未出现（通常意味着停在登录/引导页）。请在 MiniMax Code 中完成登录或引导，然后调用 manage_task 确认。",
         session: sessionMeta(),
         progressSummary: "等待 MiniMax Code 登录/引导完成",
       });
@@ -758,8 +758,8 @@ export async function runMinimaxTask(args: RunMinimaxArgs): Promise<AgentRunResu
           needsUserKind: needsPermission ? "system_permission" : "setup_recovery",
           error: needsPermission ? undefined : (describe[reason] ?? "项目绑定失败"),
           pendingQuestion: needsPermission
-            ? "请为 MiniMax Code 授予系统权限后调用 continue_task 确认。"
-            : `${describe[reason] ?? "项目绑定失败"}。请在 MiniMax Code 中确认目标项目后调用 continue_task；不会向其它项目发送任务。`,
+            ? "请为 MiniMax Code 授予系统权限后调用 manage_task 确认。"
+            : `${describe[reason] ?? "项目绑定失败"}。请在 MiniMax Code 中确认目标项目后调用 manage_task；不会向其它项目发送任务。`,
           session: sessionMeta(),
           progressSummary: "等待 MiniMax Code 项目绑定",
         });
@@ -947,7 +947,7 @@ export async function runMinimaxTask(args: RunMinimaxArgs): Promise<AgentRunResu
           e instanceof MinimaxSetupPause && e.needsPermission
             ? "system_permission"
             : "setup_recovery",
-        pendingQuestion: `${msg}。请在 MiniMax Code 中确认项目 ${ctx.projectPath} 与模型 ${ctx.model ?? ""}，处理后调用 continue_task；原任务已保留。`,
+        pendingQuestion: `${msg}。请在 MiniMax Code 中确认项目 ${ctx.projectPath} 与模型 ${ctx.model ?? ""}，处理后调用 manage_task；原任务已保留。`,
         progressSummary: "自动恢复未能完成，等待处理后继续原任务",
       });
     if (e instanceof MinimaxBudgetError)

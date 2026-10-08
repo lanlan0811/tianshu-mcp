@@ -223,7 +223,7 @@ export async function diagnosePortFailure(
       if (n > 0)
         parts.push(
           `检测到 ${n} 个未带调试端口的既有 TRAE SOLO CN 进程（单实例锁会拦下新的调试实例）；` +
-            "请先关闭这些窗口，或以任务书要求用户手动启动后再 continue_task（MCP 不自动终止既有实例）",
+            "请先关闭这些窗口，或以任务书要求用户手动启动后再 manage_task（MCP 不自动终止既有实例）",
         );
     } catch (e) {
       parts.push(`进程枚举失败：${(e as Error).message}`);

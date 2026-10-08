@@ -260,7 +260,7 @@ export async function runCodexTask(args: RunCodexArgs): Promise<AgentRunResult> 
       return result({
         endReason: "needs_user",
         needsUserKind: "login_required",
-        pendingQuestion: "请在 Codex 窗口中完成登录或引导，然后调用 continue_task 确认。",
+        pendingQuestion: "请在 Codex 窗口中完成登录或引导，然后调用 manage_task 确认。",
         session: { boundProjectPath: ctx.projectPath, model: spec.model, permissionMode: gui.defaultPermissionMode },
       });
     }
@@ -505,7 +505,7 @@ export async function runCodexTask(args: RunCodexArgs): Promise<AgentRunResult> 
         return result({
           endReason: "needs_user",
           needsUserKind: "login_required",
-          pendingQuestion: "Codex 需要登录，请在窗口中完成登录后调用 continue_task 确认。",
+          pendingQuestion: "Codex 需要登录，请在窗口中完成登录后调用 manage_task 确认。",
           session: { boundProjectPath: ctx.projectPath, model: spec.model, permissionMode: gui.defaultPermissionMode },
         });
       }
@@ -519,7 +519,7 @@ export async function runCodexTask(args: RunCodexArgs): Promise<AgentRunResult> 
           endReason: "needs_user",
           needsUserKind: "user_confirmation",
           pendingQuestion:
-            "Codex 停止按钮持续可见且对话内容长时间未变化，疑似在等待用户确认（方案确认/订阅确认等）。请在 Codex 窗口完成处理后调用 continue_task(taskId, message=已处理说明) 恢复；恢复后仅重新接入观察，不会发送消息。",
+            "Codex 停止按钮持续可见且对话内容长时间未变化，疑似在等待用户确认（方案确认/订阅确认等）。请在 Codex 窗口完成处理后调用 manage_task(taskId, action='continue', message=已处理说明) 恢复；恢复后仅重新接入观察，不会发送消息。",
           session: { boundProjectPath: ctx.projectPath, model: spec.model, permissionMode: gui.defaultPermissionMode },
         });
       }

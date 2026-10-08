@@ -155,7 +155,7 @@ export function judgeOpenDesignPoll(
         question:
           question ??
           `Open Design 停止按钮持续可见且对话与产物均已停滞约 ${Math.round(stallTimeoutMs / 1000)}s：` +
-            `agent 可能在等待用户确认或长时间静默。请回到 Open Design 窗口确认后调用 continue_task。`,
+            `agent 可能在等待用户确认或长时间静默。请回到 Open Design 窗口确认后调用 manage_task。`,
       };
     }
     return { kind: "running", state: { hash, stable: 0, idleSince: 0, sawRunning: true }, evidence };

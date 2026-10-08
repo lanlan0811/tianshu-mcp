@@ -67,7 +67,7 @@ describe("run_task → 自动验收（good 剧本）", () => {
     expect((final.changedFiles as string[]) ?? []).toContain("done.txt");
 
     // 报告可读
-    const report = await callTool(ts.client, "get_task_report", { taskId });
+    const report = await callTool(ts.client, "query_info", { type: "report", taskId });
     expect(report.text).toContain("done-marker");
     expect(report.text).toContain("验收");
   }, 60_000);
@@ -93,7 +93,7 @@ describe("自动返修（fix-on-first 剧本）", () => {
     expect(content.trim()).toBe("PASS");
 
     // fixing 事件存在
-    const list = await callTool(ts.client, "list_tasks", { projectPath: proj });
+    const list = await callTool(ts.client, "query_info", { type: "tasks", projectPath: proj });
     expect(list.text).toContain(taskId);
   }, 90_000);
 });
@@ -114,7 +114,7 @@ describe("needs_attention（never 剧本）", () => {
     expect(final.round).toBe(3); // 初跑 + 2 轮返修
 
     // 可读报告
-    const report = await callTool(ts.client, "get_task_report", { taskId });
+    const report = await callTool(ts.client, "query_info", { type: "report", taskId });
     expect(report.text).toContain("done-marker");
     const content = await fs.readFile(path.join(proj, "done.txt"), "utf8");
     expect(content.trim()).toBe("FAIL");
@@ -137,7 +137,7 @@ describe("手动 rework_task（入口 B）", () => {
     expect(failed.status).toBe("failed"); // 未开自动返修 → failed
 
     // 手动返修：把失败摘要作为 feedback
-    const rw = await callTool(ts.client, "rework_task", {
+    const rw = await callTool(ts.client, "manage_task", { action: "rework",
       taskId,
       feedback: "上一轮验收失败：done.txt 内容必须是 PASS。请修复。",
     });
@@ -192,7 +192,7 @@ describe("cancel_task", () => {
     });
     const taskId = (parseMeta(bText).meta!.taskId as string) ?? "";
     // B 此刻应 queued；取消
-    const c = await callTool(ts.client, "cancel_task", { taskId, reason: "测试取消排队任务" });
+    const c = await callTool(ts.client, "manage_task", { action: "cancel", taskId, reason: "测试取消排队任务" });
     const cMeta = parseMeta(c.text).meta;
     expect(cMeta?.status).toBe("cancelled");
     const q = await callTool(ts.client, "query_task", { taskId });

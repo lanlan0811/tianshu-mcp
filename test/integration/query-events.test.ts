@@ -147,7 +147,7 @@ describe("rework_task 上报 rework_triggered（issue #18）", () => {
   it("手动返修写入类型化事件而非匿名 note", async () => {
     const taskId = await runStubTask("请实现：新建 rework-events.txt，内容为 PASS。");
 
-    const { text } = await callTool(ts.client, "rework_task", {
+    const { text } = await callTool(ts.client, "manage_task", { action: "rework",
       taskId,
       feedback: "补充单元测试",
     });

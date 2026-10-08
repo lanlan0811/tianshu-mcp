@@ -83,7 +83,7 @@ describe("wait_task 端到端", () => {
     const waitP = callTool(ts.client, "wait_task", { taskId, timeoutMs: 20_000 });
     await new Promise((r) => setTimeout(r, 300));
     const cancelStarted = Date.now();
-    const c = await callTool(ts.client, "cancel_task", { taskId, reason: "集成测试：等待中取消" });
+    const c = await callTool(ts.client, "manage_task", { action: "cancel", taskId, reason: "集成测试：等待中取消" });
     // cancel 本身不能在 wait 结束前被阻塞
     expect(Date.now() - cancelStarted).toBeLessThan(5_000);
     expect(parseMeta(c.text).meta?.status).toBe("cancelled");
@@ -100,7 +100,7 @@ describe("wait_any 端到端", () => {
     const slow = await dispatchSleep(6000);
     const fast = await dispatchSleep(700);
     // 数组顺序把「慢的」放前面：结果必须是「快的」（数组里首个已停）
-    const { text } = await callTool(ts.client, "wait_any", {
+    const { text } = await callTool(ts.client, "wait_task", {
       taskIds: [slow.taskId, fast.taskId],
       timeoutMs: 20_000,
     });
@@ -115,7 +115,7 @@ describe("wait_any 端到端", () => {
 
   it("I6 缺一即报错（fail-closed，列出缺失 id）", async () => {
     const a = await dispatchSleep(700);
-    const { res, text } = await callTool(ts.client, "wait_any", {
+    const { res, text } = await callTool(ts.client, "wait_task", {
       taskIds: [a.taskId, "tsk_missing_yyy"],
       timeoutMs: 5_000,
     });

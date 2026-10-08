@@ -454,7 +454,7 @@ export class TaskManager {
     } else {
       return {
         found: false,
-        reason: `continue_task 当前仅支持 zcode/codex/kimicode/qoder/opendesign 任务（agentId=${meta.agentId}）`,
+        reason: `manage_task(action="continue") 当前仅支持 zcode/codex/kimicode/qoder/opendesign 任务（agentId=${meta.agentId}）`,
       };
     }
     meta.status = "queued";

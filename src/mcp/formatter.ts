@@ -47,7 +47,7 @@ export interface MetaBlockFields {
   guiStop?: {clicked: boolean; idle: boolean};
   /**
    * GUI 任务终态是否**未确认**停止（issue #14）：true 时窗口中的任务可能仍在运行，
-   * 必须先人工确认再重派；确认后用 cancel_task 清除（清除后回 false）。
+   * 必须先人工确认再重派；确认后用 manage_task(action="cancel") 清除（清除后回 false）。
    */
   guiStopUnconfirmed?: boolean;
   progressSummary?: string;
@@ -86,7 +86,7 @@ export interface MetaBlockFields {
    */
   dryRunPlanDoc?: string;
   /**
-   * 等待原语（issue #28）：`wait_task` / `wait_any` 是否等到了停点（终态或 needs_user）。
+   * 等待原语（issue #28，v0.9.0 合并为 `wait_task`）是否等到了停点（终态或 needs_user）。
    * `true`=已到停点；`false`=超时 / 被中断。仅等待工具填充，其余工具省略。
    */
   waitSettled?: boolean;

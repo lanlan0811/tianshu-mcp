@@ -64,7 +64,7 @@ describe("rework_task 的 repairHint（issue #19）", () => {
     const taskId = await runFailingTask();
 
     const hint = "src/done.txt:1 — 内容应为 PASS 而非 TODO → 把该行改为 PASS";
-    const { text } = await callTool(ts.client, "rework_task", {
+    const { text } = await callTool(ts.client, "manage_task", { action: "rework",
       taskId,
       feedback: "请按提示修复后重跑验收。",
       repairHint: hint,
@@ -88,7 +88,7 @@ describe("rework_task 的 repairHint（issue #19）", () => {
   it("不传 repairHint 时行为与既有版本一致（任务书里没有该块）", async () => {
     const taskId = await runFailingTask();
 
-    await callTool(ts.client, "rework_task", {
+    await callTool(ts.client, "manage_task", { action: "rework",
       taskId,
       feedback: "请修复。",
     });

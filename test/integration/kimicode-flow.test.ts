@@ -940,7 +940,7 @@ describe("Kimi Code M4 needs_user 五类", () => {
     const targets = makeKimicodeTargets({ composerMissing: true });
     const result = await runM3(await m4Harness(targets));
     expect(result.needsUserKind).toBe("login_required");
-    expect(result.pendingQuestion).toContain("continue_task");
+    expect(result.pendingQuestion).toContain("manage_task");
     expect(targets.states.main.sendClicks).toBe(0);
   });
 
@@ -953,7 +953,7 @@ describe("Kimi Code M4 needs_user 五类", () => {
     expect(result.endReason).toBe("setup_failed");
     expect(result.needsUserKind).toBe("setup_recovery");
     expect(result.pendingQuestion).toContain("工作区绑定回读不一致");
-    expect(result.pendingQuestion).toContain("请在 Kimi Code 中确认目标工作区后调用 continue_task");
+    expect(result.pendingQuestion).toContain("请在 Kimi Code 中确认目标工作区后调用 manage_task");
     expect(result.pendingQuestion).toContain("不会向其它工作区发送任务");
     expect(targets.states.main.sendClicks).toBe(0);
     expect(targets.states.main.clicks).not.toContain("send");
@@ -979,7 +979,7 @@ describe("Kimi Code M4 needs_user 五类", () => {
     expect(result.endReason).toBe("needs_user");
     expect(result.needsUserKind).toBe("agent_question");
     expect(result.pendingQuestion).toContain("是否继续执行数据库迁移？");
-    expect(result.pendingQuestion).toContain("continue_task");
+    expect(result.pendingQuestion).toContain("manage_task");
     expect(result.session?.id).toBe("s-new");
     expect(result.keptInstance).toBe(true);
   });

@@ -71,7 +71,7 @@ export interface MinimaxPollState {
    *
    * 注意（本 driver 的特殊性）：`stopVisible` 依赖的 `[data-testid="stop-button"]` 来自产物常量
    * 提取、真机未复验（见文件头「待复验」）。若该 testid 实际不存在，本门会让 MiniMax
-   * **每个任务**都收敛为 idle_timeout → 需人工介入（fail-closed：可 continue_task 恢复，
+   * **每个任务**都收敛为 idle_timeout → 需人工介入（fail-closed：可 manage_task 恢复，
    * 远好于误判成功）。这是与 `hasRunSignal` 注释一致的「有意的慢而不错」。
    */
   sawRunning: boolean;
@@ -211,7 +211,7 @@ export function judgeMinimaxPoll(
         kind: "needs_user",
         state: { hash, stable: 0, idleSince: 0, sawRunning: true },
         evidence: `${evidence}+stall`,
-        question: `MiniMax Code 停止按钮持续可见且对话内容已停滞约 ${Math.round(stallTimeoutMs / 1000)}s：agent 可能在等待用户确认或长时间静默。请回到 MiniMax Code 窗口确认后调用 continue_task。`,
+        question: `MiniMax Code 停止按钮持续可见且对话内容已停滞约 ${Math.round(stallTimeoutMs / 1000)}s：agent 可能在等待用户确认或长时间静默。请回到 MiniMax Code 窗口确认后调用 manage_task。`,
       };
     return { kind: "running", state: { hash, stable: 0, idleSince: 0, sawRunning: true }, evidence };
   }

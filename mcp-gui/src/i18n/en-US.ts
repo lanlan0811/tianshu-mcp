@@ -120,19 +120,14 @@ export const enUS: Messages = {
     tools: {
       run_task:
         "Dispatch: start an external AI-Agent development task with optional auto-verify and auto-rework; returns a taskId asynchronously.",
-      continue_task:
-        "Resume a task waiting in needs_user (send an answer / reconnect and observe / re-check the environment and resend the brief).",
       query_task: "Query task status / progress / recent log tail / recent fine-grained events.",
-      list_tasks: "List historical tasks (filterable by project path / status; limit defaults to 50).",
-      get_task_report: "Fetch one round's full acceptance report (report.md); round defaults to the latest.",
-      cancel_task: "Cancel a running task; for a terminal GUI task it doubles as the manual residual-confirmation entry.",
+      manage_task:
+        "Task lifecycle management: action=cancel cancels a running task (also the manual residual-confirmation entry); action=continue resumes a needs_user task (send an answer / reconnect and observe / re-check the environment and resend the brief); action=rework re-queues a terminal task with optional feedback / repairHint. Contains destructive actions.",
       verify_task: "Run one acceptance pass over a finished task or a project path (changes no source).",
+      query_info:
+        "Unified info lookup: type=tasks lists historical tasks (filterable by project path / status; limit defaults to 50); type=report fetches one round's full acceptance report (round defaults to the latest); type=profiles shows the current agent adapters and executable discovery results.",
       wait_task:
-        "Block until a single task reaches a stop point (terminal status or needs_user) or the timeout elapses; read-only, approval-free — call again after a timeout to keep waiting.",
-      wait_any:
-        "Block until the first of a group (1..20) reaches a stop point, in array order; returns that snapshot plus every task's current status.",
-      rework_task: "Manual rework: re-queue a terminal task with optional feedback / repairHint.",
-      get_profiles: "Show the current agent adapters and executable discovery results.",
+        "Block until a task reaches a stop point (terminal status or needs_user) or the timeout elapses. Single task: pass taskId. Batch: pass taskIds (1..20) and wait for the first in array order. Read-only, approval-free — call again after a timeout to keep waiting.",
       prepare_visual_baseline: "Prepare a visual baseline candidate and return a digest and preview; never adopts a baseline.",
       approve_visual_baseline: "After explicit user review, approve the visual baseline and write the baseline plus approval record.",
     },

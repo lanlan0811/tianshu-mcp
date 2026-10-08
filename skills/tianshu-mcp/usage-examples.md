@@ -2,7 +2,7 @@
 
 本文件是 `SKILL.md` 的展开件：任务书模板、六种 agent 派活示例、meta 块解读、错误码速查、验收与返修模板、needs_user/取消示例、汇报模板。**方法论在主文件，这里只给可直接复制的形状**；需要哪节就读哪节。
 
-约定：示例中的模型名、路径、端口都是**样例**，必须换成你机器上的实际值（模型名以界面/`get_profiles` 为准，路径必须真实存在）。
+约定：示例中的模型名、路径、端口都是**样例**，必须换成你机器上的实际值（模型名以界面/`query_info(type="profiles")` 为准，路径必须真实存在）。
 
 ---
 
@@ -79,12 +79,12 @@ run_task(projectPath=D:/repo/app, agentId=zcode,
 若 `query_task` 返回 `needs_user`，先读 meta 的 `needsUserKind` 与 `pendingQuestion`：
 
 ```text
-continue_task(taskId=tsk_..., message=采用 PostgreSQL 方案)
+manage_task(taskId=tsk_..., action="continue", message=采用 PostgreSQL 方案)
 ```
 
 - `agent_question`：`message` 作为答案发送到**原会话**。
 - `close_existing_instance` / `login_required` / `system_permission` / `setup_recovery`：先让用户处理（关旧实例 / 登录 / 授系统权限 / 在 ZCode 里确认目标项目），`message` 仅作为「已处理」确认。
-- **traework 不支持 `continue_task`**；若 traework 任务停在 `needs_user`，需人工处理后重派新任务。
+- **traework 不支持 `manage_task(action="continue")`**；若 traework 任务停在 `needs_user`，需人工处理后重派新任务。
 
 ### 2.3 ZCode 无项目派发（省略 `projectPath`）
 
@@ -100,7 +100,7 @@ run_task(
 
 - 省略 `autoVerify` / `autoFixRounds` 即为关；显式写 `autoVerify=true` 或 `autoFixRounds>0` 会在提交前被拒绝。
 - 任务书里不要写反引号路径或 `./`、`../` 引用——无项目模式无法解析，会在发送前报错并要求提供 `projectPath`。
-- 成功后终态文案是「未进行项目验收」；对该任务调 `verify_task` / `get_task_report` 会得到 `not_applicable: no_project`，**不会从 cwd 推导目录**。
+- 成功后终态文案是「未进行项目验收」；对该任务调 `verify_task` / `query_info(type="report")` 会得到 `not_applicable: no_project`，**不会从 cwd 推导目录**。
 - 省略 `projectPath` 但解析出的 agent 不是 ZCode（例如项目默认 agent 是 codex）会返回参数错误——**不会被悄悄改判为 ZCode**。
 
 ### 2.4 派到 ZCode 但禁止自动创建项目
@@ -146,7 +146,7 @@ run_task(projectPath=D:/repo/app, agentId=kimicode,
   档位集合以**界面实际渲染的标签**为准——传了界面不存在的档位会在发送前报错（**绝不静默沿用**）。不传时：官方档位沿用界面当前值，非官方档位强制 `on`。
 - **不支持 `mode`**；**`allowCreateProject` 不适用**（ZCode 专用）；**`projectPath` 必填**——Kimi Code 以工作区组织任务，**不支持无项目派发**。
 - 未登记的工作区会自动经原生「添加工作区」对话框导入；若与已登记工作区同名或路径重复，会 fail-closed 报歧义，**不会猜一个点**。
-- 首次启动偏慢（`launchTimeoutMs` 90s）；若已有未开 CDP 的 Kimi Code 实例，任务转 `needs_user(close_existing_instance)`，需用户手动关闭后 `continue_task`。
+- 首次启动偏慢（`launchTimeoutMs` 90s）；若已有未开 CDP 的 Kimi Code 实例，任务转 `needs_user(close_existing_instance)`，需用户手动关闭后 `manage_task(action="continue")`。
 - 官方额度用尽时界面返回 `provider.auth_error` / `HTTP 403` 并判 `agent_error`——可改用非官方免费模型（如 `stepfun/step-3.7-flash:free`）后重派。
 - 排查提示：模型 / 思考档位 / 执行模式菜单渲染在独立的 `Kimi Browser Overlay` 浮层窗口，**别在主窗口找**。
 
@@ -169,7 +169,7 @@ run_task(projectPath=D:/repo/app, agentId=qoder,
 - 工作区以**完整路径**匹配；未登记目录经「新的任务 → 工作区 → 新建工作区 → 添加可读写文件夹 → 创建」导入；目录不存在直接报错，**不会自动创建磁盘目录**。
 - **自动与手动返修都先落修复计划**，再把失败说明、计划文件名、完整路径与**全文**发回原会话（即使计划文件在项目目录外，也有全文可执行）。
 - **macOS 禁止派发**（`unsupported_platform`，状态为 `research`）。
-- 多题续答：`continue_task` 的 `message` 传 **JSON 对象字符串**，键为界面上**完整问题文字**：
+- 多题续答：`manage_task(action="continue")` 的 `message` 传 **JSON 对象字符串**，键为界面上**完整问题文字**：
 
 ```json
 {"选择开发语言":"TypeScript","需要哪些测试":["单元测试","集成测试"]}
@@ -261,17 +261,17 @@ run_task(projectPath=/path/to/项目, agentId=codex-cli,
 - `model` 参数对 spawn 类 agent **不生效**（CLI 用 `~/.codex/config.toml` 的默认模型）；要锁模型就在 `argsTemplate` 里追加 `"-m", "<模型名>"`。
 - codex CLI 需 **≥0.154.0**（≤0.130.0 签名证书已吊销，macOS Gatekeeper 直接 SIGKILL）。
 - 写入被 `workspace-write` 沙箱限制在项目目录内；POSIX 下取消/超时对进程组 `SIGTERM`→`SIGKILL`。
-- **无头路径没有 GUI 交互**：不存在 `user_confirmation` 这类等待，`continue_task` 不适用；失败直接看 `agentEndReason` 与日志。
+- **无头路径没有 GUI 交互**：不存在 `user_confirmation` 这类等待，`manage_task(action="continue")` 不适用；失败直接看 `agentEndReason` 与日志。
 
 ### 2.11 通用约定
 
 - `run_task` 是**异步契约**：立即返回 `taskId` + 队列位置，不要当同步调用等结果。
 - **优先用 `wait_task` 等结果（issue #28）**：回合驱动调用方无法自行轮询，`run_task` 后在本回合内直接 `wait_task(taskId)` 阻塞等到停点，无需用户再发消息触发查询；要看进度细节才用 `query_task` 轮询（间隔 5–10 秒，缺省返回 agent 日志末 40 行）。同项目串行 + 全局并发默认 2，重复派单只会排队。
 - **重试复用同一条 `idempotencyKey`（issue #15）**：`tools/call` 超时、断线、宿主重启后重发同一意图时，`run_task` 会返回**原 `taskId` 与当前状态**（不排队第二轮 agent），`verify_task` 会返回「进行中」或既有报告（不重跑检查）。**参数变了就换 key**——同键异参 fail-closed 报错并回报原记录 id。幂等重放的响应文本以「幂等重放：」开头、meta 带 `idempotencyReplay`，不要汇报成「已重新派单」。
-- 只有 `needs_user` 能用 `continue_task` 恢复，且当前支持 **codex / zcode / kimicode / qoder / opendesign / minimax**（opendesign 会产出 `login_required` / `user_confirmation` / `system_permission` / `setup_recovery` / `close_existing_instance` 五类，均支持 `continue_task` 恢复）；traework 与 spawn 类会被明确拒绝。
+- 只有 `needs_user` 能用 `manage_task(action="continue")` 恢复，且当前支持 **codex / zcode / kimicode / qoder / opendesign / minimax**（opendesign 会产出 `login_required` / `user_confirmation` / `system_permission` / `setup_recovery` / `close_existing_instance` 五类，均支持 `manage_task(action="continue")` 恢复）；traework 与 spawn 类会被明确拒绝。
 - `autoVerify` 不传时**默认开**；`autoFixRounds` 不传时取 agent 缺省（codex 5 / zcode 2 / kimicode 2 / qoder 3 / minimax 2 / traework 落 server 默认 0）。
 
-### 2.12 等待任务：`wait_task` / `wait_any`（issue #28）
+### 2.12 等待任务：`wait_task`（issue #28；v0.9.0 合并 `wait_any`）
 
 **动机**：`run_task` 秒回 `taskId`，但回合驱动调用方（天枢 agent 会话）只在收到用户消息的回合内运行、无法自行轮询——过去「每次任务完成都必须人工发一条消息触发查询」。`wait_task` 用**一次阻塞只读调用**承载等待：等到任务到达**停点**（终态或 `needs_user`）或超时后返回。
 
@@ -283,8 +283,8 @@ run_task(projectPath=D:/repo/app, agentId=codex, model="GPT-5.6 Sol",
   → taskId
 wait_task(taskId=tsk_..., timeoutMs=50000)
   → 任务已到停点（等待 37 秒）：状态: [PASS] 任务成功
-     可用 get_task_report 查看验收报告。
-  → get_task_report(taskId=tsk_...)
+     可用 query_info(type="report", taskId) 查看验收报告。
+  → query_info(type="report", taskId=tsk_...)
 ```
 
 **模式 B：超时循环（任务比单次上限长）**
@@ -301,17 +301,17 @@ wait_task(taskId=tsk_...)          # 再次调用即续等（无损）
 
 ```text
 wait_task(taskId=tsk_...)
-  → 任务已到停点（等待 12 秒）：状态: 等待用户处理（可用 continue_task 恢复）。
-     任务在等待人工处理：请用 continue_task 恢复，恢复后再次调用 wait_task 继续等待。
+  → 任务已到停点（等待 12 秒）：状态: 等待用户处理（可用 manage_task(action="continue") 恢复）。
+     任务在等待人工处理：请用 manage_task(action="continue") 恢复，恢复后再次调用 wait_task 继续等待。
 # 让用户在客户端处理（回答问题 / 登录 / 关旧实例…），然后：
-continue_task(taskId=tsk_..., message="已处理")
+manage_task(taskId=tsk_..., action="continue", message="已处理")
 wait_task(taskId=tsk_...)          # 恢复后继续等（needs_user 可多次进入）
 ```
 
 **模式 D：多任务先到者**
 
 ```text
-wait_any(taskIds=[tsk_a, tsk_b, tsk_c], timeoutMs=50000)
+wait_task(taskIds=[tsk_a, tsk_b, tsk_c], timeoutMs=50000)   # 批量模式
   → 已有任务到达停点（等待 8 秒）：tsk_b —— 状态: [FAIL] 任务失败
      全部任务当前状态：
      - tsk_a: 运行中（agent 正在开发）
@@ -321,10 +321,10 @@ wait_any(taskIds=[tsk_a, tsk_b, tsk_c], timeoutMs=50000)
 
 要点：
 
-- `wait_task` / `wait_any` 是**纯只读**工具（免审批、`readOnlyHint=true`）：不写任务状态、不动任务本体；被客户端截断 / 连接中断 / 超时**都无害**，最坏只是多调几次。
+- `wait_task`（含批量模式）是**纯只读**工具（免审批、`readOnlyHint=true`）：不写任务状态、不动任务本体；被客户端截断 / 连接中断 / 超时**都无害**，最坏只是多调几次。
 - `timeoutMs` 缺省 **50000ms**（低于生态常见 60s 客户端超时），上限 **600000ms**；显式传超过上限的值会被**钳制并在响应正文写明**（不静默改值）。
 - 停点含 **`needs_user`**（非终态）：任务已停止推进、在等人工，必须立即唤醒调用方——这正是需要转达用户的时刻。
-- `wait_any` 按 `taskIds` **数组顺序**返回首个到停点者（确定性优先，不看完成时间）；入口校验全部 id 存在，缺一即 fail-closed 报错并列出缺失 id。
+- `wait_task` 批量模式按 `taskIds` **数组顺序**返回首个到停点者（确定性优先，不看完成时间）；入口校验全部 id 存在，缺一即 fail-closed 报错并列出缺失 id。
 
 ---
 
@@ -343,9 +343,9 @@ wait_any(taskIds=[tsk_a, tsk_b, tsk_c], timeoutMs=50000)
 | `extraChecks` / `checksMode` / `baselineRef` | 仅 verify_task | 独立 projectPath 下 `baselineRef` 只能是 git ref，不能是任务 ID |
 | `idempotencyKey` | run_task / verify_task | trim 后 1..128 字符、不含控制字符；**两工具各自独立命名空间**；同键异参 fail-closed；不传即维持原行为 |
 | `tailLines` | query_task | 缺省 40 行 |
-| `timeoutMs` | wait_task / wait_any | 缺省 **50000ms**、上限 **600000ms**；超上限被**钳制并在响应正文披露**；超时后再次调用即续等 |
-| `taskIds` | wait_any | 1..20 个；**全部必须存在**，缺一即 fail-closed 报错并列出缺失 id |
-| `round` | get_task_report | **0-based**；缺省最新；显式 `0` 合法 |
+| `timeoutMs` | wait_task（单任务与批量模式通用） | 缺省 **50000ms**、上限 **600000ms**；超上限被**钳制并在响应正文披露**；超时后再次调用即续等 |
+| `taskIds` | wait_task（批量模式） | 1..20 个；**全部必须存在**，缺一即 fail-closed 报错并列出缺失 id |
+| `round` | query_info(type=report) | **0-based**；缺省最新；显式 `0` 合法 |
 
 ---
 
@@ -353,7 +353,7 @@ wait_any(taskIds=[tsk_a, tsk_b, tsk_c], timeoutMs=50000)
 
 除下列情况外，各工具结果文本末尾都是「人类可读文本 + 结构化 meta」：
 
-- `get_task_report` 成功时直接返回 `report-<round>.md` 原文；
+- `query_info(type="report")` 成功时直接返回 `report-<round>.md` 原文；
 - `prepare_visual_baseline` / `approve_visual_baseline` 成功时直接返回视觉操作的 JSON 原文；
 - **任何工具的错误结果**都只有 `Error: …` 文本，不带 meta 块。
 
@@ -411,7 +411,7 @@ wait_any(taskIds=[tsk_a, tsk_b, tsk_c], timeoutMs=50000)
 | `modelProvider` / `permissionMode` | 实际生效的供应商标识与权限模式（zcode 等） |
 | `actualModel` / `actualReasoningLevel` / `modelSource` | 实际生效模型、等级与模型来源（qoder） |
 | `guiStop` | 最近一次中断时 GUI 停止的点击与空闲确认结果（`clicked` / `idle`）；`idle=true` 才是**已确认**停止 |
-| `guiStopUnconfirmed` | 出现即为 `true`：GUI 任务的终态**未确认**停止（`guiStop.idle=false` 或重启归档无任何确认手段），重派前必须先人工确认并用 `cancel_task` 消除（§9.5.1） |
+| `guiStopUnconfirmed` | 出现即为 `true`：GUI 任务的终态**未确认**停止（`guiStop.idle=false` 或重启归档无任何确认手段），重派前必须先人工确认并用 `manage_task(action="cancel")` 消除（§9.5.1） |
 | `progressSummary` / `lastRunSignal` | 轮询期进度摘要 / 最近运行信号 |
 | `finishedAt` | 终态落定时间 |
 | `model` / `mode` | 本次派单传入的模型 / 面板模式 |
@@ -440,7 +440,7 @@ wait_any(taskIds=[tsk_a, tsk_b, tsk_c], timeoutMs=50000)
 | `agentEndReason` | 含义 | 处置 |
 |---|---|---|
 | `setup_failed` | 找不到安装 / 实例未就绪 / 点不到「新对话」 | 让用户确认已安装且能手动打开；重试一次 |
-| `project_ambiguous` | 项目同名或路径重复，无法消歧 | 已转 `needs_user(setup_recovery)`：请用户确认目标项目后 `continue_task` |
+| `project_ambiguous` | 项目同名或路径重复，无法消歧 | 已转 `needs_user(setup_recovery)`：请用户确认目标项目后 `manage_task(action="continue")` |
 | `project_mismatch` | 项目绑定或回读不一致，幂等重试仍失败 | 同上：请用户在 GUI 里确认或手工绑定 |
 | `project_create_failed` | 在 GUI 内新建项目失败 | 让用户手动把项目加进 agent，或换 `projectPath` |
 | `project_not_registered` | ZCode `allowCreateProject=false` 且目录未登记 | 在 ZCode 中手动登记该项目后重提 |
@@ -448,10 +448,10 @@ wait_any(taskIds=[tsk_a, tsk_b, tsk_c], timeoutMs=50000)
 | `model_mismatch` | 模型回读与期望不符 / 档位不被该模型支持 | 确认 `model` 与界面完全一致；档位改到界面实际存在的集合 |
 | `permission_unknown` | 权限模式未确认（如 ZCode 未开「完全访问」） | 让用户在 agent 内切好权限模式 |
 | `cdp_disconnected` | CDP 连接断开且未能恢复 | 让用户关掉冲突实例；重试 |
-| `instance_busy` | 同项目/同实例已有未停止的运行（重派护栏） | 先 `cancel_task` 并**确认 GUI 已停**，或等其自行结束 |
+| `instance_busy` | 同项目/同实例已有未停止的运行（重派护栏） | 先 `manage_task(action="cancel")` 并**确认 GUI 已停**，或等其自行结束 |
 | `session_lost` | zcode/kimicode/qoder/minimax 找不到原会话锚点 | 用新任务重派，不要指望恢复原会话 |
-| `input_mismatch` / `send_unknown` | 发送前回读不一致 / 发送结果无法确认（**绝不自动重发**） | 人工看窗口状态，必要时 `continue_task` 或重派 |
-| `idle_timeout` | GUI 长时间静止且无完成标志（现场已保留） | 看窗口里 agent 是否真卡住；必要时 `continue_task` 或取消 |
+| `input_mismatch` / `send_unknown` | 发送前回读不一致 / 发送结果无法确认（**绝不自动重发**） | 人工看窗口状态，必要时 `manage_task(action="continue")` 或重派 |
+| `idle_timeout` | GUI 长时间静止且无完成标志（现场已保留） | 看窗口里 agent 是否真卡住；必要时 `manage_task(action="continue")` 或取消 |
 | `agent_error` | Kimi Code 界面出现失败文案/「继续」按钮（如官方额度用尽 `provider.auth_error`） | 读窗口内错误原文；额度/模型类可换非官方免费模型后重派 |
 | `unsupported_platform` | Qoder 在非 Windows 平台派发 | 换平台或换 agent（qoder 的 macOS 状态是 `research`） |
 | `qoder_error` | Qoder 运行期错误，原文带具体码：`qoder_model_ambiguous` / `qoder_model_missing` / `qoder_model_readback_failed` / `qoder_reasoning_unsupported` / `qoder_workspace_mismatch` / `qoder_workspace_ambiguous` / `qoder_folder_dialog` / `qoder_input_readback_failed` / `qoder_question_ambiguous` / `qoder_question_answers_required` / `qoder_question_unknown_title` / `qoder_question_answer_missing` / `qoder_question_option_unavailable` / `qoder_question_not_multiselect` / `qoder_question_changed` / `qoder_session_lost` / `qoder_stage_timeout` / `qoder_checkpoint_missing` | 按码处置：模型/档位类按界面实际值重派；工作区类让用户确认目录；提问类补齐答案或用 JSON 对象、选项文字必须与界面一致；`*_stage_timeout` 多为窗口未前台/被遮挡 |
@@ -462,7 +462,7 @@ wait_any(taskIds=[tsk_a, tsk_b, tsk_c], timeoutMs=50000)
 
 **另一类“报错”不是任务终态**，而是工具入参被拒（立即返回，不排队、不产生任务）：`allowCreateProject` 用于非 ZCode、`mode` 用于非 traework、`modelSource` 用于非 qoder、`极高/最大/关闭思考` 用于非 qoder、qoder 缺 `planDoc` 或计划文件不可读、无项目模式传 `autoVerify=true`/`autoFixRounds>0`、`verify_task` 既没给 `taskId` 也没给 `projectPath`、以及**幂等键冲突**（见下）。这类改参数重试即可。
 
-**幂等键冲突（issue #15）**：报「`idempotencyKey '<key>'` 已被任务/验收记录 `<id>` 占用，但本次参数与首次提交不同」= 你复用了旧 key 却改了参数（换了项目、任务书、agent、`extraChecks` 等）。处置：**改用一条新 key** 重发，或直接对原记录 id 操作（`query_task` / `get_task_report` / `rework_task`）；不要靠改参数绕过冲突。
+**幂等键冲突（issue #15）**：报「`idempotencyKey '<key>'` 已被任务/验收记录 `<id>` 占用，但本次参数与首次提交不同」= 你复用了旧 key 却改了参数（换了项目、任务书、agent、`extraChecks` 等）。处置：**改用一条新 key** 重发，或直接对原记录 id 操作（`query_task` / `query_info(type="report")` / `manage_task(action="rework")`）；不要靠改参数绕过冲突。
 
 **幂等重放不是新执行**：`run_task` 命中同键 → 文本「幂等重放：该 idempotencyKey 已对应任务 `<taskId>`（未新建任务）」+ `idempotencyReplay: "hit"`；`verify_task` 命中执行中 → 「该 idempotencyKey 对应的验收仍在执行中（未重复执行）」+ `"in_progress"`（**成功结果**，不是错误）。汇报时必须如实说明「未新建 / 未重跑」。
 
@@ -528,13 +528,13 @@ verify_task(projectPath=D:/repo/app, checksMode=replace,
 
 ### 6.2 视觉验收与基准保护
 
-项目在 `.tianshu-mcp/acceptance.json` 里配 `visual.enabled: true` 后，`run_task` / `verify_task` 会自动带上截图对比与静态图片规格检查。**不需要新工具**；读 `get_task_report` 的 `visual` 段落与离线 HTML 看指标、差异区域与证据。
+项目在 `.tianshu-mcp/acceptance.json` 里配 `visual.enabled: true` 后，`run_task` / `verify_task` 会自动带上截图对比与静态图片规格检查。**不需要新工具**；读 `query_info(type="report")` 的 `visual` 段落与离线 HTML 看指标、差异区域与证据。
 
 ```text
 # 视觉阻塞（缺基准 / 页面不可达 / 资源被拦）→ needs_attention，等待用户处理
 query_task(taskId=tsk_...)
 # 处理后重新验收：系统先 verify，通过即结束；只有真实缺陷才启动 agent
-rework_task(taskId=tsk_...)
+manage_task(taskId=tsk_..., action="rework")
 ```
 
 基准必须由用户审阅批准，禁止自动批准：
@@ -556,23 +556,23 @@ approve_visual_baseline(candidateId=<uuid>, expectedDigest=<sha256>,
 
 ---
 
-## 7. 查历史：list_tasks 示例
+## 7. 查历史：query_info(type=tasks) 示例
 
 ```text
 # 某项目最近需关注的任务
-list_tasks(projectPath=D:/repo/app, status=needs_attention, limit=10)
+query_info(type="tasks", projectPath=D:/repo/app, status=needs_attention, limit=10)
 
 # 全局最近 50 条
-list_tasks()
+query_info(type="tasks")
 ```
 
-返回每行一条（列：taskId / status / agent / project / 任务摘要），可用于接续 `get_task_report` / `rework_task`。`projectPath` 与 `run_task` 同样做 realpath 归一；`status` 传状态枚举值（如 `needs_attention`、`succeeded`）。空结果返回「没有符合条件的任务。」。
+返回每行一条（列：taskId / status / agent / project / 任务摘要），可用于接续 `query_info(type="report")` / `manage_task(action="rework")`。`projectPath` 与 `run_task` 同样做 realpath 归一；`status` 传状态枚举值（如 `needs_attention`、`succeeded`）。空结果返回「没有符合条件的任务。」。
 
 ---
 
 ## 8. 返修提示语模板
 
-给 `rework_task(taskId, feedback)` 的 `feedback` 讲究**针对性**，避免空转：
+给 `manage_task(taskId, action="rework", feedback)` 的 `feedback` 讲究**针对性**，避免空转：
 
 ```text
 请针对上一次验收失败项定向修复：
@@ -600,7 +600,7 @@ parameter of type 'number' (src/run.ts:42)。请只修这一处类型问题并�
 - **`qoder`**：写到 **MCP 任务目录**（`<home>/tasks/<taskId>/rework-<taskId>-r<N>.md`），并把**文件名、完整路径与全文**一起发回原会话（计划在项目目录外也能执行）。
 - **`zcode` / `traework` / `kimicode` 等其余 agent**：写到任务目录（`rework-<taskId>-r<N>.md`），把路径引用进下一轮指令，避免临时计划污染项目工作区。
 
-手动 `rework_task` 的 `feedback` 按上面的针对性模板书写；对 qoder，手动返修同样会先生成计划再回原会话（原会话锚点或验收报告缺失时会直接拒绝，不新开任务冒充续修）。
+手动 `manage_task(action="rework")` 的 `feedback` 按上面的针对性模板书写；对 qoder，手动返修同样会先生成计划再回原会话（原会话锚点或验收报告缺失时会直接拒绝，不新开任务冒充续修）。
 
 ---
 
@@ -610,16 +610,16 @@ parameter of type 'number' (src/run.ts:42)。请只修这一处类型问题并�
 
 ```text
 1) 提示用户：请在 Codex 窗口完成该确认（点确认/继续/订阅按钮等）。
-2) 用户确认已处理后：continue_task(taskId, message="已在 Codex 窗口确认")
+2) 用户确认已处理后：manage_task(taskId, action="continue", message="已在 Codex 窗口确认")
 3) 恢复后 MCP 只重新接入观察（不会向 Codex 发送消息），继续 query_task 轮询到终态。
 ```
 
-用户尚未处理就调 `continue_task` 时，任务会**再次**转 `needs_user`（如实反映 GUI 状态），稍后再试即可。
+用户尚未处理就调 `manage_task(action="continue")` 时，任务会**再次**转 `needs_user`（如实反映 GUI 状态），稍后再试即可。
 
 ### 9.2 codex 需要登录（`login_required`）
 
 ```text
-在 Codex 窗口完成登录 → continue_task(taskId, message="已登录")
+在 Codex 窗口完成登录 → manage_task(taskId, action="continue", message="已登录")
 MCP 复检环境后重新派发任务书（新会话 + 项目绑定 + 完整初始指令）。
 ```
 
@@ -629,7 +629,7 @@ MCP 复检环境后重新派发任务书（新会话 + 项目绑定 + 完整初�
 
 ```text
 1) 提示用户：请在 ZCode 中确认目标项目（必要时手工完成绑定/关掉多余面板）。
-2) continue_task(taskId, message="已在 ZCode 中确认目标项目")
+2) manage_task(taskId, action="continue", message="已在 ZCode 中确认目标项目")
 3) message 只是「已处理」确认，不会作为问题发送；原任务上下文被保留。
 ```
 
@@ -637,19 +637,19 @@ MCP 复检环境后重新派发任务书（新会话 + 项目绑定 + 完整初�
 
 ```text
 # 单题
-continue_task(taskId=tsk_..., message=使用 TypeScript)
+manage_task(taskId=tsk_..., action="continue", message=使用 TypeScript)
 
 # 多题：message 是 JSON 对象字符串，键为界面上的完整问题文字
-continue_task(taskId=tsk_..., message={"选择开发语言":"TypeScript","需要哪些测试":["单元测试","集成测试"]})
+manage_task(taskId=tsk_..., action="continue", message={"选择开发语言":"TypeScript","需要哪些测试":["单元测试","集成测试"]})
 ```
 
 - 题目变化、缺答案、选项文字不存在、单选用数组：都会保留等待并报出对应 `qoder_question_*` 错误，**不会**拿推荐项/默认项代替。
 - 若任务是因「发送或答题提交结果不确定」转 `needs_user(setup_recovery)`：**先人工核对原会话**，不要盲目继续或重发（适配器保留检查点，就是不重复提交）。
 
-### 9.5 取消 GUI agent 任务（cancel_task）
+### 9.5 取消 GUI agent 任务（manage_task(action="cancel")）
 
 ```text
-cancel_task(taskId, reason="用户要求停止")
+manage_task(taskId, action="cancel", reason="用户要求停止")
 → 返回 meta.message 可能为：
   "已取消：…；已确认 <窗口名> 内运行停止。"                    ← 已确认停止，可安全重派
   "已取消：…；<窗口名> 内运行未确认停止，窗口中的任务可能仍在继续，请人工打开 <窗口名> 确认无残留运行。"  ← 需人工检查
@@ -677,7 +677,7 @@ query_task(taskId)
    meta.guiResidualUnconfirmed = true
 
 # 人工打开该窗口，确认没有还在跑的 turn 之后：
-cancel_task(taskId, reason="已人工核对窗口无残留运行")
+manage_task(taskId, action="cancel", reason="已人工核对窗口无残留运行")
 → 清除待确认标记（追加 gui_residual_acknowledged 事件），status 仍是 interrupted
 → meta.guiStopUnconfirmed 变为不存在、meta.guiResidualUnconfirmed = false
 ```
@@ -704,7 +704,7 @@ cancel_task(taskId, reason="已人工核对窗口无残留运行")
 - `cancelWaitMs`：取消时点停止按钮后等待 GUI 空闲的上限（默认 15000 = 15 秒）。
 - `selectors.userGate`：等待用户界面的检测选择器（如结账页 `embedded-checkout`），配置后命中即快速转 `needs_user`；**默认未配置 = 禁用**，配置前请真机核对。
 - `defaultAutoFixRounds`：该 agent 的自动返修缺省轮数（codex 5 / zcode 2 / kimicode 2 / qoder 3）。
-- 整键覆盖语义：数据目录 `agent-profiles.json` 里同名键会**覆盖**内置 profile 的对应字段；用户自定义 profile（如 `codex-cli`）会出现在 `get_profiles` 中。
+- 整键覆盖语义：数据目录 `agent-profiles.json` 里同名键会**覆盖**内置 profile 的对应字段；用户自定义 profile（如 `codex-cli`）会出现在 `query_info(type="profiles")` 中。
 
 ### 9.7 server 级配置（config.json，可选）
 
@@ -720,7 +720,7 @@ cancel_task(taskId, reason="已人工核对窗口无残留运行")
 
 ## 10. 汇报模板
 
-`get_task_report` 拿全文后，向用户汇报建议包含：
+`query_info(type="report")` 拿全文后，向用户汇报建议包含：
 
 ```text
 任务 <taskId> 已完成（<agent>，model=<实际模型>，等级=<实际等级或“未指定”>）。

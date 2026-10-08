@@ -109,7 +109,7 @@ resolveDataHome → Logger → DataHome(BUILTIN_PROFILES) → init()
   → TaskStore → AgentAdapterRegistry(loadProfiles) → AcceptanceEngine
   → TaskManager(+makeBuildCtx) → manager.initialize({maxRunning, guiStopWaitMs})   # archive leftover active tasks
   → skill self-install (background, does not block the handshake)
-  → register 13 tools → return ServerAssembly{server, manager, dataHome, store, logger, close}
+  → register 8 tools → return ServerAssembly{server, manager, dataHome, store, logger, close}
 ```
 
 `close()` = `manager.shutdownInterrupt()` (archive active tasks, terminate child processes) → `engine.close()` → `server.close()`.
@@ -185,16 +185,14 @@ Thirteen tools (`src/mcp/tools.ts`), split into three families: `read` (queries,
 | Tool | Capability | Approval | Purpose |
 |---|---|---|---|
 | `run_task` | write | yes | Dispatch work; returns a `taskId` asynchronously |
-| `continue_task` | write | yes | Resume a `needs_user` task in its original session |
+| `manage_task` | write | yes | Task lifecycle management (merges the former `cancel_task` / `continue_task` / `rework_task`): `action=cancel` cancels (CLI kills the process tree; GUI best-effort stop click + bounded wait); `action=continue` resumes a `needs_user` task in its original session; `action=rework` manual rework feeding the failure summary back to the same agent. **Annotation `destructiveHint=true`** (tool-level; cannot vary per action) |
 | `query_task` | read | no | Poll status / progress / log tail |
-| `list_tasks` | read | no | Historical task list (filterable by project/status) |
-| `get_task_report` | read | no | Full text of a given round's `report.md` |
+| `query_info` | read | no | Unified info lookup (merges the former `list_tasks` / `get_task_report` / `get_profiles`): `type=tasks` historical task list; `type=report` full text of a given round's `report.md`; `type=profiles` agent support status and executable discovery results |
 | `cancel_task` | write | yes | Cancel (CLI: kill the process tree; GUI: best-effort stop click + bounded wait) |
 | `verify_task` | **execute** | no | Run one verification over a task or project path: it runs project commands and may produce build artifacts, but **does not modify sources**, hence approval-free |
 | `wait_task` | read | no | Block until a single task reaches a stop point (terminal status or `needs_user`) or the timeout elapses; read-only, harmless |
-| `wait_any` | read | no | Block until the first of a group (1..20) reaches a stop point, in array order; returns its snapshot plus every task's status |
+
 | `rework_task` | write | yes | Manual rework; feeds the failure summary back to the same agent |
-| `get_profiles` | read | no | Agent support status and executable discovery results |
 | `prepare_visual_baseline` | write | yes | Produce a baseline candidate and digest (does not adopt a baseline) |
 | `approve_visual_baseline` | write | yes | After user review, check the digest and write the baseline |
 
@@ -226,7 +224,7 @@ Progress is **persisted, never pushed**: GUI adapters report on the `gui.progres
                  │      │      │            ▼          │──► needs_attention
                  │      │      └──── fixing ◄──────────┘
                  │      │
-                 │      ├──► needs_user  ──► queued   (resumed by continue_task)
+                 │      ├──► needs_user  ──► queued   (resumed by manage_task(action='continue'))
                  │      ├──► cancelled
                  │      └──► interrupted
                  └──► cancelled | interrupted
@@ -235,7 +233,7 @@ Progress is **persisted, never pushed**: GUI adapters report on the `gui.progres
 - **Statuses**: `queued, running, verify_start, fixing, succeeded, failed, needs_attention, needs_user, cancelled, interrupted`.
 - **Terminal**: `succeeded, failed, needs_attention, cancelled, interrupted`.
 - **Active**: `queued, running, verify_start, fixing`.
-- **`needs_user` is neither active nor terminal** — it can be resumed to `queued` by `continue_task`, or cancelled. This is the host-visible form of a GUI agent waiting for a human.
+- **`needs_user` is neither active nor terminal** — it can be resumed to `queued` by `manage_task(action="continue")`, or cancelled. This is the host-visible form of a GUI agent waiting for a human.
 - `TRANSITIONS` enumerates legal moves explicitly; `TaskStore.updateStatus` additionally guards that "a terminal state can only be re-entered by an explicit continue/rework".
 - `errorType`: `timeout | spawn | setup_failed | agent_failed | verify_failed | cancelled | interrupted | agent_unresolved | internal`.
   (`setup_failed` = **logical** failure during setup (mode not ready / project unbound / model unavailable) —
@@ -312,7 +310,7 @@ The window name is derived from `profile.displayName` (`guiAppNameOf()`, strippi
 
 **The "in progress" marker is process-local** (`reserveInFlight` / `releaseInFlight`): an unfinished verification is not cached across a restart (there is no report to return, so a retry honestly re-runs), which also prevents a mapping stuck at `in_progress` while the engine is long dead.
 
-**Boundaries**: a `verify_task(taskId=…)` key is **not** written into the task snapshot (that field carries the task's dispatch key, so it is never overwritten), and rebuild coverage for that one combination relies on `idempotency.json`; no keys for `rework_task` / `continue_task` / `cancel_task` / the visual baseline tools; no cross-process distributed idempotency (the same assumption the visual lock makes).
+**Boundaries**: a `verify_task(taskId=…)` key is **not** written into the task snapshot (that field carries the task's dispatch key, so it is never overwritten), and rebuild coverage for that one combination relies on `idempotency.json`; no keys for `manage_task` / the visual baseline tools; no cross-process distributed idempotency (the same assumption the visual lock makes).
 
 ### 5.7 Terminal-state notifications: webhook hook (issue #22)
 
@@ -362,18 +360,18 @@ The vocabulary lives in `src/agents/agent-events.ts` (**zero dependencies**, to 
 
 **Disclosed honestly**: events are an observability capability, not a delivery guarantee — delivery is not guaranteed, and `query_task` reflects only the last persisted event; `file_modification_started` is a heuristic, so read `changedFiles` / `diffstat` from the acceptance report for hard evidence of changes. See [event stream](docs/event-stream.en.md).
 
-### 5.9 Blocking wait primitives (`wait_task` / `wait_any`, issue #28)
+### 5.9 Blocking wait primitive (`wait_task`, issue #28; merges `wait_any` as of v0.9.0)
 
 Turn-driven callers (a Tianshu agent session) only run within the turn that received a user message and cannot poll on their own — once `run_task` returns a `taskId` immediately, "who wakes the session when the task finishes" is a real gap in the tool surface. This capability carries the wait with **one blocking, read-only call**.
 
 | Decision | Implementation and rationale |
 |---|---|
-| Stop-point definition | `isWaitSettled(status) = isTerminal(status) \|\| status === "needs_user"` (`src/tasks/task.ts`, single decision point). The moment a task **stops making progress** is the moment to wake the caller: `needs_user` is not terminal but has stopped awaiting a human (it can be resumed by `continue_task` and may re-enter) — without waiting for it, `wait_task` blocks until the timeout and the caller knows nothing about "the task is waiting for a person" |
+| Stop-point definition | `isWaitSettled(status) = isTerminal(status) \|\| status === "needs_user"` (`src/tasks/task.ts`, single decision point). The moment a task **stops making progress** is the moment to wake the caller: `needs_user` is not terminal but has stopped awaiting a human (it can be resumed by `manage_task(action="continue")` and may re-enter) — without waiting for it, `wait_task` blocks until the timeout and the caller knows nothing about "the task is waiting for a person" |
 | Wait core | `waitForStops(taskIds, getMeta, {timeoutMs, pollIntervalMs=500, signal})` in `src/tasks/wait.ts`: **pure logic with dependency-injected `getMeta`**, touching neither the filesystem nor TaskManager construction, so it is independently unit-testable; `TaskManager.waitForStops` only wires it (injects `(id) => this.getMeta(id)`, reusing the `waitForStatusWrite` barrier + memory-first + snapshot fallback) |
 | Read-only, lossless | During the wait it **writes no task state and touches no task body**; a client truncation / connection drop / timeout never affects the task's continued execution — worst case the caller calls again, and `query_task` yields the latest fact after reconnect |
 | Timeout policy | `timeoutMs` defaults to `WAIT_TASK_TIMEOUT_DEFAULT_MS` (50 s, below the common 60 s client tool timeout to leave serialization/round-trip headroom); explicit cap `WAIT_TASK_TIMEOUT_MAX_MS` (600 s), and values above it are **clamped and disclosed honestly** (never silently rewritten, `clampWaitTimeout`). A timed-out response steers the caller into a call loop (≈50 s per round; long tasks need several calls) |
 | Interruption awareness | The SDK's `RequestHandlerExtra.signal` (`server.ts` forwards `extra` to the handler) fires on connection close / request cancellation and the wait loop exits immediately without leaking background waits (the SDK's `_onclose` aborts every in-flight handler) |
-| `wait_any` return semantics | Returns the **first task in `taskIds` array order** that has reached a stop point (determinism first; no `finishedAt` sorting); the entry point validates that all ids exist, failing closed with the missing ids listed if any is absent |
+| `wait_task` batch-mode return semantics | Returns the **first task in `taskIds` array order** that has reached a stop point (determinism first; no `finishedAt` sorting); the entry point validates that all ids exist, failing closed with the missing ids listed if any is absent |
 
 **Known limits**: the wait is **in-process** — after a server restart the original wait call ends with the connection (the caller re-checks via `query_task` after reconnecting); a single call waits at most 600 s, and longer scenarios rely on repeated calls (lossless). See [wait primitives](docs/wait-task.en.md).
 
@@ -392,7 +390,7 @@ Start
       ├─ status=running → buildCtx(meta, round, feedback) → hold project lock → runAgentOnce
       │     runAgentOnce: adapter.run exists → call it; otherwise runChild + parseExit
       ├─ Branch on the agent result
-      │     needs_user            → needs_user (awaits continue_task)
+      │     needs_user            → needs_user (awaits manage_task(action='continue'))
       │     idle/timeout/cdp loss → needs_attention
       │     hardFailure           → failed(spawn)      # infra/auth error, skips verify and rework
       │     timeout / killed      → corresponding terminal state
@@ -561,7 +559,7 @@ interface AgentAdapter {
 | `endReason` | Structured end cause (values per driver below) |
 | `needsUserKind` | The specific kind of human intervention needed |
 | `guiStop:{clicked,idle}` | Whether the GUI side actually stopped on cancel |
-| `session / keptInstance` | Session anchor and whether the instance was kept, for `continue_task` |
+| `session / keptInstance` | Session anchor and whether the instance was kept, for `manage_task(action="continue")` |
 | `progressSummary` | Progress persisted for `query_task` to observe |
 
 ### 8.2 Execution order for the six GUI drivers (measured; do not reorder casually)
@@ -642,7 +640,7 @@ discover installation (explicit gui.exePath → D-drive-first candidates → rel
 > **Completion must belong to this turn's user message**: a "done" in an older reply, a static screen, or a dropped connection never qualifies.
 > Pending interactions (question/approval) outrank the stop button — judge `needs_user` first, or the task deadlocks as `running`.
 > A checkpoint is written before sending or submitting answers, and **an unconfirmed acknowledgement means observe-only, never an automatic resend**;
-> `continue_task` merely re-observes for approval/login waits, and only `agent_question` submits answers back to the original session
+> `manage_task(action="continue")` merely re-observes for approval/login waits, and only `agent_question` submits answers back to the original session
 > (multi-question answers use a JSON object keyed by the UI's exact question text).
 > A static screen with no this-turn completion evidence pauses as `setup_recovery` and **never enters acceptance** — Qoder emits no `idle_timeout`.
 > Cancellation stops **only the bound original session** (`stopQoder` requires two consecutive non-running polls before it reports `idle`);
@@ -722,7 +720,7 @@ Idle for idleTimeoutMs (default 10 min)                               → idle_t
 > right before recovery → `finished` unreachable → a bogus `idle_timeout`" would follow.
 >
 > Correspondingly, `idle_timeout` (along with `task_timeout` / `cdp_disconnected`) is always parked as
-> `needs_attention` in `fix-loop` (a non-terminal status recoverable via `continue_task`) and **must not
+> `needs_attention` in `fix-loop` (a non-terminal status recoverable via `manage_task(action="continue")`) and **must not
 > enter the project acceptance chain** — the predicate is `shouldParkAsNeedsAttention()`. Adding the gate
 > alone would only turn the misjudgement from `reply_stable` (acceptance) into `idle_timeout` (still
 > acceptance, since `autoVerify` defaults to `true`).
@@ -791,7 +789,7 @@ Idle for idleTimeoutMs (default 10 min)                               → idle_t
 > **Open Design emits five kinds** (`login_required` / `user_confirmation` / `system_permission` / `setup_recovery` / `close_existing_instance`),
 > and notably not `agent_question` (its "asking the user" case is not an answerable form control).
 > TraeWork produces no `needsUserKind` at all: its "asking the user" case ends the turn normally (`ask_user`) and releases the instance,
-> and it **never reads `ctx.resume`** — so `continue_task` is meaningless for it.
+> and it **never reads `ctx.resume`** — so `manage_task(action="continue")` is meaningless for it.
 
 ### 8.5 Registry and executable discovery (`src/agents/registry.ts`)
 
@@ -806,7 +804,7 @@ Idle for idleTimeoutMs (default 10 min)                               → idle_t
 - Selector-drift diagnostics (v0.6.2, issue #23): `src/agents/gui-diagnostics.ts` provides `visibleLabelsExpr()` (a page expression that collects visible candidate aria-labels / short texts) and `withDiagnostics()` (idempotently appends "页面可见候选=[…]"). codex / qoder / traework all attach this on selector-resolution failure so drift can be located in one step; each agent's `selectors.ts` records the tested version via `verifiedVersion`.
 - Directory scans look up to depth 6, skipping `node_modules` and dot-directories, and **pick the newest by mtime**.
 - Profile hot reload keys off a sha256 content stamp (not mtime), so edits within the same timestamp tick are still detected.
-- `get_profiles` lists the union of registered adapter keys and profile keys (custom profiles that failed to resolve still appear) and reports `[PASS]/[FAIL]` with the discovery source for each.
+- `query_info(type=profiles)` lists the union of registered adapter keys and profile keys (custom profiles that failed to resolve still appear) and reports `[PASS]/[FAIL]` with the discovery source for each.
 
 ### 8.6 GUI instance lifecycle
 
@@ -967,7 +965,7 @@ Violating any of these causes runtime corruption or an incident:
 
 ### 13.1 Adding a CLI agent (the common case)
 
-Usually this **only needs a profile**, no code change: write a `driver: "spawn"` profile in `<data home>/agent-profiles.json` (`command`, `argsTemplate`, `promptMode`, `timeoutMs`, `executableDiscovery`) and it becomes usable via `run_task(agentId=...)` and visible in `get_profiles`. See [docs/agent-profiles.md](docs/agent-profiles.md) and the `codex-cli` example in the README.
+Usually this **only needs a profile**, no code change: write a `driver: "spawn"` profile in `<data home>/agent-profiles.json` (`command`, `argsTemplate`, `promptMode`, `timeoutMs`, `executableDiscovery`) and it becomes usable via `run_task(agentId=...)` and visible in `query_info(type=profiles)`. See [docs/agent-profiles.md](docs/agent-profiles.md) and the `codex-cli` example in the README.
 
 ### 13.2 Adding a GUI agent
 
@@ -1032,7 +1030,7 @@ Ordered by impact on a successor:
 1. **UI signals are the only reliable completion criterion** — all five GUI drivers depend on DOM structure and visible signals. Client upgrades can drift selectors; fix in `selectors.ts` or via a profile override, and real-hardware re-verification is not optional.
 2. **A session waiting in the GUI cannot be stopped while the task is `needs_user`** — the MCP side holds no CDP connection. Terminal messages state this honestly. Stopping via a temporary CDP connection is listed under "planned" in `CHANGELOG.md`.
 3. **Single-session serialization** — a GUI is a single-session resource, same-project tasks serialize behind `projectBusy()`, and global concurrency is capped by `maxRunning`. This is a design constraint, not a defect.
-4. **macOS verification matrix is incomplete** — Codex and ZCode have real-hardware macOS happy paths, but cancel / rework / `continue_task` / new-project matrices are uncovered, so both stay `research` on darwin; TraeWork's and Kimi Code's macOS branches fail closed, and Kimi Code stays `research` on darwin too.
+4. **macOS verification matrix is incomplete** — Codex and ZCode have real-hardware macOS happy paths, but cancel / rework / `manage_task(action="continue")` / new-project matrices are uncovered, so both stay `research` on darwin; TraeWork's and Kimi Code's macOS branches fail closed, and Kimi Code stays `research` on darwin too.
 5. **No-project dispatch is ZCode-only and Windows-verified only**; ZCode's auto-import of unregistered projects is unavailable on Windows (register the directory manually first, or pass `allowCreateProject=false` to fail explicitly). **Kimi Code does not support project-less dispatch at all** (it must bind a workspace).
 6. **Kimi Code cancellation / question answering / same-name workspace ambiguity are covered by hermetic integration tests only** (no hardware stop click, no real question card triggered).
 7. **Visual module platform-evidence boundary** — macOS evidence comes from CI-hosted runners and has not been re-confirmed on the maintainer's own macOS device.

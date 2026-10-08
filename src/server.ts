@@ -87,7 +87,7 @@ export async function buildServer(
     {
       capabilities: { tools: {} },
       instructions:
-        "tianshu-mcp：调度外部 AI-Agent（codex/zcode/traework/kimicode/qoder）完成项目开发、验收、返修闭环。ZCode 提问或等待用户环境处理时进入 needs_user，可用 continue_task 恢复原会话。run_task 异步返回 taskId；随后用 wait_task 阻塞等待任务到达停点（终态或 needs_user），超时则再次调用本工具继续等待；需要看进度细节时用 query_task 轮询。",
+        "tianshu-mcp：调度外部 AI-Agent（codex/zcode/traework/kimicode/qoder）完成项目开发、验收、返修闭环。ZCode 提问或等待用户环境处理时进入 needs_user，可用 manage_task(taskId, action=\"continue\", message) 恢复原会话。run_task 异步返回 taskId；随后用 wait_task 阻塞等待任务到达停点（终态或 needs_user；单任务给 taskId，批量给 taskIds 等首个），超时则再次调用继续等待；需要看进度细节时用 query_task 轮询，历史任务/验收报告/agent 适配用 query_info。",
     },
   );
 
@@ -109,10 +109,12 @@ export async function buildServer(
           // 会跑项目侧命令、可产生构建产物，故 readOnlyHint 诚实为 false——但那不等于需要审批：
           // 审批与否由 _meta.requireApproval 单独承载（verify_task 按 R11 仍免审批）。
           readOnlyHint: tool.capability === "read",
+          // v0.9.0 工具合并（13→8）：MCP 注解是**工具级**、无法按 action 区分。
+          // `manage_task` 含破坏性 action（cancel / rework）与安全 action（continue），
+          // 按「宁可过报不可漏报」标 true——continue 被一并标记是此取舍的已知代价，
+          // 工具描述里已写明「本工具含破坏性 action」。
           destructiveHint:
-            tool.name === "cancel_task" ||
-            tool.name === "rework_task" ||
-            tool.name === "approve_visual_baseline",
+            tool.name === "manage_task" || tool.name === "approve_visual_baseline",
           openWorldHint: tool.name === "run_task",
           // 幂等提示（issue #15）：声明为幂等的**前提**是调用方传入 idempotencyKey
           // （run_task 的 TTL 内重放、verify_task 的进行中/已完成重放），工具描述里已写明。
@@ -120,7 +122,7 @@ export async function buildServer(
           title: tool.name,
         },
       },
-      // issue #28：把 SDK 的请求 extra（含 signal）透传给 handler，供 wait_task/wait_any
+      // issue #28：把 SDK 的请求 extra（含 signal）透传给 handler，供 wait_task（含批量）
       // 感知请求取消 / 连接关闭；其余 handler 不读 extra，行为不变。
       async (args, extra) => {
         try {

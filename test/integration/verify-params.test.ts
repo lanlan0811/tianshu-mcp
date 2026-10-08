@@ -50,10 +50,10 @@ describe("R4 get_task_report round 语义", () => {
     const final = await waitForTerminal(ts.client, taskId, 30_000);
     expect(final.status).toBe("succeeded");
     // round=0 显式读
-    const r0 = await callTool(ts.client, "get_task_report", { taskId, round: 0 });
+    const r0 = await callTool(ts.client, "query_info", { type: "report", taskId, round: 0 });
     expect(r0.text).toContain("第 0 轮");
     // 缺省读最新
-    const latest = await callTool(ts.client, "get_task_report", { taskId });
+    const latest = await callTool(ts.client, "query_info", { type: "report", taskId });
     expect(latest.text).toContain("验收");
   }, 60_000);
 });
@@ -92,9 +92,9 @@ describe("R4/S4 手动 verify_task 轮次与元数据", () => {
     expect(qMeta?.message).toContain("[PASS] 手动验收");
 
     // get_task_report() 缺省返回 report-1；round=0 返回 report-0
-    const r0 = await callTool(ts.client, "get_task_report", { taskId, round: 0 });
+    const r0 = await callTool(ts.client, "query_info", { type: "report", taskId, round: 0 });
     expect(r0.text).toContain("第 0 轮");
-    const rLatest = await callTool(ts.client, "get_task_report", { taskId });
+    const rLatest = await callTool(ts.client, "query_info", { type: "report", taskId });
     expect(rLatest.text).toContain("第 1 轮");
   }, 60_000);
 });

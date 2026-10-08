@@ -384,10 +384,10 @@ async function listTools(client, opts) {
 
 /** 只读调用 + 返回格式校验（文本 + ---tianshu-mcp-meta--- JSON 块） */
 async function readOnlyCall(client) {
-  const { promise } = client.request("tools/call", { name: "list_tasks", arguments: {} });
+  const { promise } = client.request("tools/call", { name: "query_info", arguments: { type: "tasks" } });
   const res = await promise;
   assert(!res.error, `tools/call 返回错误：${JSON.stringify(res.error)}`);
-  assert(res.result?.isError !== true, `list_tasks 返回 isError=true：${JSON.stringify(res.result)}`);
+  assert(res.result?.isError !== true, `query_info(type=tasks) 返回 isError=true：${JSON.stringify(res.result)}`);
   const text = (res.result?.content ?? [])
     .filter((c) => c.type === "text")
     .map((c) => c.text ?? "")
@@ -396,7 +396,7 @@ async function readOnlyCall(client) {
   const m = text.match(/---tianshu-mcp-meta---\n([\s\S]*?)\n---tianshu-mcp-meta---/);
   assert(m, "meta 块无法解析");
   const meta = JSON.parse(m[1]);
-  assert(meta.ok === true, `list_tasks meta.ok 应为 true，实际 ${meta.ok}`);
+  assert(meta.ok === true, `query_info(type=tasks) meta.ok 应为 true，实际 ${meta.ok}`);
   return { text, meta };
 }
 

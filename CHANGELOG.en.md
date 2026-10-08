@@ -8,6 +8,92 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.9.0] — 2026-10-08
+
+> **Tool-surface consolidation (BREAKING)**: the 13 MCP tools are merged by domain into **8**.
+> Tool names change and so do call shapes — check the migration table below before upgrading
+> (the `skills/tianshu-mcp/` docs and the README tool table are already updated).
+
+### Breaking changes
+
+**13 → 8: three merges; visual baselines stay separate**
+
+| Old tool | New call shape |
+|---|---|
+| `cancel_task(taskId, reason?)` | `manage_task(taskId, action="cancel", reason?)` |
+| `continue_task(taskId, message)` | `manage_task(taskId, action="continue", message)` |
+| `rework_task(taskId, feedback?, repairHint?)` | `manage_task(taskId, action="rework", feedback?, repairHint?)` |
+| `list_tasks(projectPath?, status?, limit?)` | `query_info(type="tasks", projectPath?, status?, limit?)` |
+| `get_task_report(taskId, round?)` | `query_info(type="report", taskId, round?)` |
+| `get_profiles()` | `query_info(type="profiles")` |
+| `wait_any(taskIds, timeoutMs?)` | `wait_task(taskIds, timeoutMs?)` (batch mode) |
+| `wait_task(taskId, timeoutMs?)` | `wait_task(taskId, timeoutMs?)` (**unchanged**) |
+| `run_task` / `query_task` / `verify_task` | unchanged |
+| `prepare_visual_baseline` / `approve_visual_baseline` | **not merged** (stay as two tools) |
+
+**Why the visual baselines are not merged**: that merge would save only ~500 characters, while
+`approve_visual_baseline`'s three required parameters — `candidateId` / `expectedDigest` /
+`approvalNote` — form the baseline's **tamper-check gate** (`src/visual/baselines.ts` rejects when
+`digest(content) !== expectedDigest`). Folding three actions into one tool would remove that gate's
+explicit position in the parameter surface; the risk is out of proportion to the gain.
+
+### Changed
+
+- **`manage_task` branch constraints are validated inside the handler.** The merged schema is a
+  plain `z.object` (not `z.discriminatedUnion` — measured: it serialises to
+  `{"type":"object","properties":{}}` on the wire, losing all parameter information). Hence:
+  - `action=continue` requires a non-empty `message` (previously schema-level `z.string().min(1)`)
+  - Branch-specific fields are whitelisted fail-closed: `action=cancel` carrying `message` is
+    explicitly rejected rather than silently ignored
+- **`query_info` likewise**: `type=report` requires a non-empty `taskId`.
+  Note `status` **stays a free-form string** (the former `list_tasks.status` was already
+  `z.string().optional()`; it was not tightened into an enum); the `limit` cap of 200 and
+  `round`'s `.int().min(0)` are preserved verbatim.
+- **`wait_task`'s either/or constraint lives in the sink**: exactly one of `taskId` / `taskIds`
+  must be provided; neither or both is an error. Each mode reuses its original implementation, so
+  **timeout hints are kept per mode** (single → "call wait_task again", batch → "call wait_task
+  again with taskIds").
+- **Annotations**: `destructiveHint` is now carried by `manage_task` (MCP annotations are
+  tool-level and cannot vary per action, so it is set true — over-report rather than under-report;
+  the description states "contains destructive actions"). `readOnlyHint` / `openWorldHint` /
+  `idempotentHint` derivation is unchanged.
+
+### Tests
+
+- New `test/integration/tool-consolidation.test.ts` (21 cases) pinning three invariants:
+  ① the surface is exactly 8 tools and every old name is gone; ② the three new tools expose
+  non-empty `inputSchema.properties` on the wire (guarding the `discriminatedUnion` / `.refine()`
+  empty-schema trap); ③ branch constraints (required-field downgrade, either/or, field
+  whitelist) still fail closed in the sink.
+  **RED→GREEN**: 11 failed / 10 passed before implementation → 21 passed after.
+- `test/protocol/protocol.test.ts`: truth table 13 → 8 rows, tool-name array and the
+  idempotent-hint negative list synced.
+- `mcp-gui/test/capabilities.test.ts`: count assertion 13 → 8, plus presence assertions for the
+  new tools.
+- Full suites in the Verification section below.
+
+### Verification
+
+- Measured tool surface: `tools/list` shows **8 tools** (merged from 13).
+- `check-schema-parity.mjs`: **MCP tool surface (frontend mirror) (8 items)** consistent —
+  source of truth ↔ GUI mirror ↔ Rust with zero drift.
+- `mcp-gui` tests: 173 passed.
+- Remaining gates in the release notes `docs/release-v0.9.0.en.md`.
+
+### Migration notes
+
+- **Skill docs are synced**: `skills/tianshu-mcp/SKILL.md` and `usage-examples.md` now use the new
+  call shapes throughout (tool table, examples, error-code playbooks). This skill is idempotently
+  synced to `~/.rivet/skills/tianshu-mcp/` at server start, and **an old copy will not be replaced
+  automatically by an npm upgrade** — if your install manifest is in the "needs change but not
+  auto-overwritten" state, release it once via the `--approve-skill-update` flow described in
+  `docs/agent-profiles.md`.
+- **Runtime strings are synced**: the 47 "call continue_task" style hints under `src/agents/**`
+  now read `manage_task(action="continue")`, so GUI-side user guidance never points at a removed
+  tool.
+
+---
+
 ## [0.8.4] — 2026-10-07
 
 > **Tool-surface slimming release**: `run_task` / `verify_task` now declare `acceptanceOverride`

@@ -432,7 +432,7 @@ export async function runOpenDesignTask(args: RunOpenDesignArgs): Promise<AgentR
         needsUserKind: "close_existing_instance",
         pendingQuestion:
           "检测到本机已有 Open Design 实例在运行，但它没有开启 CDP 调试端口，无法接管。" +
-          "请先手动关闭该 Open Design 窗口（不要 kill 其他无关进程），然后调用 continue_task 继续。",
+          "请先手动关闭该 Open Design 窗口（不要 kill 其他无关进程），然后调用 manage_task 继续。",
         progressSummary: "Open Design 已在运行但未开启调试端口，等待用户关闭后重试",
       });
     }
@@ -494,7 +494,7 @@ export async function runOpenDesignTask(args: RunOpenDesignArgs): Promise<AgentR
         needsUserKind: "login_required",
         pendingQuestion:
           "已连上 Open Design 主窗口，但任务输入框在观察期内始终未出现（通常意味着停在登录/引导页）。" +
-          "请在 Open Design 中完成登录或引导，然后调用 continue_task 确认。",
+          "请在 Open Design 中完成登录或引导，然后调用 manage_task 确认。",
         progressSummary: "等待 Open Design 登录/引导完成",
       });
     }
@@ -603,7 +603,7 @@ export async function runOpenDesignTask(args: RunOpenDesignArgs): Promise<AgentR
           pendingQuestion:
             "Open Design 的后台 daemon 尚未就绪，工作目录选择器现在还打不开" +
             "（产品会提示 desktop 与 daemon 的鉴权握手失败）。请确认 Open Design 已正常联网并保持在运行中，" +
-            "随后调用 continue_task 继续。",
+            "随后调用 manage_task 继续。",
           progressSummary: "等待 Open Design daemon 就绪",
         });
       }
@@ -644,7 +644,7 @@ export async function runOpenDesignTask(args: RunOpenDesignArgs): Promise<AgentR
       if (!bound.ok) {
         // 工作目录绑定失败一律转 `needs_user`（计划决策 12：失败重试一次后交用户），
         // **不能**落成「非硬失败的 setup_failed」——那种结果会被编排器当成 agent 普通失败，
-        // 用户既看不到可操作提示，也没法用 continue_task 续跑。
+        // 用户既看不到可操作提示，也没法用 manage_task 续跑。
         const needsPermission = bound.reason === "native" && permissionError(bound.message);
         logger.warn(
           `[opendesign] 工作目录绑定失败：reason=${bound.reason ?? "unknown"}；${bound.message ?? ""}`,
@@ -661,8 +661,8 @@ export async function runOpenDesignTask(args: RunOpenDesignArgs): Promise<AgentR
           pendingQuestion:
             `Open Design 工作目录绑定失败（${bound.reason ?? "unknown"}）：${bound.message ?? ""}\n` +
             (needsPermission
-              ? "请在系统里为 Open Design 授予辅助功能/文件访问权限后调用 continue_task 确认。"
-              : `请在 Open Design 中确认「工作目录」可正常选择 ${ctx.projectPath} 后调用 continue_task 继续；` +
+              ? "请在系统里为 Open Design 授予辅助功能/文件访问权限后调用 manage_task 确认。"
+              : `请在 Open Design 中确认「工作目录」可正常选择 ${ctx.projectPath} 后调用 manage_task 继续；` +
                 "MCP 不会向其它目录发送任务。"),
           progressSummary: "等待 Open Design 工作目录绑定",
         });
@@ -821,7 +821,7 @@ export async function runOpenDesignTask(args: RunOpenDesignArgs): Promise<AgentR
       return result({
         endReason: "needs_user",
         needsUserKind: e instanceof OpenDesignSetupPause && e.needsPermission ? "system_permission" : "setup_recovery",
-        pendingQuestion: `${msg}。请在 Open Design 中确认环境后调用 continue_task 继续。`,
+        pendingQuestion: `${msg}。请在 Open Design 中确认环境后调用 manage_task 继续。`,
         progressSummary: "等待 Open Design 环境恢复",
       });
     }
@@ -999,7 +999,7 @@ async function observe(client: OpenDesignCdpClient, args: ObserveArgs): Promise<
         needsUserKind: "user_confirmation",
         pendingQuestion:
           `${question ?? "Open Design 正在等待用户处理"}\n` +
-          "请在 Open Design 窗口中处理该等待项后调用 continue_task(taskId, message=已处理说明) 恢复；恢复后仅重新接入观察，不会发送消息。" +
+          "请在 Open Design 窗口中处理该等待项后调用 manage_task(taskId, action='continue', message=已处理说明) 恢复；恢复后仅重新接入观察，不会发送消息。" +
           noProjectNote,
         actualModel: args.actualModel,
         progressSummary: `Open Design 等待用户处理${noProjectNote}`,

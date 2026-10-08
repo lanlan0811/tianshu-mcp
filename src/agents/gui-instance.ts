@@ -6,7 +6,7 @@ import type { SpawnOptions } from "node:child_process";
  * `detached: true` 是**不变量**，不是平台偏好：桌面实例必须自成进程组、脱离父进程，否则父进程
  * （MCP server，或一次性 smoke / probe 脚本）退出时会把它连坐杀掉，`run_task` 的 `keptInstance`
  * （「实例跨 server 退出驻留」）语义随之失效——表现为 `needs_user` 提示「请在 ZCode 中处理后再
- * 调用 continue_task」，而窗口其实已经消失，用户根本无从操作。
+ * 调用 manage_task」，而窗口其实已经消失，用户根本无从操作。
  *
  * 真机实测（Windows 10 / Node 24.18.0，2026-09-15）：同一段 spawn，non-detached 子进程在父进程
  * 退出后存活 0，detached 存活 1；对照组是 detached 启动的 ZCode 实例跨多次 server 退出仍驻留。

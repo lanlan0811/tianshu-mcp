@@ -77,7 +77,7 @@ describe("run_task 幂等键（issue #15）", () => {
     expect(againMeta.taskId).toBe(taskId);
     expect(againMeta.idempotencyReplay).toBe("hit");
     expect(again.text).toContain("幂等重放");
-    expect(again.text).toContain("rework_task");
+    expect(again.text).toContain("manage_task");
     expect(await recordDirs(ts.home, "tsk_")).toHaveLength(1);
   }, 120_000);
 
@@ -145,8 +145,8 @@ describe("run_task 幂等键（issue #15）", () => {
       | undefined;
     expect(hint?.taskId).toBe(firstId);
     expect(second.text).toContain("已有未结束任务");
-    await callTool(ts.client, "cancel_task", { taskId: firstId, reason: "用例收尾" });
-    await callTool(ts.client, "cancel_task", {
+    await callTool(ts.client, "manage_task", { action: "cancel", taskId: firstId, reason: "用例收尾" });
+    await callTool(ts.client, "manage_task", { action: "cancel",
       taskId: parseMeta(second.text).meta!.taskId as string,
       reason: "用例收尾",
     });

@@ -25,23 +25,21 @@ export interface McpToolEntry {
 }
 
 /**
- * 工具面全量清单（13 个）。
+ * 工具面全量清单（8 个，v0.9.0 合并后）。
  * **顺序与 `src/mcp/tools.ts` 的 `TOOL_DEFS` 一致**，便于逐项比对。
+ *
+ * 合并映射：cancel/continue/rework → `manage_task`；list_tasks/get_task_report/get_profiles
+ * → `query_info`；wait_task/wait_any → `wait_task`（增强）。
  */
 export const MCP_TOOLS: readonly McpToolEntry[] = [
   { name: "prepare_visual_baseline", capability: "write", requireApproval: true },
   { name: "approve_visual_baseline", capability: "write", requireApproval: true },
-  { name: "continue_task", capability: "write", requireApproval: true },
   { name: "run_task", capability: "write", requireApproval: true },
   { name: "query_task", capability: "read", requireApproval: false },
-  { name: "list_tasks", capability: "read", requireApproval: false },
-  { name: "get_task_report", capability: "read", requireApproval: false },
-  { name: "cancel_task", capability: "write", requireApproval: true },
+  { name: "manage_task", capability: "write", requireApproval: true },
   { name: "verify_task", capability: "execute", requireApproval: false },
+  { name: "query_info", capability: "read", requireApproval: false },
   { name: "wait_task", capability: "read", requireApproval: false },
-  { name: "wait_any", capability: "read", requireApproval: false },
-  { name: "rework_task", capability: "write", requireApproval: true },
-  { name: "get_profiles", capability: "read", requireApproval: false },
 ] as const;
 
 /** 三族的展示顺序（read → write → execute） */

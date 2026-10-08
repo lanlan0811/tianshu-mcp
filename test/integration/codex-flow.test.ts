@@ -661,7 +661,7 @@ describe("Codex 等待用户检测（issue #5）", () => {
     });
     expect(result.endReason).toBe("needs_user");
     expect(result.needsUserKind).toBe("user_confirmation");
-    expect(result.pendingQuestion).toContain("continue_task");
+    expect(result.pendingQuestion).toContain("manage_task");
     expect(fake.sent).toBe(1); // 只发送一次，不重发
   });
 
@@ -854,7 +854,7 @@ describe("Codex TaskManager 恢复与取消", () => {
     const nu = await waitStatus(manager, meta.taskId, ["needs_user"], 20_000);
     expect(nu?.status).toBe("needs_user");
     expect(nu?.needsUserKind).toBe("user_confirmation");
-    expect(nu?.pendingQuestion).toContain("continue_task");
+    expect(nu?.pendingQuestion).toContain("manage_task");
     expect(fake.sent).toBe(1);
 
     // 用户在 GUI 处理完 → continue_task 重观察恢复

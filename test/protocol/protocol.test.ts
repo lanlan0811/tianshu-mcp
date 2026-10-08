@@ -1,6 +1,6 @@
 /**
  * 协议级测试：官方 SDK client 连接 in-memory transport 后的 server。
- * 断言 13 个工具可见、调用返回格式（文本 + meta 块 / 参数校验错误）。
+ * 断言 8 个工具可见（v0.9.0 合并后）、调用返回格式（文本 + meta 块 / 参数校验错误）。
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { startTestServer, callTool, parseMeta, rmrf, type TestServer } from "../test-utils.js";
@@ -26,20 +26,20 @@ describe("服务版本", () => {
 });
 
 describe("工具 annotations（S4/S6：直接断言真实 tools/list）", () => {
-  it("read 类工具 readOnlyHint=true，write/execute 类 false；cancel/rework destructiveHint=true", async () => {
+  it("read 类工具 readOnlyHint=true，write/execute 类 false；destructiveHint 仅管理/基准审批为 true", async () => {
     const tools = await ts.client.listTools();
     const byName = new Map(tools.tools.map((t) => [t.name, t]));
     // 读类
-    for (const name of ["query_task", "list_tasks", "get_task_report", "get_profiles"]) {
+    for (const name of ["query_task", "query_info", "wait_task"]) {
       expect(byName.get(name)?.annotations?.readOnlyHint, `${name} readOnly`).toBe(true);
     }
     // 写类 + execute 类
-    for (const name of ["run_task", "cancel_task", "rework_task", "continue_task", "verify_task"]) {
+    for (const name of ["run_task", "manage_task", "verify_task"]) {
       expect(byName.get(name)?.annotations?.readOnlyHint, `${name} readOnly`).toBe(false);
     }
-    // destructive
-    expect(byName.get("cancel_task")?.annotations?.destructiveHint).toBe(true);
-    expect(byName.get("rework_task")?.annotations?.destructiveHint).toBe(true);
+    // destructive：manage_task（含 cancel/rework 破坏性 action，注解是工具级故过报）+ 基准审批
+    expect(byName.get("manage_task")?.annotations?.destructiveHint).toBe(true);
+    expect(byName.get("approve_visual_baseline")?.annotations?.destructiveHint).toBe(true);
     // openWorld：仅 run_task
     expect(byName.get("run_task")?.annotations?.openWorldHint).toBe(true);
     expect(byName.get("query_task")?.annotations?.openWorldHint).toBe(false);
@@ -61,17 +61,15 @@ describe("工具 annotations（S4/S6：直接断言真实 tools/list）", () => 
       idempotentHint: boolean;
     }> = [
       { name: "run_task", capability: "write", requireApproval: true, readOnlyHint: false, destructiveHint: false, openWorldHint: true, idempotentHint: true },
-      { name: "continue_task", capability: "write", requireApproval: true, readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false },
       { name: "query_task", capability: "read", requireApproval: false, readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: false },
-      { name: "list_tasks", capability: "read", requireApproval: false, readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: false },
-      { name: "get_task_report", capability: "read", requireApproval: false, readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: false },
-      { name: "cancel_task", capability: "write", requireApproval: true, readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: false },
+      // v0.9.0 合并：cancel_task + continue_task + rework_task → manage_task。
+      // destructiveHint 为 true：MCP 注解是工具级、无法按 action 区分，按「宁可过报」处理。
+      { name: "manage_task", capability: "write", requireApproval: true, readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: false },
       { name: "verify_task", capability: "execute", requireApproval: false, readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
-      { name: "rework_task", capability: "write", requireApproval: true, readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: false },
-      { name: "get_profiles", capability: "read", requireApproval: false, readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: false },
-      // issue #28：阻塞等待原语——纯只读、免审批、非幂等（每次等待是新的时间片）
+      // v0.9.0 合并：list_tasks + get_task_report + get_profiles → query_info
+      { name: "query_info", capability: "read", requireApproval: false, readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: false },
+      // v0.9.0 合并：wait_task + wait_any → wait_task（增强）。纯只读、免审批、非幂等
       { name: "wait_task", capability: "read", requireApproval: false, readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: false },
-      { name: "wait_any", capability: "read", requireApproval: false, readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: false },
       { name: "prepare_visual_baseline", capability: "write", requireApproval: true, readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false },
       { name: "approve_visual_baseline", capability: "write", requireApproval: true, readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: false },
     ];
@@ -101,14 +99,9 @@ describe("工具 annotations（S4/S6：直接断言真实 tools/list）", () => 
     }
     for (const name of [
       "query_task",
-      "list_tasks",
-      "get_task_report",
-      "get_profiles",
-      "cancel_task",
-      "rework_task",
-      "continue_task",
+      "manage_task",
+      "query_info",
       "wait_task",
-      "wait_any",
       "prepare_visual_baseline",
       "approve_visual_baseline",
     ]) {
@@ -118,22 +111,17 @@ describe("工具 annotations（S4/S6：直接断言真实 tools/list）", () => 
 });
 
 describe("工具面", () => {
-  it("注册 13 个工具且名称与能力标注符合视觉验收计划", async () => {
+  it("注册 8 个工具且名称与能力标注符合 v0.9.0 合并计划", async () => {
     const tools = await ts.client.listTools();
     const names = tools.tools.map((t) => t.name).sort();
     expect(names).toEqual([
       "approve_visual_baseline",
-      "cancel_task",
-      "continue_task",
-      "get_profiles",
-      "get_task_report",
-      "list_tasks",
+      "manage_task",
       "prepare_visual_baseline",
+      "query_info",
       "query_task",
-      "rework_task",
       "run_task",
       "verify_task",
-      "wait_any",
       "wait_task",
     ]);
     // 每个工具在 TOOL_DEFS 有声明
@@ -149,8 +137,8 @@ describe("工具面", () => {
     expect(new Set(TOOL_DEFS.map((d) => d.name)).size).toBe(tools.tools.length);
   });
 
-  it("continue_task 是需审批的写工具", () => {
-    const def = TOOL_DEFS.find((d) => d.name === "continue_task");
+  it("manage_task 是需审批的写工具", () => {
+    const def = TOOL_DEFS.find((d) => d.name === "manage_task");
     expect(def?.capability).toBe("write");
     expect(def?.requireApproval).toBe(true);
   });
@@ -165,8 +153,8 @@ describe("工具面", () => {
     expect(tools.find((t) => t.name === "approve_visual_baseline")?.annotations?.destructiveHint).toBe(true);
   });
 
-  it("get_profiles 返回文本 + 可解析 meta 块", async () => {
-    const { text } = await callTool(ts.client, "get_profiles", {});
+  it("query_info(type=profiles) 返回文本 + 可解析 meta 块", async () => {
+    const { text } = await callTool(ts.client, "query_info", { type: "profiles" });
     const { meta } = parseMeta(text);
     expect(meta).not.toBeNull();
     expect(meta!.ok).toBe(true);
@@ -176,8 +164,8 @@ describe("工具面", () => {
     expect(text).toContain("profileStatus=research");
   });
 
-  it("list_tasks 空表也返回合法格式", async () => {
-    const { text } = await callTool(ts.client, "list_tasks", {});
+  it("query_info(type=tasks) 空表也返回合法格式", async () => {
+    const { text } = await callTool(ts.client, "query_info", { type: "tasks" });
     const { meta } = parseMeta(text);
     expect(meta!.ok).toBe(true);
   });

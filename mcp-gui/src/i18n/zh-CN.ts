@@ -116,19 +116,14 @@ export const zhCN = {
     approvalFree: "免审批",
     tools: {
       run_task: "派活：启动外部 AI-Agent 开发任务并可自动验收返修，异步返回 taskId。",
-      continue_task:
-        "恢复处于 needs_user 的任务（回发答案 / 重连观察 / 复检环境后补发任务书）。",
       query_task: "查询任务状态 / 进度 / 最近日志尾部 / 最近细粒度事件。",
-      list_tasks: "列出历史任务（可按项目路径 / 状态过滤，limit 默认 50）。",
-      get_task_report: "取某轮验收报告全文（report.md）；round 缺省取最新一轮。",
-      cancel_task: "取消运行中任务；对已终态 GUI 任务兼任「人工确认残留」入口。",
+      manage_task:
+        "任务生命周期管理：action=cancel 取消运行中任务（含人工确认残留入口）；action=continue 恢复 needs_user 任务（回发答案 / 重连观察 / 复检环境后补发任务书）；action=rework 手动返修终态任务，可带 feedback / repairHint。含破坏性 action。",
       verify_task: "对已完成任务或项目路径执行一次验收（不改源码）。",
+      query_info:
+        "统一信息查询：type=tasks 列出历史任务（可按项目路径 / 状态过滤，limit 默认 50）；type=report 取某轮验收报告全文（round 缺省取最新）；type=profiles 查看 agent 适配与可执行探测结果。",
       wait_task:
-        "阻塞等待单个任务到达停点（终态或 needs_user）或超时；纯只读、免审批，超时后再次调用继续等待。",
-      wait_any:
-        "阻塞等待一组任务（1..20）中数组顺序首个到达停点者，返回其快照与全部任务当前状态。",
-      rework_task: "手动返修：把终态任务重新入队续跑，可带 feedback / repairHint。",
-      get_profiles: "查看当前 agent 适配与可执行探测结果。",
+        "阻塞等待任务到达停点（终态或 needs_user）或超时；单任务给 taskId，批量给 taskIds（1..20，等首个停者）。纯只读、免审批，超时后再次调用继续等待。",
       prepare_visual_baseline: "准备视觉基准候选，返回摘要与预览；不采用正式基准。",
       approve_visual_baseline: "用户明确审阅授权后批准视觉基准，写入基准与审批记录。",
     },

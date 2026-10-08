@@ -100,7 +100,7 @@ resolveDataHome → Logger → DataHome(BUILTIN_PROFILES) → init()
   → TaskStore → AgentAdapterRegistry(loadProfiles) → AcceptanceEngine
   → TaskManager(+makeBuildCtx) → manager.initialize({maxRunning, guiStopWaitMs})  # 归档重启遗留的 active 任务
   → 技能自检安装（后台，不阻塞握手）
-  → 注册 13 个工具 → 返回 ServerAssembly{server, manager, dataHome, store, logger, close}
+  → 注册 8 个工具 → 返回 ServerAssembly{server, manager, dataHome, store, logger, close}
 ```
 
 `close()` = `manager.shutdownInterrupt()`（归档活动任务 + 终止子进程）→ `engine.close()` → `server.close()`。
@@ -171,21 +171,16 @@ resolveDataHome → Logger → DataHome(BUILTIN_PROFILES) → init()
 
 ## 4. MCP 工具面与返回契约
 
-13 个工具（`src/mcp/tools.ts`），按能力分为三族：`read`（读/查询，无副作用）、`write`（有副作用，全部需审批）、`execute`（执行项目侧命令但不改源码，当前仅 `verify_task`，按 R11 仍免审批）：
+8 个工具（`src/mcp/tools.ts`；v0.9.0 起由 13 个按域合并），按能力分为三族：`read`（读/查询，无副作用）、`write`（有副作用，全部需审批）、`execute`（执行项目侧命令但不改源码，当前仅 `verify_task`，按 R11 仍免审批）：
 
 | 工具 | 能力 | 审批 | 作用 |
 |---|---|---|---|
 | `run_task` | write | 是 | 派活，异步返回 `taskId` |
-| `continue_task` | write | 是 | 恢复 `needs_user` 的原会话 |
 | `query_task` | read | 否 | 轮询状态 / 进度 / 日志尾 |
-| `list_tasks` | read | 否 | 历史任务列表（可按项目/状态过滤） |
-| `get_task_report` | read | 否 | 取某轮 `report.md` 全文 |
-| `cancel_task` | write | 是 | 取消（CLI 杀进程树；GUI 尽力点停止 + 有界等待） |
+| `manage_task` | write | 是 | 任务生命周期管理（合并原 `cancel_task` / `continue_task` / `rework_task`）：`action=cancel` 取消（CLI 杀进程树；GUI 尽力点停止 + 有界等待）；`action=continue` 恢复 `needs_user` 的原会话；`action=rework` 手动返修，把失败摘要喂回同一 agent。**注解层 `destructiveHint=true`**（工具级、无法按 action 区分） |
 | `verify_task` | **execute** | 否 | 对任务或项目路径做一次验收：会跑项目命令、可产生构建产物，但**不改源码**，故免审批 |
-| `wait_task` | read | 否 | 阻塞等待单任务到停点（终态或 `needs_user`）或超时；纯只读、无害 |
-| `wait_any` | read | 否 | 阻塞等待一组任务（1..20）中数组顺序首个到停点者，返回其快照 + 全部状态 |
-| `rework_task` | write | 是 | 手动返修，把失败摘要喂回同一 agent |
-| `get_profiles` | read | 否 | agent 适配与可执行探测结果 |
+| `query_info` | read | 否 | 统一信息查询（合并原 `list_tasks` / `get_task_report` / `get_profiles`）：`type=tasks` 历史任务列表；`type=report` 某轮 `report.md` 全文；`type=profiles` agent 适配与可执行探测结果 |
+| `wait_task` | read | 否 | 阻塞等待任务到停点（终态或 `needs_user`）或超时；单任务给 `taskId`，批量给 `taskIds`（1..20，等数组顺序首个停者，返回其快照 + 全部状态）。纯只读、无害（v0.9.0 合并原 `wait_any`） |
 | `prepare_visual_baseline` | write | 是 | 生成基准候选与摘要（不落正式基准） |
 | `approve_visual_baseline` | write | 是 | 用户审阅后核对摘要并写入基准 |
 
@@ -217,7 +212,7 @@ resolveDataHome → Logger → DataHome(BUILTIN_PROFILES) → init()
                  │      │      │            ▼          │──► needs_attention
                  │      │      └──── fixing ◄──────────┘
                  │      │
-                 │      ├──► needs_user  ──► queued   （continue_task 恢复）
+                 │      ├──► needs_user  ──► queued   （manage_task(action='continue') 恢复）
                  │      ├──► cancelled
                  │      └──► interrupted
                  └──► cancelled | interrupted
@@ -226,7 +221,7 @@ resolveDataHome → Logger → DataHome(BUILTIN_PROFILES) → init()
 - **状态集**：`queued, running, verify_start, fixing, succeeded, failed, needs_attention, needs_user, cancelled, interrupted`。
 - **终态**：`succeeded, failed, needs_attention, cancelled, interrupted`。
 - **活动态**：`queued, running, verify_start, fixing`。
-- **`needs_user` 既非活动态也非终态**——它可被 `continue_task` 恢复到 `queued`，也可被取消。这是 GUI agent 等待人工介入时的宿主可见形态。
+- **`needs_user` 既非活动态也非终态**——它可被 `manage_task(action="continue")` 恢复到 `queued`，也可被取消。这是 GUI agent 等待人工介入时的宿主可见形态。
 - 转移表 `TRANSITIONS` 显式枚举合法迁移；`TaskStore.updateStatus` 额外守卫「终态只能由显式 continue/rework 重新进入」。
 - `errorType`：`timeout | spawn | setup_failed | agent_failed | verify_failed | cancelled | interrupted | agent_unresolved | internal`。
   （`setup_failed`＝setup 阶段的**逻辑性**失败（模式未就绪/项目未绑定/模型不可用），重试换环境不会成功；
@@ -241,7 +236,7 @@ resolveDataHome → Logger → DataHome(BUILTIN_PROFILES) → init()
 
 并发写保护：`TaskStore` 用 `statusWriteTails` 把同一任务的写操作串成链，避免状态乱序；`waitForStatusWrite()` 是**读屏障**——保证查询/取消不会在 JSONL 事件落盘之前就观察到内存里的终态。
 
-**崩后恢复策略是「归档而非续跑」**：`TaskManager.initialize()` 扫描遗留的活动态任务，一律标 `interrupted` + `abortSource="shutdown"`。理由：GUI 会话与子进程已随 server 退出而失联，静默续跑会产生无法归因的半成品。恢复动作必须由人显式 `rework_task` 触发。
+**崩后恢复策略是「归档而非续跑」**：`TaskManager.initialize()` 扫描遗留的活动态任务，一律标 `interrupted` + `abortSource="shutdown"`。理由：GUI 会话与子进程已随 server 退出而失联，静默续跑会产生无法归因的半成品。恢复动作必须由人显式 `manage_task(action="rework")` 触发。
 
 ### 5.3 队列与并发
 
@@ -276,7 +271,7 @@ GUI agent 的取消是**尽力而为且诚实回报**，但各适配器能力不
 |---|---|---|
 | `TaskMeta.guiStop` | 最近一次 abort 的 GUI 侧停止结果 `{clicked, idle}`（**所有** GUI agent 都落盘） | `abortTerminal()` / 运行结果落盘 |
 | `TaskMeta.interruptedCleanStop` | 本次 interrupted 是否**已确认**停止（仅 `guiStop.idle === true` 为 true） | `abortTerminal()` / `persistInterrupted()` |
-| `TaskMeta.guiResidualUnconfirmed` | 重启归档的 GUI 遗留任务待人工确认残留（重启时无任何连接可确认，故无条件置 true） | `initialize()`；由 `cancel_task` 清除 |
+| `TaskMeta.guiResidualUnconfirmed` | 重启归档的 GUI 遗留任务待人工确认残留（重启时无任何连接可确认，故无条件置 true） | `initialize()`；由 `manage_task(action="cancel")` 清除 |
 | meta 块 `guiStopUnconfirmed` | 读侧单一判据：`guiResidualUnconfirmed===true \|\| interruptedCleanStop===false` | `metaFromTask()` |
 
 判定矩阵（红线 8 的单一实现，`guiStopDisclosure()`）：`idle===true` → 已确认停止；`idle===false` → 点击过但未确认；**字段缺失 → 无停止结果，同样不得声称已停止**。
@@ -302,7 +297,7 @@ GUI agent 的取消是**尽力而为且诚实回报**，但各适配器能力不
 
 **「执行中」标记是进程内的**（`reserveInFlight` / `releaseInFlight`）：重启后未完成的验收不会被缓存（没有报告可返回，重试即重新执行，如实），也避免映射挂着 `in_progress` 而引擎已死。
 
-**边界**：`verify_task(taskId=…)` 的键**不写入任务快照**（该字段承载任务的派单键，避免覆盖），这一种组合的重建覆盖依赖 `idempotency.json`；不给 `rework_task` / `continue_task` / `cancel_task` / 视觉基准工具加键；不做跨进程分布式幂等（与 visual lock 同一假定）。
+**边界**：`verify_task(taskId=…)` 的键**不写入任务快照**（该字段承载任务的派单键，避免覆盖），这一种组合的重建覆盖依赖 `idempotency.json`；不给 `manage_task` / 视觉基准工具加键；不做跨进程分布式幂等（与 visual lock 同一假定）。
 
 ### 5.7 终态通知：webhook 钩子（issue #22）
 
@@ -348,18 +343,18 @@ GUI agent 的取消是**尽力而为且诚实回报**，但各适配器能力不
 
 **如实披露**：事件属观测能力而非交付保证——不保证送达，`query_task` 只反映「最后一次落盘的事件」；`file_modification_started` 是启发式推断，确切改动证据请看验收报告的 `changedFiles` / `diffstat`。详见 [事件流](docs/event-stream.md)。
 
-### 5.9 阻塞等待原语（`wait_task` / `wait_any`，issue #28）
+### 5.9 阻塞等待原语（`wait_task`，issue #28；v0.9.0 合并 `wait_any`）
 
 回合驱动的调用方（天枢 agent 会话）只在收到用户消息的回合内运行，无法自行轮询——`run_task` 秒回 `taskId` 后，「谁在任务完成时叫醒会话」成为工具面的真实空白。本能力以**一次阻塞式只读调用**承载等待。
 
 | 决策 | 实现与理由 |
 |---|---|
-| 停点定义 | `isWaitSettled(status) = isTerminal(status) \|\| status === "needs_user"`（`src/tasks/task.ts`，单一判定点）。任务**停止推进**的时刻即应唤醒调用方：`needs_user` 非终态但已停等人工（可被 `continue_task` 恢复，之后可能再次进入）——不等它，wait 会空等到 timeout，调用方对「任务在等人」一无所知 |
+| 停点定义 | `isWaitSettled(status) = isTerminal(status) \|\| status === "needs_user"`（`src/tasks/task.ts`，单一判定点）。任务**停止推进**的时刻即应唤醒调用方：`needs_user` 非终态但已停等人工（可被 `manage_task(action="continue")` 恢复，之后可能再次进入）——不等它，wait 会空等到 timeout，调用方对「任务在等人」一无所知 |
 | 等待核心 | `src/tasks/wait.ts` 的 `waitForStops(taskIds, getMeta, {timeoutMs, pollIntervalMs=500, signal})`：**纯逻辑、依赖注入 `getMeta`**，不触文件系统 / TaskManager 构造，可独立单测；`TaskManager.waitForStops` 只做接线（注入 `(id) => this.getMeta(id)`，复用 `waitForStatusWrite` 屏障 + 内存优先 + 快照兜底） |
 | 只读与无损 | 等待期间**不写任何任务状态、不动任务本体**；被客户端截断 / 连接中断 / 超时都不影响任务继续执行——最坏结果只是调用方多调几次，重连后 `query_task` 即拿到最新事实 |
 | 超时策略 | `timeoutMs` 缺省 `WAIT_TASK_TIMEOUT_DEFAULT_MS`（50s，低于生态常见 60s 客户端超时，留序列化/往返余量）；显式上限 `WAIT_TASK_TIMEOUT_MAX_MS`（600s），超上限**钳制并如实披露**（不静默改值，`clampWaitTimeout`）。超时返回体引导循环调用（每轮 ≈50s，长任务靠多次调用） |
 | 中断感知 | SDK 的 `RequestHandlerExtra.signal`（`server.ts` 把 `extra` 透传给 handler）在连接关闭 / 请求取消时触发，等待循环立即退出、不泄漏后台等待（SDK `_onclose` 会 abort 全部 in-flight handler） |
-| `wait_any` 返回语义 | 按 `taskIds` **数组顺序**返回首个处于停点的任务（确定性优先，不做 `finishedAt` 排序）；入口预检全部 id 存在，缺一即 fail-closed 报错并列出缺失 id |
+| `wait_task` 批量模式返回语义 | 按 `taskIds` **数组顺序**返回首个处于停点的任务（确定性优先，不做 `finishedAt` 排序）；入口预检全部 id 存在，缺一即 fail-closed 报错并列出缺失 id |
 
 **已知限制**：等待是**进程内**的——server 重启后原 wait 调用随连接终止（调用方重连后 `query_task` 复核）；单次调用等待上限 600s，更长场景靠循环调用（无损）。详见 [等待原语](docs/wait-task.md)。
 
@@ -378,7 +373,7 @@ GUI agent 的取消是**尽力而为且诚实回报**，但各适配器能力不
       ├─ status=running → buildCtx(meta, round, feedback) → 持有项目锁 → runAgentOnce
       │     runAgentOnce: adapter.run 存在 → 调用它；否则 runChild + parseExit
       ├─ agent 结果分支
-      │     needs_user            → needs_user（等待 continue_task）
+      │     needs_user            → needs_user（等待 manage_task(action='continue')）
       │     idle/timeout/cdp 断开  → needs_attention
       │     hardFailure           → failed(spawn)      # 基础设施/认证错误，不进验收
       │     timeout / killed      → 对应终态
@@ -400,7 +395,7 @@ GUI agent 的取消是**尽力而为且诚实回报**，但各适配器能力不
 
 **关键设计点**：`hardFailure` 与「验收失败」被严格区分。前者是环境/认证/启动问题，进验收与返修毫无意义，直接终态失败；只有 agent 真正跑完才进入验收与返修记账。
 
-**`pendingVisualVerification` 的意义**：因缺少已批准基准或基准被改动而阻塞的任务，在 `rework_task` 恢复时**先重新验收**，通过即结束。这避免了「规则问题被当成代码问题」白烧一轮 agent。
+**`pendingVisualVerification` 的意义**：因缺少已批准基准或基准被改动而阻塞的任务，在 `manage_task(action="rework")` 恢复时**先重新验收**，通过即结束。这避免了「规则问题被当成代码问题」白烧一轮 agent。
 
 ---
 
@@ -536,7 +531,7 @@ interface AgentAdapter {
 | `endReason` | 结构化结束原因（各 driver 取值见下） |
 | `needsUserKind` | 需要人工介入的细分类型 |
 | `guiStop:{clicked,idle}` | 取消时 GUI 侧是否真的停了 |
-| `session / keptInstance` | 会话锚点与实例是否保留，供 `continue_task` 恢复 |
+| `session / keptInstance` | 会话锚点与实例是否保留，供 `manage_task(action="continue")` 恢复 |
 | `progressSummary` | 落盘进 `query_task` 可见的进度 |
 
 ### 8.2 六个 GUI driver 的执行顺序（实测结论，勿随意调整）
@@ -605,7 +600,7 @@ MSIX 发现（Appx 查询优先 + 扫盘回退） → COM 激活 + 专属 user-d
 
 > **完成判定必须绑定本轮用户消息**：历史回复里的「完成」、界面静止、连接断开都不算；
 > 提问/审批等等待项优先于停止按钮，先判 `needs_user`，避免死锁成 `running`。
-> 发送与答题提交前先写检查点，**未确认回执时只观察、绝不自动重发**；`continue_task` 对审批/登录等
+> 发送与答题提交前先写检查点，**未确认回执时只观察、绝不自动重发**；`manage_task(action="continue")` 对审批/登录等
 > 环境等待只恢复观察，仅 `agent_question` 把答案写回原会话（多题使用「完整问题文字 → 答案」的 JSON 对象）。
 > 界面静止但没有本轮完成证据 → `pause("setup_recovery")`，**不进入验收**，也不产出 `idle_timeout`。
 > 取消只停**已绑定的原会话**（`stopQoder` 连续两次观测到非运行才认 `idle`），未确认时保留实例并阻止重派。
@@ -672,7 +667,7 @@ DOM 完成标志出现（"由AI生成" 等）                      → 判定完
 > 已确认在运行，不种子会导致「恢复后 turn 恰好已完成 → 判不了 finished → 误落 idle_timeout」。
 >
 > 配套地，`idle_timeout`（以及 `task_timeout` / `cdp_disconnected`）在 `fix-loop` 中一律转
-> `needs_attention`（非终态、可 `continue_task` 恢复），**不得进入项目验收链** ——
+> `needs_attention`（非终态、可 `manage_task(action="continue")` 恢复），**不得进入项目验收链** ——
 > 判定谓词见 `shouldParkAsNeedsAttention()`。仅加门而不做这一步，误判只是从
 > `reply_stable`（进验收）变成 `idle_timeout`（因 `autoVerify` 默认为 `true` 仍进验收）。
 
@@ -721,7 +716,7 @@ DOM 完成标志出现（"由AI生成" 等）                      → 判定完
 | `session_lost` | 已连接的主窗口/会话丢失 |
 | `idle_timeout` | 长时间无运行信号且无完成证据（异常结束，保留实例） |
 | `task_timeout` | 任务级超时 |
-| `aborted` | 取消（`cancel_task` / server 退出） |
+| `aborted` | 取消（`manage_task(action="cancel")` / server 退出） |
 | `setup_failed` | 入口校验失败（设计方向非法 / 任务书为空 / 未找到可执行 / 启动失败） |
 | `needs_user` | 需人工介入（如已有实例未开调试端口 `close_existing_instance`） |
 
@@ -739,7 +734,7 @@ DOM 完成标志出现（"由AI生成" 等）                      → 判定完
 > **Qoder CN 是唯一能产出全部 6 种 kind 的适配器**（`pause(kind, …)` 把 kind 同时当作 `endReason`）。
 > **Open Design 产出 5 种 kind**（`login_required` / `user_confirmation` / `system_permission` / `setup_recovery` / `close_existing_instance`），
 > 唯独不产出 `agent_question`（它的「向用户提问」不表现为可回填的答题控件）。
-> TraeWork 不产出 `needsUserKind`：它的「向用户提问」被当作正常结束（`ask_user`）并释放实例，且**完全不读 `ctx.resume`**——所以 `continue_task` 对它无意义。
+> TraeWork 不产出 `needsUserKind`：它的「向用户提问」被当作正常结束（`ask_user`）并释放实例，且**完全不读 `ctx.resume`**——所以 `manage_task(action="continue")` 对它无意义。
 
 ### 8.5 注册表与可执行探测（`src/agents/registry.ts`）
 
@@ -754,7 +749,7 @@ DOM 完成标志出现（"由AI生成" 等）                      → 判定完
 - 选择器漂移诊断（v0.6.2，issue #23）：`src/agents/gui-diagnostics.ts` 提供 `visibleLabelsExpr()`（页面内表达式，收集可见候选 aria-label / 短文本）与 `withDiagnostics()`（幂等追加「页面可见候选=[…]」后缀）。codex / qoder / traework 三者在选择器解析失败时统一附上该信息，便于一步定位漂移；各 agent 的 `selectors.ts` 以 `verifiedVersion` 记录实测版本。
 - 目录扫描按深度 6 内查找候选，跳过 `node_modules` 与点目录，**取 mtime 最新者**。
 - profile 热加载靠 sha256 内容指纹（不是 mtime），因此同一时间戳内的修改也能被感知。
-- `get_profiles` 列出所有已注册 adapter 键与 profile 键的并集（未解析成功的自定义 profile 也会出现），并逐条给出 `[PASS]/[FAIL]` 与探测来源。
+- `query_info(type=profiles)` 列出所有已注册 adapter 键与 profile 键的并集（未解析成功的自定义 profile 也会出现），并逐条给出 `[PASS]/[FAIL]` 与探测来源。
 
 ### 8.6 GUI 实例生命周期
 
@@ -792,7 +787,7 @@ DOM 完成标志出现（"由AI生成" 等）                      → 判定完
         → 采样多数票 + 任务级输入哈希缓存（键含命令二进制身份）
         → 默认仅告警（optional）；逐规则 blocking:true 才参与致败与返修
   → 缺陷按 autoFixRounds 返修；阻塞 → needs_attention
-  → rework_task 对阻塞任务先重新验收，不先启动 agent
+  → manage_task(action="rework") 对阻塞任务先重新验收，不先启动 agent
 ```
 
 **AI 内容校验的凭证边界（v0.5.4，红线 §12）**：MCP 不读取、不存储、不转发任何密钥，也不实现模型/厂商

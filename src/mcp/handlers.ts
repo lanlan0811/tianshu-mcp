@@ -1,7 +1,7 @@
 /**
  * 13 个工具的具体 handler。统一返回 ToolResult（文本 + meta 块）。
  * run_task / rework / verify 依赖 AppContext 提供的 manager/engine/services；
- * wait_task / wait_any（issue #28）额外接收 SDK 的请求 `extra`（用其 `signal` 感知中断）。
+ * wait_task（issue #28；v0.9.0 合并 wait_any）额外接收 SDK 的请求 `extra`（用其 `signal` 感知中断）。
  */
 import fsp from "node:fs/promises";
 import { validateQoderReferences } from "../agents/qoder/references.js";
@@ -26,6 +26,9 @@ import {
   type ContinueTaskParams,
   type WaitTaskParams,
   type WaitAnyParams,
+  type ManageTaskParams,
+  type QueryInfoParams,
+  type WaitTaskMergedParams,
   type ServerConfig,
   type ProjectRecord,
 } from "../config/schema.js";
@@ -115,7 +118,7 @@ function idempotencyConflictError(
   const noun = scope === "run_task" ? "任务" : "验收记录";
   return errorResult(
     `idempotencyKey '${key}' 已被${noun} ${entry.taskId} 占用，但本次参数与首次提交不同。` +
-      `幂等键不能在参数变更后复用：请改用新的 key，或直接对原记录操作（query_task / get_task_report / rework_task）。`,
+      `幂等键不能在参数变更后复用：请改用新的 key，或直接对原记录操作（query_task / query_info(type="report") / manage_task(action="rework")）。`,
   );
 }
 
@@ -167,7 +170,7 @@ function runTaskReplayLines(meta: TaskMeta): string[] {
   ].filter((s) => s !== "");
   if (isTerminal(meta.status)) {
     lines.push(
-      `任务已处于终态（${meta.status}）：如需继续处理请用 rework_task(${meta.taskId})，或改用新的 idempotencyKey 重新派单。`,
+      `任务已处于终态（${meta.status}）：如需继续处理请用 manage_task(${meta.taskId}, action="rework")，或改用新的 idempotencyKey 重新派单。`,
     );
   } else {
     lines.push(`请用 query_task(${meta.taskId}) 继续轮询。`);
@@ -300,19 +303,14 @@ export function makeHandlers(ctx: AppContext, defaults: Defaults) {
       ),
     run_task: runTaskHandler(ctx, defaults, idempotency),
     query_task: queryTaskHandler(ctx),
-    list_tasks: listTasksHandler(ctx),
-    get_task_report: getReportHandler(ctx),
-    cancel_task: cancelTaskHandler(ctx),
     verify_task: verifyTaskHandler(ctx, idempotency),
-    wait_task: waitTaskHandler(ctx),
-    wait_any: waitAnyHandler(ctx),
-    rework_task: reworkTaskHandler(ctx),
-    continue_task: continueTaskHandler(ctx),
-    get_profiles: getProfilesHandler(ctx),
+    manage_task: manageTaskHandler(ctx),
+    query_info: queryInfoHandler(ctx),
+    wait_task: waitTaskMergedHandler(ctx),
   };
 }
 
-/** wait_task / wait_any 用到的请求上下文（SDK `RequestHandlerExtra` 的结构子集）。 */
+/** wait_task（含批量模式）用到的请求上下文（SDK `RequestHandlerExtra` 的结构子集）。 */
 export interface HandlerExtra {
   /** 请求取消 / 连接关闭信号（SDK 注入）——wait 循环据此立即退出，不泄漏后台等待。 */
   signal?: AbortSignal;
@@ -763,10 +761,10 @@ function validateAcceptanceOverride(value: unknown): string | null {
 /** 停点后的后续动作指引：终态 → 取报告；needs_user → continue 后再次 wait。 */
 function waitNextStep(status: TaskStatus): string {
   if (status === "needs_user") {
-    return "任务在等待人工处理：请用 continue_task 恢复，恢复后再次调用 wait_task 继续等待。";
+    return "任务在等待人工处理：请用 manage_task(action=\"continue\") 恢复，恢复后再次调用 wait_task 继续等待。";
   }
-  if (status === "succeeded") return "可用 get_task_report 查看验收报告。";
-  return "可用 get_task_report / query_task 查看详情。";
+  if (status === "succeeded") return "可用 query_info(type=\"report\", taskId) 查看验收报告。";
+  return "可用 query_info(type=\"report\", taskId) / query_task 查看详情。";
 }
 
 /** 钳制披露（仅在显式 timeoutMs 超上限时非空）：如实说明已钳制，不静默改值。 */
@@ -857,7 +855,7 @@ function waitAnyHandler(ctx: AppContext): Handler {
     return formatToolResult(
       [
         `等待超时（${waitedSec} 秒）：暂无任务到达停点。${clampNote}`,
-        "任务本体不受影响；请再次调用 wait_any 继续等待，或用 query_task 查看细节。",
+        "任务本体不受影响；请再次调用 wait_task（传 taskIds 批量模式）继续等待，或用 query_task 查看细节。",
         "全部任务当前状态：",
         statusLines,
       ].join("\n"),
@@ -884,7 +882,7 @@ function describeStatus(meta: TaskMeta): string {
     succeeded: "[PASS] 任务成功",
     failed: "[FAIL] 任务失败",
     needs_attention: "[WARN] 需要人工介入（自动返修轮次已用尽或可修性存疑）",
-    needs_user: "等待用户处理（可用 continue_task 恢复）",
+    needs_user: "等待用户处理（可用 manage_task(action=\"continue\") 恢复）",
     cancelled: "已取消",
     interrupted: "已中断（server 重启/退出）",
   };
@@ -998,8 +996,8 @@ function verifyInProgressResult(
   const lines = [
     "该 idempotencyKey 对应的验收仍在执行中（未重复执行）。",
     existingTaskMode
-      ? `任务 ${taskId}：请用 query_task(${taskId}) 查看进度，完成后用 get_task_report(${taskId}) 读报告。`
-      : `验收记录 ${taskId}：该记录在验收完成后才落盘；请稍后用同一 key 重试（会返回既有报告，不会重跑），或完成后用 get_task_report(${taskId}) 读取。`,
+      ? `任务 ${taskId}：请用 query_task(${taskId}) 查看进度，完成后用 query_info(type="report", taskId=${taskId}) 读报告。`
+      : `验收记录 ${taskId}：该记录在验收完成后才落盘；请稍后用同一 key 重试（会返回既有报告，不会重跑），或完成后用 query_info(type="report", taskId=${taskId}) 读取。`,
   ];
   return formatToolResult(lines.join("\n"), {
     ok: true,
@@ -1396,7 +1394,7 @@ function continueTaskHandler(ctx: AppContext): Handler {
 function getProfilesHandler(ctx: AppContext): Handler {
   const { registry } = ctx;
   return async () => {
-    // 用户自定义 profile 未 resolve 前没有注册 adapter，必须按 profile 键枚举，否则 get_profiles 漏列。
+    // 用户自定义 profile 未 resolve 前没有注册 adapter，必须按 profile 键枚举，否则 query_info(type=profiles) 漏列。
     const ids = await registry.listProfileIds();
     // 并行探测；Promise.all 保持结果顺序与 ids 一致。resolve 不抛错（失败返回 ok:false），
     // 若底层异常 reject 则与旧串行版一样整体失败，错误处理语义不变。
@@ -1415,5 +1413,141 @@ function getProfilesHandler(ctx: AppContext): Handler {
       message: `共 ${ids.length} 个 agent`,
       checks: [],
     });
+  };
+}
+
+/* ---------------- 合并工具 handler（v0.9.0，13 → 8） ---------------- */
+
+/**
+ * 分支字段白名单校验（fail-closed）。
+ *
+ * 为什么需要它：合并后的 schema 是 plain `z.object`（`discriminatedUnion` / `.refine()`
+ * 会毁掉线上 schema），因此**分支专属字段在别的分支里不会被自动拒绝**。
+ * 例如 `action=cancel` 携带 `message` 时 schema 层放行——按项目通篇的 fail-closed 原则，
+ * 这里显式拒绝，避免调用方以为参数生效了。
+ *
+ * @returns 错误文本；合法时返回 null
+ */
+function checkBranchFields(
+  provided: Record<string, unknown>,
+  allowed: readonly string[],
+  branchLabel: string,
+): string | null {
+  const allow = new Set(allowed);
+  const extra = Object.keys(provided).filter((k) => provided[k] !== undefined && !allow.has(k));
+  if (extra.length > 0) {
+    return `${branchLabel} 不接受参数: ${extra.join(", ")}（该分支允许: ${allowed.join(", ")}）`;
+  }
+  return null;
+}
+
+/**
+ * `manage_task` —— 分发到 cancel / continue / rework。
+ *
+ * 复用既有 handler 作为内部实现（不改一行业务逻辑），因此三个分支的行为、
+ * 文案、meta 结构与合并前逐字一致。
+ */
+function manageTaskHandler(ctx: AppContext): Handler {
+  const cancel = cancelTaskHandler(ctx);
+  const cont = continueTaskHandler(ctx);
+  const rework = reworkTaskHandler(ctx);
+  return async (rawArgs) => {
+    const args = rawArgs as ManageTaskParams;
+    switch (args.action) {
+      case "cancel": {
+        const bad = checkBranchFields(args, ["taskId", "action", "reason"], "action=cancel");
+        if (bad) return errorResult(bad);
+        return cancel({ taskId: args.taskId, reason: args.reason });
+      }
+      case "continue": {
+        const bad = checkBranchFields(args, ["taskId", "action", "message"], "action=continue");
+        if (bad) return errorResult(bad);
+        // 原为 schema 层 `z.string().min(1, "message 不能为空")`；合并后必填降级，在此补位。
+        if (!args.message || args.message.length === 0)
+          return errorResult("action=continue 需要非空的 message（原 continue_task 的必填参数）。");
+        return cont({ taskId: args.taskId, message: args.message });
+      }
+      case "rework": {
+        const bad = checkBranchFields(
+          args,
+          ["taskId", "action", "feedback", "repairHint"],
+          "action=rework",
+        );
+        if (bad) return errorResult(bad);
+        return rework({ taskId: args.taskId, feedback: args.feedback, repairHint: args.repairHint });
+      }
+      default:
+        return errorResult(`未知的 action: ${String(args.action)}`);
+    }
+  };
+}
+
+/**
+ * `query_info` —— 分发到 tasks / report / profiles。
+ *
+ * 同样复用既有 handler：`list_tasks` 的路径归一与列格式、`get_task_report` 的
+ * round 缺省语义、`get_profiles` 的并行探测全部逐字保留。
+ */
+function queryInfoHandler(ctx: AppContext): Handler {
+  const list = listTasksHandler(ctx);
+  const report = getReportHandler(ctx);
+  const profiles = getProfilesHandler(ctx);
+  return async (rawArgs) => {
+    const args = rawArgs as QueryInfoParams;
+    switch (args.type) {
+      case "tasks": {
+        const bad = checkBranchFields(
+          args,
+          ["type", "projectPath", "status", "limit"],
+          "type=tasks",
+        );
+        if (bad) return errorResult(bad);
+        return list({
+          projectPath: args.projectPath,
+          status: args.status,
+          limit: args.limit,
+        });
+      }
+      case "report": {
+        const bad = checkBranchFields(args, ["type", "taskId", "round"], "type=report");
+        if (bad) return errorResult(bad);
+        // 原为 schema 层 `z.string().min(1)`；合并后必填降级，在此补位。
+        if (!args.taskId)
+          return errorResult("type=report 需要非空的 taskId（原 get_task_report 的必填参数）。");
+        return report({ taskId: args.taskId, round: args.round });
+      }
+      case "profiles": {
+        const bad = checkBranchFields(args, ["type"], "type=profiles");
+        if (bad) return errorResult(bad);
+        return profiles({});
+      }
+      default:
+        return errorResult(`未知的 type: ${String(args.type)}`);
+    }
+  };
+}
+
+/**
+ * `wait_task`（增强）—— 单任务 / 批量二选一。
+ *
+ * 两个分支各自复用既有 handler：**提示文案按对应模式保留**
+ * （单任务回「请再次调用 wait_task 继续等待」，批量回「请再次调用 wait_any 继续等待」），
+ * 因为这是发给用户的可见文本，且两条路径的语义本就不同。
+ */
+function waitTaskMergedHandler(ctx: AppContext): Handler {
+  const single = waitTaskHandler(ctx);
+  const batch = waitAnyHandler(ctx);
+  return async (rawArgs, extra) => {
+    const args = rawArgs as WaitTaskMergedParams;
+    const hasSingle = args.taskId !== undefined;
+    const hasBatch = args.taskIds !== undefined;
+    if (hasSingle === hasBatch) {
+      return errorResult(
+        "必须且只能提供 taskId（单任务模式）或 taskIds（批量模式）之一" +
+          (hasSingle && hasBatch ? "——本次两者都给了。" : "——本次两者都没给。"),
+      );
+    }
+    if (hasSingle) return single({ taskId: args.taskId, timeoutMs: args.timeoutMs }, extra);
+    return batch({ taskIds: args.taskIds, timeoutMs: args.timeoutMs }, extra);
   };
 }

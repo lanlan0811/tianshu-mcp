@@ -1,10 +1,10 @@
-# Blocking wait primitives: `wait_task` / `wait_any` (issue #28)
+# Blocking wait primitive: `wait_task` (issue #28; merges `wait_any` as of v0.9.0)
 
 Chinese version: wait-task.md
 
 `run_task` is an asynchronous contract: it returns a `taskId` immediately and never blocks `tools/call`. But the intended caller — a Tianshu desktop agent session — is **turn-driven**: the agent only runs within the turn that received a user message and does nothing between turns, so it **cannot poll on its own**. In the "turn-driven caller + long task" combination the tool surface therefore missed the completion moment: previously every task completion **required a human to send a message** to trigger a check.
 
-This capability fills that gap: `wait_task` / `wait_any` carry the waiting with **one blocking, read-only call**, returning once a task reaches a stop point — no user intervention needed.
+This capability fills that gap: `wait_task` carries the waiting with **one blocking, read-only call** (single task via `taskId`, batch via `taskIds`), returning once a task reaches a stop point — no user intervention needed.
 
 ## 1. Why it must be a blocking wait
 
@@ -14,7 +14,7 @@ It **complements** the webhook notification ([issue #22](notifications.en.md)) w
 
 ## 2. Stop-point definition
 
-The "returnable point" that `wait_task` / `wait_any` waits for is a **stop point**:
+The "returnable point" that `wait_task` (both modes) waits for is a **stop point**:
 
 ```text
 isWaitSettled(status) = isTerminal(status) || status === "needs_user"
@@ -38,7 +38,7 @@ Block until **a single** task reaches a stop point or the timeout elapses.
 
 Returns: text (stop-point line / status line / next-step guidance) + a meta block, whose meta carries `waitSettled` (whether a stop point was reached) and `waitedMs` (actual wait duration).
 
-### `wait_any(taskIds, timeoutMs?)`
+### Batch mode: `wait_task(taskIds, timeoutMs?)`
 
 Block until the **first task in array order** among **a group** reaches a stop point.
 
@@ -55,7 +55,7 @@ Returns: the snapshot of the task that reached a stop point + a meta block, and 
 
 | Call | `timeoutMs` | Behavior |
 |---|---|---|
-| `wait_task` / `wait_any` | omitted | Uses the default `50000ms` (below the common 60 s client timeout, leaving serialization / round-trip headroom) |
+| `wait_task` (both modes) | omitted | Uses the default `50000ms` (below the common 60 s client timeout, leaving serialization / round-trip headroom) |
 | same | ≤ 600000 | Waits the given value |
 | same | > 600000 | **Clamped to 600000ms** and the response body **honestly states** "clamped to the cap" |
 | same | expires without a stop point | Returns the **current snapshot** + "please call this tool again to keep waiting" guidance (`waitSettled=false`) |
@@ -99,14 +99,14 @@ wait_task(taskId)          # keep waiting after resuming (needs_user can recur)
 ### 5.4 First of several tasks
 
 ```text
-wait_any(taskIds=[tsk_a, tsk_b, tsk_c], timeoutMs=50000)
+wait_task(taskIds=[tsk_a, tsk_b, tsk_c], timeoutMs=50000)   # batch mode
   → a task reached a stop point (waited 8 s): tsk_b — status: [FAIL] failed
      current status of every task: …
 ```
 
 ## 6. Lossless guarantee
 
-`wait_task` / `wait_any` are **pure read-only** operations (`capability: "read"`, approval-free, MCP `readOnlyHint: true`): they write no task state and touch no task body. A client truncation, a dropped connection, or a timeout — **no path affects the task's continued execution**; the worst case is that the caller calls a few more times, and `query_task` yields the latest fact after reconnecting.
+`wait_task` (both modes) is a **pure read-only** operation (`capability: "read"`, approval-free, MCP `readOnlyHint: true`): they write no task state and touch no task body. A client truncation, a dropped connection, or a timeout — **no path affects the task's continued execution**; the worst case is that the caller calls a few more times, and `query_task` yields the latest fact after reconnecting.
 
 Other tool calls proceed normally during the wait (SDK request handling does not block, measured):
 
@@ -129,7 +129,7 @@ The wait treats `needs_user` as a stop point and returns (it does not block unti
 Set `timeoutMs` a little below it (for example 20000 ms). Even if truncated it is harmless: the caller just calls again to continue.
 
 **Several tasks at once?**
-Use `wait_any`. It returns the first task in `taskIds` array order that reaches a stop point, and lists every task's current status.
+Use batch mode (`taskIds`). It returns the first task in array order that reaches a stop point, and lists every task's current status.
 
 **What about the original wait call after a server restart?**
 The wait is **in-process**: after a restart the original wait call ends with the connection. The caller reconnects and re-checks with `query_task` — historical leftover tasks are archived as `interrupted` at startup, and a wait returns **immediately** for an already-terminal task.
@@ -138,5 +138,5 @@ The wait is **in-process**: after a restart the original wait call ends with the
 
 - The wait is **in-process**: after a server restart the original wait call ends with the connection (the caller re-checks with `query_task` after reconnecting).
 - A single call waits at most **600 s** (a constant); longer scenarios rely on repeated calls (lossless).
-- `wait_any` does not know "earliest finished"; it returns the first settled task in array order.
+- Batch mode does not know "earliest finished"; it returns the first settled task in array order.
 - The default `50000ms` is a conservative value for "unknown client timeout"; if your client's single-tool timeout is shorter, adjust per §5.
