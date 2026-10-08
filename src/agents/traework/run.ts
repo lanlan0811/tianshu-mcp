@@ -127,6 +127,48 @@ async function guardPoll<T>(
 }
 
 /**
+ * 取消时尽力点击界面停止按钮，并按 `gui.cancelWaitMs` 有界等待界面空闲。
+ *
+ * 为何需要：取消路径若只 abort 轮询、不点界面停止，TraeWork 窗口里的 turn 会继续跑，
+ * 终态只能如实写「无停止结果可确认」（`guiStopDisclosure(undefined, …)`），
+ * 调用方据此被禁止重派同项目任务——取消实际没有达到「停下来」的目的。
+ * 其它 GUI 适配器（codex/kimicode/minimax/opendesign）均实现了本步骤。
+ *
+ * **idle=false 时不得谎报已停止**（`idle` 是「界面确已无运行信号」的证据）。
+ * sleep 用未被预算包裹的原始等待：取消发生在预算已耗尽/已 abort 之后，
+ * 预算内的 sleep 会立刻抛错，连一次点击都发不出去。
+ */
+async function stopGuiTurn(
+  cdp: TraeworkCdpClient,
+  gui: GuiProfile,
+  sleep: (ms: number) => Promise<void>,
+  logger: AgentRunLogger,
+  purpose: "取消" | "重派护栏",
+): Promise<{ clicked: boolean; idle: boolean }> {
+  try {
+    const first = await cdp.probeLiveness(gui.selectors);
+    if (!first.stopVisible && !first.tailLoading) return { clicked: false, idle: true };
+    const clicked = await cdp.click("stopButton", gui.selectors);
+    logger.info(
+      `[traework] ${purpose}：${clicked ? "已点击" : "未能点击"} GUI 停止按钮，等待界面空闲（≤${gui.cancelWaitMs}ms）`,
+    );
+    // 有界等待：每轮最多 500ms，轮数由 cancelWaitMs 决定（窗口不超过 cancelWaitMs + 500ms）。
+    const attempts = Math.max(1, Math.ceil(gui.cancelWaitMs / 500));
+    for (let i = 0; i < attempts; i++) {
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(Math.min(500, gui.cancelWaitMs));
+      // eslint-disable-next-line no-await-in-loop
+      const poll = await cdp.probeLiveness(gui.selectors);
+      if (!poll.stopVisible && !poll.tailLoading) return { clicked, idle: true };
+    }
+    return { clicked, idle: false };
+  } catch (e) {
+    logger.warn(`[traework] ${purpose}时停止 GUI 运行失败：${e instanceof Error ? e.message : String(e)}`);
+    return { clicked: false, idle: false };
+  }
+}
+
+/**
  * 等待渲染进程 DOM 就绪。
  * 实测（2026-09-08）：新启动实例时 CDP 端口可能先就绪，但聊天面板尚未渲染，
  * 此时「新建任务」「选择文件夹」等元素都不存在。以聊天输入框出现为就绪信号。
@@ -274,6 +316,23 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
     endReason = reason;
     keptInstance = true;
     return fail(error, extra);
+  };
+  /**
+   * 取消：先尽力点击界面停止按钮（有界等待界面空闲），再落终态。
+   * 绝不谎报——`guiStop.idle` 才是「界面确已停止」的证据，未确认时由
+   * `guiStopDisclosure` 如实写进终态文案，调用方据此避免误重派。
+   */
+  const abortResult = async (): Promise<AgentRunResult> => {
+    const client = cdp;
+    const guiStop = client
+      ? await stopGuiTurn(client, gui, deps.sleep, logger, "取消")
+      : undefined;
+    const progressSummary = guiStop
+      ? guiStop.idle
+        ? "TraeWork 取消：GUI 内运行已停止"
+        : "TraeWork 取消：GUI 内运行未确认停止，TraeWork 窗口中的任务可能仍在继续"
+      : "TraeWork 取消：未连接 CDP，无法确认界面停止";
+    return stop("aborted", "已取消", { killed: true, guiStop, progressSummary });
   };
 
   await mkdirp(path.dirname(logFile));
@@ -432,8 +491,7 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
         // eslint-disable-next-line no-await-in-loop
         await guardPoll(deps.sleep(gui.pollIntervalMs), opts.signal, deadline);
       } catch (e) {
-        if (e instanceof PollGuardError && e.reason === "aborted")
-          return stop("aborted", "已取消", { killed: true });
+        if (e instanceof PollGuardError && e.reason === "aborted") return await abortResult();
         if (e instanceof PollGuardError && e.reason === "timeout") {
           return stop(
             "timeout",
@@ -458,8 +516,7 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
           deadline,
         );
       } catch (e) {
-        if (e instanceof PollGuardError && e.reason === "aborted")
-          return stop("aborted", "已取消", { killed: true });
+        if (e instanceof PollGuardError && e.reason === "aborted") return await abortResult();
         if (e instanceof PollGuardError && e.reason === "timeout") {
           return stop(
             "timeout",
@@ -495,9 +552,14 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
       }
 
       if (now - lastProgressAt >= gui.progressIntervalMs) {
+        // 文案遵循跨适配器契约：进度 note 必须写成「运行证据=<值>；」形式——
+        // 编排器（fix-loop 的 onProgress）用 /运行证据=([^；]+)/ 提取 meta.lastRunSignal，
+        // 该正则以「；」为终止符。值后若直接跟「）」等字符会被一并吃进，导致字段值
+        // 变成 "stop_button）" 这类脏值，破坏调用方的等值比较（含 smoke 的取消触发条件）。
+        // 该字段是 query_task 的对外文档化字段，也是判断「agent 是否真在生成」的依据。
         const note = live.running
-          ? `TraeWork 仍在生成（运行信号：${live.evidence}）`
-          : `TraeWork 等待完成（稳定轮数 ${state.stable}/${gui.stableRounds}；诊断：${live.evidence}）`;
+          ? `TraeWork 仍在生成；运行证据=${live.evidence}；稳定轮数 ${state.stable}/${gui.stableRounds}`
+          : `TraeWork 等待完成；运行证据=${live.evidence}；稳定轮数 ${state.stable}/${gui.stableRounds}`;
         logger.info(`[traework] ${note}`);
         // 进度事件写入失败不能中断任务。
         // eslint-disable-next-line no-await-in-loop

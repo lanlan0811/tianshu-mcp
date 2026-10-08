@@ -216,6 +216,9 @@ UI 升级导致选择器失效时，**无需改代码**——在 `gui.selectors`
   `gui.idleTimeoutMs`（默认 10 分钟）才返回 `idle`，并保留实例。选择器全部漂移时失败开放到该完成标志与空闲计时。
 - **异常结束保留现场**：任务超时、空闲、取消或 CDP 断开不会关闭实例；`query_task` 的 meta 可查看
   `agentEndReason` / `keptInstance`。只有 `completion_mark` 与 `ask_user` 会释放本模块新启动的实例。
+- **取消会尽力停止 GUI 内运行**：`manage_task(action="cancel")` 点击界面停止按钮并按 `gui.cancelWaitMs`（默认 15s）有界等待空闲，
+  结果写进 meta 的 `guiStop`（`{clicked, idle}`）与 `progressSummary`；`idle:true` 时终态文案为「已确认 … 内运行停止」，
+  未能确认时如实写「未确认停止」并置 `guiStopUnconfirmed`，调用方在人工核对前不得重派同项目任务。
 - **模型切换依赖下拉**：目标不在下拉（未解锁权益/名称不符）时明确失败，不会静默用错模型。
 - **UI 升级会漂移**：选择器集中在 `selectors.ts`，可经 profile 覆盖；`scripts/probe-traework.mjs` 用于诊断。
 - **macOS 未验证**：CDP 机制平台无关，但可执行探测与原生对话框驱动（AppleScript 路线）尚未在 macOS 实测。
@@ -252,6 +255,9 @@ UI 升级导致选择器失效时，**无需改代码**——在 `gui.selectors`
 | **长时间思考时约 36 秒被误判完成** | 旧稳定兜底把 DOM 静态直接当完成，且只检查字面「思考中」 | 停止按钮/task-tail loading 优先；稳定轮数改为启动 10 分钟空闲计时 |
 | **TraeWork 关闭后轮询永久挂住** | WebSocket 断开未拒绝 pending，`send()` 也没有超时 | `onclose`/`onerror` 收敛全部 pending；单次命令默认 15 秒超时 |
 | **MCP 超时后关闭仍在工作的实例** | `finally` 无条件释放本模块启动的实例 | 仅真正完成/ask_user 释放；空闲、超时、取消、CDP 断开均保留并写结构化 meta |
+| **取消任务后 `lastRunSignal` 恒为 undefined，取消路径在真机上完全走不到**（2026-10-08 真机） | 进度 note 写的是「运行信号：」，而编排器 `fix-loop` 用 `/运行证据=([^；]+)/` 提取——**六个 GUI 适配器里唯独 traework 用了别的措辞**（codex/kimicode/minimax/opendesign/zcode 均为「运行证据=」）。该字段是 `query_task` meta 的对外文档化字段，smoke 的取消触发条件 `lastRunSignal==="stop_button"` 因此永不成立 | note 统一为 `…；运行证据=<值>；…`。注意值后**必须紧跟「；」**——正则的 `[^；]+` 会吃进 `）` 等字符，产出 `"stop_button）"` 这类脏值，同样破坏等值比较。回归锁：`test/unit/last-run-signal-contract.test.ts` |
+| **取消时点不到停止按钮：`TypeError: e.click is not a function`**（2026-10-08 真机） | `click()` 原实现先 `element.click()`、抛错才回退坐标点击——但语义键常命中**图标类元素**（`stopButton` = `.chat-input-v2-send-button-stop-icon`），这类元素没有 `click()` 方法，异常直接冒泡，调用方只拿到错误、从未走到回退分支 | `click()` 改为**坐标点击优先、DOM click 兜底**（与 kimicode 一致），且 DOM 分支用 `typeof e.click==='function'` 守卫、异常不冒泡。回归锁：`test/unit/traework-cancel-path.test.ts` |
+| **取消时报 `CDP_UNAVAILABLE: 客户端主动断开`，点停止按钮失败**（2026-10-08 真机） | 取消分支写成 `return abortResult()` 而非 `return await abortResult()`。JS 语义下 `return <promise>` 会**立即**执行外层 `finally`（含 `cdp.disconnect()`），不等 async 函数体完成——`stopGuiTurn` 启动时 CDP 已被本函数的 finally 切断。对照：kimicode/minimax/opendesign 均写 `return await abortResult()` | 两处取消分支补 `await`。栈追踪证据：`disconnect ← run.js finally ← adapter.run ← TaskOrchestrator.run`。**该缺陷同时解释了两次真机跑都报 `guiStop={clicked:false,idle:false}`**——不是停止按钮点不动，而是连接已被自己断掉 |
 
 ---
 

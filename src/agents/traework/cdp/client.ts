@@ -343,22 +343,40 @@ export class TraeworkCdpClient {
   /**
    * 点击某语义键对应的元素。
    *
-   * 返回值的真实语义（issue #38）：返回 `true` 只表示「**元素存在、可见，且已派发 click 事件**」，
+   * 返回值的真实语义（issue #38）：返回 `true` 只表示「**元素存在、可见，且已派发点击**」，
    * **不代表点击的副作用已生效**——对 DirectUI 按钮（如下拉底部的「选择文件夹」），
    * `element.click()` 会「返回成功却不唤起原生弹窗」（间歇，见 #35 实测）。
    *
    * 因此**需要确认副作用的调用方必须自行复检**（如 `ui/session.ts` 的 `clickDropdownFooter`
    * 以「原生对话框是否出现」为判据并升级执行方式），不得把本返回值直接当作成功。
    *
-   * DOM click 失败（evaluate 抛错/未命中）时才回退坐标点击。
+   * **执行顺序：坐标点击优先，DOM click 兜底**。原因（真机实测）：语义键常命中**图标类元素**
+   * （如 `stopButton` = `.chat-input-v2-send-button-stop-icon`），这类元素没有 `click()` 方法，
+   * 先走 `e.click()` 会抛 `TypeError: e.click is not a function` 并直接冒泡，
+   * 调用方（如取消路径的 stopGuiTurn）拿到的只有异常、点不到按钮。
+   * 坐标点击派发真实鼠标事件，对图标/无 click 方法的元素同样有效；
+   * 两者都失败才返回 false。
    */
   async click(key: SelectorKey, overrides?: SelectorOverrides): Promise<boolean> {
-    const expr = `(function(){const cs=${candidateArrayExpr(key, overrides)};for(const c of cs){const e=document.querySelector(c);if(e){const r=e.getBoundingClientRect();if(r.width>0&&r.height>0){e.click();return true}}}return false})()`;
-    if ((await this.evaluate<boolean>(expr)) === true) return true;
-    const pos = await this.center(key, overrides);
-    if (!pos) return false;
-    await this.clickAt(pos.x, pos.y);
-    return true;
+    // 1) 坐标点击：对图标类元素（无 click 方法）同样有效
+    const pos = await this.center(key, overrides).catch(() => null);
+    if (pos) {
+      try {
+        await this.clickAt(pos.x, pos.y);
+        return true;
+      } catch {
+        // 坐标点击失败（如元素在点击瞬间消失）→ 落到 DOM click 兜底
+      }
+    }
+    // 2) DOM click 兜底：需吞掉元素不支持 click() 时抛出的 TypeError，
+    //    否则异常会冒泡给调用方，使其误判为「CDP 不可用」。
+    try {
+      const expr = `(function(){const cs=${candidateArrayExpr(key, overrides)};for(const c of cs){const e=document.querySelector(c);if(e){const r=e.getBoundingClientRect();if(r.width>0&&r.height>0){if(typeof e.click==='function'){e.click();return true}return false}}}return false})()`;
+      if ((await this.evaluate<boolean>(expr)) === true) return true;
+    } catch {
+      // 兜底路径失败不抛错——语义同「未命中」
+    }
+    return false;
   }
 
   /** 聚焦某语义键元素 */
