@@ -62,6 +62,30 @@ export interface CodexRunDeps {
   ensureRegistered: typeof ensureProjectRegistered;
   sleep: (ms: number) => Promise<void>;
 }
+/**
+ * CDP 断连达上限时的**真因诊断**（真机 2026-10-08，26.930.7945.0）。
+ *
+ * 用户看到的表象是 `ECONNREFUSED 127.0.0.1:9333`，但那是**结果**：Codex 进程消失后
+ * 端口自然没人监听。只报「CDP 连接断开」会把排查方向引到 CDP/窗口可见性上。
+ *
+ * 两个断连出口（发送确认环、运行检测环）共用本诊断——同一类故障不该有两套文案。
+ *
+ * 探测本身失败（PowerShell 超时等）时按「进程仍在」处理（保守：不据此断言进程已退出），
+ * 让原始 CDP 错误照常抛出，不被诊断逻辑掩盖。
+ */
+async function diagnoseCdpLoss(e: unknown, deps: CodexRunDeps): Promise<unknown> {
+  let alive = true;
+  try {
+    alive = (await deps.listProcesses()).length > 0;
+  } catch {
+    return e;
+  }
+  if (alive) return e;
+  return new CdpUnavailableError(
+    `Codex 实例已退出（进程表中已无 ChatGPT.exe），任务在运行中中断；CDP 断开是其结果而非原因。请重新派发任务（适配器会重新激活受管实例）。原始错误：${e instanceof Error ? e.message : String(e)}`,
+  );
+}
+
 const DEFAULT_DEPS: CodexRunDeps = {
   discover: discoverCodex,
   ensureInstance: ensureCodexInstance,
@@ -406,7 +430,7 @@ export async function runCodexTask(args: RunCodexArgs): Promise<AgentRunResult> 
           // 与运行检测环同因：页面切换瞬间 evaluate 可挂起——重连继续，连续失败才放大
           if (!(e instanceof CdpDisconnectedError || e instanceof CdpUnavailableError)) throw e;
           confirmCdpFailures += 1;
-          if (confirmCdpFailures > 5) throw e;
+          if (confirmCdpFailures > 5) throw await diagnoseCdpLoss(e, deps);
           try {
             // eslint-disable-next-line no-await-in-loop
             await reconnectCdp();
@@ -467,7 +491,7 @@ export async function runCodexTask(args: RunCodexArgs): Promise<AgentRunResult> 
       } catch (e) {
         if (!(e instanceof CdpDisconnectedError || e instanceof CdpUnavailableError)) throw e;
         cdpFailures += 1;
-        if (cdpFailures > 5) throw e;
+        if (cdpFailures > 5) throw await diagnoseCdpLoss(e, deps);
         logger.warn(
           `[codex] CDP 轮询失败（${cdpFailures}/5）：${e instanceof Error ? e.message : String(e)}；尝试重连当前页面`,
         );

@@ -42,6 +42,13 @@ export interface CdpClientOptions {
    * 需借此收敛到主应用窗口。
    */
   targetRank?: (t: CdpPageTarget) => number;
+  /**
+   * 错误文案里出现的应用名。本类被 6 个 GUI 适配器复用
+   * （traework / codex / kimicode / minimax / opendesign / qoder），
+   * 若硬编码单一名字，其余适配器的「连不上」提示会把用户引到**错误的程序**去排查。
+   * 缺省 `TraeWork` 仅为向后兼容；新调用方应显式传入自己的应用名。
+   */
+  appLabel?: string;
 }
 
 export interface LivenessProbe {
@@ -88,6 +95,11 @@ export class TraeworkCdpClient {
 
   constructor(private readonly opts: CdpClientOptions) {
     this.port = opts.port;
+  }
+
+  /** 错误文案用的应用名（见 `CdpClientOptions.appLabel` 的复用说明） */
+  private appLabel(): string {
+    return this.opts.appLabel ?? "TraeWork";
   }
 
   get connected(): boolean {
@@ -148,7 +160,7 @@ export class TraeworkCdpClient {
       targets = await TraeworkCdpClient.listTargets(this.port, this.opts.connectTimeoutMs ?? 10_000);
     } catch (e) {
       throw new CdpUnavailableError(
-        `无法连接端口 ${this.port}（请确认 TraeWork 以 --remote-debugging-port=${this.port} 启动且窗口可见）：${(e as Error).message}`,
+        `无法连接端口 ${this.port}（请确认 ${this.appLabel()} 以 --remote-debugging-port=${this.port} 启动且窗口可见）：${(e as Error).message}`,
       );
     }
     const page = this.pickTarget(targets);

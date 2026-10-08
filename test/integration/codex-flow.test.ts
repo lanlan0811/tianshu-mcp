@@ -480,6 +480,65 @@ describe("Codex 假 CDP 单轮流程", () => {
     });
     expect(result.endReason).toBe("cdp_disconnected");
     expect(result.hardFailure).toBe(true);
+    // 进程仍在（夹具默认 listProcesses 返回一条）：错误文案应是原始 CDP 错误，
+    // **不得**误报「实例已退出」。
+    expect(result.error ?? "").not.toMatch(/实例已退出/);
+  });
+
+  /**
+   * 回归锁：CDP 断开且**进程已消失**时，错误文案必须指向真因（真机 2026-10-08，26.930.7945.0）。
+   *
+   * 真机现象：Codex 进程在执行中退出 → CDP 报 `ECONNREFUSED 127.0.0.1:9333`。
+   * 旧实现直接把它当 `cdp_disconnected` 抛出，用户看到的是「CDP 连接断开」，
+   * 会去排查 CDP 端口/窗口可见性，而真正发生的是**程序没了**。
+   */
+  it("CDP 断开且进程已消失 → 文案点明实例已退出（真因），而非只报 CDP", async () => {
+    const project = await makeTmpRoot("codex-exited");
+    cleanup.push(project);
+    const fake = new DisconnectedCodex(project);
+    const result = await runCodexTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      // 进程表为空 = Codex 已退出（真机 ECONNREFUSED 的成因）
+      deps: depsFor(fake, { listProcesses: async () => [] }),
+    });
+    expect(result.hardFailure).toBe(true);
+    expect(result.endReason).toBe("cdp_disconnected");
+    const error = result.error ?? "";
+    expect(error).toMatch(/实例已退出/);
+    expect(error).toMatch(/ChatGPT\.exe/);
+    // 必须把因果关系说清：CDP 断开是结果，不是原因
+    expect(error).toMatch(/结果而非原因/);
+    // 原始错误仍要保留（用户可能想看到底层 ECONNREFUSED 之类）
+    expect(error).toMatch(/test disconnect/);
+    // 不得把排查方向引到「窗口是否可见」这类与进程退出无关的动作上
+    expect(error).not.toMatch(/请把 .* 窗口置于前台/);
+  });
+
+  /**
+   * 诊断探测自身失败时（PowerShell 超时等）不得掩盖原始错误 —— 保守返回「进程仍在」，
+   * 让原 CDP 错误照常抛出。否则一次探针抖动就会把 CDP 故障误报成「程序崩了」。
+   */
+  it("进程探测自身抛错时不误判为实例退出，原始 CDP 错误照常上报", async () => {
+    const project = await makeTmpRoot("codex-probe-fail");
+    cleanup.push(project);
+    const fake = new DisconnectedCodex(project);
+    const result = await runCodexTask({
+      ctx: ctx(project),
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake, {
+        listProcesses: async () => {
+          throw new Error("powershell timeout");
+        },
+      }),
+    });
+    expect(result.endReason).toBe("cdp_disconnected");
+    expect(result.error ?? "").not.toMatch(/实例已退出/);
+    expect(result.error ?? "").toMatch(/test disconnect/);
   });
 
   it("缺少 AUMID 时拒绝以 msix-com 启动", async () => {

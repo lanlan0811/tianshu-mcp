@@ -202,6 +202,7 @@ export class MinimaxCdpClient {
         new TraeworkCdpClient({
           port,
           sendTimeoutMs,
+          appLabel: "MiniMax Code",
           targetRank: role === "menu" ? minimaxMenuTargetRank : minimaxMainTargetRank,
         }) as MinimaxPageClient);
     this.pages = { main: create("main"), menu: create("menu") };

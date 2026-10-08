@@ -905,6 +905,72 @@ describe("Codex 选择器规范", () => {
     expect(runWith("Switch project: my-repo")).toBe("my-repo"); // 英文回退
     expect(runWith("不在项目中工作")).toBe(""); // 未绑定：不得误命中
   });
+
+  /**
+   * 回归锁：`conversationText` 必须**排除 composer 子树**（真机 26.930.7945.0，2026-10-08）。
+   *
+   * 真机 DOM 结构（DOM 取证 + 截图）：
+   *   MainContentSurface(y=96,h=680)          ← messageArea 命中它
+   *     └─ … └─ _ComposerLayoutRoot_xxx(y=610)
+   *              └─ … └─ div.ProseMirror(contenteditable)  ← 输入框
+   *
+   * 于是「任务书还留在输入框里」也会被算作「对话区已出现该文本」——
+   * 发送确认因此**假阳性**：明明没发出去，却报「指令已确认发送（对话区=true）」，
+   * 后续轮询对着不变的页面等到超时/崩溃。真机第 2 轮即如此，
+   * 且残留的任务书又污染了第 3 轮。
+   *
+   * 用 linkedom 造**真 DOM**（与 zcode-dom.test.ts 同构），避免手写桩把缺陷测丢。
+   */
+  it("poll() 的 conversationText 排除 composer 子树（真机畸形嵌套）", async () => {
+    const { CodexCdpClient } = await import("../../src/agents/codex/cdp.js");
+    const vm = await import("node:vm");
+    const { parseHTML } = await import("linkedom");
+    const cdp = new CodexCdpClient(1, 1);
+    let expr = "";
+    const stub = cdp as unknown as { evaluate: (e: string) => Promise<unknown> };
+    stub.evaluate = async (e: string) => {
+      expr = e;
+      return {};
+    };
+    await cdp.poll();
+
+    const MARKER = "【tianshu:tsk_test:r0:initial】做某事";
+    /**
+     * 真机形态：composer 嵌在 messageArea 容器内部。
+     * @param markerInComposer 任务书是否仍在输入框里（未发出）
+     * @param markerInThread   对话区是否已有该文本（已发出）
+     */
+    const run = (markerInComposer: boolean, markerInThread: boolean): { conversationText: string } => {
+      const { document } = parseHTML(
+        `<html><body>
+          <div class="_MainContentSurface_abc123">
+            <div class="thread-body">${markerInThread ? MARKER : "历史回复"}</div>
+            <div class="_ComposerLayoutRoot_abc123">
+              <div class="_ComposerLayoutInput_abc123">
+                <div class="ProseMirror" contenteditable="true">${markerInComposer ? MARKER : ""}</div>
+              </div>
+            </div>
+          </div>
+        </body></html>`,
+      );
+      for (const el of document.querySelectorAll("*")) {
+        Object.assign(el, {
+          getBoundingClientRect: () => ({ width: 100, height: 100, top: 0, left: 0, right: 100, bottom: 100 }),
+        });
+      }
+      return vm.runInNewContext(expr, { document, innerWidth: 1000, innerHeight: 1000 }) as {
+        conversationText: string;
+      };
+    };
+
+    // ① 真机形态：marker **只在 composer 里**（任务书没发出去）
+    //    修复前 conversationText 会包含它（假阳性）；修复后必须读不到
+    expect(run(true, false).conversationText).not.toContain("tianshu:");
+    // ② marker 真在对话区（已发送）→ 必须保留，不能因剥离而漏判
+    expect(run(false, true).conversationText).toContain("tianshu:");
+    // ③ 两处都有 → 对话区那份仍要能读到
+    expect(run(true, true).conversationText).toContain("tianshu:");
+  });
 });
 
 /* ---------------- 注册表分支 ---------------- */

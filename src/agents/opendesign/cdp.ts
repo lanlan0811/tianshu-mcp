@@ -103,6 +103,7 @@ export function createOpenDesignPageClient(
   return new TraeworkCdpClient({
     port,
     sendTimeoutMs,
+    appLabel: "Open Design",
     targetRank: role === "overlay" ? openDesignOverlayTargetRank : openDesignMainTargetRank,
   }) as KimicodePageClient;
 }

@@ -291,7 +291,10 @@ node scripts/probe-codex.mjs --launch   # 完整：激活受管实例 + 连 CDP 
 | 长时间不结束 | 停止钮选择器未命中 | 属失败开放路径，最终 `idle_timeout`；用 `--launch` 实测真实停止钮文案 |
 | 项目绑定失败 | 原生对话框被拦截/路径含特殊字符 | 看 `agent-N.log` 的 `[codex]` 行；确认键盘自动化权限 |
 | `project_create_failed` 且日志「窗口置前：未确认」 | Windows 前台锁阻止窗口置前，原生选择器未弹 | 保持受管 Codex 窗口可见并置前（勿被其他窗口遮挡）；或改用**已有项目**（在 Codex 侧先建一次项目）后重试 |
-| 点击源文件夹后无原生对话框 | 用了 untrusted 点击或点到了「源文件夹」label | 确认走 `clickTrusted`（trusted 事件 + 命中校验）且目标是 drop zone 按钮 |
+| 点击源文件夹后无原生对话框 | 用了 untrusted 点击或点到了「源文件夹」标签 | 确认走 `clickTrusted`（trusted 事件 + 命中校验）且目标是 drop zone 按钮 |
+| **日志说「指令已确认发送」但 Codex 里根本没发出**（任务书还留在输入框） | `messageArea` 选择器命中的 `MainContentSurface` **把 composer 一起包住了**（真机 26.930.7945.0 实测：`MainContentSurface` → … → `_ComposerLayoutRoot_` → `div.ProseMirror`）。于是「输入框里还留着任务书」也被算作「对话区已出现该文本」，发送确认**假阳性**；随后轮询对着不变的页面等到超时/崩溃。残留文本还会污染下一轮 | `conversationText` 取文本前先 `cloneNode(true)` 并摘除 `[class*="Composer"]` 子树。判据用类名子串 `Composer`（CSS Module 哈希后缀会变，基名稳定）。回归锁：`test/unit/codex-core.test.ts` 的「poll() 的 conversationText 排除 composer 子树」 |
+| **任务报「CDP 连接断开」但其实是 Codex 进程没了** | 真机现象：Codex 进程运行中退出 → CDP 报 `ECONNREFUSED 127.0.0.1:9333`。那是**结果**不是原因，只报 CDP 会把排查方向引到端口/窗口可见性 | 两个断连出口（发送确认环 + 运行检测环）共用 `diagnoseCdpLoss()`：断开达上限时探一次进程表，进程不在就把「实例已退出」写进错误文案并保留原始错误；探测自身失败按「进程仍在」处理（不掩盖原错误）。回归锁：`test/integration/codex-flow.test.ts` 三条 |
+| CDP 连不上时的提示说「请确认 **TraeWork** 以 --remote-debugging-port=… 启动」 | `TraeworkCdpClient` 被 **6 个** GUI 适配器复用（traework / codex / kimicode / minimax / opendesign / qoder），错误文案里硬编码了 `TraeWork`——其余 5 个适配器出错时会把用户引到**错误的程序** | 加 `CdpClientOptions.appLabel`（缺省仍是 `TraeWork` 以向后兼容），5 个复用方各自传自己的名字。回归锁：`test/unit/traework-cdp-client.test.ts` |
 
 ## 13. 已知限制
 

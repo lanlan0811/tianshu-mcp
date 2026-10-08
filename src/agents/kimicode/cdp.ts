@@ -198,6 +198,7 @@ export class KimicodeCdpClient {
         new TraeworkCdpClient({
           port,
           sendTimeoutMs,
+          appLabel: "Kimi Code",
           targetRank: role === "overlay" ? kimicodeOverlayTargetRank : kimicodeMainTargetRank,
         }) as KimicodePageClient);
     this.pages = { main: create("main"), overlay: create("overlay") };

@@ -19,7 +19,12 @@ export function qoderTargetRank(t: {url?: string}): number {
 export class QoderCdpClient {
   private readonly client: TraeworkCdpClient;
   constructor(port: number, private readonly timeout: number, private readonly overrides: Record<string,string> = {}) {
-    this.client = new TraeworkCdpClient({port, sendTimeoutMs: timeout, targetRank: qoderTargetRank});
+    this.client = new TraeworkCdpClient({
+      port,
+      sendTimeoutMs: timeout,
+      appLabel: "Qoder",
+      targetRank: qoderTargetRank,
+    });
   }
   selector(key: QoderSelectorKey): string { return qoderPrimary(key, this.overrides); }
   /** 该语义键的全部候选选择器（覆盖优先，其后 primary 与 fallbacks，去重保序） */

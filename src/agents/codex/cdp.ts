@@ -62,6 +62,7 @@ export class CodexCdpClient {
     this.inner = new TraeworkCdpClient({
       port,
       sendTimeoutMs,
+      appLabel: "Codex",
       // Codex 会额外暴露 avatar-overlay 等次级窗口；主应用页在 index.html 且无 overlay 路由。
       targetRank: (t) => {
         const url = t.url ?? "";
@@ -532,11 +533,35 @@ export class CodexCdpClient {
         const resolve=(k)=>__codexResolve(JSON.parse(sels[k]));
         const visAny=(k)=>{for(const e of resolve(k)){if(vis(e))return true}return false};
         const textOf=(k)=>{for(const e of resolve(k)){if(vis(e))return (e.value!==undefined?e.value:'')||(e.innerText||e.textContent||'')}return ''};
+        /**
+         * \`messageArea\` 容器**把 composer 一起包住了**（真机 26.930.7945.0 实测，2026-10-08）：
+         *   MainContentSurface(y=96,h=680)
+         *     └─ … └─ _ComposerLayoutRoot_xxx(y=610)
+         *              └─ … └─ div.ProseMirror(contenteditable) ← 输入框
+         * 于是「输入框里还留着任务书」也会被算作「对话区已出现该文本」——
+         * 发送确认因此**假阳性**：任务书根本没发出去，却报「指令已确认发送（对话区=true）」，
+         * 后续轮询对着一个不会变化的页面等到超时。
+         *
+         * 故取文本前先克隆并**摘除 composer 子树**，让 conversationText 只反映真正的对话区。
+         * 判据用类名子串 \`Composer\`（CSS Module 哈希后缀会变，基名稳定）。
+         */
+        const conversationTextOf=()=>{
+          for(const e of resolve('messageArea')){
+            if(!vis(e))continue;
+            let host=e;
+            if(typeof e.cloneNode==='function'){
+              host=e.cloneNode(true);
+              for(const c of host.querySelectorAll('[class*="Composer"],[class*="composer"]')) c.remove();
+            }
+            return ((host.value!==undefined?host.value:'')||(host.innerText||host.textContent||'')).trim();
+          }
+          return '';
+        };
         return {
           stopVisible:visAny('stopButton'),
           sendVisible:visAny('sendButton'),
           composerText:(textOf('chatInput')||'').trim(),
-          conversationText:(textOf('messageArea')||'').trim().slice(0,20000),
+          conversationText:conversationTextOf().slice(0,20000),
           loginVisible:visAny('loginIndicator'),
           userGateVisible:visAny('userGate')
         };`,
