@@ -8,6 +8,57 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.9.1] — 2026-10-08
+
+> **TraeWork real-machine smoke fix release**: running the full loop on a real machine
+> (Code mode + DeepSeek-V4.1-Flash) surfaced 5 defects — two of them, the "queue notice
+> reported as task completion" and "cancel path entirely broken", are **false-success /
+> false-failure** class: the caller received a conclusion opposite to reality.
+> Also adds the TraeWork real-machine smoke script `smoke:traework`.
+
+### Fixed
+
+**TraeWork adapter**
+
+| Defect | Symptom and root cause | Fix |
+|---|---|---|
+| **Queue notice reported as "task completed"** (false success) | Free-tier users hit queueing at peak times; TraeWork shows "Queue notice: current model is in high demand, you are #1064 in line…". **That bubble carries the「由 AI 生成」footer** — exactly the adapter's completion marker; and while queued, `stopVisible`/`tailLoading` are both false (authoritative run signals miss). The two together made the verdict fall straight into `finished` → reported `succeeded`, **returning the queue notice as the deliverable** | Added queue detection (discriminator is the position phrase「排(在\|队) N 位」, so prose merely mentioning "queue" is not misjudged), evaluated **before** the completion marker. Queueing is treated as temporary waiting: keep polling, periodically report position, **do not occupy the「运行证据=」prefix** (that prefix means "already running"; being queued is precisely "not started yet"); timeout text states "was queued throughout, task never started — consider another model, off-peak retry, or membership" |
+| **Stop button unclickable on cancel** | `click()` tried `element.click()` first and only fell back to coordinate clicks on error; but `stopButton` matches an **icon element** (`.chat-input-v2-send-button-stop-icon`, no `click()` method), so `TypeError: e.click is not a function` bubbled up and the fallback was unreachable | `click()` now does **coordinate click first, DOM click as fallback** (matching kimicode), with a `typeof` guard and no exception bubbling |
+| **CDP already disconnected by ourselves on cancel** | Cancel branch was `return abortResult()` instead of `return await abortResult()`. Per JS semantics `return <promise>` runs the outer `finally` (including `cdp.disconnect()`) **immediately**, without waiting for the async body — so the connection was already cut when the stop button was clicked, reporting `CDP_UNAVAILABLE: client disconnected` | Added the missing `await` to both cancel branches. Stack-trace evidence: `disconnect ← run.js finally ← adapter.run ← TaskOrchestrator.run` |
+| **`lastRunSignal` always undefined** | The progress note said「运行信号：」while the orchestrator extracts via `/运行证据=([^；]+)/` — **of the six GUI adapters only traework used different wording**. That field is a documented `query_task` field and the caller's basis for "is the agent actually generating" | Notes now use「…；运行证据=\<value\>；…」. The value **must be immediately followed by「；」** — the regex `[^；]+` would swallow a trailing `）` and yield dirty values like `"stop_button）"`, equally breaking equality checks |
+
+**Tool surface (finishing the v0.9.0 consolidation)**
+
+- `skills/tianshu-mcp/SKILL.md` had 3 **operational instructions** still naming `cancel_task` (not historical notes — an agent following them would always fail) → changed to `manage_task(action="cancel")`.
+- 3 smoke scripts still called old tool names (`smoke-zcode` / `smoke-kimicode` / `smoke-opendesign`) → all corrected.
+- `test/integration/rework-repair-hint.test.ts`'s repairHint case was a **false green**: it called `rework_task` (no longer existing) while only asserting `isError===true` — a missing tool satisfies that too. → Now calls `manage_task` **and asserts the error source**, so a wrong tool name turns it red precisely.
+- `verify-params.test.ts`'s no-param allowlist contained the removed `get_profiles` (branch never executed; allowlist silently dead) → cleared, plus an anti-drift assertion.
+
+### Added
+
+- **`scripts/smoke-traework.mjs`** (real-machine smoke, not in CI): three-part guard (`--confirm-send` / `--model` / `--task` all required to send), `--mode <Work|Code|Design>` panel mode, `--cancel-after-ms` cancel-path validation, isolated data directory. Added npm script `smoke:traework` and included in the package `files` list.
+
+### Tests
+
+- New `test/unit/traework-cancel-path.test.ts` (4 cancel-path invariants) and `test/unit/last-run-signal-contract.test.ts` (note contract across all 6 GUI adapters).
+- `test/unit/traework-reply.test.ts` gains 4 queue cases (fixtures use the real captured copy, including a false-positive guard).
+- **Every regression lock was verified by counter-evidence**: injecting the corresponding regression turns it red precisely; reverting turns it green.
+
+### Verification
+
+- `tsc --noEmit` exit 0; `eslint . --max-warnings 0` clean; full suite **1673 passed**.
+- Real-machine final check (Code mode + DeepSeek-V4.1-Flash + `D:\Trae项目\AI游戏\Minecraft`):
+  - Success path `succeeded`, SVG output matching the brief (512×512, 3/8 grass `#5D9C3C` + 5/8 dirt `#8B5A2B` + two rows of `#3E6B27` jagged transition).
+  - Cancel path: before the fix `guiStop={clicked:false,idle:false}` + "no stop result to confirm" → after, `{clicked:true,idle:true}` + "confirmed stopped", click-to-idle ≈ 1.2s.
+  - Queue path: replaying the same real DOM, before the fix `finished` (false success) → after, `queue` (position 1064 extracted correctly).
+
+### Notes
+
+- **No breaking changes** and no change to the tool surface (still 8 tools); upgrade requires no caller changes.
+- Known pre-existing environment failures (unrelated to this release): `spawn-regression` (this machine lacks `tianshu-runtime.exe`) and `codex-flow`; both confirmed by a git-worktree comparison at the pre-change HEAD.
+
+---
+
 ## [0.9.0] — 2026-10-08
 
 > **Tool-surface consolidation (BREAKING)**: the 13 MCP tools are merged by domain into **8**.

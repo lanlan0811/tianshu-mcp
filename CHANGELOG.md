@@ -7,6 +7,55 @@
 
 ---
 
+## [0.9.1] — 2026-10-08
+
+> **TraeWork 真机冒烟修复版**：在真机上（Code 模式 + DeepSeek-V4.1-Flash）跑通完整闭环时，
+> 发现并修复 5 个缺陷——其中「排队提醒被误报为任务完成」与「取消路径完全失效」属**假成功/假失败**级别，
+> 会让调用方拿到与事实相反的结论。另新增 TraeWork 真机冒烟脚本 `smoke:traework`。
+
+### 修复
+
+**TraeWork 适配器**
+
+| 缺陷 | 现象与根因 | 处置 |
+|---|---|---|
+| **排队提醒被误报为「任务完成」**（假成功） | 免费用户高峰期派单会进入排队，TraeWork 显示「排队提醒：当前模型请求量较高，你目前排在 1064 位…」。**该气泡带「由 AI 生成」footer**——正是适配器的完成标志；而排队时 `stopVisible`/`tailLoading` 均为 false（权威运行信号不命中）。两者叠加使判定直落 `finished` 分支 → 上报 `succeeded`，**把排队提示当交付结果返回** | 新增排队识别（判别式取位次短语「排(在\|队) N 位」，避免正文正常提及「排队」被误判），判定**优先于**完成标志。排队按暂时等待处理：继续轮询、周期性上报位次，**不占用「运行证据=」前缀**（该前缀是「已开工」语义，排队恰是尚未开工）；超时终态点明「期间一直处于排队，任务尚未开始执行，建议换模型/错峰重派或升级会员」 |
+| **取消时点击停止按钮失败** | `click()` 原实现先 `element.click()`、抛错才回退坐标点击；但 `stopButton` 命中的是**图标元素**（`.chat-input-v2-send-button-stop-icon`，无 `click()` 方法），`TypeError: e.click is not a function` 直接冒泡，回退分支不可达 | `click()` 改为**坐标点击优先、DOM click 兜底**（与 kimicode 一致），DOM 分支加 `typeof` 守卫且异常不冒泡 |
+| **取消时 CDP 已被自己断开** | 取消分支写成 `return abortResult()` 而非 `return await abortResult()`。JS 语义下 `return <promise>` 会**立即**执行外层 `finally`（含 `cdp.disconnect()`），不等 async 函数体完成——点停止按钮时连接已被切断，报 `CDP_UNAVAILABLE: 客户端主动断开` | 两处取消分支补 `await`。栈追踪证据：`disconnect ← run.js finally ← adapter.run ← TaskOrchestrator.run` |
+| **`lastRunSignal` 恒为 undefined** | 进度 note 写「运行信号：」，而编排器用 `/运行证据=([^；]+)/` 提取——**六个 GUI 适配器里唯独 traework 用了别的措辞**。该字段是 `query_task` 的对外文档化字段，也是调用方判断「agent 是否真在生成」的依据 | note 统一为「…；运行证据=\<值\>；…」。注意值后**必须紧跟「；」**——正则的 `[^；]+` 会吃进 `）` 等字符产出 `"stop_button）"` 这类脏值，同样破坏等值比较 |
+
+**工具面（v0.9.0 合并的收尾）**
+
+- `skills/tianshu-mcp/SKILL.md` 3 处**操作指令**仍写 `cancel_task`（非沿革说明，agent 照此调用必失败）→ 改为 `manage_task(action="cancel")`。
+- 3 个 smoke 脚本仍调用旧工具名（`smoke-zcode` / `smoke-kimicode` / `smoke-opendesign`）→ 全部改正。
+- `test/integration/rework-repair-hint.test.ts` 的 repairHint 用例**是假绿**：调 `rework_task`（已不存在）却只断言 `isError===true`——工具不存在同样满足。→ 改调 `manage_task` 并**加断言错误来源**，使工具名再写错时精确变红。
+- `verify-params.test.ts` 的无参工具白名单含已不存在的 `get_profiles`（分支永不执行，白名单静默失效）→ 清空并加防漂移断言。
+
+### 新增
+
+- **`scripts/smoke-traework.mjs`**（真机冒烟，不入 CI）：三件套护栏（`--confirm-send` / `--model` / `--task` 齐全才发送）、`--mode <Work|Code|Design>` 面板模式、`--cancel-after-ms` 取消路径验证、隔离数据目录。已加 npm script `smoke:traework` 并纳入发布包 `files` 清单。
+
+### 测试
+
+- 新增 `test/unit/traework-cancel-path.test.ts`（4 条取消路径不变量）与 `test/unit/last-run-signal-contract.test.ts`（6 个 GUI 适配器的 note 契约全覆盖）。
+- `test/unit/traework-reply.test.ts` 新增 4 条排队用例（夹具用真机抓取的文案原文，含假阳性防护）。
+- **全部回归锁经反证验证**：注入对应回归 → 精确变红；还原 → 全绿。
+
+### 验证
+
+- `tsc --noEmit` exit 0；`eslint . --max-warnings 0` 全绿；全量 **1673 passed**。
+- 真机终验（Code 模式 + DeepSeek-V4.1-Flash + `D:\Trae项目\AI游戏\Minecraft`）：
+  - 成功路径 `succeeded`，产出 SVG 符合任务书（512×512、3/8 草绿 `#5D9C3C` + 5/8 土棕 `#8B5A2B` + 两排 `#3E6B27` 锯齿）。
+  - 取消路径：修复前 `guiStop={clicked:false,idle:false}` + 「无停止结果可确认」→ 修复后 `{clicked:true,idle:true}` + 「已确认运行停止」，点击到确认空闲约 1.2s。
+  - 排队路径：同一份真实 DOM 回放，修复前判 `finished`（假成功）→ 修复后判 `queue`（位次 1064 正确提取）。
+
+### 说明
+
+- 本版**无破坏性变更**、无工具面增减（仍 8 个工具），升级无需改调用方。
+- 已知既存环境失败（与本版无关）：`spawn-regression`（本机缺 `tianshu-runtime.exe`）、`codex-flow`；已用改动前 HEAD 的 git worktree 对照确证。
+
+---
+
 ## [0.9.0] — 2026-10-08
 
 > **工具面合并版（BREAKING）**：13 个 MCP 工具按域合并为 **8 个**。工具名有增减，调用方式改变——
