@@ -1086,10 +1086,17 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
         throw new ZcodeModelReadbackError("ZCode 模型回读未在观察期内稳定");
       };
       let modelValue = await readModel();
+      /**
+       * 回读匹配的候选名集合：面板把 `cline-pass/deepseek-v4.1-flash` 当作**一个整体模型名**
+       * （斜杠是名字的一部分），而 `供应商/模型` 约定把它切成 provider=`cline-pass`、
+       * model=`deepseek-v4.1-flash`。故三段都算合法匹配：完整串、仅 model 段、仅 provider 段。
+       * 真机 2026-10-08（ZCode 3.14.4.7912）实测：选中后 display 与 internal 都是完整串。
+       */
+      const modelNameCandidates = [spec.model, `${spec.provider}/${spec.model}`, spec.provider];
+      const nameMatches = (value: string) =>
+        modelNameCandidates.some((c) => exactUiName(value, c));
       const modelMatches = () =>
-        (exactUiName(modelValue.display, spec.model) ||
-          exactUiName(modelValue.display, `${spec.provider}/${spec.model}`)) &&
-        exactUiName(modelValue.internal, spec.model);
+        nameMatches(modelValue.display) && nameMatches(modelValue.internal);
       if (!modelMatches()) {
         if (!(await cdp.click("modelTrigger")))
           return result({
@@ -1106,6 +1113,46 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
           provider = await clickExactWhenReady(cdp, "providerOption", spec.provider, deps, "hover");
           if (provider.clicked) await deps.sleep(600);
           model = await clickExactWhenReady(cdp, "modelOption", spec.model, deps);
+          /**
+           * 供应商段与面板分组名不一致时的回退（真机 2026-10-08，ZCode 3.14.4.7912）。
+           *
+           * 用户按**面板看到的模型名**传参：`cline-pass/deepseek-v4.1-flash`。按
+           * `供应商/模型` 约定解析出 provider=`cline-pass`，但该模型所属分组的显示名是
+           * `cline`（testid `...registry-provider:new-provider-2`）——精确匹配 0 命中，
+           * 于是报 `model_unavailable`，尽管模型就在面板里、用显示名能精确选中。
+           *
+           * 回退：拿 providerOption 探得的分组显示名（provider.available）逐个 hover
+           * 并试匹配模型显示名。**不放宽精度**——模型名仍要求精确命中，
+           * 只是不再把「provider 段必须等于分组显示名」当作硬前提。
+           */
+          if (!model.clicked && !provider.clicked && provider.available?.length) {
+            for (const group of provider.available) {
+              if (exactUiName(group, spec.provider)) continue; // 上面已试过
+              // eslint-disable-next-line no-await-in-loop
+              const hov = await clickExactWhenReady(cdp, "providerOption", group, deps, "hover");
+              if (!hov.clicked) continue;
+              // eslint-disable-next-line no-await-in-loop
+              await deps.sleep(600);
+              // eslint-disable-next-line no-await-in-loop
+              // 模型匹配值优先用**完整原始串**：面板把 `cline-pass/deepseek-v4.1-flash`
+              // 当作一个整体模型名（斜杠是名字的一部分），而 spec.model 只剩后半段
+              // `deepseek-v4.1-flash`，单用它匹配不到。两者都试，精确命中即止。
+              const fullName = `${spec.provider}/${spec.model}`;
+              // eslint-disable-next-line no-await-in-loop
+              let hit = await clickExactWhenReady(cdp, "modelOption", fullName, deps);
+              if (!hit.clicked)
+                // eslint-disable-next-line no-await-in-loop
+                hit = await clickExactWhenReady(cdp, "modelOption", spec.model, deps);
+              if (hit.clicked) {
+                logger.info(
+                  `[zcode] 供应商段「${spec.provider}」不是面板分组名，已回退到分组「${group}」按模型显示名选中`,
+                );
+                provider = { ...hov, clicked: false }; // 不把分组 hover 当「供应商已匹配」
+                model = hit;
+                break;
+              }
+            }
+          }
         }
         /**
          * issue #27 问题三：radix 子菜单由 hover 维持，press 时子菜单可能已收回——
@@ -1129,10 +1176,8 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
         await deps.sleep(300);
         modelValue = await readModel(true);
       } else logger.info(`[zcode] 模型回读已匹配，复用 ${spec.provider}/${spec.model}`);
-      const displayMatches =
-        exactUiName(modelValue.display, spec.model) ||
-        exactUiName(modelValue.display, `${spec.provider}/${spec.model}`);
-      const internalMatches = exactUiName(modelValue.internal, spec.model);
+      const displayMatches = nameMatches(modelValue.display);
+      const internalMatches = nameMatches(modelValue.internal);
       if (!displayMatches || !internalMatches)
         return result({
           hardFailure: true,

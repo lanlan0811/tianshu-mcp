@@ -529,6 +529,50 @@ class ThoughtLevelZcode extends FakeZcode {
   }
 }
 
+/**
+ * 真机 3.14.4.7912 的**供应商段与面板分组名不一致**场景（2026-10-08）。
+ *
+ * 用户按面板显示传 `model="cline-pass/deepseek-v4.1-flash"`，但该模型所属的
+ * provider 分组显示名是 `cline`（testid `...registry-provider:new-provider-2`）。
+ * 适配器原先只拿 `spec.provider`（`cline-pass`）去精确匹配分组名 → 匹配 0 →
+ * 报 `model_unavailable`，尽管模型就在面板里、且用显示名能精确命中。
+ *
+ * 真实证据（真机 clickExact 实测）：
+ *   clickExact(providerOption, "cline", hover)      → clicked:true,  count:1
+ *   clickExact(providerOption, "cline-pass", hover) → clicked:false, count:0
+ *   clickExact(modelOption, "cline-pass/deepseek-v4.1-flash") 在 hover "cline" 后 → clicked:true
+ */
+class MismatchedProviderNameZcode extends FakeZcode {
+  hoveredProviders: string[] = [];
+  /** 面板分组只有这两个（显示名与「模型 id 前缀」不同） */
+  private readonly groups = ["cline", "OpenRouter"];
+  override async clickExact(key: string, value: string, mode?: string) {
+    if (key === "providerOption") {
+      if (mode !== "hover") return { clicked: false, count: 0, available: this.groups };
+      // 只有精确等于面板分组显示名才算命中（模拟真机行为）
+      if (!this.groups.includes(value))
+        return { clicked: false, count: 0, available: this.groups };
+      this.hoveredProviders.push(value);
+      return { clicked: true, count: 1, available: this.groups };
+    }
+    if (key === "modelOption") {
+      // 模型项只在**已 hover 的**分组里渲染；且显示名等于传入值才算命中
+      if (this.hoveredProviders.length === 0) return { clicked: false, count: 0, available: [] };
+      if (value !== "cline-pass/deepseek-v4.1-flash")
+        return { clicked: false, count: 0, available: ["cline-pass/deepseek-v4.1-flash"] };
+      // 命中即落状态：真机上选中后触发器会回读为新模型名
+      this.model = value;
+      return {
+        clicked: true,
+        count: 1,
+        available: ["cline-pass/deepseek-v4.1-flash"],
+        testids: ["chat-model-select-item-custom:new-provider-2:cline-pass%2Fdeepseek-v4.1-flash"],
+      };
+    }
+    return super.clickExact(key, value);
+  }
+}
+
 /** 模型菜单首轮被吞（候选为空），重开菜单后才可选中。 */
 class SwallowedModelMenuZcode extends FakeZcode {
   modelMenuOpens = 0;
@@ -2504,5 +2548,27 @@ describe("ZCode 模型菜单被吞后重开（issue #27）", () => {
     expect(fake.clickAttempts).toBe(0);
     expect(fake.model).toBe("deepseek-flash");
     expect(fake.sent).toBe(1);
+  });
+
+  it("provider 段与面板分组名不一致时回退枚举分组，命中模型显示名", async () => {
+    // 真机 3.14.4.7912：model="cline-pass/deepseek-v4.1-flash"，
+    // 但该模型所属分组显示名是 "cline"（provider 段 "cline-pass" 匹配不到任何分组）。
+    // 修复前：报 model_unavailable（模型匹配 0；供应商匹配 0）。
+    // 修复后：回退枚举可见分组逐个 hover，用模型显示名精确命中。
+    const project = await makeTmpRoot("zcode-provider-name-mismatch");
+    cleanup.push(project);
+    const fake = new MismatchedProviderNameZcode(project);
+    const result = await runZcodeTask({
+      ctx: { ...ctx(project), model: "cline-pass/deepseek-v4.1-flash" },
+      resolved: resolved(),
+      opts: opts(),
+      logFile: path.join(project, "agent.log"),
+      deps: depsFor(fake),
+    });
+    expect(result.ok, `期望派发成功，实际 error=${result.error ?? "(无)"}`).toBe(true);
+    expect(fake.model).toBe("cline-pass/deepseek-v4.1-flash");
+    expect(fake.sent).toBe(1);
+    // 必须真的 hover 过 cline 分组（模型项只在 hover 后渲染）
+    expect(fake.hoveredProviders).toContain("cline");
   });
 });

@@ -187,6 +187,24 @@ export function normalizeZcodeModelSelection(raw: ZcodeModelSelectionRaw): {
   const visibleLabel = raw.visibleLabel?.trim() || raw.title?.trim() || "";
   const modelName = (value: string) =>
     value.includes("/") ? value.slice(value.indexOf("/") + 1) : value;
+  /**
+   * `currentValue` 的格式是 `<kind>:<provider>:<urlencoded-model>`。
+   * `split(":").at(-1)` 假设**模型名不含冒号**，但真机存在反例：
+   * OpenRouter 的免费模型后缀就是 `:free`（2026-10-08，ZCode 3.14.4.7912）——
+   *   custom:openrouter:inclusionai%2Fling-3.0-flash-sante%3Afree
+   *   解码 = custom:openrouter:inclusionai/ling-3.0-flash-sante:free
+   *   split(":").at(-1) = "free"（截断），而可见标签给出完整名 → 误报「属性与可见标签冲突」。
+   *
+   * 解析改为**按 `<kind>:<provider>:` 前缀剥离**（只切前两段，第三段整段保留），
+   * 这与属性格式一一对应，不依赖模型名/路径里是否出现冒号或斜杠。
+   * 若剥离结果与可见标签不一致，则回退旧的末段解析结果参与后续校验——
+   * 真正的冲突（两个不同模型）仍会被 exactUiName 拦下，不放宽。
+   */
+  const decodedCurrent = currentValue ? decodeURIComponent(currentValue) : "";
+  const stripped = /^[^:]*:[^:]*:(.+)$/.exec(decodedCurrent)?.[1]?.trim() ?? "";
+  const visibleModel = visibleLabel ? modelName(visibleLabel) : "";
+  const currentModelFromValue =
+    stripped && visibleModel && exactUiName(stripped, visibleModel) ? stripped : currentModel;
   if (
     raw.ambiguous ||
     (raw.visibleLabel &&
@@ -194,9 +212,13 @@ export function normalizeZcodeModelSelection(raw: ZcodeModelSelectionRaw): {
       !exactUiName(modelName(raw.visibleLabel), modelName(raw.title)))
   )
     throw new ZcodeModelReadbackError("ZCode 当前模型可见标签存在歧义");
-  if (currentModel && visibleLabel && !exactUiName(currentModel, modelName(visibleLabel)))
+  if (
+    currentModelFromValue &&
+    visibleLabel &&
+    !exactUiName(currentModelFromValue, modelName(visibleLabel))
+  )
     throw new ZcodeModelReadbackError("ZCode 当前模型属性与可见标签冲突");
-  if (currentModel) display = visibleLabel || currentModel;
+  if (currentModelFromValue) display = visibleLabel || currentModelFromValue;
   else if (visibleLabel) display = visibleLabel;
   else if (ariaLabel && display.includes(ariaLabel))
     throw new ZcodeModelReadbackError("ZCode 模型文本包含混合标签，无法确认当前模型");
@@ -204,7 +226,7 @@ export function normalizeZcodeModelSelection(raw: ZcodeModelSelectionRaw): {
   return {
     display,
     internal:
-      currentModel ||
+      currentModelFromValue ||
       legacyInternal ||
       (display.includes("/") ? display.slice(display.indexOf("/") + 1).trim() : display),
   };
