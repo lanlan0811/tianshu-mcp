@@ -258,6 +258,10 @@ UI 升级导致选择器失效时，**无需改代码**——在 `gui.selectors`
 | **取消任务后 `lastRunSignal` 恒为 undefined，取消路径在真机上完全走不到**（2026-10-08 真机） | 进度 note 写的是「运行信号：」，而编排器 `fix-loop` 用 `/运行证据=([^；]+)/` 提取——**六个 GUI 适配器里唯独 traework 用了别的措辞**（codex/kimicode/minimax/opendesign/zcode 均为「运行证据=」）。该字段是 `query_task` meta 的对外文档化字段，smoke 的取消触发条件 `lastRunSignal==="stop_button"` 因此永不成立 | note 统一为 `…；运行证据=<值>；…`。注意值后**必须紧跟「；」**——正则的 `[^；]+` 会吃进 `）` 等字符，产出 `"stop_button）"` 这类脏值，同样破坏等值比较。回归锁：`test/unit/last-run-signal-contract.test.ts` |
 | **取消时点不到停止按钮：`TypeError: e.click is not a function`**（2026-10-08 真机） | `click()` 原实现先 `element.click()`、抛错才回退坐标点击——但语义键常命中**图标类元素**（`stopButton` = `.chat-input-v2-send-button-stop-icon`），这类元素没有 `click()` 方法，异常直接冒泡，调用方只拿到错误、从未走到回退分支 | `click()` 改为**坐标点击优先、DOM click 兜底**（与 kimicode 一致），且 DOM 分支用 `typeof e.click==='function'` 守卫、异常不冒泡。回归锁：`test/unit/traework-cancel-path.test.ts` |
 | **取消时报 `CDP_UNAVAILABLE: 客户端主动断开`，点停止按钮失败**（2026-10-08 真机） | 取消分支写成 `return abortResult()` 而非 `return await abortResult()`。JS 语义下 `return <promise>` 会**立即**执行外层 `finally`（含 `cdp.disconnect()`），不等 async 函数体完成——`stopGuiTurn` 启动时 CDP 已被本函数的 finally 切断。对照：kimicode/minimax/opendesign 均写 `return await abortResult()` | 两处取消分支补 `await`。栈追踪证据：`disconnect ← run.js finally ← adapter.run ← TaskOrchestrator.run`。**该缺陷同时解释了两次真机跑都报 `guiStop={clicked:false,idle:false}`**——不是停止按钮点不动，而是连接已被自己断掉 |
+| **排队中任务被误报为「已完成」（假成功）**（2026-10-08 真机，免费用户高峰期） | 排队提醒气泡**也带「由 AI 生成」footer**——正是适配器的完成标志；而排队时 `stopVisible`/`tailLoading` 均为 false（权威运行信号不命中）。两者叠加使 `judgePoll` 直接落到 `finished` 分支 → 上报 `succeeded`，**把「你排在 1064 位」当交付结果返回**。真机回放确证：同一份 DOM，修复前判 `finished`、修复后判 `queue` | `judgePoll` 在 `finished` **之前**增加排队判定（判别式取位次短语「排在 N 位」，避免正文正常提及「排队」被误判）。适配器把排队按**暂时等待**处理：继续轮询、周期性上报位次，**不写「运行证据=」前缀**（该前缀是「已开工」语义，排队恰是尚未开工），超时终态文案点明「期间一直处于排队，任务尚未开始执行」。回归锁：`test/unit/traework-reply.test.ts` 的 4 条排队用例（含假阳性防护） |
+
+> **排队不要求用户介入**：traework 不在 `continue_task` 支持名单，走 `needs_user` 会造成无法恢复；
+> 且排队是暂时状态，正确语义是适配器继续有界等待（上限由 `taskTimeoutMs` 决定，默认 30 分钟）。
 
 ---
 

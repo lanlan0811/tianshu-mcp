@@ -40,6 +40,30 @@ export function isAskUserPending(text: string): boolean {
 }
 
 /**
+ * 排队提醒检测（免费用户高峰期）。
+ *
+ * 真机实测（2026-10-08）DOM 原文：
+ *   「TraeWork」「排队提醒」「当前模型请求量较高，你目前排在 1064 位。升级会员，
+ *    可在高峰期优先响应，或尝试其他模型、切换 Auto 模式继续任务。」
+ *   「升级权益」「手动终止输出」「由 AI 生成」
+ *
+ * **为何必须单独识别**：该气泡**带「由 AI 生成」footer**（正是完成标志），
+ * 而排队时 `stopVisible`/`tailLoading` 均为 false（权威运行信号不命中），
+ * 两者叠加会让判定直接落到 finished → 适配器上报 succeeded，**把排队提示当交付结果**。
+ *
+ * 判别式取「排在 N 位」这一位次短语（而非仅「排队」二字），避免正文正常提及「排队」被误判。
+ */
+export function isQueuePending(text: string): boolean {
+  return /排(?:在|队)\s*\d+\s*位/.test(text || "");
+}
+
+/** 提取排队位次（用于终态文案与调用方决策）；非排队返回 null */
+export function queuePosition(text: string): number | null {
+  const m = /排(?:在|队)\s*(\d+)\s*位/.exec(text || "");
+  return m ? Number(m[1]) : null;
+}
+
+/**
  * 原生 agent 循环痕迹检测：只认真正的工具执行证据
  * （「已执行 N 条命令」「命令已真实执行」「退出码 N」）。
  * 「任务耗时 Ns」「已初始化环境」是每条回复的固定收尾样板，绝不能当痕迹。
@@ -139,6 +163,7 @@ export interface CompletionState {
 export type CompletionVerdict =
   | { kind: "finished"; added: string }
   | { kind: "ask_user"; added: string }
+  | { kind: "queue"; added: string; position: number | null }
   | { kind: "idle"; added: string }
   | { kind: "pending"; state: CompletionState };
 
@@ -190,6 +215,13 @@ export function judgePoll(
   // 权威运行信号优先于完成标志；thinkingStream 仅诊断，不影响 running。
   if (liveness.running) {
     return { kind: "pending", state: { prev: current, stable: 0, idleSince: 0 } };
+  }
+
+  // 排队提醒优先于完成标志：该气泡带「由 AI 生成」footer，若不先拦会被误判 finished，
+  // 把「你排在 N 位」当成交付结果上报（免费用户高峰期必现）。
+  if (hasMarker && isQueuePending(cutStale(added))) {
+    const text = cutStale(added);
+    return { kind: "queue", added: text, position: queuePosition(text) };
   }
 
   if (finished) {

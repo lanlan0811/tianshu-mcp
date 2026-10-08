@@ -317,6 +317,28 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
     keptInstance = true;
     return fail(error, extra);
   };
+  // 排队状态（免费用户高峰期）：由轮询循环的 queue 分支写入，供终态文案与进度上报消费。
+  /** 排队提醒首次出现的时刻（0=尚未排队）；用于排队时长诊断 */
+  let queueSince = 0;
+  /** 最近一次上报的排队位次（供终态文案复用） */
+  let queueNoted: number | null = null;
+  /** 上次写排队进度 note 的时刻，避免与常规进度重复刷屏 */
+  let lastQueueNoteAt = 0;
+
+  /**
+   * 超时终态：若期间一直处于排队（queueNoted 非空），文案必须点明——
+   * 「排队没轮到」与「任务跑失败了」是两件事，调用方的处置完全不同
+   * （前者应换模型/错峰重派，后者要看失败检查项）。
+   */
+  const timeoutResult = (): AgentRunResult => {
+    const base = `等待 TraeWork 开发完成超时（${Math.round((ctx.taskTimeoutMs || 0) / 1000)}s）`;
+    const queueNote =
+      queueNoted !== null
+        ? `；期间一直处于排队（最后位次 ${queueNoted}${queueSince ? `，已等待 ${Math.round((Date.now() - queueSince) / 1000)}s` : ""}）——任务尚未开始执行，建议换模型、错峰重派或升级会员`
+        : "";
+    return stop("timeout", `${base}${queueNote}`, { timeout: true });
+  };
+
   /**
    * 取消：先尽力点击界面停止按钮（有界等待界面空闲），再落终态。
    * 绝不谎报——`guiStop.idle` 才是「界面确已停止」的证据，未确认时由
@@ -485,7 +507,6 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
     let lastProgressAt = Date.now();
     let runningSince = 0;
     let runningWarned = false;
-
     for (;;) {
       try {
         // eslint-disable-next-line no-await-in-loop
@@ -493,11 +514,7 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
       } catch (e) {
         if (e instanceof PollGuardError && e.reason === "aborted") return await abortResult();
         if (e instanceof PollGuardError && e.reason === "timeout") {
-          return stop(
-            "timeout",
-            `等待 TraeWork 开发完成超时（${Math.round((ctx.taskTimeoutMs || 0) / 1000)}s）`,
-            { timeout: true },
-          );
+          return timeoutResult();
         }
         throw e;
       }
@@ -518,11 +535,7 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
       } catch (e) {
         if (e instanceof PollGuardError && e.reason === "aborted") return await abortResult();
         if (e instanceof PollGuardError && e.reason === "timeout") {
-          return stop(
-            "timeout",
-            `等待 TraeWork 开发完成超时（${Math.round((ctx.taskTimeoutMs || 0) / 1000)}s）`,
-            { timeout: true },
-          );
+          return timeoutResult();
         }
         throw e;
       }
@@ -574,6 +587,38 @@ export async function runTraeworkTask(args: RunTraeworkArgs): Promise<AgentRunRe
         now,
         idleTimeoutMs: gui.idleTimeoutMs,
       });
+      if (verdict.kind === "queue") {
+        // 排队提醒：「当前模型请求量较高，你目前排在 N 位」（免费用户高峰期必现）。
+        // 该气泡带「由 AI 生成」footer，若被当作完成标志上报 succeeded，等于把排队提示
+        // 当交付结果——调用方会以为任务做完了。此处按**暂时等待**处理：继续轮询、
+        // 上报位次，让调用方看得见进展；排队不是终态，也不要求用户介入
+        // （traework 不在 continue_task 支持名单，走 needs_user 会无法恢复）。
+        queueNoted = verdict.position;
+        const note = `TraeWork 排队中（你目前排在 ${verdict.position ?? "未知"} 位），等待模型响应；这不是任务完成`;
+        if (now - lastProgressAt >= gui.progressIntervalMs && now - lastQueueNoteAt >= gui.progressIntervalMs) {
+          lastQueueNoteAt = now;
+          logger.info(`[traework] ${note}`);
+          // 进度事件写入失败不能中断任务。
+          // 注意：**不写「运行证据=」前缀**——该前缀是「agent 真的在生成」的语义契约
+          // （fix-loop 提取为 lastRunSignal，调用方据此判断是否已开工）；排队恰恰是
+          // 「尚未开工」，占用该前缀会让调用方误判。排队进展走 queuePosition 字段。
+          // eslint-disable-next-line no-await-in-loop
+          await Promise.resolve(opts.onProgress?.(note)).catch((e: unknown) =>
+            logger.warn(`[traework] 写入进度事件失败：${e instanceof Error ? e.message : String(e)}`),
+          );
+          lastProgressAt = now;
+        }
+        if (queueSince === 0) {
+          queueSince = now;
+          // eslint-disable-next-line no-await-in-loop
+          await emit("awaiting_user_authorization", note, {
+            round: ctx.round,
+            queuePosition: verdict.position,
+          });
+        }
+        state = { prev: current, stable: 0, idleSince: 0 };
+        continue;
+      }
       if (verdict.kind === "finished") {
         endReason = "completion_mark";
         replyText = verdict.added;

@@ -115,6 +115,52 @@ describe("judgePoll 轮询状态机", () => {
     expect(v.kind).toBe("pending");
   });
 
+  /**
+   * 排队提醒气泡的**假成功**回归锁（2026-10-08 真机，免费用户高峰期）。
+   *
+   * 实测 DOM 原文（TraeWork 面板，排队 1064 位时）：
+   *   派单文本 +「TraeWork」「排队提醒」「当前模型请求量较高，你目前排在 1064 位。
+   *   升级会员，可在高峰期优先响应，或尝试其他模型、切换 Auto 模式继续任务。」
+   *   「升级权益」「手动终止输出」「由 AI 生成」
+   *
+   * 两个致命点：
+   *  1. 排队气泡**带「由 AI 生成」footer** —— 正是适配器的完成标志；
+   *  2. 排队时 `stopVisible`/`tailLoading` 均为 false —— 权威运行信号不命中，
+   *     于是判定落到 finished 分支 → 适配器上报 succeeded。
+   * 后果：免费用户高峰期派单会**误报成功**，把排队提示当交付结果返回。
+   */
+  const QUEUE_BUBBLE =
+    "TraeWork排队提醒当前模型请求量较高，你目前排在 1064 位。升级会员，可在高峰期优先响应，或尝试其他模型、切换 Auto 模式继续任务。升级权益手动终止输出由 AI 生成";
+
+  it("排队提醒不得判为 finished（否则高峰期免费用户会被误报成功）", () => {
+    const v = judgePoll(`${marker}${QUEUE_BUBBLE}`, marker, "", initial, 12, {
+      liveness: notRunning,
+    });
+    expect(v.kind, "排队提醒气泡带「由 AI 生成」footer，但绝不能被当作交付完成").not.toBe("finished");
+  });
+
+  it("排队提醒判定为独立的 queue 状态，并带回位次供调用方决策", () => {
+    const v = judgePoll(`${marker}${QUEUE_BUBBLE}`, marker, "", initial, 12, {
+      liveness: notRunning,
+    });
+    expect(v.kind).toBe("queue");
+  });
+
+  it("排队鉴别的假阳性防护：正文里出现「排队」但不含位次短语时仍按正常完成", () => {
+    // 位次短语「排在 N 位」是排队提醒的判别式；普通回复提到「排队」不算
+    const v = judgePoll(`${marker}我在说明排队这个概念，正文结束由AI生成12:30`, marker, "", initial, 12, {
+      liveness: notRunning,
+    });
+    expect(v.kind, "仅出现「排队」二字不应改变判定").toBe("finished");
+  });
+
+  it("排队鉴别不受模型名干扰：其他模型的排队提醒同样识别", () => {
+    const other =
+      "TraeWork排队提醒当前模型请求量较高，你目前排在 37 位。升级会员，可在高峰期优先响应。升级权益手动终止输出由 AI 生成";
+    const v = judgePoll(`${marker}${other}`, marker, "", initial, 12, { liveness: notRunning });
+    expect(v.kind).toBe("queue");
+  });
+
   it("达到稳定轮数但未到 idleTimeoutMs 仍 pending，到时返回 idle", () => {
     const text = `${marker}一直没完成的正文`;
     const first = judgePoll(text, marker, "", initial, 2, { now: 1_000, idleTimeoutMs: 5_000 });
