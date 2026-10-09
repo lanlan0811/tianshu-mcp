@@ -534,7 +534,7 @@ export class CodexCdpClient {
         const visAny=(k)=>{for(const e of resolve(k)){if(vis(e))return true}return false};
         const textOf=(k)=>{for(const e of resolve(k)){if(vis(e))return (e.value!==undefined?e.value:'')||(e.innerText||e.textContent||'')}return ''};
         /**
-         * \`messageArea\` 容器**把 composer 一起包住了**（真机 26.930.7945.0 实测，2026-10-08）：
+         * \`messageArea\` 容器**把 composer 一起包住了**（真机实测 26.930/26.1002）：
          *   MainContentSurface(y=96,h=680)
          *     └─ … └─ _ComposerLayoutRoot_xxx(y=610)
          *              └─ … └─ div.ProseMirror(contenteditable) ← 输入框
@@ -542,18 +542,42 @@ export class CodexCdpClient {
          * 发送确认因此**假阳性**：任务书根本没发出去，却报「指令已确认发送（对话区=true）」，
          * 后续轮询对着一个不会变化的页面等到超时。
          *
-         * 故取文本前先克隆并**摘除 composer 子树**，让 conversationText 只反映真正的对话区。
-         * 判据用类名子串 \`Composer\`（CSS Module 哈希后缀会变，基名稳定）。
+         * ⚠️ 实现禁用 cloneNode（2026-10-09 真机回归）：**游离克隆体没有布局**，
+         * Chromium 对游离节点取 innerText 只返回空壳（实测 605 字符的真实对话 → 4 字符
+         * "输出内容"），导致 conversationText 恒定、回复稳定判定完全失真（三轮对话哈希相同）。
+         * 也禁用 [class*="Composer"] 子串匹配：Tailwind 变体 \`has-[[data-composer-expand-toggle]]\`
+         * 让对话滚动容器也命中该子串，会把对话本身一起剔掉。
+         *
+         * 正解：**在可见容器上做节点级遍历**，遇到 composer 组件节点（精确到组件基名
+         * \`_ComposerLayoutRoot_\` / \`_ComposerLayoutBody_\`）整棵跳过，其余叶子取 textContent
+         * （textContent 不依赖布局，游离与在树内行为一致）。真机验证：保留全部对话内容。
          */
+        const isComposerComponent=(n)=>{
+          const cls=String(n.className||'');
+          return cls.indexOf('_ComposerLayoutRoot_')>=0||cls.indexOf('_ComposerLayoutBody_')>=0;
+        };
+        const collectConversationText=(root)=>{
+          const parts=[];
+          const walk=(n)=>{
+            if(n.nodeType!==1)return;
+            if(isComposerComponent(n))return;
+            let hasElementChild=false;
+            for(const c of n.children){hasElementChild=true;walk(c)}
+            if(!hasElementChild){
+              const t=(n.textContent||'').trim();
+              if(t)parts.push(t);
+            }
+          };
+          walk(root);
+          // 空串 join：marker（形如 tianshu:xxx）必须是**连续串**——用空格 join 会把它
+          // 拆成 tianshu / xxx 两段，令调用方的 seenMessage 判据静默失效。
+          // 只折叠空格与制表符，保留 textContent 段界表达的换行。
+          return parts.join('').replace(/[ \t]+/g, ' ').trim();
+        };
         const conversationTextOf=()=>{
           for(const e of resolve('messageArea')){
             if(!vis(e))continue;
-            let host=e;
-            if(typeof e.cloneNode==='function'){
-              host=e.cloneNode(true);
-              for(const c of host.querySelectorAll('[class*="Composer"],[class*="composer"]')) c.remove();
-            }
-            return ((host.value!==undefined?host.value:'')||(host.innerText||host.textContent||'')).trim();
+            return collectConversationText(e);
           }
           return '';
         };

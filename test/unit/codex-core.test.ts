@@ -971,6 +971,72 @@ describe("Codex 选择器规范", () => {
     // ③ 两处都有 → 对话区那份仍要能读到
     expect(run(true, true).conversationText).toContain("tianshu:");
   });
+
+  /**
+   * 回归锁：conversationText 的**实现方式**必须避开两个真机踩过的坑（2026-10-09）。
+   *
+   * 坑 A —— `cloneNode` 空壳：游离克隆体没有布局，Chromium 对游离节点取 innerText
+   *   只返回空壳。真机实测：可见容器的真实对话是 605 字符，克隆体只读到 4 字符
+   *   「输出内容」，导致 conversationText 恒定、回复稳定判定失真（三轮对话哈希完全相同）。
+   * 坑 B —— `[class*="Composer"]` 子串误伤：Tailwind 变体类名
+   *   `has-[[data-composer-expand-toggle]]` 让**对话滚动容器**也命中该子串，
+   *   于是把对话本身一起剔掉（真机实测剔完只剩 placeholder）。
+   *
+   * 正解：节点级遍历 + textContent，只跳过 composer **组件**节点
+   *   （精确到组件基名 `_ComposerLayoutRoot_` / `_ComposerLayoutBody_`）。
+   * 本用例用真机类名复刻这两个坑的触发条件，锁住实现不被改回去。
+   */
+  it("conversationText 不受 Tailwind 变体类名误伤，且保留连续 marker（真机回归锁）", async () => {
+    const { CodexCdpClient } = await import("../../src/agents/codex/cdp.js");
+    const vm = await import("node:vm");
+    const { parseHTML } = await import("linkedom");
+    const cdp = new CodexCdpClient(1, 1);
+    let expr = "";
+    const stub = cdp as unknown as { evaluate: (e: string) => Promise<unknown> };
+    stub.evaluate = async (e: string) => {
+      expr = e;
+      return {};
+    };
+    await cdp.poll();
+
+    const MARKER = "tianshu:tsk_regression:r0";
+    // 对话滚动容器的真实类名含 Tailwind 变体 `has-[[data-composer-expand-toggle]]`
+    // ——这正是坑 B 的触发条件（旧实现按子串匹配 Composer 会把它整棵剔掉）。
+    const html = `<html><body>
+      <div class="_MainContentSurface_abc123">
+        <div class="group/thread-scroll-layout has-[[data-composer-expand-toggle]]:[contain]">
+          <div class="thread-scroll-container overflow-y-auto">
+            <div class="message-body">${MARKER}</div>
+          </div>
+        </div>
+        <div class="_ComposerLayoutRoot_abc123">
+          <div class="_ComposerLayoutBody_abc123">
+            <div class="ProseMirror" contenteditable="true">残留任务书</div>
+            <div class="_ComposerFooterLabel_x">5.6 Terra 极高 Ultra 持续</div>
+          </div>
+        </div>
+      </div>
+    </body></html>`;
+    const { document } = parseHTML(html);
+    for (const el of document.querySelectorAll("*")) {
+      Object.assign(el, {
+        getBoundingClientRect: () => ({ width: 100, height: 100, top: 0, left: 0, right: 100, bottom: 100 }),
+      });
+    }
+    const out = vm.runInNewContext(expr, { document, innerWidth: 1000, innerHeight: 1000 }) as {
+      conversationText: string;
+    };
+
+    // 坑 B：对话内容必须保留（不得因变体类名含 composer 子串而被整棵剔除）
+    expect(out.conversationText).toContain(MARKER);
+    // 坑 A：不得是空壳（克隆体路线会退化成极短占位文本，真机实测只剩 4 字符）。
+    // 夹具里对话只有 marker 一项，故断言「至少不短于 marker 本身」即已锁住空壳退化。
+    expect(out.conversationText.length).toBeGreaterThanOrEqual(MARKER.length);
+    // composer 组件内的内容仍须被排除
+    expect(out.conversationText).not.toContain("残留任务书");
+    expect(out.conversationText).not.toContain("5.6 Terra");
+    expect(out.conversationText).not.toContain("极高");
+  });
 });
 
 /* ---------------- 注册表分支 ---------------- */
