@@ -8,6 +8,86 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.9.3] — 2026-10-09
+
+> **Codex adapter fix release**: upgrading Codex to **26.1002** surfaced **5 defects**.
+> Three of them made dispatching **entirely impossible** (connection timeout after clicking
+> "New chat", false-positive send confirmation, distorted reply-stability detection), one
+> **misreported process exit**, and one pointed users at the **wrong program**. All are fixed
+> here, each with a regression lock.
+
+**No breaking changes; the tool surface is unchanged (still 8 tools) — upgrade requires no caller changes.**
+
+### Fixes
+
+**1. False-positive send confirmation (most severe)**
+
+The container matched by `messageArea` **also wraps the composer**:
+
+```
+MainContentSurface(y=96,h=680)
+  └─ … └─ _ComposerLayoutRoot_(y=610)
+           └─ div.ProseMirror          ← the input box
+```
+
+So "the task brief is still sitting in the input box" counted as "the conversation area
+already contains that text" — the adapter reported "instruction confirmed sent" when nothing
+had been sent, then polled a page that would never change until timeout; the leftover text
+also polluted the next round. Now text is collected via **node-level traversal** of the
+visible container, skipping the composer component subtree entirely.
+
+**2. Inverted readiness condition during connect**
+
+`connectStableCodex` used to accept only `chatInput` as the readiness signal. But when Codex
+restarts **on an existing conversation view**, the composer is not mounted (measured on a real
+device: `chatInput=0`, while the "New chat" button is clickable) — so it retried until timeout
+and reported "Codex input box has not recovered", **never reaching the step that clicks
+"New chat"**. The condition is now "`chatInput` mounted **or** `newChat` clickable", and the
+code explicitly waits for the composer after clicking.
+
+**3. Distorted reply-stability detection (constant `conversationText`)**
+
+Text used to be collected from a **detached clone**, which has **no layout** — Chromium
+returns only a hollow shell for `innerText` on detached nodes (measured: a real 605-character
+conversation read back as 4 characters, `"输出内容"`), making the conversation hash constant and
+reply-stability detection meaningless. The `[class*="Composer"]` substring match also
+**clobbered the conversation scroll container** (the Tailwind variant
+`has-[[data-composer-expand-toggle]]` contains that substring too). Now it does node-level
+traversal with `textContent` (layout-independent) and skips only composer **component** nodes
+(exact base names `_ComposerLayoutRoot_` / `_ComposerLayoutBody_`); leaf text is joined with
+an **empty string** to preserve the continuity of `【tianshu:…】` markers.
+
+Real-device re-verification: `conversationText` **4 → 428 characters**, hash now varies with content.
+
+**4. Process exit misreported as CDP disconnect**
+
+After killing the process on a real device, CDP reports `ECONNREFUSED` — that is a
+**consequence**, not the cause. Added `diagnoseCdpLoss()`, shared by both disconnect exits;
+probe failures conservatively assume "process still alive".
+
+**5. Hard-coded program name in CDP error messages**
+
+`TraeworkCdpClient` is reused by **6** adapters (traework/codex/kimicode/minimax/opendesign/qoder);
+the other five pointed users at the **wrong program** on error. Added `CdpClientOptions.appLabel`.
+
+### Other
+
+- Added `scripts/smoke-codex.mjs` (real-device smoke script, registered as `npm run smoke:codex`).
+- CI fix: removed banned emoji from source comments (the project's plain-text protocol rule
+  scans all of `src/**/*.ts`, comments included).
+
+### Known issues
+
+- On Codex 26.1002, the **first round of a new conversation** occasionally fails with
+  "text typed but send not triggered" (`send_unknown`: text remains in the input box and no
+  artifact is produced). That path **never resends** (resending is riskier than a misjudgment),
+  so it reports an honest error rather than a false success. The send path will be fixed
+  separately in the next release.
+- Model picker: on newer builds the group heading (e.g. "Default/Recommended models") shares
+  `role="menuitemradio"` with real model items and may leak into model candidates.
+
+---
+
 ## [0.9.2] — 2026-10-08
 
 > **ZCode real-device smoke fix release**: two rounds of real-device smoke testing (code
