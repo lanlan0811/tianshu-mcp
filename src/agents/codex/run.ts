@@ -165,7 +165,7 @@ async function connectStableCodex(
       await candidate.connect();
       // 列出的 target 可能属于正在重载的 renderer，要求一次真实 DOM 往返。
       //
-      // ⚠️ 就绪判据不能只认 chatInput（2026-10-09 真机 26.1002 回归）：
+      // 注意——就绪判据不能只认 chatInput（2026-10-09 真机 26.1002 回归）：
       // Codex 重开后**停在既有会话视图**时 composer 并不挂载（chatInput=0），
       // 而「新建会话」按钮是可点的（newChat>0）。若此处只等 chatInput，
       // 就会一路重试到超时报「Codex 输入框尚未恢复」，**根本走不到下面点 newChat 的步骤**

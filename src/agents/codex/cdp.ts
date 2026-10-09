@@ -542,7 +542,7 @@ export class CodexCdpClient {
          * 发送确认因此**假阳性**：任务书根本没发出去，却报「指令已确认发送（对话区=true）」，
          * 后续轮询对着一个不会变化的页面等到超时。
          *
-         * ⚠️ 实现禁用 cloneNode（2026-10-09 真机回归）：**游离克隆体没有布局**，
+         * 注意——实现禁用 cloneNode（2026-10-09 真机回归）：**游离克隆体没有布局**，
          * Chromium 对游离节点取 innerText 只返回空壳（实测 605 字符的真实对话 → 4 字符
          * "输出内容"），导致 conversationText 恒定、回复稳定判定完全失真（三轮对话哈希相同）。
          * 也禁用 [class*="Composer"] 子串匹配：Tailwind 变体 \`has-[[data-composer-expand-toggle]]\`
