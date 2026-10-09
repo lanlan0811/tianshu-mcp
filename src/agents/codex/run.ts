@@ -163,9 +163,16 @@ async function connectStableCodex(
     try {
       // eslint-disable-next-line no-await-in-loop
       await candidate.connect();
-      // 列出的 target 可能属于正在重载的 renderer，要求一次真实 DOM 往返
-      // eslint-disable-next-line no-await-in-loop
+      // 列出的 target 可能属于正在重载的 renderer，要求一次真实 DOM 往返。
+      //
+      // ⚠️ 就绪判据不能只认 chatInput（2026-10-09 真机 26.1002 回归）：
+      // Codex 重开后**停在既有会话视图**时 composer 并不挂载（chatInput=0），
+      // 而「新建会话」按钮是可点的（newChat>0）。若此处只等 chatInput，
+      // 就会一路重试到超时报「Codex 输入框尚未恢复」，**根本走不到下面点 newChat 的步骤**
+      // （第 7 步顺序颠倒：先要求输入框、后才点新聊天）。
+      // 故就绪判据改为「chatInput 已挂载 **或** newChat 可点」——后者由调用方点击后再等 composer。
       if (await candidate.exists("chatInput")) return candidate;
+      if (await candidate.exists("newChat")) return candidate;
       // eslint-disable-next-line no-await-in-loop
       if (allowLogin && (await candidate.exists("loginIndicator"))) return candidate;
       lastError = new Error("Codex 输入框尚未恢复");
@@ -320,6 +327,17 @@ export async function runCodexTask(args: RunCodexArgs): Promise<AgentRunResult> 
       if (gui.freshSession && !(await cdp.click("newChat")))
         return result({ hardFailure: true, error: "无法点击 Codex「新对话」", endReason: "setup_failed" });
       await deps.sleep(600);
+      /**
+       * 新会话页的 composer 是**异步挂载**的（真机 26.1002 实测）。
+       * 连接阶段的就绪判据已放宽为「chatInput 或 newChat 可点」，所以此刻
+       * composer 可能还没出现——必须显式等它，否则后续输入会落在空处。
+       */
+      if (!(await waitFor(cdp, "chatInput", deps, Math.min(gui.launchTimeoutMs, 30_000))))
+        return result({
+          hardFailure: true,
+          error: "点击「新对话」后 Codex 输入框未在观察期内出现",
+          endReason: "setup_failed",
+        });
 
       const items = await cdp.projects();
       const matched = matchCodexProject(items, ctx.projectPath);
