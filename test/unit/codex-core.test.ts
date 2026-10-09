@@ -1072,7 +1072,6 @@ describe("Codex 选择器规范", () => {
     };
     await cdp.poll();
 
-    const FULL = "【tianshu:tsk_20261009083825_4d992a:r0:initial】在当前项目创建 docs/verify-fix.md";
     // 真机形态：marker 被切成 SPAN/#text 交错的多节点
     const html = `<html><body>
       <div class="_MainContentSurface_abc123">
