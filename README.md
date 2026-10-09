@@ -81,6 +81,7 @@ Codex · TraeWork · ZCode · Kimi Code · Qoder CN · Open Design · MiniMax Co
 
 ## 目录
 
+- [项目图解](#项目图解)
 - [为什么需要编排层与验收仪](#为什么需要编排层与验收仪)
 - [核心特性](#核心特性)
 - [快速开始](#快速开始)
@@ -94,6 +95,30 @@ Codex · TraeWork · ZCode · Kimi Code · Qoder CN · Open Design · MiniMax Co
 - [面向开发者](#面向开发者)
 - [安全](#安全)
 - [社区与支持](#社区与支持)
+
+## 项目图解
+
+五幅概念插画，概括本 server 的形态与机制（插画为概念示意，非逐字对应的结构图）。
+
+<p align="center">
+  <img src="./assets/fig-architecture-zh.png" alt="总体架构：调度 / 执行面 / 客观验收仪三路汇入一个编排核心" width="49%">
+  <img src="./assets/fig-state-machine-zh.png" alt="任务状态机：单任务推进 · 中间信号 · 终态停点" width="49%">
+  <br>
+  <b>总体架构</b> —— 调度 · 执行面 · 客观验收仪 &nbsp;｜&nbsp; <b>任务状态机</b> —— 单任务推进 · 中间信号 · 终态停点
+</p>
+
+<p align="center">
+  <img src="./assets/fig-verify-loop-zh.png" alt="验收闭环：git 基线 · 命令检查 · 失败返修" width="49%">
+  <img src="./assets/fig-module-map-zh.png" alt="模块地图：调度 · 执行面 · 验收仪 · 任务" width="49%">
+  <br>
+  <b>验收闭环</b> —— git 基线 · 命令检查 · 失败返修 &nbsp;｜&nbsp; <b>模块地图</b> —— 调度 · 执行面 · 验收仪 · 任务
+</p>
+
+<p align="center">
+  <img src="./assets/fig-tool-surface-zh.png" alt="MCP 工具面：8 个工具 · 派单 · 查询 · 验收" width="49%">
+  <br>
+  <b>MCP 工具面</b> —— 8 个工具 · 派单 · 查询 · 验收
+</p>
 
 ## 为什么需要编排层与验收仪
 

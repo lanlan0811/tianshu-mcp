@@ -81,6 +81,7 @@ Codex · TraeWork · ZCode · Kimi Code · Qoder CN · Open Design · MiniMax Co
 
 ## Table of contents
 
+- [Illustrated overview](#illustrated-overview)
 - [Why an orchestration layer and acceptance gate](#why-an-orchestration-layer-and-acceptance-gate)
 - [Core features](#core-features)
 - [Quick start](#quick-start)
@@ -94,6 +95,30 @@ Codex · TraeWork · ZCode · Kimi Code · Qoder CN · Open Design · MiniMax Co
 - [For developers](#for-developers)
 - [Security](#security)
 - [Community & support](#community--support)
+
+## Illustrated overview
+
+Five conceptual illustrations summarizing the shape and mechanisms of this server (they are conceptual, not literal structural diagrams).
+
+<p align="center">
+  <img src="./assets/fig-architecture-en.png" alt="Overall architecture: scheduling / execution / verification converging into one orchestration core" width="49%">
+  <img src="./assets/fig-state-machine-en.png" alt="Task state machine: progression · signals · terminal stops" width="49%">
+  <br>
+  <b>Overall Architecture</b> — scheduling · execution · verification &nbsp;|&nbsp; <b>Task State Machine</b> — progression · signals · terminal stops
+</p>
+
+<p align="center">
+  <img src="./assets/fig-verify-loop-en.png" alt="Verification loop: git baseline · command checks · rework" width="49%">
+  <img src="./assets/fig-module-map-en.png" alt="Module map: scheduling · execution · verification · tasks" width="49%">
+  <br>
+  <b>Verification Loop</b> — git baseline · command checks · rework &nbsp;|&nbsp; <b>Module Map</b> — scheduling · execution · verification · tasks
+</p>
+
+<p align="center">
+  <img src="./assets/fig-tool-surface-en.png" alt="MCP tool surface: 8 tools · dispatch · query · verify" width="49%">
+  <br>
+  <b>MCP Tool Surface</b> — 8 tools · dispatch · query · verify
+</p>
 
 ## Why an orchestration layer and acceptance gate
 
