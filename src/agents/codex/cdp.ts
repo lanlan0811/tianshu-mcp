@@ -559,14 +559,14 @@ export class CodexCdpClient {
         const collectConversationText=(root)=>{
           const parts=[];
           const walk=(n)=>{
+            if(n.nodeType===3){
+              const t=(n.nodeValue||'').trim();
+              if(t)parts.push(t);
+              return;
+            }
             if(n.nodeType!==1)return;
             if(isComposerComponent(n))return;
-            let hasElementChild=false;
-            for(const c of n.children){hasElementChild=true;walk(c)}
-            if(!hasElementChild){
-              const t=(n.textContent||'').trim();
-              if(t)parts.push(t);
-            }
+            for(const c of n.childNodes)walk(c);
           };
           walk(root);
           // 空串 join：marker（形如 tianshu:xxx）必须是**连续串**——用空格 join 会把它

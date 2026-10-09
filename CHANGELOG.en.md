@@ -8,6 +8,56 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.9.4] — 2026-10-09
+
+> **Codex send-confirmation fix release**: fixes the "instruction delivered but reported as
+> unconfirmable" defect on 26.1002. The root cause is that conversation-text collection
+> **dropped bare text nodes**, losing the middle segments of the `【tianshu:…】` marker and
+> making the send-confirmation check `seenMessage` **permanently false** — which surfaced on
+> real devices as "text typed but send not triggered" (in fact it *was* sent; the adapter
+> simply could not read it back).
+
+**No breaking changes; the tool surface is unchanged (still 8 tools) — upgrade requires no caller changes.**
+
+### Fixes
+
+**Conversation-text collection dropped bare text nodes (send confirmation always failed)**
+
+Codex renders message bodies as **fragmented** DOM — the marker is split across multiple
+nodes, with element and bare text nodes interleaved (measured on a real device):
+
+```
+SPAN     "【tianshu"
+#text    ":tsk_20261009083825_4d992a"
+#text    ":r0"
+#text    ":initial"
+SPAN     "】在当前项目创建 docs/verify-fix.md…"
+```
+
+The old implementation walked only `children` (elements) and discarded a node's own text
+whenever it had element children — so the `#text` nodes were **dropped wholesale** and the
+result read back as `【tianshu】…`, losing every middle segment.
+
+Consequence: `conversationText.includes(marker)` was permanently false → `seenMessage`
+permanently false → all three send-confirmation signals false → `send_unknown`. **The message
+had in fact already been delivered** (real-device evidence: `composerText` 165 → 0, stop
+button appeared, artifact written to disk).
+
+**Fix**: walk `childNodes` (including `#text`) and join in document order; composer component
+nodes are still skipped whole.
+
+**Real-device re-verification** (`tsk_20261009102459_0e6869`): the log shows
+`instruction confirmed sent (conversation=true, input cleared=true)` — `seenMessage` was
+**true** for the first time; the conversation hash varied round by round
+(`b86128cc` → `a5fddf7f` → `1c6bb700` → `108a8d3d` → `4cfcc9ca`), settling to `reply_stable`
+after 4 stable rounds, and the artifact `docs/send-fix-verify.md` was written.
+
+**Regression lock**: 1 new case (replicating the real-device `SPAN`/`#text` interleaving);
+**counter-proof passed** (reverting the fix reads back `【tianshu】…` and turns red; restoring
+turns green).
+
+---
+
 ## [0.9.3] — 2026-10-09
 
 > **Codex adapter fix release**: upgrading Codex to **26.1002** surfaced **5 defects**.

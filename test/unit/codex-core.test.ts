@@ -1037,6 +1037,68 @@ describe("Codex 选择器规范", () => {
     expect(out.conversationText).not.toContain("5.6 Terra");
     expect(out.conversationText).not.toContain("极高");
   });
+
+  /**
+   * 回归锁：conversationText 必须保留**跨节点的连续文本**（2026-10-09 真机 26.1002）。
+   *
+   * Codex 的消息正文在 DOM 里是**碎片化**的——marker 被切在多个节点里，
+   * 且元素节点（SPAN）与纯文本节点（#text）交错：
+   *
+   *   SPAN    "【tianshu"
+   *   #text   ":tsk_20261009083825_4d992a"
+   *   #text   ":r0"
+   *   #text   ":initial"
+   *   SPAN    "】在当前项目创建 docs/verify-fix.md…"
+   *
+   * 旧实现只遍历 `children`（元素）、且「有元素子节点就丢弃自身文本」，
+   * 于是纯文本节点被整批丢掉，读出来变成 `【tianshu】…`——
+   * **marker 中间段全部丢失**，`seenMessage` 判据恒 false，
+   * 发送确认因此误报 `send_unknown`（真机实测：对话区已出现完整 marker，
+   * 却因读残而判「无法确认」，用户看到「文本已输入但未触发发送」）。
+   *
+   * 正解：遍历 `childNodes`（含 #text），按文档顺序拼接。
+   * 本用例用真机复刻的节点形态锁住该行为。
+   */
+  it("conversationText 保留跨 #text/SPAN 节点的连续 marker（真机 26.1002 碎片形态）", async () => {
+    const { CodexCdpClient } = await import("../../src/agents/codex/cdp.js");
+    const vm = await import("node:vm");
+    const { parseHTML } = await import("linkedom");
+    const cdp = new CodexCdpClient(1, 1);
+    let expr = "";
+    const stub = cdp as unknown as { evaluate: (e: string) => Promise<unknown> };
+    stub.evaluate = async (e: string) => {
+      expr = e;
+      return {};
+    };
+    await cdp.poll();
+
+    const FULL = "【tianshu:tsk_20261009083825_4d992a:r0:initial】在当前项目创建 docs/verify-fix.md";
+    // 真机形态：marker 被切成 SPAN/#text 交错的多节点
+    const html = `<html><body>
+      <div class="_MainContentSurface_abc123">
+        <div class="thread-scroll-container">
+          <div class="text-size-chat whitespace-pre-wrap">
+            <span>【tianshu</span>:tsk_20261009083825_4d992a:r0:initial<span>】在当前项目创建 docs/verify-fix.md</span>
+          </div>
+        </div>
+      </div>
+    </body></html>`;
+    const { document } = parseHTML(html);
+    for (const el of document.querySelectorAll("*")) {
+      Object.assign(el, {
+        getBoundingClientRect: () => ({ width: 100, height: 100, top: 0, left: 0, right: 100, bottom: 100 }),
+      });
+    }
+    const out = vm.runInNewContext(expr, { document, innerWidth: 1000, innerHeight: 1000 }) as {
+      conversationText: string;
+    };
+
+    // 核心断言：完整 marker（含中间段）必须可读——这是 seenMessage 的判据基础
+    expect(out.conversationText).toContain("tianshu:tsk_20261009083825_4d992a:r0:initial");
+    // 且不得被空格/分隔符拆断（拆断会让 includes() 失败）
+    expect(out.conversationText).toContain("【tianshu:tsk_20261009083825_4d992a");
+    expect(out.conversationText).toContain("】在当前项目创建 docs/verify-fix.md");
+  });
 });
 
 /* ---------------- 注册表分支 ---------------- */
