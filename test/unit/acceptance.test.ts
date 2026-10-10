@@ -181,3 +181,43 @@ describe("git porcelain 解析", () => {
     expect(r.untracked).toContain("new.txt");
   });
 });
+
+/**
+ * 非 git 仓库下的 requireChanges 静默降级（真机缺陷，2026-10-10）。
+ *
+ * 真机现象（MiniMax Code 冒烟，工作区 `D:\Trae项目\AI游戏\Minecraft` 不是 git 仓库）：
+ *   `--auto-verify` 跑了验收，`requireChanges` 默认 true，但报告写
+ *     「[INFO] requireChanges=true，但项目不是 git 仓库，零变更门禁已跳过。」
+ *     「[INFO] 项目不是 git 仓库，未做变更清单/diffstat 分析。」
+ *   结论 **[PASS]** —— 而同一份报告里 `changedFiles: []`、`diffstat: +0 -0`。
+ *
+ * 即：用户以为开着「零变更保护」，实际在非 git 仓库里**被静默跳过**。
+ * 若 agent 什么都没产出，验收依然判 PASS —— **假成功**。
+ * 对照 git 仓库：同样零变更会 fail-closed（`no-changes` 检查项失败）。
+ *
+ * 正解：非 git 仓库时**不得把「无法判定」当成「通过」**。
+ * 零变更门禁无法用 git 判定时，要么用文件系统快照替代判据，
+ * 要么把该门禁如实标为**不通过/不确定**，绝不能静默 PASS。
+ */
+describe("非 git 仓库：requireChanges 不得静默降级为通过", () => {
+  it("非 git 仓库 + requireChanges=true → 零变更门禁不得被静默跳过（真机 RED）", async () => {
+    const projectPath = await tmpDir("nogit");
+    await fsp.writeFile(path.join(projectPath, "seed.txt"), "seed\n");
+    const baseline = await captureBaseline(projectPath);
+    expect(baseline.isRepo).toBe(false); // 前提：确实不是 git 仓库
+
+    const { report } = await verifyProject(projectPath, { baseline });
+    // 判定行为不变（非 git 仓库算不出基线，零变更不拦截——既有契约，有测试锁定）；
+    // 但该降级**不得静默**：必须同时进 `analysis.warnings`
+    // （渲染为 [WARN] 并计入报告摘要），而不是只躺在 `notes` 里以 [INFO] 淹没。
+    const notesText = report.analysis.notes.join(" ");
+    const warned = report.analysis.warnings.join(" ");
+    expect(/零变更门禁已跳过/.test(notesText), "降级说明仍应保留（可读性）").toBe(true);
+    expect(
+      /零变更门禁已跳过/.test(warned),
+      "非 git 仓库下 requireChanges 被静默跳过：仅写 notes（[INFO]）不够，必须进 warnings（[WARN] + 报告摘要）",
+    ).toBe(true);
+    // 摘要必须体现该告警（summaryBits 对 warnings 计数）
+    expect(report.message).toContain("告警");
+  });
+});

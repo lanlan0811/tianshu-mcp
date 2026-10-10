@@ -437,7 +437,18 @@ export class AcceptanceEngine {
         analysis.notes.push("requireChanges=false：相对动工前基线零变更，仅提示不拦截。");
       }
     } else if (!baseline.isRepo && requireChanges) {
-      analysis.notes.push("requireChanges=true，但项目不是 git 仓库，零变更门禁已跳过。");
+      // 非 git 仓库算不出动工前基线，零变更门禁无法判定——**判定行为**是不拦截
+      // （既有契约，有测试锁定：非 git 仓库零变更不误伤）。
+      // 但该降级**绝不能静默**（真机缺陷，2026-10-10）：用户显式开着 requireChanges
+      // 却在非 git 工作区里得不到任何保护，若 agent 什么都没产出，验收照样判 PASS。
+      // 真机现象：报告只写 `[INFO] requireChanges=true，但项目不是 git 仓库，
+      // 零变更门禁已跳过。`——[INFO] 会被淹没，摘要里也毫无痕迹。
+      // 正解：同一事实双写——notes 保留可读性，warnings 让它进 [WARN] 与报告摘要。
+      const notice = "requireChanges=true，但项目不是 git 仓库，零变更门禁已跳过。";
+      analysis.notes.push(notice);
+      analysis.warnings.push(
+        `${notice}该工作区没有任何「任务是否产出」的自动保护：请人工确认产物，或把项目纳入 git。`,
+      );
     }
 
     if (!configurationError) {
