@@ -27,6 +27,14 @@ const TARGET_NATIVE = "D:\\Trae项目\\AI游戏\\Minecraft";
 const OTHER_NATIVE = "D:\\Trae项目\\tianshu-mcp";
 
 /**
+ * 本组用例锁的是 **Windows 路径语义**（盘符大小写 + 反斜杠归一）缺陷，
+ * 且 `normalizeProjectPath` 在非 win32 平台走「原样返回」分支
+ * （Windows 路径语义不套用到 posix）——因此整组限定 win32。
+ * 与 opendesign-workspace.test.ts 的 `isWin` 约定一致。
+ */
+const isWin = process.platform === "win32";
+
+/**
  * 真机形状的分组 DOM（2026-10-10 实测）：
  *   [data-testid="sidebar-session-group"]  带 data-workspace-dir / data-project-key
  *     └─ div[aria-label="Minecraft, D:\Trae项目\AI游戏\Minecraft"]   ← 分组头（可点）
@@ -79,7 +87,7 @@ function makePage(dirs: string[]): { evaluate: (expr: string) => unknown } {
   };
 }
 
-describe("MiniMax 项目分组点选表达式（真机缺陷回归）", () => {
+describe.skipIf(!isWin)("MiniMax 项目分组点选表达式（真机缺陷回归）", () => {
   it("盘符大小写：页面内归一的盘符必须与 Node 侧一致（real-machine RED）", () => {
     // 这是缺陷的最小复现：两侧对同一原生路径的归一结果必须相等。
     const wanted = normalizeProjectPath(TARGET_NATIVE);
