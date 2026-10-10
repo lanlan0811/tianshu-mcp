@@ -221,13 +221,23 @@ async function ensureModelSelected(args: SelectModelArgs): Promise<string> {
 
 /** 悬停目标模型展开子菜单 → 读候选 → 校验 → 依次选档位与窗口 */
 async function pickSubmenu(args: SelectModelArgs): Promise<void> {
-  const { cdp, spec, submenuTimeoutMs, menuBudget } = args;
+  const { cdp, spec, submenuTimeoutMs, menuBudget, logger } = args;
   if (!(await cdp.hoverModel(spec.model, Math.min(submenuTimeoutMs, menuBudget())))) {
+    // 失败现场没有可诊断信息时只能靠重跑猜（真机缺陷，2026-10-10）：
+    // 日志只留 `hoverModel elapsed=9630ms`，无法区分「菜单没开」「开的是别的窗口」
+    // 「子菜单渲染了但归属不对」「子菜单容器为空」这四种情况。这里一次性取回全部事实，
+    // **先记日志再抛错**（抛错后进程很快结束，日志是唯一留存的现场）。
+    const diag = await cdp.menuDiagnostics(spec.model).catch(() => null);
     const owner = await cdp.submenuOwner().catch(() => "");
+    logger.warn(
+      `[minimax] 子菜单未展开：模型=${spec.model}；当前归属=${owner || "（无）"}；` +
+        `菜单诊断=${JSON.stringify(diag ?? "（读取失败）")}`,
+    );
     await cdp.dismissMenus();
     throw new MinimaxModelSelectError(
       `模型 ${spec.model} 的推理等级/上下文窗口子菜单未在观察期内展开` +
-        `（悬停未生效或 UI 结构已漂移${owner ? `；当前子菜单归属=${owner}` : ""}）`,
+        `（悬停未生效或 UI 结构已漂移${owner ? `；当前子菜单归属=${owner}` : ""}` +
+        `${diag ? `；菜单诊断=${JSON.stringify(diag)}` : ""}）`,
       "model_mismatch",
     );
   }
@@ -257,7 +267,26 @@ async function pickSubmenu(args: SelectModelArgs): Promise<void> {
  *
  * - `wanted` 未指定 → 不切换（沿用界面当前值；这不是「静默沿用请求值」——调用方本来就没要求）；
  * - `wanted` 指定 → 必须**精确**命中界面候选，点完还要**回读 `aria-checked`** 确认真的切过去了。
+ *
+ * 回读用**有界轮询至收敛**，不用「固定 sleep + 单次读数」（真机缺陷，2026-10-10）：
+ * 点击后 UI 异步更新，实测同一轮内 `+350ms` 仍读到旧值 `512K`、`+1550ms` 才变 `1M`；
+ * 旧实现等 350ms 就读一次，8 轮里 7 轮误报
+ * `上下文窗口切换回读不一致：期望「1M」，实际「512K」` → `model_mismatch`——
+ * **点击其实早已生效，是回读太早**。以收敛为准而非固定时长，
+ * 与 `focusMainWindow()` 的既有做法一致。
  */
+const SUBMENU_SETTLE_TIMEOUT_MS = 4_000;
+const SUBMENU_SETTLE_POLL_MS = 200;
+
+/** 读取某个子菜单的候选（按 kind 分派；两个维度共用同一套收敛逻辑） */
+function readSubmenuOptions(
+  cdp: MinimaxCdpClient,
+  spec: MinimaxModelSpec,
+  kind: "effort" | "context",
+): Promise<(MinimaxEffortOption | MinimaxContextOption)[]> {
+  return kind === "effort" ? cdp.effortOptions(spec.model) : cdp.contextOptions(spec.model);
+}
+
 async function pickOption(
   args: SelectModelArgs,
   kind: "effort" | "context",
@@ -275,11 +304,19 @@ async function pickOption(
     );
   if (hit.current) return;
   await cdp.clickMenuPoint(hit.point);
-  await sleep(350);
-  const after =
-    kind === "effort" ? await cdp.effortOptions(spec.model) : await cdp.contextOptions(spec.model);
-  const now = after.find((o) => o.current);
-  if (!now || !optionMatches(now.label, wanted))
+  // 点到收敛：读到目标值即返回；超时仍未收敛则如实报最后一次读数（不谎报成功）。
+  const until = Date.now() + SUBMENU_SETTLE_TIMEOUT_MS;
+  let now: { label?: string } | undefined;
+  for (;;) {
+    // eslint-disable-next-line no-await-in-loop
+    await sleep(SUBMENU_SETTLE_POLL_MS);
+    // eslint-disable-next-line no-await-in-loop
+    const after = await readSubmenuOptions(cdp, spec, kind);
+    now = after.find((o) => o.current);
+    if (now && optionMatches(now.label ?? "", wanted)) break;
+    if (Date.now() >= until) break;
+  }
+  if (!now || !optionMatches(now.label ?? "", wanted))
     throw new MinimaxModelSelectError(
       `${label}切换回读不一致：期望「${wanted}」，实际「${now?.label ?? "空"}」`,
       "model_mismatch",

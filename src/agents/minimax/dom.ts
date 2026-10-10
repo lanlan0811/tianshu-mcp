@@ -342,6 +342,44 @@ export function submenuOwnerExpression(): string {
   })()`;
 }
 
+/**
+ * 菜单诊断快照（真机缺陷，2026-10-10）。
+ *
+ * 动机：`hoverModel` 观察期内失败的现场**没有可诊断信息**——日志只留
+ * `hoverModel elapsed=9630ms`，无法区分「菜单没开」「开的是别的窗口」「子菜单渲染了但归属不对」
+ * 「子菜单容器为空」这四种情况，只能靠重跑猜。本表达式一次性把判定所需的全部事实取回。
+ *
+ * 返回（全部为纯读取，无副作用）：
+ * - `menus`：当前文档里每个 `[role="menu"]` 的 aria-label 与两个组的渲染计数；
+ * - `targetMenuCount`：aria-label 恰等于目标模型名的菜单数（`submenuOpenExpression` 要求 ===1）；
+ * - `topLevelCount`：aria-label 为「选择模型」的菜单数（顶层菜单）；
+ * - `hoverPointFound`：目标模型项是否能算出悬停坐标（false = 该项没渲染/多命中）。
+ */
+export function menuDiagnosticsExpression(
+  model: string,
+  overrides: SelectorOverrides = {},
+): string {
+  return `(function(){${MINIMAX_DOM}/*mm:menu-diagnostics*/
+    const target = mmNorm(${JSON.stringify(model)});
+    const menus = [...document.querySelectorAll('[role="menu"]')];
+    const describe = m => ({
+      label: m.getAttribute('aria-label') || '',
+      contexts: m.querySelectorAll('[data-testid="model-context-control"]').length,
+      effortGroups: m.querySelectorAll('[role="group"][aria-label]').length,
+    });
+    const found = mmResolve(${menuSpec("modelOption", overrides)}, false)
+      .filter(e => mmNorm(mmLabel(e)) === target);
+    return {
+      menus: menus.map(describe),
+      targetMenuCount: menus.filter(m => mmNorm(m.getAttribute('aria-label') || '') === target).length,
+      topLevelCount: menus.filter(m => mmNorm(m.getAttribute('aria-label') || '') === mmNorm('选择模型')).length,
+      hoverPointFound: found.length === 1,
+      modelOptionCount: mmResolve(${menuSpec("modelOption", overrides)}, false).length,
+      menuRootCount: mmResolve(${menuSpec("menuRoot", overrides)}, false).length,
+    };
+  })()`;
+}
+
 /** 二级子菜单里的推理等级候选（标签 + 是否当前档 + 坐标）。**限定在目标模型的子菜单内** */
 export function effortOptionsExpression(model: string, overrides: SelectorOverrides = {}): string {
   return `(function(){${MINIMAX_DOM}/*mm:effort-options*/
@@ -390,6 +428,12 @@ export function contextOptionsExpression(model: string, overrides: SelectorOverr
  *
  * `wanted` 由 Node 侧用 normalizeProjectPath 归一后传入，页面内只做同样的词法归一并比较，
  * 避免两处各写一套归一逻辑产生分歧（与 Kimi Code 的 clickWorkspaceByPath 同一思路）。
+ *
+ * ⚠️ 归一顺序必须与 Node 侧 `normalizeProjectPath` **逐字一致**（真机缺陷，2026-10-10）：
+ * 先整体 `toLocaleLowerCase()`，**再**把盘符恢复成大写。
+ * 旧实现写成「先盘符大写、后整体小写」——后一步把盘符又压回小写，
+ * 那句盘符大写恒被抵消（死代码），页面侧得 `d:\...` 而 Node 侧得 `D:\...`，
+ * 两侧**永不相等** → 点选从未发生 → 上层报「命中条目但点击未生效」。
  */
 export function projectPointExpression(
   wanted: string,
@@ -397,7 +441,8 @@ export function projectPointExpression(
 ): string {
   return `(function(){${MINIMAX_DOM}/*mm:project-point*/
     const target = ${JSON.stringify(wanted)};
-    const norm = s => (s || '').replace(/[\/]+$/, '').replace(/^([a-z]):/, (m, d) => d.toUpperCase() + ':').toLocaleLowerCase();
+    // 与 Node 侧 normalizeProjectPath 同序：先去尾部分隔符 → 整体小写 → 恢复盘符大写。
+    const norm = s => (s || '').replace(/[\\/]+$/, '').toLocaleLowerCase().replace(/^([a-z]):/, (m, d) => d.toUpperCase() + ':');
     const groups = __minimaxResolve(${mainSpec("sessionGroup", overrides)});
     const hit = groups.filter(g => norm(g.getAttribute('data-workspace-dir') || '') === target);
     if (hit.length !== 1) return null;

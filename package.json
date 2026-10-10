@@ -62,6 +62,7 @@
     "docs/minimax-cdp.md",
     "docs/minimax-cdp.en.md",
     "scripts/probe-minimax.mjs",
+    "scripts/smoke-minimax.mjs",
     "docs/minimax-evidence",
     "docs/agent-profiles.md",
     "docs/agent-profiles.en.md"
@@ -98,7 +99,8 @@
     "pack:check": "npm pack --dry-run",
     "evidence:visual:windows": "node scripts/evidence-visual-windows.mjs",
     "probe:minimax": "node scripts/probe-minimax.mjs",
-    "smoke:codex": "node scripts/smoke-codex.mjs"
+    "smoke:codex": "node scripts/smoke-codex.mjs",
+    "smoke:minimax": "node scripts/smoke-minimax.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.15.0",

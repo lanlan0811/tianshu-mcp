@@ -35,6 +35,7 @@ import {
   inputTextExpression,
   labelExpression,
   menuModelItemsExpression,
+  menuDiagnosticsExpression,
   menuModelReadyExpression,
   menuOpenCountExpression,
   menuOpenExpression,
@@ -583,6 +584,18 @@ export class MinimaxCdpClient {
   async submenuOwner(): Promise<string> {
     if (!(await this.ensureMenu())) return "";
     return this.evaluateOn<string>("menu", submenuOwnerExpression());
+  }
+
+  /**
+   * 菜单诊断快照（`hoverModel` 观察期失败时采集；真机缺陷，2026-10-10）。
+   *
+   * 为什么需要它：失败现场原本只留 `hoverModel elapsed=9630ms`，无法区分
+   * 「菜单没开」「开的是别的窗口」「子菜单渲染了但归属不对」「子菜单容器为空」——
+   * 只能重跑猜。本方法一次性取回判定所需的全部事实，纯读取、无副作用。
+   */
+  async menuDiagnostics(model: string): Promise<unknown> {
+    if (!(await this.ensureMenu())) return { menuConnected: false };
+    return this.evaluateOn<unknown>("menu", menuDiagnosticsExpression(model, this.selectors));
   }
 
   /**
