@@ -863,6 +863,72 @@ describe("Kimi Code M3「更多模型…」对话框（非官方模型的唯一�
     expect(targets.states.main.sendClicks).toBe(0);
   });
 
+  /**
+   * 回归锁（2026-10-10 真机，第三轮）：「更多模型…」点击必须先把**浮层页**置前。
+   *
+   * 真机取证（有探针证据，5/5 稳定复现）：
+   *   overlay 页 `document.visibilityState === 'hidden'` 时，页面**不参与命中测试**——
+   *   `document.elementFromPoint(菜单行中心)` 返回的是舞台容器 `browser-overlay-stage`，
+   *   而不是那一行；`Input.dispatchMouseEvent` 派发的合成点击被容器接收，
+   *   行上的监听器**一次都没收到**（探针实录 `事件=[无]`）。
+   *
+   *   此时 `clickOverlayExact` 仍返回 `clicked: true`（坐标算得出来、匹配数也对），
+   *   于是 `openModelPicker` 认为点过了 → 对话框永不出现 → 上层报
+   *   `model_unavailable`（"模型不存在"），把环境问题误报成产品问题——
+   *   这正是用户看到的「模型一直请求失败」。
+   *
+   *   A/B 因果验证：对 overlay 调 `Page.bringToFront` + 焦点模拟后，
+   *   `elementFromPoint` 落点从 `OTHER:browser-overlay-stage` 变为 `CHILD`（命中行），
+   *   同一段点击代码随即在 1000ms 内打开对话框。
+   *
+   * 修复方向：`clickAt` 对 overlay 分支也要做置前（与主窗口 `focusMainWindow()` 同构），
+   * 判据是**页面自身的可见性**，而不是「坐标算得出来」。
+   */
+  it("浮层页处于 hidden 时，点击「更多模型…」前必须先置前（否则事件被容器吞掉）", async () => {
+    const targets = makeKimicodeTargets({
+      modelPill: "K2.8 Preview · High",
+      currentModel: "K2.8 Preview",
+      // 快捷菜单里没有目标模型 → 必须走「更多模型…」二级入口
+      modelOptions: ["K2.8 Preview"],
+      modelDialogModels: ["K2.8 Preview", "K3-256k"],
+      pollScript: finishingScript(),
+      workspaces: M3_PROJECT_WORKSPACES,
+    });
+    // 真机状态：浮层页处于 hidden（菜单虽已渲染，但页面不被命中测试）
+    targets.states.overlay.overlayPageHidden = true;
+
+    const result = await runM3(await m3Harness(targets, { ctx: { model: "K3-256k" } }));
+
+    // 1) 置前必须真的发生在浮层页上（Page.bringToFront + 焦点模拟）
+    expect(targets.states.overlay.overlayBringToFrontCalls).toBeGreaterThan(0);
+    expect(targets.states.overlay.overlayFocusEmulationCalls).toBeGreaterThan(0);
+    // 2) 点击不得被吞（hidden 态的点击会被舞台容器吃掉，桩以 clicks 记录）
+    expect(targets.states.overlay.clicks).not.toContain("overlay-click-swallowed");
+    // 3) 端到端：对话框真的被打开过、模型真的切过去了、消息真的发出去了
+    expect(targets.states.overlay.clicks).toContain("overlay-more-models");
+    expect(targets.states.main.clicks).toContain("dialog-model:K3-256k");
+    expect(targets.states.main.modelPill).toBe("K3-256k · High");
+    expect(result.ok).toBe(true);
+    expect(result.endReason).toBe("reply_stable");
+    expect(targets.states.main.sendClicks).toBe(1);
+  });
+
+  it("浮层页可见时不必置前（避免无谓的 bringToFront 抖动）", async () => {
+    const targets = makeKimicodeTargets({
+      modelPill: "K2.8 Preview · High",
+      currentModel: "K2.8 Preview",
+      modelOptions: ["K2.8 Preview"],
+      modelDialogModels: ["K2.8 Preview", "K3-256k"],
+      pollScript: finishingScript(),
+      workspaces: M3_PROJECT_WORKSPACES,
+    });
+    // 浮层页本来就可见（overlayPageHidden 默认 false）
+    const result = await runM3(await m3Harness(targets, { ctx: { model: "K3-256k" } }));
+    expect(result.ok).toBe(true);
+    expect(targets.states.overlay.overlayBringToFrontCalls).toBe(0);
+    expect(targets.states.overlay.clicks).toContain("overlay-more-models");
+  });
+
   it("完整名搜索 0 命中 → 退化为按 provider 搜一次（先清空搜索框），再按完整名精确选中", async () => {
     const targets = makeKimicodeTargets({
       modelPill: "K2.8 Preview · High",

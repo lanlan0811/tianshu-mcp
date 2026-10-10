@@ -330,6 +330,26 @@ export interface FakeKimicodeState {
   sendEnabled: boolean;
   /** 主窗口是否被隐藏（页面节流） */
   pageHidden: boolean;
+  /**
+   * 浮层页是否处于 `hidden`（真机实测：overlay 窗口的 `document.visibilityState`
+   * 在菜单打开时也可能是 hidden）。
+   *
+   * 真机取证（2026-10-10，第三轮）：overlay 页为 hidden 时，页面**不参与命中测试**——
+   * `document.elementFromPoint(菜单行中心)` 返回的是舞台容器 `browser-overlay-stage`
+   * 而不是那一行。此时 `Input.dispatchMouseEvent` 派发的合成点击会被容器接收，
+   * 事件永远到不了行上：`clickOverlayExact` 仍返回 `clicked: true`（坐标算得出来），
+   * 但对话框不弹 → 上层误报 `model_unavailable`。
+   *
+   * 修复方向：点击前把 overlay 置前（`Page.bringToFront` + 焦点模拟）并等它真的可见，
+   * 正如主窗口的 `focusMainWindow()`。
+   */
+  overlayPageHidden: boolean;
+  /** `Page.bringToFront` 调用次数（断言置前真的发生在 overlay 上） */
+  overlayBringToFrontCalls: number;
+  /** `Emulation.setFocusEmulationEnabled` 调用次数 */
+  overlayFocusEmulationCalls: number;
+  /** `Page.enable` 调用次数 */
+  overlayPageEnableCalls: number;
   /** 浮层是否可见（菜单开关的权威判据） */
   overlayVisible: boolean;
   /** 浮层 DOM 是否残留（关闭后可能短暂存在，不能当判据） */
@@ -434,6 +454,10 @@ export function makeKimicodeFakeState(over: Partial<FakeKimicodeState> = {}): Fa
     conversation: "",
     sendEnabled: true,
     pageHidden: false,
+    overlayPageHidden: false,
+    overlayBringToFrontCalls: 0,
+    overlayFocusEmulationCalls: 0,
+    overlayPageEnableCalls: 0,
     overlayVisible: false,
     menuDomPresent: false,
     clicks: [],
@@ -521,6 +545,20 @@ export class FakeKimicodePage {
     return (await this.resolve(expression)) as T;
   }
   async send(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
+    // 置前族：复刻真机——`Page.bringToFront` 让浮层页变为可见（异步生效），
+    // `Emulation.setFocusEmulationEnabled` 让它能接收合成输入。
+    if (this.isOverlay) {
+      if (method === "Page.enable") { this.state.overlayPageEnableCalls += 1; return undefined; }
+      if (method === "Page.bringToFront") {
+        this.state.overlayBringToFrontCalls += 1;
+        this.state.overlayPageHidden = false;
+        return undefined;
+      }
+      if (method === "Emulation.setFocusEmulationEnabled") {
+        this.state.overlayFocusEmulationCalls += 1;
+        return undefined;
+      }
+    }
     if (method === "Input.insertText") {
       // 对话框搜索框聚焦时，真实输入落在搜索框；否则落在 composer。
       if (this.state.searchFocused && this.state.modelDialogVisible)
@@ -547,6 +585,13 @@ export class FakeKimicodePage {
     }
     // 只认 mousePressed，避免 moved/pressed/released 三次重复应用同一效果
     if (method === "Input.dispatchMouseEvent" && params.type === "mousePressed") {
+      // 复刻真机（2026-10-10）：浮层页处于 hidden 时**不参与命中测试**——
+      // `elementFromPoint` 返回舞台容器而非菜单行，合成点击被容器吃掉，
+      // 行上的监听器永远收不到事件。此时点击**不产生任何副作用**。
+      if (this.isOverlay && this.state.overlayPageHidden) {
+        this.state.clicks.push("overlay-click-swallowed");
+        return undefined;
+      }
       this.applyClick(Number(params.x), Number(params.y));
     }
     return undefined;
@@ -561,7 +606,10 @@ export class FakeKimicodePage {
       return undefined;
     }
     if (expression.includes("kc:overlay-visible")) return s.overlayVisible;
-    if (expression.includes("kc:page-hidden")) return s.pageHidden;
+    // 页面隐藏判据：浮层页看它自己的可见性状态，主窗口看 pageHidden。
+    // 真机语义一致——`document.visibilityState` 是**每页各自**的属性。
+    if (expression.includes("kc:page-hidden"))
+      return this.isOverlay ? s.overlayPageHidden : s.pageHidden;
     if (expression.includes("kc:menu-count")) return s.panelOpen ? 1 : 0;
     if (expression.includes("kc:workspace-panel-open")) return s.draft && s.panelOpen;
     if (expression.includes("kc:workspace-chip-text")) return this.activeWorkspace()?.name ?? "";
@@ -656,16 +704,25 @@ export class FakeKimicodePage {
       const raw = /const target = kcNorm\((.*?)\);/.exec(expression)?.[1] ?? '""';
       const value = JSON.parse(raw) as string;
       const m = this.link ?? s;
-      // 「更多模型…」入口的 spec 里带 texts（中英变体）→ 按这就可与模型项区分开。
-      if (expression.includes("更多模型")) {
+      // ⚠️ 判定必须**跳过 KIMICODE_DOM 的注释正文**：helper 的取证注释里也写着
+      // 「更多模型…」（见 dom.ts 的 kcVisible 说明），用整段 `expression.includes()`
+      // 判定会把任何含该 helper 的表达式都误判成「更多模型…」入口
+      // （真实发生过：模型直选被派发成「更多模型…」，端到端跑偏）。
+      // 语义标记之后才是本次调用的真实载荷，只在那里做判定。
+      const marker = expression.indexOf("/*kc:exact*/");
+      const payload = marker >= 0 ? expression.slice(marker) : expression;
+      if (payload.includes("更多模型")) {
         const available = m.moreModelsAvailable ? ["更多模型…"] : [];
         if (!m.moreModelsAvailable) return { count: 0, available };
         this.pendingOverlay = { kind: "more-models", label: "更多模型…" };
         return { count: 1, available, point: { x: 700, y: 700 } };
       }
-      const kind: FakeOverlayPending["kind"] = expression.includes("ui-seg__item")
+      // 档位/执行模式/模型三个键的 CSS 同形（都是 menuitemradio），在载荷段按特征区分：
+      // 档位 spec 含 `ui-seg__item`；执行模式与模型的 spec 同形，靠**候选文本**消歧
+      // （执行模式的候选是固定中文档位名，模型的候选来自 provider 列表）。
+      const kind: FakeOverlayPending["kind"] = payload.includes("ui-seg__item")
         ? "tier"
-        : expression.includes("完全自动")
+        : /完全自动|必要时询问|始终询问|Full auto/.test(payload)
           ? "permission"
           : "model";
       const labels =

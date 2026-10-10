@@ -251,6 +251,54 @@ export class KimicodeCdpClient {
     }
   }
 
+  /**
+   * 把**浮层窗口**置于前台并开启焦点模拟，然后等它真正可见再返回。
+   *
+   * 真机教训（2026-10-10，有探针证据，5/5 稳定复现）：
+   *   overlay 页 `document.visibilityState === 'hidden'` 时，页面**不参与命中测试**——
+   *   `document.elementFromPoint(菜单行中心)` 返回的是舞台容器 `browser-overlay-stage`
+   *   而不是那一行；合成点击被容器接收，行上的监听器一次都收不到（探针实录 `事件=[无]`）。
+   *   此时 `clickOverlayExact` 仍返回 `clicked: true`（坐标算得出来、匹配数也对），
+   *   于是调用方以为点过了 → 对话框永不出现 → 报 `model_unavailable`（"模型不存在"），
+   *   把**环境**问题误报成**产品**问题。
+   *
+   * A/B 因果验证：对 overlay 置前后，`elementFromPoint` 落点从
+   *   `OTHER:browser-overlay-stage` 变为 `CHILD`（命中行），同一段点击在 1000ms 内打开对话框。
+   *
+   * 与 `focusMainWindow()` 同构；失败不抛错——置前只是让点击更容易生效，
+   * 正确性判据始终是点击后的回读。
+   */
+  async focusOverlayWindow(): Promise<void> {
+    if (!(await this.ensureOverlay())) return;
+    try {
+      await this.pages.overlay.send("Page.enable");
+    } catch {
+      /* Page 域不可用不影响后续命令 */
+    }
+    try {
+      await this.pages.overlay.send("Page.bringToFront");
+    } catch {
+      /* 置前失败：交由调用方的回读判定 */
+    }
+    try {
+      await this.pages.overlay.send("Emulation.setFocusEmulationEnabled", { enabled: true });
+    } catch {
+      /* 焦点模拟失败：同上 */
+    }
+    const until = Date.now() + FOCUS_SETTLE_MS;
+    for (;;) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        if (!(await this.overlayPageHidden())) return;
+      } catch {
+        return;
+      }
+      if (Date.now() >= until) return;
+      // eslint-disable-next-line no-await-in-loop
+      await this.pause(100);
+    }
+  }
+
   disconnect(): void {
     try {
       this.pages.main.disconnect();
@@ -292,6 +340,17 @@ export class KimicodeCdpClient {
   /** 主窗口是否被隐藏（被遮挡/最小化 → 页面节流 → 合成点击不可靠） */
   pageHidden(): Promise<boolean> {
     return this.evaluate<boolean>(pageHiddenExpression());
+  }
+
+  /**
+   * 浮层窗口是否被隐藏。
+   *
+   * 真机实测（2026-10-10）：overlay 页在 `hidden` 时**不参与命中测试**——
+   * `elementFromPoint` 返回舞台容器而非菜单行，合成点击被容器吞掉。
+   * 这是「点中但没反应」的真因，所以点击浮层前必须据此决定是否置前。
+   */
+  overlayPageHidden(): Promise<boolean> {
+    return this.evaluateOn<boolean>("overlay", pageHiddenExpression());
   }
 
   /** 收起主窗口菜单与浮层菜单（toggle 语义：只在确认打开时才按 Escape） */
@@ -757,12 +816,17 @@ export class KimicodeCdpClient {
     const page = role === "overlay" ? this.pages.overlay : this.pages.main;
     // 窗口被遮挡/最小化时 Chromium 会节流页面，合成事件常被吞（真机实测：工作区触发器
     // 点 5 秒无任何反应）。派发前先确认前台，隐藏就先置前，避免把节流误诊成选择器失效。
-    if (role === "main") {
-      try {
+    //
+    // 浮层页同样要判（2026-10-10 真机，5/5 稳定复现）：overlay 在 hidden 态时
+    // `elementFromPoint` 返回舞台容器而非菜单行，合成点击被容器吞掉——
+    // 表现为 `clicked: true` 却毫无反应（对话框不弹、菜单不关），
+    // 上层据此误报 model_unavailable。见 focusOverlayWindow() 的取证说明。
+    try {
+      if (role === "main") {
         if (await this.pageHidden()) await this.focusMainWindow();
-      } catch {
-        /* 读不到可见性时按可见处理，继续点击（回读仍会如实判定） */
-      }
+      } else if (await this.overlayPageHidden()) await this.focusOverlayWindow();
+    } catch {
+      /* 读不到可见性时按可见处理，继续点击（回读仍会如实判定） */
     }
     await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
     await page.send("Input.dispatchMouseEvent", {
