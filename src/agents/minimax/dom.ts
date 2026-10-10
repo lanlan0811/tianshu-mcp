@@ -429,7 +429,7 @@ export function contextOptionsExpression(model: string, overrides: SelectorOverr
  * `wanted` 由 Node 侧用 normalizeProjectPath 归一后传入，页面内只做同样的词法归一并比较，
  * 避免两处各写一套归一逻辑产生分歧（与 Kimi Code 的 clickWorkspaceByPath 同一思路）。
  *
- * ⚠️ 归一顺序必须与 Node 侧 `normalizeProjectPath` **逐字一致**（真机缺陷，2026-10-10）：
+ * 注意：归一顺序必须与 Node 侧 `normalizeProjectPath` **逐字一致**（真机缺陷，2026-10-10）：
  * 先整体 `toLocaleLowerCase()`，**再**把盘符恢复成大写。
  * 旧实现写成「先盘符大写、后整体小写」——后一步把盘符又压回小写，
  * 那句盘符大写恒被抵消（死代码），页面侧得 `d:\...` 而 Node 侧得 `D:\...`，

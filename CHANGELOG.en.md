@@ -8,6 +8,68 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.9.6] — 2026-10-10
+
+> **MiniMax Code real-machine fix release**: fixes two adapter defects (project selection
+> always failing / submenu read-back too early) and one false-pass risk in the acceptance
+> layer (the `requireChanges` zero-change gate was silently skipped in non-git repos).
+
+**No breaking changes; the tool surface is unchanged (still 8 tools) — upgrade requires no caller changes.**
+
+### Fixes
+
+**① Selecting an already-listed project always failed (normalization order)**
+
+The in-page normalization in `projectPointExpression` uppercased the drive letter first and
+then `toLocaleLowerCase()` cancelled it (dead code); the Node-side `normalizeProjectPath`
+does the opposite order (lowercase first, then restore the drive letter). For the same
+directory the two sides produced `d:\...` vs `D:\...` — never equal → the expression
+returned `null` → "project row matched but the click did not take effect".
+**Trigger: the project is already in the sidebar** (the first round used the modal path and
+never hit this). Real machine: `null` → `{x:119.5,y:308}`.
+
+**② Submenu tier/window switch read back too early**
+
+`pickOption` waited a fixed `sleep(350)` and read back once, throwing
+`context window switch read-back mismatch` on the stale value. Real-machine quantified
+reproduction: **1/8 success**, with continuous observation proving the click had taken
+effect (`+350ms` still 512K, `+1550ms` already 1M). Changed to **bounded polling until
+convergence**; real-machine re-verification **6/6**.
+
+**③ `requireChanges` silently degraded in non-git repos (acceptance layer)**
+
+With `--auto-verify` in a non-git workspace the zero-change gate was **skipped with only an
+[INFO] line** while verification still reported PASS, with `changedFiles` / `diffstat` both
+empty. Judgment behaviour is unchanged (no baseline outside git; not blocking is intentional
+and test-locked). This release only changes **visibility**: the same fact is dual-written
+into `warnings`, reaching `[WARN]` and the report summary.
+
+### Hardening
+
+The `hoverModel` failure site now captures a diagnostics snapshot
+(`menuDiagnosticsExpression` + `cdp.menuDiagnostics()`) and logs before throwing — it
+previously left only `hoverModel elapsed=9630ms`, which could not distinguish four causes.
+
+### Added
+
+`scripts/smoke-minimax.mjs` — drives the full loop through the real MCP tool surface, adding
+`--context-window` over the kimi version (MiniMax's submenu has a second dimension).
+
+### Verification
+
+- 14 new cases across 4 files; all three defects went RED→GREEN→disproof
+- Real machine M2.7: 6 new-task rounds all green; 4 Markdown artifacts all met spec
+- Real machine M3.1-Flash-Preview: 3 + 5 consecutive green rounds after the fixes
+- minimax unit 136 passed; affected acceptance 45 passed; typecheck green; lint green
+
+### Known unreproduced
+
+`openModelMenu` and `hoverModel` each timed out once (across 11 smoke rounds); standalone
+probes (CPU load, back-to-back runs, replaying the full preceding sequence) could not
+reproduce — **root cause not identified, not fixed**; this release only adds diagnostics.
+
+---
+
 ## [0.9.5] — 2026-10-10
 
 > **Kimi Code model-switch fix release**: fixes "models outside the quick menu can never

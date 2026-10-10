@@ -42,6 +42,15 @@
 >   新增 `focusOverlayWindow()` / `overlayPageHidden()`（与 `focusMainWindow()` 同构）。
 >   真机 **0/5 → 4/4**。**判据教训**：`clicked: true` 只代表坐标算得出来，**不代表事件送达**——
 >   真实判据只能是后置条件回读。
+> - **0.9.6（MiniMax Code）**：三处缺陷。① `projectPointExpression` 的页面内归一先「盘符大写」
+>   再 `toLocaleLowerCase()`，前者恒被抵消（死代码），与 Node 侧 `normalizeProjectPath`（先小写
+>   再恢复盘符）**永不相等** → 点选既有项目分组恒返回 `null` → `setup_failed`。**触发条件是项目
+>   已在侧栏**，故首轮成功后才在第二轮暴露。② `pickOption` 点击后只等固定 `sleep(350)` 就回读，
+>   实测 **1/8 成功**（`+350ms` 仍旧值、`+1550ms` 已新值）——改为**有界轮询至收敛**后 **6/6**。
+>   ③ 验收层：非 git 仓库下 `requireChanges` 零变更门禁**静默跳过**（仅 [INFO]）却照判 PASS；
+>   判定不变，改为双写 `warnings` 使其进 `[WARN]` 与报告摘要。
+>   另：`hoverModel` 失败现场新增诊断快照（原本只留 `elapsed=9630ms`，无法区分四种失败原因）；
+>   新增 `scripts/smoke-minimax.mjs`（此前 MiniMax 只有只读 probe）。
 >
 > **⑤ 测试基线**：全量 **1692 passed / 2 failed / 12 skipped**（1706 项，137 文件）。两处失败为
 > **既存环境失败（非本仓库缺陷）**——`spawn-regression`（本机缺 `tianshu-runtime.exe`）与 `codex-flow`，
