@@ -1,6 +1,6 @@
 # ARCHITECTURE.md — tianshu-mcp Architecture
 
-> Applies to version `0.5.7` (2026-09-22).
+> Applies to version `0.9.4` (2026-10-09).
 > This document describes the **system structure and module boundaries** for developers who will modify this repository; the version marker is only bumped on release commits, and the latest release notes live in `docs/release-v<latest>.md`.
 > This document describes the **system structure and module boundaries** for developers who will modify this repository.
 > For installation, usage, and host integration see [README.en.md](README.en.md); for handover status, troubleshooting, and lessons learned see [HANDOFF.md](HANDOFF.md).
@@ -56,7 +56,7 @@ ZCode falls into the same class: it ships no headless CLI, so it is also CDP-dri
 ```text
 ┌──────────────────────────────────────────────────────────────────┐
 │ L1 Protocol edge   src/index.ts · src/server.ts · src/mcp/        │
-│   entry & CLI dispatch · assembly · 11 tool registrations          │
+│   entry & CLI dispatch · assembly · 8 tool registrations           │
 │   parameter validation · text+meta formatting                      │
 ├──────────────────────────────────────────────────────────────────┤
 │ L2 Task domain     src/tasks/                                      │
@@ -510,7 +510,7 @@ large diff needing rollback. `dryRun` provides the intermediate "see the plan, t
 
 | Decision | Implementation and rationale |
 |---|---|
-| Where the read-only constraint is injected | `makeBuildCtx()` (`src/mcp/context.ts`) merges `DRY_RUN_CONSTRAINT` into `ctx.context`. **One change covers all five adapters** (they all append `ctx.context`), and since dryRun is a round-0 first dispatch, the zcode/kimicode guard that only appends context on `initialDispatch` does not swallow it |
+| Where the read-only constraint is injected | `makeBuildCtx()` (`src/mcp/context.ts`) merges `DRY_RUN_CONSTRAINT` into `ctx.context`. **One change covers all seven adapters** (they all append `ctx.context`), and since dryRun is a round-0 first dispatch, the zcode/kimicode guard that only appends context on `initialDispatch` does not swallow it |
 | A dedicated engine method rather than a branch in `executeVerify` | `AcceptanceEngine.runDryRun()` returns a `DryRunReport` (different meaning from `VerifyReport`). Folding it into the same return value would require a union type or a fake `VerifyReport`, polluting the types and complicating round accounting |
 | Consumes no acceptance round | Its report is `dry-run-report-<round>.*`, which does not match `^report-(\d+)\.(md\|json)$`, so `nextReportRound()`'s scan ignores it naturally |
 | **The zero-change gate is the core evidence** | `analyzeChanges()` diffs against the pre-work baseline; if changes remain after excluding MCP-owned artifacts (the plan file and any `planDoc` named in the task book) → `dry_run_violation` (error). It **does not depend on the plan being correct**: it still works when the agent produces no plan at all |
@@ -548,7 +548,7 @@ interface AgentAdapter {
 **The one two-path seam**: when `run()` exists, `TaskOrchestrator` does not spawn a child process but calls it (GUI adapters); otherwise it goes through `runChild()` (CLI adapters).
 
 - **CLI path** (`src/agents/cli.ts` + `src/agents/spawn.ts`): `cross-spawn` launches a child process, stdout/stderr go to the log, and the exit code decides the outcome. `promptMode` supports `arg` / `stdin` / `file` for brief delivery.
-- **GUI path**: all five adapters' `buildInvocation()` throws outright and `run()` carries the entire CDP orchestration. **Four of them (Codex / ZCode / Kimi Code / Qoder CN) add a module-level serial gate** where tasks of the same adapter queue up and a cancelled waiter returns `aborted` without overtaking the current holder; TraeWork has no serial gate and relies on the per-project serial queue plus the global concurrency gate instead.
+- **GUI path**: all seven adapters' `buildInvocation()` throws outright and `run()` carries the entire CDP orchestration. **Six of them (Codex / ZCode / Kimi Code / Qoder CN / Open Design / MiniMax Code) add a module-level serial gate** where tasks of the same adapter queue up and a cancelled waiter returns `aborted` without overtaking the current holder; TraeWork has no serial gate and relies on the per-project serial queue plus the global concurrency gate instead.
 
 `AgentRunResult` is the cross-layer information carrier; the key fields:
 
@@ -562,7 +562,7 @@ interface AgentAdapter {
 | `session / keptInstance` | Session anchor and whether the instance was kept, for `manage_task(action="continue")` |
 | `progressSummary` | Progress persisted for `query_task` to observe |
 
-### 8.2 Execution order for the six GUI drivers (measured; do not reorder casually)
+### 8.2 Execution order for the seven GUI drivers (measured; do not reorder casually)
 
 **TraeWork** (CDP-driven TRAE SOLO CN):
 
@@ -687,9 +687,59 @@ launch/reuse the CDP instance after environment sanitisation (drop ELECTRON_RUN_
 > The version gate compares `appVersion` from `<install dir>/resources/open-design-config.json` (the **Electron**
 > version reported by CDP is not a product version). See [opendesign-cdp.en.md](docs/opendesign-cdp.en.md).
 
+**MiniMax Code** (CDP-driven, **two renderer processes**, the seventh GUI agent to be added):
+
+```text
+discover install (explicit gui.exePath → fixed-drive relative-path templates with preferredDrives first
+                  → uninstall-registry InstallLocation → standard dirs → PATH;
+                  non-win32 returns ok:false, macOS is research and dispatch is disabled)
+  → launch/reuse the CDP instance (port base 9999, range 9999–10008; a live non-CDP instance → needs_user(close_existing_instance))
+  → connect the main window (targetRank convergence; a login/onboarding page → needs_user(login_required))
+  → close this instance's stray #32770 windows (a modal swallows the main window's synthetic clicks)
+  → re-dispatch guard (a running signal still present on the managed instance → try to stop; if not idle, instance_busy)
+  → new task and bind project (`data-workspace-dir` full-path normalised criterion; unregistered goes through "new project"
+    → in-app modal → native Select Directory → modal submit)
+  → pick model / reasoning level / context window (**a second-level submenu revealed by hovering the model item**,
+    with the candidate set varying per model)
+  → confirm permission mode (read-back comparison only; candidates are not verified so it never auto-switches)
+  → send the task (tiptap input + marker read-back + bounded 60 s send confirmation)
+  → three-signal run detection (stop button / failure-text regex / text-hash stability) → poll to completion
+  → on failure write .minimax/plans/minimax-fix-r<N>.md at the project root → send the plan name in the same session → re-accept
+```
+
+> **It is a "two renderer processes" driver isomorphic to Kimi Code**: the main window (`app://./archon`) carries the
+> sidebar / project / conversation / composer, while the model menu is rendered by a separate `Model menu` window
+> (`.../dist/model-menu/index.html`); an unrelated `Rsbuild App` helper page shares the same port and must be filtered out.
+> `src/agents/minimax/cdp.ts` therefore holds **two CDP clients** (main window + lazily connected overlay).
+> **"Is the overlay open?" cannot be judged from `visibilityState`**: MiniMax's `Model menu` window stays resident and only
+> clears its content when closed — the **opposite** of Kimi Code's overlay semantics (that conclusion comes from an independent probe).
+>
+> **The reasoning level / context window live in a second-level submenu** (a real-machine correction): the product's own
+> frontend artifact constants show them flat as `role="group"`, but **the real DOM only renders them after hovering the model item**.
+> So the driver must "move the mouse away before hovering" (the submenu container is reused, so entering it directly does not
+> fire `mouseenter` and the DOM keeps the previous hovered model's tier set) and "constrain candidate reads by ownership"
+> (the submenu root's `aria-label` is exactly the target model name). The candidate set **varies per model**: e.g.
+> `M3.1-Flash-Preview` has a full tier + window set, `M3` has no tier group, `deepseek-v4.1-flash` has no window group, and the
+> `M2.7` family **has no submenu** — requesting those two settings for a model without a submenu **fails closed before sending**,
+> never silently reusing the UI's current value.
+>
+> **It does not support project-less dispatch** (isomorphic to Kimi Code): the task must bind a project folder, and
+> `workspaceMode=default` or a missing `projectPath` is rejected with `setup_failed`.
+> Run detection **deliberately does not treat the send button's two states as a run signal** — MiniMax's send button only has an
+> `aria-disabled` two-state, and both "empty input" and "sent, awaiting reply" disable it, so the button itself cannot tell them apart;
+> counting it as a run signal would make a task "running forever once sent". When every stop-button selector fails, the stable window
+> still converges the turn (**slow but correct, by design**). Deadlock breaking: a stop button permanently visible plus text stalled
+> beyond `stallTimeoutMs` → `needs_user`. **It emits all six `needsUserKind` values** (`continue` dispatches by kind; environment
+> kinds always "re-dispatch fresh and resend the full task", and the user's confirmation text is never sent to the model).
+> Conversation entries **have no explicit id attribute**, so the anchor is recorded as "project path + conversation title"
+> (`minimaxSessionId` / `minimaxSessionTitle` in separate slots); failing to locate the original session always hard-fails as
+> `session_lost` and never degrades to opening the "most recent session".
+> **No version gate** (there is no `resources/*-config.json` version file, and the version is only readable from the CDP UA — which is
+> exactly what is unreadable when driving fails), so `selector_drift` is the fallback. See [MiniMax Code CDP adapter](docs/minimax-cdp.en.md).
+
 ### 8.3 Completion detection: run signal first, completion marker second
 
-All six drivers share one judgment principle (implemented in each `liveness.ts`):
+All seven drivers share one judgment principle (implemented in each `liveness.ts`):
 
 ```text
 A run signal exists (stop button / loading indicator / active tool call) → still running, never end
@@ -774,18 +824,42 @@ Idle for idleTimeoutMs (default 10 min)                               → idle_t
 | `setup_failed` | Entry validation failed (invalid design direction / empty task text / executable not found / launch failure) |
 | `needs_user` | Human intervention needed (e.g. a live instance without a debug port, `close_existing_instance`) |
 
+**MiniMax Code** (two-renderer driver; values actually produced):
+
+| `endReason` | Trigger |
+|---|---|
+| `reply_stable` | The text hash stays stable for `stableRounds` consecutive rounds (success) |
+| `aborted` | Cancellation (`manage_task(action="cancel")` / server exit) |
+| `task_timeout` | Task-level timeout |
+| `idle_timeout` | No run signal and no completion evidence for a long time (abnormal end; instance kept) |
+| `needs_user` | Human intervention needed (login / binding permission / close an existing instance / question and confirmation / recovery budget exhausted) |
+| `setup_failed` | Entry validation failed (illegal tier value / project-less mode / executable not found / instance not ready / project binding failed / insufficient system permission) |
+| `session_lost` | The original session cannot be located (**never degrades to opening the "most recent session"**) |
+| `instance_busy` | The managed instance still has an unstoppable run (a stop was attempted without success) |
+| `model_unavailable` | The target model is absent from the submenu candidates (the error text echoes the visible candidates) |
+| `model_mismatch` | The model read-back differs from the expectation |
+| `input_mismatch` | The task input read-back lacks the marker (input unconfirmed) |
+| `send_unknown` | The send result cannot be confirmed (**never an automatic resend**) |
+| `cdp_disconnected` | CDP connection lost (hardFailure) |
+| `agent_error` | This turn's conversation judged failed (a failure message / network error in the UI) |
+| `internal` | Internal error |
+
+> MiniMax Code organises tasks by **project** (not workspace) but **does not support project-less dispatch**, so it never
+> produces the `project_*` family; binding failures surface as `setup_failed` or `needs_user(system_permission / setup_recovery)`.
+
 `needsUserKind` (six values in the union; each driver produces a different subset):
 
 | Value | Meaning | Producer |
 |---|---|---|
-| `agent_question` | The agent is asking the user something in the UI | ZCode, Kimi Code (heuristic question detection only when `gui.selectors.userGate` is configured), Qoder CN (dedicated answer controls) |
-| `user_confirmation` | Parked on a confirmation screen | Codex, Kimi Code, Qoder CN, **Open Design** |
-| `login_required` | Login needed | Codex, ZCode, Kimi Code, Qoder CN, **Open Design** |
-| `close_existing_instance` | An existing instance holds no CDP port; the user must close it | ZCode, Kimi Code, Qoder CN, **Open Design** (**not Codex**: its `ensureInstance` declares `needsClose` but never returns true) |
-| `system_permission` | Missing system permission (e.g. macOS Accessibility) | ZCode, Kimi Code, **Open Design** |
-| `setup_recovery` | Automatic recovery budget exhausted / send result unknown; a human must step in | ZCode, Kimi Code, Qoder CN, **Open Design** |
+| `agent_question` | The agent is asking the user something in the UI | ZCode, Kimi Code (heuristic question detection only when `gui.selectors.userGate` is configured), Qoder CN (dedicated answer controls), **MiniMax Code** |
+| `user_confirmation` | Parked on a confirmation screen | Codex, Kimi Code, Qoder CN, **Open Design**, **MiniMax Code** |
+| `login_required` | Login needed | Codex, ZCode, Kimi Code, Qoder CN, **Open Design**, **MiniMax Code** |
+| `close_existing_instance` | An existing instance holds no CDP port; the user must close it | ZCode, Kimi Code, Qoder CN, **Open Design**, **MiniMax Code** (**not Codex**: its `ensureInstance` declares `needsClose` but never returns true) |
+| `system_permission` | Missing system permission (e.g. macOS Accessibility) | ZCode, Kimi Code, **Open Design**, **MiniMax Code** |
+| `setup_recovery` | Automatic recovery budget exhausted / send result unknown; a human must step in | ZCode, Kimi Code, Qoder CN, **Open Design**, **MiniMax Code** |
 
-> **Qoder CN is the only adapter that can emit all six kinds** (`pause(kind, …)` uses the kind as the endReason too).
+> **Qoder CN and MiniMax Code are the only two adapters that can emit all six kinds** (Qoder CN's `pause(kind, …)` uses the
+> kind as the endReason too; MiniMax Code's `continue` dispatches by kind).
 > **Open Design emits five kinds** (`login_required` / `user_confirmation` / `system_permission` / `setup_recovery` / `close_existing_instance`),
 > and notably not `agent_question` (its "asking the user" case is not an answerable form control).
 > TraeWork produces no `needsUserKind` at all: its "asking the user" case ends the turn normally (`ask_user`) and releases the instance,
@@ -793,14 +867,14 @@ Idle for idleTimeoutMs (default 10 min)                               → idle_t
 
 ### 8.5 Registry and executable discovery (`src/agents/registry.ts`)
 
-- The constructor pre-registers seven `CliAdapter` bases (codex / zcode / traework / kimicode / qoder / opendesign / stub), then swaps in the GUI implementation based on `profile.adapter` (`codex-gui` / `zcode-gui` / `traework-gui` / `kimicode-gui` / `qoder-gui` / `opendesign-gui`); it only rebuilds when the implementation class changes.
+- The constructor pre-registers eight `CliAdapter` bases (codex / zcode / traework / kimicode / qoder / opendesign / minimax / stub), then swaps in the GUI implementation based on `profile.adapter` (`codex-gui` / `zcode-gui` / `traework-gui` / `kimicode-gui` / `qoder-gui` / `opendesign-gui` / `minimax-gui`); it only rebuilds when the implementation class changes.
 - `resolve(agentId)` branches on the profile's `status`:
   - `unsupported` → immediate failure;
   - `research` → ZCode goes through the dedicated `discoverZcode`, others through generic probing;
   - `ready` → in order: explicit absolute path → discovery-directory scan → PATH (`where` / `which`). Placeholder commands (`<...>`) are rejected.
-- `codex-gui`, `kimicode-gui`, `qoder-gui` and `traework-gui` skip generic probing: they resolve their executable through `discoverCodex` (Appx query + disk scan), `discoverKimicode` (drive-root relative paths + standard directories + macOS bundle), `discoverQoder` and `discoverTraework` respectively. **`qoder-gui` and `traework-gui` additionally require `process.platform === "win32"`** — on any other platform `resolve` returns `ok:false` even when an installation was found, so they can never be dispatched on macOS. All four `discovery.ts` modules share one order skeleton: explicit path → fixed-drive relative paths (`preferredDrives` first) → registry `InstallLocation` → shortcut (qoder/traework) → standard dirs (incl. macOS bundle) → PATH.
+- `codex-gui`, `kimicode-gui`, `qoder-gui`, `traework-gui`, `opendesign-gui` and `minimax-gui` skip generic probing: they resolve their executable through `discoverCodex` (Appx query + disk scan), `discoverKimicode` (drive-root relative paths + standard directories + macOS bundle), `discoverQoder`, `discoverTraework`, `discoverOpenDesign` and `discoverMinimax` respectively. **`traework-gui`, `qoder-gui`, `opendesign-gui` and `minimax-gui` additionally require `process.platform === "win32"`** — on any other platform `resolve` returns `ok:false` even when an installation was found, so they can never be dispatched on macOS. All seven `discovery.ts` modules share one order skeleton: explicit path → fixed-drive relative paths (`preferredDrives` first) → registry `InstallLocation` → shortcut (qoder/traework) → standard dirs (incl. macOS bundle) → PATH.
 - `profile.adapter` explicitly outranks `driver`: `driver:"spawn"` + `adapter:"codex-gui"` still installs the GUI implementation. `ensureAdapterFor` rebuilds only when the implementation class changes, so an ad-hoc swap does not disturb a running task.
-- Selector overrides: TraeWork / ZCode / Codex / Kimi Code / Qoder CN / **Open Design** all use **override → primary → fallback chain** (Kimi Code namespaces overlay keys as `overlay.<key>`). As of v0.6.2 Qoder CN was upgraded from a single-value override to a layered structure matching Codex (`QoderSelectorSpec`: `primary/fallbacks/texts/ariaLabels/ariaPatterns/verifiedVersion`); `QoderCdpClient.selector()` still returns the string primary to keep existing semantics, and adds `candidates()/existsKey()/clickKey()` that probe candidates in order before clicking.
+- Selector overrides: TraeWork / ZCode / Codex / Kimi Code / Qoder CN / **Open Design** / **MiniMax Code** all use **override → primary → fallback chain** (Kimi Code namespaces overlay keys as `overlay.<key>`). As of v0.6.2 Qoder CN was upgraded from a single-value override to a layered structure matching Codex (`QoderSelectorSpec`: `primary/fallbacks/texts/ariaLabels/ariaPatterns/verifiedVersion`); `QoderCdpClient.selector()` still returns the string primary to keep existing semantics, and adds `candidates()/existsKey()/clickKey()` that probe candidates in order before clicking.
 - Selector-drift diagnostics (v0.6.2, issue #23): `src/agents/gui-diagnostics.ts` provides `visibleLabelsExpr()` (a page expression that collects visible candidate aria-labels / short texts) and `withDiagnostics()` (idempotently appends "页面可见候选=[…]"). codex / qoder / traework all attach this on selector-resolution failure so drift can be located in one step; each agent's `selectors.ts` records the tested version via `verifiedVersion`.
 - Directory scans look up to depth 6, skipping `node_modules` and dot-directories, and **pick the newest by mtime**.
 - Profile hot reload keys off a sha256 content stamp (not mtime), so edits within the same timestamp tick are still detected.
@@ -810,13 +884,13 @@ Idle for idleTimeoutMs (default 10 min)                               → idle_t
 
 | Stage | Mechanism |
 |---|---|
-| Launch | All five go through `guiInstanceSpawnOptions()`: **unconditional** `detached: true` + `unref()` (`stdio:"ignore"`) |
-| Reuse | Prefer a managed instance (Codex matches the dedicated `--user-data-dir`; ZCode / Kimi Code / Qoder CN scan a port range; TraeWork probes the port directly). **Qoder CN spawns only when no root process exists, and reuses the existing CDP port when the launcher forwards an exit** |
+| Launch | Six go through `guiInstanceSpawnOptions()`: **unconditional** `detached: true` + `unref()` (`stdio:"ignore"`); Open Design additionally uses the `guiInstanceDiagSpawnOptions()` variant (stderr captured into a bounded pipe for launch-failure diagnosis) |
+| Reuse | Prefer a managed instance (Codex matches the dedicated `--user-data-dir`; ZCode / Kimi Code / Qoder CN / Open Design / MiniMax Code scan a port range; TraeWork probes the port directly). **Qoder CN spawns only when no root process exists, and reuses the existing CDP port when the launcher forwards an exit** (Open Design / MiniMax Code share that forward-and-reuse semantics) |
 | Attach | A CDP connection is only accepted after one real DOM round trip (`exists("chatInput")`) |
 | Liveness | One DOM evaluation per tick, handed to the respective `judge*Poll` |
-| Keeping | Codex / ZCode / Kimi Code / Qoder CN set `keptInstance: true` on nearly every return path and never kill the process; TraeWork releases its own instance only on a clean completion (`completion_mark` / `ask_user`), and only then reports `keptInstance:false` |
+| Keeping | Codex / ZCode / Kimi Code / Qoder CN / Open Design / MiniMax Code set `keptInstance: true` on nearly every return path and never kill the process; TraeWork releases its own instance only on a clean completion (`completion_mark` / `ask_user`), and only then reports `keptInstance:false` |
 | Ownership checks | TraeWork **re-reads the live command line** before releasing and requires both the recorded `--remote-debugging-port=<port>` and the exe basename; if it cannot read or match them it gives up (avoiding a wrong kill), and its `taskkill` **omits `/T`**. Codex stops only managed instances |
-| Orphans | ZCode / Kimi Code / Qoder CN meeting a live instance *without* a CDP port yield `needs_user(close_existing_instance)` for the user to handle; they never kill blindly. (Codex declares `needsClose` in its instance contract but never returns true, so it has no such path) |
+| Orphans | ZCode / Kimi Code / Qoder CN / Open Design / MiniMax Code meeting a live instance *without* a CDP port yield `needs_user(close_existing_instance)` for the user to handle; they never kill blindly. (Codex declares `needsClose` in its instance contract but never returns true, so it has no such path) |
 
 > **`detached: true` is an invariant, not a platform preference**: the desktop instance must outlive the MCP server to honor the `keptInstance` contract. Before v0.5.3 the spawn was platform-branched (not detached on Windows), so the GUI was killed along with the server on exit; that is fixed.
 >
@@ -911,7 +985,7 @@ Task timeout resolution: call argument `taskTimeoutMs` > profile `timeoutMs` > `
 
 | Group | Fields |
 |---|---|
-| Identity and shape | `id`, `displayName`, `type`, `driver` (spawn\|gui), `adapter` (traework-gui\|zcode-gui\|codex-gui\|kimicode-gui), `status` (ready\|research\|unsupported) |
+| Identity and shape | `id`, `displayName`, `type`, `driver` (spawn\|gui), `adapter` (traework-gui\|zcode-gui\|codex-gui\|kimicode-gui\|qoder-gui\|opendesign-gui\|minimax-gui), `status` (ready\|research\|unsupported) |
 | CLI execution | `command`, `argsTemplate`, `promptMode` (arg\|stdin\|file), `cwd` (task\|home), `env`, `timeoutMs`, `killTree` |
 | Executable discovery | `executableDiscovery`: `dirs`, `fileNames`, `fallbackCommand`, `preferredDrives`, `appxPackageName`, `scanRoots`, and more |
 | GUI orchestration | `gui`: `cdpPort` (9222), `cdpPortRange`, `exePath`, `windowMode`, `launchTimeoutMs` (60 s), `pollIntervalMs` (3 s), `stableRounds` (12), `idleTimeoutMs` (10 min), `stallTimeoutMs` (300 s), `cancelWaitMs` (15 s), `cdpSendTimeoutMs` (15 s), `progressIntervalMs` (30 s), `projectTriggerTimeoutMs` (15 s), `workspaceTriggerTimeoutMs` (15 s, Kimi Code draft-page criterion), `selectors`, `defaultPermissionMode`, `defaultAutoFixRounds`, `activation` (spawn\|msix-com), `userDataDir`, `fixPlanDir`, and more |
@@ -1000,9 +1074,9 @@ This requires a new adapter directory implementing `AgentAdapter` with `run()` a
 
 | Layer | Location | Coverage |
 |---|---|---|
-| Unit | `test/unit/` | Pure functions and component logic: reply / selectors / launcher / liveness / recovery for all five drivers, the acceptance engine (including parallelism), baseline attribution, atomic writes, hot reload, the path gate, the visual module |
-| Integration | `test/integration/` | The three stub-agent scripts, cancel / timeout / baseline, fake-CDP TraeWork / Codex / ZCode / Kimi Code end-to-end and rework loops, race regressions, visual services / capture / flow |
-| Protocol | `test/protocol/` | An official SDK client asserting the 13-tool surface and return format |
+| Unit | `test/unit/` | Pure functions and component logic: reply / selectors / launcher / liveness / recovery for all seven drivers, the acceptance engine (including parallelism), baseline attribution, atomic writes, hot reload, the path gate, the visual module |
+| Integration | `test/integration/` | The three stub-agent scripts, cancel / timeout / baseline, fake-CDP TraeWork / Codex / ZCode / Kimi Code / Qoder CN / Open Design end-to-end and rework loops, race regressions, visual services / capture / flow |
+| Protocol | `test/protocol/` | An official SDK client asserting the 8-tool surface and return format |
 | Real-hardware (manual) | `scripts/probe-*.mjs`, `scripts/smoke-zcode.mjs`, `scripts/evidence-visual-windows.mjs` | Require a real client or an installed browser |
 | Consumer | `scripts/check-visual-consumer.mjs` | Installs the production tarball into a directory with no dev dependencies and runs real-browser visual acceptance plus the offline report |
 
@@ -1027,10 +1101,10 @@ Three places must agree on the version: `package.json`, `package-lock.json`, and
 
 Ordered by impact on a successor:
 
-1. **UI signals are the only reliable completion criterion** — all five GUI drivers depend on DOM structure and visible signals. Client upgrades can drift selectors; fix in `selectors.ts` or via a profile override, and real-hardware re-verification is not optional.
+1. **UI signals are the only reliable completion criterion** — all seven GUI drivers depend on DOM structure and visible signals. Client upgrades can drift selectors; fix in `selectors.ts` or via a profile override, and real-hardware re-verification is not optional.
 2. **A session waiting in the GUI cannot be stopped while the task is `needs_user`** — the MCP side holds no CDP connection. Terminal messages state this honestly. Stopping via a temporary CDP connection is listed under "planned" in `CHANGELOG.md`.
 3. **Single-session serialization** — a GUI is a single-session resource, same-project tasks serialize behind `projectBusy()`, and global concurrency is capped by `maxRunning`. This is a design constraint, not a defect.
-4. **macOS verification matrix is incomplete** — Codex and ZCode have real-hardware macOS happy paths, but cancel / rework / `manage_task(action="continue")` / new-project matrices are uncovered, so both stay `research` on darwin; TraeWork's and Kimi Code's macOS branches fail closed, and Kimi Code stays `research` on darwin too.
+4. **macOS verification matrix is incomplete** — Codex and ZCode have real-hardware macOS happy paths, but cancel / rework / `manage_task(action="continue")` / new-project matrices are uncovered, so both stay `research` on darwin; TraeWork, Kimi Code, Qoder CN, Open Design and MiniMax Code fail closed on macOS (Kimi Code / Qoder CN / Open Design / MiniMax Code stay `research` on darwin, while TraeWork returns `ok:false` outright on non-Windows).
 5. **No-project dispatch is ZCode-only and Windows-verified only**; ZCode's auto-import of unregistered projects is unavailable on Windows (register the directory manually first, or pass `allowCreateProject=false` to fail explicitly). **Kimi Code does not support project-less dispatch at all** (it must bind a workspace).
 6. **Kimi Code cancellation / question answering / same-name workspace ambiguity are covered by hermetic integration tests only** (no hardware stop click, no real question card triggered).
 7. **Visual module platform-evidence boundary** — macOS evidence comes from CI-hosted runners and has not been re-confirmed on the maintainer's own macOS device.
