@@ -35,6 +35,13 @@
 >   CDP 断开误报进程退出、CDP 错误文案硬编码程序名（`TraeworkCdpClient` 被 6 个适配器复用）。新增 `scripts/smoke-codex.mjs`。
 > - **0.9.4（Codex）**：对话文本采集丢弃纯文本节点 → `【tianshu:…】` 标记中间段丢失 → 发送确认判据
 >   `seenMessage` **恒 false**（而消息早已送达）。改遍历 `childNodes` + `textContent`。
+> - **0.9.5（Kimi Code）**：浮层页处于 `hidden` 态时**不参与命中测试**——`elementFromPoint(菜单行中心)`
+>   返回舞台容器 `browser-overlay-stage` 而非那一行，合成点击被容器接收、行上零事件；但
+>   `clickOverlayExact` 仍返回 `clicked: true`（坐标算得出来），于是「切换模型」对话框永不出现 →
+>   误报 `model_unavailable`。根因是 `clickAt()` 只对**主窗口**做前置检查，浮层页从未置前；
+>   新增 `focusOverlayWindow()` / `overlayPageHidden()`（与 `focusMainWindow()` 同构）。
+>   真机 **0/5 → 4/4**。**判据教训**：`clicked: true` 只代表坐标算得出来，**不代表事件送达**——
+>   真实判据只能是后置条件回读。
 >
 > **⑤ 测试基线**：全量 **1692 passed / 2 failed / 12 skipped**（1706 项，137 文件）。两处失败为
 > **既存环境失败（非本仓库缺陷）**——`spawn-regression`（本机缺 `tianshu-runtime.exe`）与 `codex-flow`，

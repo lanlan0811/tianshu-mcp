@@ -8,6 +8,53 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.9.5] — 2026-10-10
+
+> **Kimi Code model-switch fix release**: fixes "models outside the quick menu can never
+> be selected". The root cause is that when the overlay page is in the `hidden` state it
+> **does not participate in hit testing** — `elementFromPoint(row center)` returns the
+> stage container `browser-overlay-stage` instead of the row, so synthetic clicks are
+> received by that container and listeners on the row **never fire**. The adapter still
+> reads `clicked: true` (coordinates were computed), concludes the click landed, and the
+> "Switch model" dialog never appears → reports `model_unavailable` ("model does not
+> exist") — misreporting an **environment** problem as a **product** problem.
+
+**No breaking changes; the tool surface is unchanged (still 8 tools) — upgrade requires no caller changes.**
+
+### Fixes
+
+**Overlay-page clicks swallowed by the stage container (models outside the quick menu unselectable)**
+
+`clickAt()` performed a foreground check only for the **main window**; the **overlay page
+was never brought to front**. Real-machine probes (reproduced 5/5): in the `hidden` state
+`elementFromPoint` returns `browser-overlay-stage` with zero events on the row; an A/B
+comparison showed the hit point becomes `CHILD` after bringing it to front, and the dialog
+goes from "not opened" to opening in 1000ms.
+
+Added `focusOverlayWindow()` (isomorphic to `focusMainWindow()`: `Page.enable` +
+`Page.bringToFront` + focus emulation + wait for visibility convergence) and
+`overlayPageHidden()`, and made `clickAt()`'s overlay branch decide based on the page's
+own visibility.
+
+**Real-machine re-verification**: **0/5 before** the fix → **4/4 after** (including a run
+that hit the exact `hidden` condition).
+
+### Verification
+
+- 2 regression locks (must bring to front when hidden / no-op when visible): RED then
+  GREEN; reverting the fix turns them RED again (disproof loop)
+- All 10 gate-named required files green: `Test Files 10 passed` / `Tests 162 passed`
+- typecheck green / eslint green (`--max-warnings 0`)
+
+### Known issues
+
+On this machine the `npm test` path fails because the `node.cmd` shim under
+`D:/Tianshu/node-runtime` does not resolve in the project cwd
+(`tianshu-runtime.exe is not recognized`). Invoking vitest directly
+(`node node_modules/vitest/vitest.mjs run <file>`) is unaffected.
+
+---
+
 ## [0.9.4] — 2026-10-09
 
 > **Codex send-confirmation fix release**: fixes the "instruction delivered but reported as

@@ -7,6 +7,45 @@
 
 ---
 
+## [0.9.5] — 2026-10-10
+
+> **Kimi Code 模型切换修复版**：修复「非快捷菜单里的模型永远切不过去」。
+> 根因是浮层页处于 `hidden` 态时**不参与命中测试**——`elementFromPoint(菜单行中心)`
+> 返回舞台容器 `browser-overlay-stage` 而非那一行，合成点击被容器接收，
+> 行上的监听器**一次都收不到**；但适配器仍读到 `clicked: true`（坐标算得出来），
+> 于是认为点过了 → 「切换模型」对话框永不出现 → 报 `model_unavailable`
+> （"模型不存在"）——把**环境**问题误报成**产品**问题。
+
+**本版无破坏性变更、工具面不变（仍 8 个工具），升级无需改调用方。**
+
+### 修复
+
+**浮层页点击被舞台容器吞掉（非快捷菜单模型无法切换）**
+
+`clickAt()` 只对**主窗口**做前置检查，**浮层页从未被置前**。真机探针
+（5/5 稳定复现）：`hidden` 态下 `elementFromPoint` 返回 `browser-overlay-stage`，
+行上零事件；A/B 对照显示置前后落点变为 `CHILD`、对话框从"未开"变为 1000ms 打开。
+
+新增 `focusOverlayWindow()`（与 `focusMainWindow()` 同构：`Page.enable` +
+`Page.bringToFront` + 焦点模拟 + 等可见性收敛）与 `overlayPageHidden()`，
+在 `clickAt()` 的浮层分支按页面自身可见性决定是否置前。
+
+**真机复验**：修复前 **0/5** → 修复后 **4/4**（含直接命中 `hidden` 态的场景）。
+
+### 验证
+
+- 回归锁 2 条（hidden 必须置前 / 可见不必置前）：先红后绿；回滚修复后转红（反证通过）
+- 门禁点名 10 个 required 文件全绿：`Test Files 10 passed` / `Tests 162 passed`
+- typecheck 绿 / eslint 绿（`--max-warnings 0`）
+
+### 已知问题
+
+本机 `npm test` 链路因 `D:/Tianshu/node-runtime` 的 `node.cmd` shim 在项目 cwd 下失效
+而报 `tianshu-runtime.exe 不是内部或外部命令`；vitest 直调
+（`node node_modules/vitest/vitest.mjs run <file>`）不受影响。
+
+---
+
 ## [0.9.4] — 2026-10-09
 
 > **Codex 发送确认修复版**：修复 26.1002 下「指令已送达却判为无法确认」的缺陷。
