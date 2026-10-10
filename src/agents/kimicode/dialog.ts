@@ -82,8 +82,45 @@ public static class TianshuKimicodeDialog {
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr SendMessage(IntPtr h, uint msg, IntPtr w, string l);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr SendMessage(IntPtr h, uint msg, IntPtr w, StringBuilder l);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
+  // 前台化的标准兜底：后台进程直接调 SetForegroundWindow 会被前台锁拒绝，
+  // 需先 AttachThreadInput 到当前前台窗口的线程再 Set，最后解绑。
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, IntPtr pid);
+  [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
+  [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint attach, uint attachTo, bool fAttach);
+  [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr h);
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
+  [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT p);
+  [DllImport("user32.dll")] public static extern bool IsChild(IntPtr parent, IntPtr child);
+  [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
+  /**
+   * 把窗口真正置于前台并**回读校验**。返回是否成功。
+   * 顺序：常规 Set → 失败则 AttachThreadInput 到前台线程再 Set → 逐次回读确认。
+   */
+  public static bool ForceForeground(IntPtr h) {
+    if (GetForegroundWindow() == h) return true;
+    SetForegroundWindow(h);
+    if (GetForegroundWindow() == h) return true;
+    IntPtr fg = GetForegroundWindow();
+    uint fgThread = GetWindowThreadProcessId(fg, IntPtr.Zero);
+    uint myThread = GetCurrentThreadId();
+    bool attached = AttachThreadInput(myThread, fgThread, true);
+    try {
+      ShowWindow(h, 9);              // SW_RESTORE：最小化的窗口也需要先还原
+      BringWindowToTop(h);
+      SetForegroundWindow(h);
+    } finally {
+      if (attached) AttachThreadInput(myThread, fgThread, false);
+    }
+    return GetForegroundWindow() == h;
+  }
+  /** 命中点 (x,y) 的窗口是否属于目标（自身或其后代）——用于确认鼠标落点没被遮挡。 */
+  public static bool PointHitsWindow(int x, int y, IntPtr h) {
+    IntPtr hit = WindowFromPoint(new POINT { X = x, Y = y });
+    return hit == h || IsChild(h, hit);
+  }
   public const uint WM_SETTEXT = 0x000C;
   public const uint WM_GETTEXT = 0x000D;
   public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
@@ -176,11 +213,34 @@ do {
 if(-not $confirmReady){throw "Kimi Code 工作区确认按钮未就绪（匹配 $confirmCount）"}
 Assert-Deadline
 Write-Output 'native:submit-once'
-[void][TianshuKimicodeDialog]::SetForegroundWindow($dialogHandle)
-Start-Sleep -Milliseconds 150
 $rect=$confirm.Current.BoundingRectangle
-[void][TianshuKimicodeDialog]::SetCursorPos([int]($rect.X+$rect.Width/2),[int]($rect.Y+$rect.Height/2))
+$cx=[int]($rect.X+$rect.Width/2); $cy=[int]($rect.Y+$rect.Height/2)
+# 点击**必须**在对话框真正位于前台时发出：
+# 本机实测，后台进程调用 SetForegroundWindow 会被 Windows 前台锁静默拒绝
+# （返回 True 但 GetForegroundWindow 仍是别的窗口），此时 SetCursorPos+mouse_event
+# 的点击会落在**遮挡窗口**上（WindowFromPoint 命中的不是对话框），
+# 确认按钮从未被点中 → 对话框不关闭 → 报「提交后仍未关闭」，真因不可见。
+# 故：先用 ForceForeground（含 AttachThreadInput 兜底）并**回读校验**。
+$fgOk=$false
+for($attempt=1;$attempt -le 5;$attempt++){
+  Assert-Deadline
+  if([TianshuKimicodeDialog]::ForceForeground($dialogHandle)){$fgOk=$true;break}
+  Start-Sleep -Milliseconds 200
+}
+if(-not $fgOk){throw 'KIMICODE_DIALOG_NOT_FOREGROUND'}
+Write-Output 'native:foreground-ok'
+# 落点校验：确认按钮中心必须真的属于该对话框（防遮挡/坐标漂移）。
+$hitOk=$false
+for($attempt=1;$attempt -le 5;$attempt++){
+  Assert-Deadline
+  [void][TianshuKimicodeDialog]::SetCursorPos($cx,$cy)
+  Start-Sleep -Milliseconds 150
+  if([TianshuKimicodeDialog]::PointHitsWindow($cx,$cy,$dialogHandle)){$hitOk=$true;break}
+  [void][TianshuKimicodeDialog]::ForceForeground($dialogHandle)
+}
+if(-not $hitOk){throw 'KIMICODE_DIALOG_POINT_OBSCURED'}
 [TianshuKimicodeDialog]::mouse_event([TianshuKimicodeDialog]::MOUSEEVENTF_LEFTDOWN,0,0,0,[UIntPtr]::Zero)
+Start-Sleep -Milliseconds 60
 [TianshuKimicodeDialog]::mouse_event([TianshuKimicodeDialog]::MOUSEEVENTF_LEFTUP,0,0,0,[UIntPtr]::Zero)
 do {
   Start-Sleep -Milliseconds 200

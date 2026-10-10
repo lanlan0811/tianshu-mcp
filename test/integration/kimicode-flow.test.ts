@@ -140,6 +140,70 @@ describe("Kimi Code CDP target 归属", () => {
     expect(await cdp.overlayVisible()).toBe(true);
   });
 
+  /**
+   * 回归锁（2026-10-10 真机）：浮层菜单开关**不能用 `document.visibilityState` 判定**。
+   *
+   * 真机实测（Kimi Code 当前版本，两个 CDP target 都验过）：
+   *   菜单**打开**时 → overlay 窗口的 `visibilityState` 仍是 **hidden**；
+   *   菜单**关闭**时 → 也是 hidden。
+   *   该字段在本应用里**恒为 hidden**，作为开关判据恒返回 false。
+   *
+   * 后果（真机复现两次）：`openModelMenu()` 无论怎么点都返回 false →
+   *   上层报「无法打开 Kimi Code 模型菜单以读取思考档位标签」→
+   *   `model_mismatch` 硬失败。**任务其实完全能跑**（另一次真机里 SVG 正常产出）。
+   *
+   * 可靠判据是**渲染内容**：菜单打开时 overlay DOM 里有已渲染的菜单行 / 档位段
+   * （真机探针：打开=有 sized 菜单节点；关闭=0 个菜单节点）。
+   */
+  it("浮层开关判据基于渲染内容，不依赖恒为 hidden 的 visibilityState", async () => {
+    const { overlayVisibleExpression } = await import("../../src/agents/kimicode/dom.js");
+    const expr = overlayVisibleExpression();
+    // 不得把 visibilityState 当作菜单开关判据（该字段在本应用恒为 hidden）
+    expect(expr).not.toContain("visibilityState");
+    // 必须依据渲染出的菜单内容判定
+    expect(expr).toMatch(/overlay-menu-row|ui-seg__item|menuitem/);
+  });
+
+  /**
+   * 回归锁（2026-10-10 真机）：「继续」失败判据**必须按文本锚定**，不能只看样式类。
+   *
+   * 真机误判链（有探针证据）：
+   *   任务实际**完全成功**（agent 产出 11779 B 的合法 SVG，还自检了渲染），
+   *   但 Kimi Code 在回复里渲染了一枚**引用来源徽章**「来源 · 读了 1 个页面」，
+   *   它复用了按钮样式类：
+   *     class = "ui-button ui-button--secondary ui-button--sm bsrc-pill"
+   *   而 `errorRetryButton` 的主选择器正是 `button.ui-button--secondary` ——
+   *   于是这枚**内容徽章**命中失败判据，适配器报
+   *     「界面出现「继续」按钮（模型请求失败，本轮对话已中断）」
+   *   把一次成功交付判成了 agent_error。
+   *
+   * 断言对准**生产判据表达式**本身（fake 无法复刻这条真机语义）：
+   * 轮询脚本必须对候选做「文本等于 继续/Retry」过滤。
+   */
+  it("「继续」判据按文本锚定：引用徽章（同样式类）不得被判成重试按钮", async () => {
+    const targets = makeKimicodeTargets();
+    const cdp = clientFor(targets);
+    await cdp.connect();
+    let expr = "";
+    const stub = cdp as unknown as { evaluate: (e: string) => Promise<unknown> };
+    const original = stub.evaluate.bind(cdp);
+    stub.evaluate = async (e: string) => {
+      expr = e;
+      return original(e);
+    };
+    await cdp.poll();
+
+    // 候选来自样式类命中，但**必须**再经文本白名单过滤后才算「继续」按钮。
+    // 表达式里选择器已展开为 CSS 字面量，故断言结构而非键名。
+    expect(expr).toContain("button.ui-button--secondary");
+    // 关键：retry 必须是「候选过滤」的结果，而不是直接 kcResolve 的原始命中。
+    expect(expr).toMatch(/const retryCandidates = kcResolve\(/);
+    expect(expr).toMatch(/const retry = retryCandidates\.filter\(kcIsRetryButton\)/);
+    // 文本判据必须存在，且锚定在「继续」等重试文案上（真机引用徽章文本不符 → 被排除）。
+    expect(expr).toContain("kcIsRetryButton");
+    expect(expr).toContain("继续");
+  });
+
   it("dismissMenus 同时收起主窗口面板与浮层菜单（Escape 各发到对应 target）", async () => {
     const targets = makeKimicodeTargets({ draft: true, panelOpen: true }, { overlayVisible: true });
     const cdp = clientFor(targets);
@@ -367,6 +431,37 @@ describe("Kimi Code 原生对话框脚本", () => {
     expect(toNativeDialogPath("D:\\work\\demo")).toBe("D:\\work\\demo");
     // 仅盘符在对话框里等价于盘根（win32.normalize 会补成 `d:.`，不能原样送进对话框）。
     expect(toNativeDialogPath("d:")).toBe("D:\\");
+  });
+
+  /**
+   * 回归锁（2026-10-10 真机）：**点击确认前必须验证对话框真的在前台**。
+   *
+   * 真机因果链（有探针证据）：
+   *   1. 脚本调 `SetForegroundWindow($dialogHandle)`，但**不校验返回值**；
+   *   2. 该 API 在后台进程调用时会被 Windows 前台锁拒绝（本机实测返回 True 但
+   *      `GetForegroundWindow()` 仍是记事本，前台并未切换）；
+   *   3. 脚本随即 `SetCursorPos(确认按钮中心)` + `mouse_event` —— 点击落在**遮挡的
+   *      别的窗口**上（`WindowFromPoint(506,447)` 命中 Edit 而非确认按钮）；
+   *   4. 确认按钮从未被点中 → 对话框不关闭 → 等到 deadline → 报
+   *      「原生『添加工作区』对话框未完成路径提交」。
+   *
+   * 反证：手工把对话框真正置于前台后再点同一坐标 —— 对话框立即关闭、工作区 chip
+   * 变为目标名，绑定成功。
+   *
+   * 因此脚本必须在点击前后校验前台归属，并在未取得前台时给出**可区分**的失败信号，
+   * 而不是把「没点中」伪装成「提交后未关闭」。
+   */
+  it("确认前校验对话框已在前台（前台锁会让点击落在遮挡窗口上）", () => {
+    const scripts = source.slice(
+      source.indexOf("WINDOWS_SELECT_SCRIPT"),
+      source.indexOf("export async function listOwnedDialogs"),
+    );
+    // 必须能观测前台窗口（GetForegroundWindow 声明 + 使用）
+    expect(scripts).toContain("GetForegroundWindow");
+    // 必须存在「前台不匹配」的显式判定与失败信号（不能静默继续点击）
+    expect(scripts).toMatch(/KIMICODE_DIALOG_(FOREGROUND|NOT_FOREGROUND)/);
+    // 前台化失败时的兜底：AttachThreadInput（标准抢前台技巧）
+    expect(scripts).toContain("AttachThreadInput");
   });
 });
 
@@ -597,6 +692,46 @@ describe("Kimi Code M3 模型与档位", () => {
     );
     expect(result.ok).toBe(true);
     expect(targets.states.overlay.clicks).toEqual(["overlay-tier:On"]);
+  });
+});
+
+/**
+ * Kimi Code 档位别名的**入口契约**（2026-10-10 真机）。
+ *
+ * 真机现象：以界面可见形态传 `--reasoning-level On` 时，MCP 层在**到达适配器之前**
+ * 就被拒：
+ *   MCP error -32602: Invalid arguments for tool run_task:
+ *   Invalid enum value. Expected ... | 'on' | 'off', received 'On'
+ *
+ * 而适配器内部 `normalizeReasoningLevel("On")` 本来就认（kimicode-model.test.ts 已锁），
+ * 断点在 `ReasoningLevelSchema` 这个 wire enum 上——调用方按界面写法传参是**最自然**
+ * 的行为（Kimi Code 界面就显示 `On` / `Off`），不该被拒。
+ */
+describe("Kimi Code 档位别名的入口契约", () => {
+  it("wire schema 接受界面可见形态 On/Off（大小写不敏感）", async () => {
+    const { RunTaskWireSchema } = await import("../../src/config/schema.js");
+    const base = {
+      agentId: "kimicode",
+      task: "写一个 Minecraft 的 SVG 图标",
+      projectPath: "D:/Trae项目/AI游戏/Minecraft",
+    };
+    for (const raw of ["On", "on", "ON", "Off", "off", "OFF"]) {
+      const parsed = RunTaskWireSchema.safeParse({ ...base, reasoningLevel: raw });
+      expect(
+        parsed.success,
+        `reasoningLevel=${raw} 应被 wire schema 接受，实际：${parsed.success ? "" : parsed.error.issues[0]?.message}`,
+      ).toBe(true);
+    }
+  });
+
+  it("仍拒绝真正非法的档位值（不因放宽别名而放开语义）", async () => {
+    const { RunTaskWireSchema } = await import("../../src/config/schema.js");
+    const parsed = RunTaskWireSchema.safeParse({
+      agentId: "kimicode",
+      task: "x",
+      reasoningLevel: "turbo",
+    });
+    expect(parsed.success).toBe(false);
   });
 });
 

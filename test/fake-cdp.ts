@@ -362,8 +362,16 @@ export interface FakeKimicodeState {
   stopVisible: boolean;
   /** 次权威运行信号：`button.send` class 含 `is-starting` */
   sendStarting: boolean;
-  /** 失败态：`button.ui-button--secondary`（「继续」）是否可见 */
+  /**
+   * 失败态：`button.ui-button--secondary`（「继续」）是否可见。
+   * ⚠️ 该样式类**会被内容徽章复用**（真机实测：引用来源 pill
+   * `ui-button ui-button--secondary ui-button--sm bsrc-pill`），
+   * 所以真实判据是**文本等于「继续」**而非类名命中。设置 `retryPillText`
+   * 可复刻该场景：非「继续」文本时 `retryVisible` 必须为 false。
+   */
   retryVisible: boolean;
+  /** 命中 `ui-button--secondary` 的节点文本（真机形态：可能是引用徽章而非「继续」） */
+  retryPillText: string;
   /** panes 内的失败文案 */
   errorText: string;
   /** 用户消息复制按钮（`button.u-copy`）是否可见 */
@@ -442,6 +450,7 @@ export function makeKimicodeFakeState(over: Partial<FakeKimicodeState> = {}): Fa
     stopVisible: false,
     sendStarting: false,
     retryVisible: false,
+    retryPillText: "",
     errorText: "",
     userCopyVisible: false,
     userGateVisible: false,
@@ -593,7 +602,10 @@ export class FakeKimicodePage {
         sendStarting: s.sendStarting,
         assistantText: s.conversation,
         errorText: s.errorText,
-        retryVisible: s.retryVisible,
+        // 真机判据：`ui-button--secondary` 命中后还须**文本等于**「继续」才算重试按钮
+        // （同一样式类被引用徽章复用 → 只看类名会把成功误判成失败）。
+        retryVisible:
+          s.retryPillText !== "" ? /^(继续|Continue|Retry)$/i.test(s.retryPillText.trim()) : s.retryVisible,
         userGateVisible: s.userGateVisible,
         inputText: s.inputText,
         sendEnabled: s.sendEnabled,

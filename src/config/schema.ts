@@ -19,22 +19,31 @@ export type TraeworkMode = z.infer<typeof TraeworkModeSchema>;
  * 追加值（各 agent 按自己的档位语义解释，越权档位由 agent 侧显式拒绝）：
  * - `max`：Kimi Code 官方模型（仅 Low/High/Max 三档）
  * - `on` / `off`：Kimi Code 非官方模型（仅两档，默认 on）
+ *
+ * 注意——大小写不敏感（2026-10-10 真机）：`on`/`off` 在 Kimi Code 界面上显示为
+ * **`On` / `Off`**，调用方按界面写法传参是最自然的行为。曾经的纯 enum 会在
+ * **MCP 层校验**就拒掉 `On`（早于适配器，而适配器内部本来就认），报
+ * `Invalid enum value ... received 'On'`。故用 preprocess 把 ascii 字母档位
+ * 归一为小写后再进 enum——只放宽大小写，不放宽语义（未列出的值仍拒）。
  */
-export const ReasoningLevelSchema = z.enum([
-  "低",
-  "中",
-  "高",
-  "low",
-  "medium",
-  "high",
-  "max",
-  "极高",
-  "xhigh",
-  "最大",
-  "关闭思考",
-  "on",
-  "off",
-]);
+export const ReasoningLevelSchema = z.preprocess(
+  (v) => (typeof v === "string" && /^[a-zA-Z]+$/.test(v.trim()) ? v.trim().toLowerCase() : v),
+  z.enum([
+    "低",
+    "中",
+    "高",
+    "low",
+    "medium",
+    "high",
+    "max",
+    "极高",
+    "xhigh",
+    "最大",
+    "关闭思考",
+    "on",
+    "off",
+  ]),
+);
 export type ReasoningLevel = z.infer<typeof ReasoningLevelSchema>;
 
 /**

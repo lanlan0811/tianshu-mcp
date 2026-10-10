@@ -325,7 +325,16 @@ export function pollExpression(overrides: SelectorOverrides = {}): string {
   return `(function(){${KIMICODE_DOM}/*kc:poll*/
     const stop = kcResolve(${mainSpec("stopButton", overrides)}, true);
     const sendNodes = kcResolve(${mainSpec("sendButton", overrides)}, false);
-    const retry = kcResolve(${mainSpec("errorRetryButton", overrides)}, true);
+    const retryCandidates = kcResolve(${mainSpec("errorRetryButton", overrides)}, true);
+    /*
+     *「继续」必须 **按文本锚定**（2026-10-10 真机）：
+     * 样式类 ui-button--secondary 会被**内容徽章复用**——真机实测回复里的引用来源
+     * pill 是 "ui-button ui-button--secondary ui-button--sm bsrc-pill"，于是「只按类名」
+     * 的判据把一次**成功交付**（SVG 已落盘）判成了「模型请求失败」。
+     * 样式类只用于缩小候选范围，身份由文本决定。
+     */
+    const kcIsRetryButton = e => /^(继续|重试|Continue|Retry)$/i.test(kcText(e));
+    const retry = retryCandidates.filter(kcIsRetryButton);
     const gate = kcResolve(${mainSpec("userGate", overrides)}, true);
     const panes = kcResolve(${mainSpec("messageArea", overrides)}, true);
     const input = kcResolve(${mainSpec("chatInput", overrides)}, true);
@@ -369,12 +378,23 @@ export function menuOpenCountExpression(): string {
 }
 
 /**
- * 浮层窗口是否可见。**菜单开/关的唯一权威判据**：菜单关闭时 overlay 的
- * `document.visibilityState === 'hidden'`，关闭后 DOM 可能短暂残留。
+ * 浮层菜单是否**打开**。判据是**渲染内容**，不是 `document.visibilityState`。
+ *
+ * 真机实测（2026-10-10）：该应用的 overlay 窗口 `visibilityState` **恒为 hidden**
+ * ——菜单打开、关闭两种状态下都是 hidden。旧实现据此判定，于是恒返回 false，
+ * `openModelMenu()` 永远失败，上层报「无法打开模型菜单以读取思考档位标签」
+ * 并 `model_mismatch` 硬失败（任务其实完全可跑）。
+ *
+ * 可靠信号是菜单**渲染出来的行**：打开时 overlay DOM 内存在已渲染（有尺寸）的
+ * 菜单行（`button.overlay-menu-row`）/ 档位段（`button.ui-seg__item`）；
+ * 关闭时这些节点数为 0（真机探针：打开=有 sized 菜单节点、关闭=0）。
  */
 export function overlayVisibleExpression(): string {
   return `(function(){/*kc:overlay-visible*/
-    return document.visibilityState === 'visible';
+    const sized = e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+    const rows = document.querySelectorAll('button.overlay-menu-row, button.ui-seg__item[role="tab"], [role="menuitem"], [role="menuitemradio"]');
+    for (const e of rows) if (sized(e)) return true;
+    return false;
   })()`;
 }
 
