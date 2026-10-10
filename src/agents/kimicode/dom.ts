@@ -21,10 +21,21 @@ const kcVisible = e => {
   if (!e) return false;
   const r = e.getBoundingClientRect();
   if (!(r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth)) return false;
+  /*
+   * 祖先链只判 visibility/display —— 两者可继承、能真正隐藏整棵子树。
+   * **不判 opacity**（2026-10-10 真机）：菜单行的祖先容器
+   * .ui-menu.browser-overlay-menu 的 opacity 恒为 0（连测 2s 不变，非动画途中），
+   * 该容器不参与渲染、可见性由子元素各自决定（行自身 opacity:1）。
+   * 若在祖先链判 opacity，每一行都会被误判为不可见：
+   * count 恒 0 → clickOverlayExact 永不点击 → openModelPicker 失败 →
+   * 仅存在于「更多模型…」里的模型报 model_unavailable。
+   */
   for (let n = e; n; n = n.parentElement) {
     const s = getComputedStyle(n);
-    if (s.visibility === 'hidden' || s.display === 'none' || s.opacity === '0') return false;
+    if (s.visibility === 'hidden' || s.display === 'none') return false;
   }
+  // opacity 是非继承属性：只判元素自身（祖先 opacity:0 不代表本元素不可见）。
+  if (getComputedStyle(e).opacity === '0') return false;
   return true;
 };
 const kcNorm = s => (s || '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase();

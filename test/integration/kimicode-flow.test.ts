@@ -165,6 +165,41 @@ describe("Kimi Code CDP target 归属", () => {
   });
 
   /**
+   * 回归锁（2026-10-10 真机，第二轮）：容器 `opacity: 0` 不得让**行**判为不可见。
+   *
+   * 真机取证（Kimi Code 当前版本）：
+   *   菜单行的祖先容器 `.ui-menu.browser-overlay-menu` 的 `opacity` **恒为 0**
+   *   （连测 0/300/800/2000ms 都是 0，不是动画途中）——该容器不参与渲染，
+   *   可见性由**子元素**各自决定（行自身 `opacity: 1`）。
+   *
+   * 而 `kcVisible` 的祖先链检查里有 `if (s.opacity === '0') return false`，
+   * 于是每一行都被判为不可见 → `exactMatchExpression` 的 `count` 恒为 0 →
+   * `clickOverlayExact` 永不点击 → `openModelPicker` 失败 →
+   * 模型只在「更多模型…」里时（如本次的 agnes-3.0-flash）报 `model_unavailable`。
+   *
+   * 正解：可见性只看**元素自身**的 opacity（祖先只判 `visibility`/`display`——
+   * 这两者是继承性的、能真正隐藏子树；opacity 不是继承性的，容器 opacity:0
+   * 不影响子元素的绘制可见性判定，且本应用正是靠子元素控制显示）。
+   */
+  it("祖先容器 opacity:0 不使菜单行判为不可见（opacity 只看自身）", async () => {
+    const { KIMICODE_DOM } = await import("../../src/agents/kimicode/dom.js");
+    const src = KIMICODE_DOM;
+    // 精确定位「祖先链循环体」——用缩进闭合（`\n  }`）界定，避免贪婪吞掉循环之后的代码。
+    const loopStart = src.indexOf("for (let n = e; n; n = n.parentElement) {");
+    expect(loopStart).toBeGreaterThan(0);
+    const loopEnd = src.indexOf("\n  }", loopStart);
+    expect(loopEnd).toBeGreaterThan(loopStart);
+    const ancestorLoop = src.slice(loopStart, loopEnd);
+    // 祖先链检查不得包含 opacity（非继承属性，容器置 0 不代表子树不可见）
+    expect(ancestorLoop).not.toContain("opacity");
+    // 且确实检查了 visibility/display（别为了过断言把整段删掉）
+    expect(ancestorLoop).toContain("visibility");
+    expect(ancestorLoop).toContain("display");
+    // 元素**自身**的 opacity 仍须参与判定（真正的 opacity:0 不该被判可见）
+    expect(src).toMatch(/getComputedStyle\(e\)\.opacity === '0'/);
+  });
+
+  /**
    * 回归锁（2026-10-10 真机）：「继续」失败判据**必须按文本锚定**，不能只看样式类。
    *
    * 真机误判链（有探针证据）：
