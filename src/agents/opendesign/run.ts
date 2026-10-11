@@ -62,6 +62,7 @@ import { OpenDesignTransport } from "./transport.js";
 import type { KimicodePageClient } from "../kimicode/cdp.js";
 import { missingSelectorKeys } from "./selectors.js";
 import { bindWorkspace } from "./workspace.js";
+import { chooseExportKind, exportArtifact } from "./export.js";
 import { selectMenuItem } from "./menu.js";
 import { dispatchTask } from "./send.js";
 import { normalizeOpenDesignDirection, directionLabel } from "./model.js";
@@ -185,6 +186,7 @@ export function openDesignProfileOf(
     | "supportedVersions"
     | "workingDirPanelTimeoutMs"
     | "nativeDialogTimeoutMs"
+    | "exportTimeoutMs"
     | "modelMenuTimeoutMs"
     | "designSystemTimeoutMs"
     | "designDirectionTimeoutMs"
@@ -199,6 +201,7 @@ export function openDesignProfileOf(
       profile?.workingDirPanelTimeoutMs ?? OPEN_DESIGN_DEFAULTS.workingDirPanelTimeoutMs,
     nativeDialogTimeoutMs:
       profile?.nativeDialogTimeoutMs ?? OPEN_DESIGN_DEFAULTS.nativeDialogTimeoutMs,
+    exportTimeoutMs: profile?.exportTimeoutMs ?? OPEN_DESIGN_DEFAULTS.exportTimeoutMs,
     modelMenuTimeoutMs: profile?.modelMenuTimeoutMs ?? OPEN_DESIGN_DEFAULTS.modelMenuTimeoutMs,
     designSystemTimeoutMs:
       profile?.designSystemTimeoutMs ?? OPEN_DESIGN_DEFAULTS.designSystemTimeoutMs,
@@ -350,6 +353,8 @@ export async function runOpenDesignTask(args: RunOpenDesignArgs): Promise<AgentR
     { ...opts, logger },
     gui.progressIntervalMs,
   );
+  /** 导出段要用的 Open Design 进程 pid 列表（在绑定工作目录时赋值；两个 observe 调用点共用） */
+  let ownerPids: number[] = [];
   const deps: OpenDesignRunDeps = {
     ...baseDeps,
     sleep: (ms) => baseDeps.sleep(Math.min(ms, Math.max(1, budget.remaining()))),
@@ -570,6 +575,8 @@ export async function runOpenDesignTask(args: RunOpenDesignArgs): Promise<AgentR
         result,
         onAbort: abortResult,
         noProject: !ctx.projectPath.trim(),
+        budget,
+        ownerPids,
         // issue #31：重观察轮的被观察 turn 此前已确认在运行，种子 sawRunning
         sawRunningSeed: true,
       });
@@ -623,7 +630,7 @@ export async function runOpenDesignTask(args: RunOpenDesignArgs): Promise<AgentR
       const rootPids = rootOpenDesignProcesses(
         await deps.listProcesses({ signal: opts.signal }),
       ).map((p) => p.pid);
-      const ownerPids = ready.pid ? [ready.pid, ...rootPids] : rootPids;
+      ownerPids = ready.pid ? [ready.pid, ...rootPids] : rootPids;
       const bound = await budget.run(
         (signal, timeoutMs) =>
           bindWorkspace({
@@ -810,6 +817,8 @@ export async function runOpenDesignTask(args: RunOpenDesignArgs): Promise<AgentR
       onAbort: abortResult,
       actualModel,
       noProject: !ctx.projectPath.trim(),
+      budget,
+      ownerPids,
       // issue #31：发送确认阶段观测到的运行信号（stop/sendStarting）是「本轮确实已启动」最可靠
       // 的证据。观察循环可能因选择器漂移或 turn 已跑完而整段采不到信号，不带过来的话会把已启动
       // 的任务误落 idle_timeout。
@@ -921,6 +930,10 @@ interface ObserveArgs {
   actualModel?: string;
   /** 无 projectPath：终态文案必须**如实**说明已跳过目录绑定与视觉验收（计划 §4） */
   noProject?: boolean;
+  /** 阶段预算（导出段要 setStage 上报进度） */
+  budget: OpenDesignBudget;
+  /** Open Design 进程 pid 列表（导出段用它定位原生窗口；无则为空数组） */
+  ownerPids: number[];
   /** 产物数据根（<namespaceRoot>/data）：终态后据此把设计稿取回项目目录，供视觉验收 */
   artifactDataRoot?: string | null;
   /**
@@ -936,7 +949,7 @@ interface ObserveArgs {
  * 判定优先级由 `judgeOpenDesignPoll` 决定；本函数只负责采集信号、上报事件与落终态文案。
  */
 async function observe(client: OpenDesignCdpClient, args: ObserveArgs): Promise<AgentRunResult> {
-  const { ctx, deps, gui, opts, logger, startedAt, logFile, result } = args;
+  const { ctx, deps, gui, opts, logger, startedAt, logFile, result, budget, ownerPids } = args;
   let state: OpenDesignPollState = initialOpenDesignState();
   if (args.sawRunningSeed) {
     // issue #31：重观察轮的 turn 此前已确认在运行 —— 种子 sawRunning 规避
@@ -1047,6 +1060,31 @@ async function observe(client: OpenDesignCdpClient, args: ObserveArgs): Promise<
         targetDir: ctx.projectPath,
         logger,
       });
+      // 显式要过导出格式时，再走一遍产品的导出链路（真机取证 2026-10-11：
+      // 0.24.1 是**浏览器式下载**，靠 CDP 指下载目录落盘，不弹保存对话框）。
+      // 同样**不改终态**：导出失败只在 summary 里如实写明，任务本身已完成。
+      let exported = "";
+      if (ctx.exportKind?.trim() && ctx.projectPath.trim()) {
+        const kind = chooseExportKind(ctx.exportKind);
+        try {
+          budget.setStage("导出产物");
+          const out = await exportArtifact({
+            page: client,
+            kind,
+            targetDir: ctx.projectPath,
+            ownerPids,
+            budgetMs: ctx.exportTimeoutMs ?? OPEN_DESIGN_DEFAULTS.exportTimeoutMs,
+            logger,
+          });
+          exported = out.ok
+            ? `；已导出 ${kind}：${out.artifact ?? ""}`
+            : `；导出 ${kind} 未完成：${out.message ?? "未知原因"}`;
+          if (!out.ok) logger.warn(`[opendesign] 导出未完成：${out.message ?? ""}`);
+        } catch (error) {
+          exported = `；导出 ${kind} 抛错：${String(error)}`;
+          logger.warn(`[opendesign] 导出抛错：${String(error)}`);
+        }
+      }
       return {
         ok: true,
         exitCode: 0,
@@ -1057,7 +1095,7 @@ async function observe(client: OpenDesignCdpClient, args: ObserveArgs): Promise<
         endReason: "reply_stable",
         keptInstance: true,
         actualModel: args.actualModel,
-        progressSummary: `Open Design 已完成本轮（对话与产物均静止）${fetched}${noProjectNote}`,
+        progressSummary: `Open Design 已完成本轮（对话与产物均静止）${fetched}${exported}${noProjectNote}`,
       };
     }
   }

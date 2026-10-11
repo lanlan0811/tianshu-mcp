@@ -195,6 +195,14 @@ export const RunTaskParamsSchema = z.object({
    */
   designDirection: z.string().min(1).optional(),
   /**
+   * 导出格式（仅 opendesign-gui 生效）：`html`（默认，自包含单文件）或 `zip`（含交接文档的压缩包）。
+   *
+   * 任务成功结束后，适配器用 CDP 把下载目录指到 `projectPath`，再点工具栏「导出」菜单完成导出——
+   * 真机取证（2026-10-11）：0.24.1 是浏览器式下载，不弹原生保存对话框，所以必须走下载目录而非对话框。
+   * 传其他值不报错，按 `html` 处理（`chooseExportKind` 的既有取舍：不因笔误阻断整条链路）。
+   */
+  exportKind: z.string().min(1).optional(),
+  /**
    * 上下文窗口（仅 minimax-gui 生效）：界面候选实测为 `512K` / `1M`（数值换算而来：
    * `e/1e6 → nM`、`e/1e3 → nK`）。其他 agent 显式传入即报错。
    *
@@ -669,6 +677,8 @@ export const OpenDesignProfileSchema = z.object({
   workingDirPanelTimeoutMs: z.number().int().positive().optional(),
   /** 等待原生「选择文件夹」对话框出现的预算（ms） */
   nativeDialogTimeoutMs: z.number().int().positive().optional(),
+  /** 导出产物的总预算（点菜单项 → 等文件落到目标目录，ms） */
+  exportTimeoutMs: z.number().int().positive().optional(),
   /** 等待模型菜单展开并回读触发区的预算（ms） */
   modelMenuTimeoutMs: z.number().int().positive().optional(),
   /** 等待设计系统面板展开并回读触发区的预算（ms） */
@@ -700,6 +710,11 @@ export const OPEN_DESIGN_DEFAULTS = {
   dialogProbeTimeoutMs: 30_000,
   /** 原生「选择文件夹」对话框「填路径 → 回读校验 → 确认 → 等关闭」的总预算 */
   dialogOperationTimeoutMs: 60_000,
+  /**
+   * 导出产物的总预算（点菜单项 → 等文件落到目标目录）。
+   * 真机实测单次导出 1–3s（html 24279B / zip 11748B 各一轮），60s 有充足余量。
+   */
+  exportTimeoutMs: 60_000,
 } as const;
 
 /**

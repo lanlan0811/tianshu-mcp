@@ -505,6 +505,34 @@ export class OpenDesignCdpClient {
   }
 
   /**
+   * 把**下载目录**指到目标路径（导出段的正解；真机取证 2026-10-11）。
+   *
+   * 为什么不能用原生保存对话框：0.24.1 的「导出为独立 HTML」/「下载为 .zip」走的是
+   * **浏览器式下载**（blob → Electron `will-download`）——点完只出现一个 `#32770` 空壳窗口
+   * （标题 `blob:od://app/<uuid>`、无任何子控件），下载停在 `~/Downloads/<uuid>.tmp` 不再增长。
+   * 那个窗口不是可供 Win32/UIA 驱动的保存对话框，`saveViaNativeDialog` 因此永远等不到产物。
+   *
+   * 正解：CDP 先指定 downloadPath，再点菜单项，文件**直接落盘到目标目录**。
+   * 真机复现：html → 完整文档；zip → 魔数 `504b0304` + `testzip()` 无损坏。
+   *
+   * 两个协议版都发一次：`Page.*` 在部分 Electron/Chromium 组合上被忽略，
+   * `Browser.*`（较新）覆盖面更广——两者都是幂等设置，重复调用无副作用。
+   */
+  async setDownloadDir(dir: string): Promise<boolean> {
+    let ok = false;
+    for (const method of ["Page.setDownloadBehavior", "Browser.setDownloadBehavior"] as const) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await this.send(method, { behavior: "allow", downloadPath: dir });
+        ok = true;
+      } catch {
+        // 单个协议不支持不影响另一个；两个都失败才算失败
+      }
+    }
+    return ok;
+  }
+
+  /**
    * 按**可见文本**精确点一个按钮。
    *
    * 为什么需要它：工具栏「导出」按钮**没有 testid**（真机取证 2026-09-28），产品只给了文本；

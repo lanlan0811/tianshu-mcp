@@ -52,6 +52,10 @@ export interface NewTaskInput {
   designSystem?: string;
   /** Open Design 设计方向（已归一为 prototype/document/clone）；其他 agent 忽略 */
   designDirection?: string;
+  /** Open Design 产物导出格式（html/zip）；省略 = 不自动导出。其他 agent 忽略 */
+  exportKind?: string;
+  /** 导出产物的总预算（ms）；省略用适配器默认值。其他 agent 忽略 */
+  exportTimeoutMs?: number;
   /** MiniMax Code 上下文窗口（界面候选文本）；其他 agent 忽略 */
   contextWindow?: string;
   /** GUI 类 agent（traework）使用的面板模式；CLI 类忽略 */
@@ -278,6 +282,8 @@ export class TaskManager {
       planDoc: input.planDoc,
       designSystem: input.designSystem,
       designDirection: input.designDirection,
+      exportKind: input.exportKind,
+      exportTimeoutMs: input.exportTimeoutMs,
       contextWindow: input.contextWindow,
       mode: input.mode,
       allowCreateProject: input.allowCreateProject,

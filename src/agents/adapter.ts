@@ -47,6 +47,15 @@ export interface TaskContext {
   /** Open Design 设计方向（已归一 prototype/document/clone）；其他 agent 忽略 */
   designDirection?: string;
   /**
+   * Open Design 产物导出格式（`html` / `zip`）；省略 = 不自动导出。其他 agent 忽略。
+   *
+   * 任务成功结束后由适配器走产品导出链路把产物落到 `projectPath`——
+   * 真机取证（2026-10-11）：0.24.1 是浏览器式下载（CDP 指下载目录），不弹保存对话框。
+   */
+  exportKind?: string;
+  /** 导出产物的总预算（ms）；省略用适配器默认值。其他 agent 忽略 */
+  exportTimeoutMs?: number;
+  /**
    * MiniMax Code 上下文窗口（已归一到界面候选文本，如 `512K` / `1M`）；其他 agent 忽略。
    * 合法性（是否落在界面实际候选内）只能在运行期读界面候选项校验，见 minimax/run.ts。
    */

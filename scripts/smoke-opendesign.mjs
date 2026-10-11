@@ -48,6 +48,7 @@ const projectPath = path.resolve(readArg("--project") ?? process.cwd());
 const model = readArg("--model");
 const designSystem = readArg("--design-system");
 const designDirection = readArg("--design-direction");
+const exportKind = readArg("--export-kind");
 const task = readArg("--task");
 const timeoutMs = Number(readArg("--timeout-ms") ?? 20 * 60_000);
 const answer = readArg("--answer");
@@ -65,6 +66,7 @@ if (
   process.stderr.write(
     "用法: node scripts/smoke-opendesign.mjs --confirm-send --model <模型名> --task <任务书> " +
       "[--project <绝对路径>] [--design-system <名>] [--design-direction <原型|文档|网站复刻>] " +
+      "[--export-kind <html|zip>] " +
       "[--auto-verify] [--auto-fix-rounds <0-10>] [--answer <续答>] [--timeout-ms <毫秒>]\n",
   );
   process.exit(2);
@@ -91,6 +93,7 @@ try {
     model,
     designSystem,
     designDirection,
+    exportKind,
     autoVerify,
     autoFixRounds,
     taskTimeoutMs: timeoutMs,
@@ -99,7 +102,7 @@ try {
     throw new Error(`run_task 失败：${submitted.text}`);
   const taskId = submitted.meta.taskId;
   process.stdout.write(
-    `${JSON.stringify({ event: "submitted", taskId, home, projectPath, model, designSystem, designDirection })}\n`,
+    `${JSON.stringify({ event: "submitted", taskId, home, projectPath, model, designSystem, designDirection, exportKind })}\n`,
   );
   const startedAt = Date.now();
   let previous = "";

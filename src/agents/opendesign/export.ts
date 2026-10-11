@@ -125,6 +125,15 @@ export function zipExtractCommand(
 export interface OpenDesignExportPage {
   /** 当前产物 URL（用于推导文件名与产物名） */
   currentUrl(): Promise<string>;
+  /**
+   * 把浏览器下载目录指到目标路径。
+   *
+   * 真机取证（2026-10-11）：0.24.1 的导出是**浏览器式下载**（blob → `will-download`），
+   * 不弹原生保存对话框——点完只出现一个无子控件的 `blob:` 空壳窗口，
+   * 下载停在 `~/Downloads/<uuid>.tmp` 不再增长。所以「填地址栏 + 点保存」那条路不适用，
+   * 唯一可靠做法是先用 CDP 指定 downloadPath，再点菜单项，文件直接落盘到目标目录。
+   */
+  setDownloadDir(dir: string): Promise<boolean>;
   /** 按可见文本点一个按钮（工具栏「导出」无 testid，只能按文本找） */
   clickByText(text: string): Promise<{ clicked: boolean; count: number }>;
   /** 等菜单出现（`role=menu`） */
@@ -227,6 +236,16 @@ export async function exportArtifact(input: ExportArtifactInput): Promise<Export
   if (!(await page.waitForMenu(5_000)))
     return { ok: false, message: "点击「导出」后菜单未出现（浮层未展开或点击被吞）" };
 
+  // 1.5) **把下载目录指到项目根**——必须在点菜单项之前（点完就开始下载，那时再设就晚了）。
+  //      真机取证（2026-10-11）：0.24.1 是浏览器式下载，不弹保存对话框；
+  //      不设这一步文件会落到默认「下载」目录，目标目录永远等不到产物。
+  const dirSet = await page.setDownloadDir(targetDir).catch(() => false);
+  if (!dirSet)
+    logger.warn(
+      "[opendesign] 设置下载目录失败（Page/Browser.setDownloadBehavior 均未成功）——产物可能落到浏览器默认下载目录",
+    );
+  else logger.info(`[opendesign] 已把下载目录指向：${targetDir}`);
+
   // 2) 点导出方式
   const itemText = exportItemText(kind);
   const item = await page.clickMenuItem(itemText);
@@ -238,16 +257,28 @@ export async function exportArtifact(input: ExportArtifactInput): Promise<Export
       }`,
     };
 
-  // 3) 原生保存对话框：在地址栏填目标目录后保存（基线在**点导出之前**采样并透传，
-  //    否则弹出来的那个窗口会被当成"本来就存在"，永远匹配不到——见 dialogBaseline 注释）
-  const saved = await deps.saveViaNativeDialog({
-    targetDir,
-    fileName,
-    ownerPids,
-    budgetMs,
-    baseline: input.dialogBaseline ?? [],
-  });
-  if (!saved.ok) return { ok: false, message: saved.message ?? "原生保存对话框未完成" };
+  // 3) 原生保存对话框：**只有浏览器式下载没生效时才需要**，故降级为可选兜底。
+  //
+  //    真机取证（2026-10-11）：0.24.1 是浏览器式下载——`setDownloadDir` 之后点菜单项，
+  //    文件**直接落盘**到目标目录，**不弹**保存对话框（点完只出现一个无子控件的 `blob:` 空壳窗口）。
+  //    那种情况下若把 saveViaNativeDialog 当必需步骤，它会因为找不到对话框而失败，
+  //    整个导出就被它拦死——而这恰恰是最常见的正常路径。
+  //
+  //    所以：先给一个**短预算**试对话框；失败不 return，继续走「等产物落盘」——
+  //    产物是否真的出现在目标目录才是唯一成败判据（见下方 step 4）。
+  const saved = await deps
+    .saveViaNativeDialog({
+      targetDir,
+      fileName,
+      ownerPids,
+      budgetMs: Math.min(budgetMs, 8_000),
+      baseline: input.dialogBaseline ?? [],
+    })
+    .catch((error: unknown) => ({ ok: false, message: String(error) }));
+  if (!saved.ok)
+    logger.info(
+      `[opendesign] 未出现原生保存对话框（${saved.message ?? "未知"}）——按浏览器式下载处理，改等产物直接落盘`,
+    );
 
   // 4) 等产物真的落到目标目录（只点按钮不算）
   const deadline = Date.now() + budgetMs;
