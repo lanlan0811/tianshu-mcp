@@ -107,7 +107,22 @@ export async function runQoderTask(args:{ctx:TaskContext;resolved:ResolvedAgent;
     }else{
       if(ctx.round>0||ctx.resume?.sendMessage)throw new Error('qoder_session_lost');
       if(initial.waiting)return pause(initial.waiting,initial.waitingText??'请先处理 Qoder 当前等待项');
-      if(!await c.exists(c.selector('newTask')))return pause('login_required','Qoder 工作界面不可用，请完成登录或引导后继续。');
+      // 界面可用性必须有界等待，不能一次瞬时检查就判 login_required。
+      // 真机踩过（2026-10-11）：Qoder 06:34:46 启动、06:34:59 就被判 login_required
+      // （仅 13 秒），而同一实例 2 分钟后 newTask/input/model/permission 全部就绪
+      // —— ensureInstance 的「CDP 可连 + 有 page target」不代表 React 已挂载完，
+      // 13 秒时 `[data-e2e="chat.new"]` 还没渲染出来，于是「还没渲染完」被误诊成「需要登录」。
+      // 这里与同文件其他等待同构（等 input、等 send 都用有界等待），手上的
+      // setupRecoveryTimeoutMs 预算本就该用在这个判据上；真等不到才 fail-closed。
+      const newTaskReady=await wait(async()=>await client.exists(client.selector('newTask')),'new-task-entry')
+        .then(()=>true)
+        .catch((error:unknown)=>{
+          // 只把「阶段超时」当界面不可用；取消（AbortError）必须原样抛出，否则会把用户主动取消
+          // 误报成 login_required，掩盖真实的终止原因。
+          if(error instanceof Error&&error.message.startsWith('qoder_stage_timeout'))return false;
+          throw error;
+        });
+      if(!newTaskReady)return pause('login_required','Qoder 工作界面不可用，请完成登录或引导后继续。');
       await c.click(c.selector('newTask'));
       await wait(async()=>!await client.sessionId()&&await client.exists(client.selector('input')),'new-task');
       const processes=await d.listProcesses({signal,deadline:setupEnd});
