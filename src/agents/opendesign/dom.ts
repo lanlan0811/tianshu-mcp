@@ -153,7 +153,26 @@ export function conversationTextExpression(overrides: SelectorOverrides = {}): s
   })()`;
 }
 
-/** 触发器上的当前值文本（模型/设计系统/设计方向/工作目录回读共用） */
+/**
+ * 触发器上的当前值文本（模型/设计系统/设计方向/工作目录回读共用）。
+ *
+ * `title` **按形态**采信（真机回归，2026-10-11）：工作目录触发器的 `title` 语义随状态变化——
+ *
+ *   空态（真机 outerHTML 逐字）：
+ *     <button data-testid="working-dir-trigger" aria-expanded="false"
+ *             title="让 Agent 可读取该本地目录（不会导入到 Design Files）">
+ *       <span class="…triggerLabel">工作目录</span>      ← 占位符
+ *     </button>
+ *   已绑定态：innerText=「Minecraft」(末段)，title=「D:\Trae项目\AI游戏\Minecraft」(完整路径)
+ *
+ * 所以只有**像路径**的 title 才采信（盘符 / 正斜杠开头 / 反斜杠开头 UNC）；
+ * 提示语一律回落 innerText。无条件读 title 会把 tooltip 当成目录值——
+ * 真机日志实测出现过：`工作目录当前为「让 Agent 可读取该本地目录（不会导入到 Design Files）」`。
+ *
+ * 为什么值得读 title：完整路径能**自证**绑定结果，不必依赖 `app-config.json` 的
+ * `recentLinkedDirs` 旁证——而那个文件异步落盘（真机实测晚 8.2s），远超回读预算，
+ * 会让已成功的绑定被判成 `readback` 假失败。
+ */
 export function triggerTextExpression(
   key: OpenDesignSelectorKey,
   overrides: SelectorOverrides = {},
@@ -161,7 +180,16 @@ export function triggerTextExpression(
   return `(function(){${OPEN_DESIGN_DOM}/*od:trigger-text*/
     const nodes = odResolve(${selectorSpec(key, overrides)}, true);
     if (!nodes.length) return '';
-    return odText(nodes[0]);
+    const e = nodes[0];
+    const title = (e.getAttribute('title') || '').trim();
+    const first = title.charAt(0);
+    const looksLikePath =
+      /^[A-Za-z]:/.test(title) ||
+      first === '/' ||
+      first === '\\\\' ||
+      title.indexOf('\\\\\\\\') === 0;
+    if (looksLikePath && !/\\s{2,}|\\n/.test(title)) return title;
+    return odText(e);
   })()`;
 }
 

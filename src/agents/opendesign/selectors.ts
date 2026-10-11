@@ -39,6 +39,7 @@ export type OpenDesignSelectorKey =
   | "designDirectionItem"
   | "sendButton"
   | "stopButton"
+  | "errorText"
   | "conversationText"
   | "exportTrigger"
   | "exportMenu"
@@ -96,8 +97,19 @@ export const OPEN_DESIGN_LAYOUT_GUARD_KEYS: readonly OpenDesignSelectorKey[] = [
  */
 export const OPEN_DESIGN_SELECTORS: Record<OpenDesignSelectorKey, OpenDesignSelectorSpec> = {
   /**
-   * 页面框架锚点。首页 hero 容器 = `data-testid="home-hero"`（已渲染首页的权威标志）。
+   * 页面框架锚点。首页 hero 容器 = `data-testid="home-hero"`（**已渲染首页的权威标志**）。
    * 会话页没有 hero，故补 `home-view` / 标题元素作为跨形态兜底。
+   *
+   * ⚠ 语义纪律（真机踩过，2026-10-11）：本键被 `ensureHomePage()` 用作
+   * **「当前是否已在首页」**的判据——命中即跳过「点首页入口回首页」这一步。
+   * 因此**绝不能**把会话页也存在的东西（如 `chat-composer` / `chat-log`）放进候选：
+   * 那会让停留会话页时被误判成「已在首页」，后续 `working-dir-trigger` 等
+   * 首页专属控件必然 0 命中，任务卡在 `no-panel`。
+   *
+   * 真机取证（0.24.1）：真首页 `od://app/` 上 `home-hero` / `home-view` **确实存在**
+   * （会话页 `od://app/projects/.../files/...` 上不存在）——原定义本来就对，
+   * 当时报 `selector_drift` 的真因是 `OPEN_DESIGN_HOME_ENTRY_SELECTOR` 缺入口
+   * （见 run.ts 该常量注释），不是本键。
    */
   title: {
     primary: '[data-testid="home-hero"]',
@@ -242,6 +254,23 @@ export const OPEN_DESIGN_SELECTORS: Record<OpenDesignSelectorKey, OpenDesignSele
   stopButton: {
     primary: "button.composer-send.stop",
     ariaPatterns: ["^(停止|停止生成|Stop|Stoppen|停止する)$"],
+  },
+  /**
+   * 运行失败态文案（**失败终态的权威信号**；真机取证 2026-10-11，0.24.1）。
+   *
+   * 真机 DOM（模型侧失败后）：
+   *   <div data-testid="chat-run-error-card">
+   *     <div class="RunErrorCard-module__…__title">未能生成内容</div>
+   *     <div data-testid="chat-run-error-description">AI 未能生成内容，请重新发起任务，或更换模型后再试。</div>
+   *   </div>
+   *
+   * 为什么必须有它：失败时**停止按钮消失**（没有运行信号），界面看起来「全静止」；
+   * 若只按「文本+产物稳定」判静止，会一直等到任务时限——真机实测就是这样空等了 10 分钟以上，
+   * 而 UI 早在 3m39s 就显示「运行失败」了。
+   */
+  errorText: {
+    primary: '[data-testid="chat-run-error-description"]',
+    fallbacks: ['[data-testid="chat-run-error-card"]'],
   },
   /** 对话正文容器：`chat-log`（产品自己的滚动/取证锚点，语义极稳定） */
   conversationText: {

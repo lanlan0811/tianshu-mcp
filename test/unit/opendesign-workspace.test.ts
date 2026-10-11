@@ -34,6 +34,12 @@ const OTHER = "D:\\Other";
 interface PageBehaviour {
   /** 点击「工作目录」后是否挂出「选择目录」菜单项（默认 true） */
   panelOpens?: boolean;
+  /**
+   * 模拟真机 0.24.1 形态：触发器 title 属性 = **完整路径**，而其 innerText 只有末段。
+   * 真机实测 `working-dir-trigger` 的 outerHTML：
+   *   `<button data-testid="working-dir-trigger" title="D:\Trae项目\AI游戏\Minecraft">Minecraft</button>`
+   */
+  titleAttr?: string;
   /** 回调收到 node，返回 true = 模拟应用接受该目录（界面显示值更新） */
   onNativeDialog?: (node: { setWorkspaceValue: (v: string) => void }) => void;
 }
@@ -46,7 +52,7 @@ function makePage(workspaceValue: string, behaviour: PageBehaviour = {}) {
       <form data-od="composer">
         <textarea data-od="input"></textarea>
         <button data-od="working-dir" aria-haspopup="menu" aria-expanded="false">工作目录</button>
-        <span data-od="working-dir-value">${workspaceValue}</span>
+        <span data-od="working-dir-value"${behaviour.titleAttr ? ` title="${behaviour.titleAttr}"` : ""}>${workspaceValue}</span>
         <button data-od="model" aria-haspopup="menu">v4.1-flash</button>
         <button data-od="design-system" aria-haspopup="dialog">Claude (Anthropic)</button>
         <button data-od="direction" aria-haspopup="menu">原型</button>
@@ -133,7 +139,7 @@ function makePage(workspaceValue: string, behaviour: PageBehaviour = {}) {
       return false;
     },
   };
-  return { page, clicks, setWorkspaceValue };
+  return { page, clicks, setWorkspaceValue, dom: document };
 }
 
 function gui() {
@@ -410,5 +416,82 @@ describe("Open Design 工作目录：回读", () => {
     expect(await readWorkspaceValue(ok.page, CAPTURED)).toBe(TARGET);
     const missing = makePage("");
     expect(await readWorkspaceValue(missing.page, CAPTURED)).toBe("");
+  });
+});
+
+
+/**
+ * 真机缺陷回归（2026-10-11，Open Design 0.24.1）：
+ * 绑定工作目录时 `reason=readback` 反复失败，但产品**其实已经绑好了**。
+ *
+ * 真机 DOM 取证（首页 `od://app/` 的 working-dir-picker，outerHTML 逐字）：
+ *   <button type="button" class="WorkingDirPicker-module__Vg5_qq__trigger"
+ *           data-testid="working-dir-trigger" aria-expanded="false"
+ *           title="D:\Trae项目\AI游戏\Minecraft">Minecraft</button>
+ *   └ innerText = 「Minecraft」（只有末段），title = 完整路径
+ *
+ * 而 `readWorkspaceValue()` 当时只读 innerText（末段）→ 拿末段比完整目标路径 →
+ * 只能靠 `app-config.json` 的 `recentLinkedDirs` 旁证兜底；但产品把该记录**异步落盘**
+ * （真机时序实测：原生对话框 08:30:30.6 完成，app-config.json 到 08:30:38.8 才写盘，
+ *  晚 8.2s），而回读预算 4×700ms ≈ 2.8s → 旁证始终旧值 → 假失败。
+ *
+ * 正解：`title` 属性**本来就是完整路径**（权威真值），优先读它即可自证，不依赖落盘时序。
+ */
+describe("Open Design 工作目录：title 属性优先（真机回归）", () => {
+  it("触发器带 title 时读完整路径，不读末段 innerText", async () => {
+    // 真机形态：innerText 只有末段，title 才是完整路径
+    const p = makePage("Minecraft", { titleAttr: TARGET });
+    expect(p.dom.querySelector('[data-od="working-dir-value"]')?.getAttribute("title")).toBe(TARGET);
+    expect(await readWorkspaceValue(p.page, CAPTURED)).toBe(TARGET);
+  });
+
+  it("触发器无 title 时回落 innerText（兼容旧形态）", async () => {
+    const p = makePage(TARGET);
+    expect(await readWorkspaceValue(p.page, CAPTURED)).toBe(TARGET);
+  });
+
+  it("title 与 innerText 同时存在且冲突时，以 title 为准（真机两值语义不同）", async () => {
+    const p = makePage("Minecraft", { titleAttr: OTHER });
+    expect(await readWorkspaceValue(p.page, CAPTURED)).toBe(OTHER);
+  });
+});
+
+/**
+ * 自审补丁（2026-10-11，真机空态取证后）：
+ * `title` 优先规则**不能无条件生效**——工作目录触发器在**空态**下
+ * `title` 是 tooltip 提示语而非路径：
+ *
+ *   空态（真机 outerHTML 逐字）：
+ *     <button data-testid="working-dir-trigger" aria-expanded="false"
+ *             title="让 Agent 可读取该本地目录（不会导入到 Design Files）">
+ *       <span class="…triggerLabel">工作目录</span>
+ *     </button>
+ *     → innerText = 「工作目录」（占位符），title = 提示语
+ *
+ *   已绑定态：
+ *     → innerText = 「Minecraft」（末段），title = 「D:\Trae项目\AI游戏\Minecraft」
+ *
+ * 无条件读 title 会把提示语当成目录值（真机日志实测复现：
+ * `工作目录当前为「让 Agent 可读取该本地目录（不会导入到 Design Files）」`）。
+ * 故 title 只在**像路径**时才采信。
+ */
+describe("Open Design 工作目录：空态 title 是提示语（自审补丁）", () => {
+  it("title 为 tooltip 提示语时不得当成目录值", async () => {
+    const p = makePage("工作目录", { titleAttr: "让 Agent 可读取该本地目录（不会导入到 Design Files）" });
+    const v = await readWorkspaceValue(p.page, CAPTURED);
+    expect(v).not.toContain("让 Agent 可读取");
+    expect(v).toBe("工作目录");
+  });
+
+  it("title 为 Windows 盘符路径时才采信", async () => {
+    const p = makePage("Minecraft", { titleAttr: "D:\Trae项目\AI游戏\Minecraft" });
+    expect(await readWorkspaceValue(p.page, CAPTURED)).toBe("D:\Trae项目\AI游戏\Minecraft");
+  });
+
+  it("title 为 UNC / 正斜杠路径时同样采信", async () => {
+    const p1 = makePage("share", { titleAttr: "\\server\share\proj" });
+    expect(await readWorkspaceValue(p1.page, CAPTURED)).toBe("\\server\share\proj");
+    const p2 = makePage("proj", { titleAttr: "/home/user/proj" });
+    expect(await readWorkspaceValue(p2.page, CAPTURED)).toBe("/home/user/proj");
   });
 });

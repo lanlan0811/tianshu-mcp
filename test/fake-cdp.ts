@@ -1074,6 +1074,11 @@ export interface FakeOpenDesignState {
   sendSwallowed: boolean;
   /** 页面是否被隐藏（节流） */
   pageHidden: boolean;
+  /**
+   * 失败终态文案（真机 `chat-run-error-description` 的文本；空 = 无失败）。
+   * 真机回归 2026-10-11：poll 桩此前不回传它，于是真机上的 failed 判定在测试里永远走不到。
+   */
+  errorText: string;
   /** 点击记录（语义标签） */
   clicks: string[];
   /** 额外声明「多命中」的语义键（复刻 UI 渲染出重复控件的情形） */
@@ -1117,6 +1122,7 @@ export function makeOpenDesignFakeState(
     sendClicks: 0,
     sendSwallowed: false,
     pageHidden: false,
+    errorText: "",
     clicks: [],
     ...over,
   };
@@ -1355,6 +1361,8 @@ export class FakeOpenDesignPage {
         sendStarting: s.sendStarting,
         conversationText: s.conversation,
         inputText: s.inputText,
+        // 与真机 pollExpression 同构：失败文案必须一起回传，否则桩掩盖真机的 failed 判定
+        errorText: s.errorText ?? "",
         pageHidden: s.pageHidden,
       };
     }

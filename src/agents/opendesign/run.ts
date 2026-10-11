@@ -123,9 +123,20 @@ const DEFAULT_DEPS: OpenDesignRunDeps = {
   sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
 };
 
-/** 首页入口（首页 hero 不在前台时用它切回首页；产品自己的导航钩子） */
+/**
+ * 首页入口（首页 hero 不在前台时用它切回首页；产品自己的导航钩子）。
+ *
+ * 真机取证（2026-10-11，0.24.1）：`entry-view-home` / `entry-nav-home` **均已不存在**
+ * （实测命中 0）。当前页面若停在会话/文件页，`tryReturnHome` 会点空气 → 切不回 →
+ * 布局守卫报 `selector_drift`（真机任务 tsk_20261011081412_a43de4 即此）。
+ *
+ * 0.24.1 实测存在的入口候选：`workspace-home-chrome`（左上角 chrome，1 命中且可见）。
+ * 旧钩子保留为 fallback（兼容旧版本）。
+ *
+ * 刻意**不**把 `chat-log` / `chat-composer` 列进来：它们是会话区容器，点击不会切回首页。
+ */
 export const OPEN_DESIGN_HOME_ENTRY_SELECTOR =
-  '[data-testid="entry-view-home"], [data-testid="entry-nav-home"]';
+  '[data-testid="entry-view-home"], [data-testid="entry-nav-home"], [data-testid="workspace-home-chrome"]';
 
 /** profile 缺省值兜底（与 kimicodeGuiOf 同构：profile 是数据，默认值只在读取点提供） */
 export function openDesignGuiOf(resolved: ResolvedAgent): GuiProfile {
@@ -958,6 +969,8 @@ async function observe(client: OpenDesignCdpClient, args: ObserveArgs): Promise<
       sendStarting: snapshot.sendStarting,
       conversationText: snapshot.conversationText,
       inputText: snapshot.inputText,
+      // 失败终态：少这一跳，判定层的 failed 分支永远收不到信号（真机 2026-10-11 空等到超时）
+      errorText: snapshot.errorText,
       artifactSignature,
       pageHidden: snapshot.pageHidden,
     };

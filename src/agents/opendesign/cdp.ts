@@ -187,6 +187,12 @@ export interface OpenDesignPollSnapshot {
   sendStarting: boolean;
   conversationText: string;
   inputText: string;
+  /**
+   * 界面明确给出的失败文案（失败终态的权威信号）。
+   * 真机回归（2026-10-11）：漏了这个字段，失败态就永远传不到判定层，
+   * 任务会在「看起来全静止」的失败界面上空等到时限。
+   */
+  errorText: string;
   pageHidden: boolean;
 }
 
@@ -213,6 +219,11 @@ export function pollExpression(overrides: SelectorOverrides = {}): string {
         return 'value' in e && typeof e.value === 'string' ? e.value : odText(e);
       })(),
       pageHidden: document.hidden === true,
+      // 失败终态文案：有它就必须判 failed，不得继续当「运行中」等下去
+      errorText: (function () {
+        const e = odResolve(${spec("errorText")}, true);
+        return e.length ? odText(e[0]) : '';
+      })(),
     };
   })()`;
 }

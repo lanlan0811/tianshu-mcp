@@ -73,6 +73,7 @@ function makePage(state: StubState) {
       conversationText: state.conversation,
       inputText: state.inputText,
       pageHidden: false,
+      errorText: "",
     }),
     waitFor: async (_predicate, timeoutMs) =>
       new Promise<boolean>((resolve) => setTimeout(() => resolve(false), Math.min(timeoutMs, 10))),
