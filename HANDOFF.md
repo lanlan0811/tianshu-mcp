@@ -51,6 +51,24 @@
 >   判定不变，改为双写 `warnings` 使其进 `[WARN]` 与报告摘要。
 >   另：`hoverModel` 失败现场新增诊断快照（原本只留 `elapsed=9630ms`，无法区分四种失败原因）；
 >   新增 `scripts/smoke-minimax.mjs`（此前 MiniMax 只有只读 probe）。
+> - **0.9.7（Open Design）**：**接通此前零调用方的产物导出链路** + 三处适配器缺陷。
+>   ① **导出从未接线**：`export.ts` 逻辑与单测齐备，但 `run.ts` 从未调用、schema 无 `exportKind`
+>   ——「判据齐全、接线缺失」。真机取证推翻了原实现的核心假设：0.24.1 是**浏览器式下载**
+>   （blob → Electron `will-download`），**不弹**保存对话框（点完只出现无子控件的 `blob:` 空壳窗口，
+>   下载停在 `~/Downloads/<uuid>.tmp`）；正解是 CDP `Page.setDownloadBehavior` 指下载目录 → 点菜单项
+>   → 文件直接落盘。`saveViaNativeDialog` 降级为**可选兜底**（短预算试一次，失败不 return）。
+>   ② **首页入口漂移**：首页 `od://app/` 与会话页 `.../files/` 是**互斥形态**（`home-hero` /
+>   `working-dir-trigger` 只在首页，会话页只有 `workspace-home-chrome`）；`HOME_ENTRY` 缺后者 →
+>   会话页点空气 → 守卫在会话页跑 → `title` 恒 0 → `selector_drift`。并固化 `title` 的**仅首页命中**语义。
+>   ③ **失败态未接线**：`liveness.errorText → failed` 判据早已齐备（含单测），但 `cdp` 快照类型 /
+>   `pollExpression` / `run.ts` poll 组装**三层从未接线** → UI 已显示失败，适配器仍报 `running`
+>   空等 10 分钟+。④ **工作目录回读假失败**：`working-dir-trigger` 的 `title` **语义随状态变化**
+>   （空态是 tooltip、绑定态才是完整路径），而 `innerText` 只给末段；原判据只读 `innerText` →
+>   只能靠 `app-config.json` 的 `recentLinkedDirs` 旁证，而该文件**异步落盘晚 8.2 秒**（实测
+>   对话框 08:30:30.6 完成、config 08:30:38.8 才写）→ 绑定成功却判 `readback` 假失败。
+>   改为「`title` 像路径才采信」（盘符/正斜杠/UNC）。
+>   真机端到端验证：zip → `Website-Clone.zip`（魔数 `504b0304`、`testzip()` 无损坏、3 条目）；
+>   html → `minecraft-promo.html`（178065 字节）。两种格式各跑两轮全通过。
 >
 > **⑤ 测试基线**：全量 **1692 passed / 2 failed / 12 skipped**（1706 项，137 文件）。两处失败为
 > **既存环境失败（非本仓库缺陷）**——`spawn-regression`（本机缺 `tianshu-runtime.exe`）与 `codex-flow`，

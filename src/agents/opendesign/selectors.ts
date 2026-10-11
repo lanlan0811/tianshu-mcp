@@ -100,7 +100,7 @@ export const OPEN_DESIGN_SELECTORS: Record<OpenDesignSelectorKey, OpenDesignSele
    * 页面框架锚点。首页 hero 容器 = `data-testid="home-hero"`（**已渲染首页的权威标志**）。
    * 会话页没有 hero，故补 `home-view` / 标题元素作为跨形态兜底。
    *
-   * ⚠ 语义纪律（真机踩过，2026-10-11）：本键被 `ensureHomePage()` 用作
+   * 【语义纪律】真机踩过，2026-10-11：本键被 `ensureHomePage()` 用作
    * **「当前是否已在首页」**的判据——命中即跳过「点首页入口回首页」这一步。
    * 因此**绝不能**把会话页也存在的东西（如 `chat-composer` / `chat-log`）放进候选：
    * 那会让停留会话页时被误判成「已在首页」，后续 `working-dir-trigger` 等

@@ -7,6 +7,70 @@
 
 ---
 
+## [0.9.7] — 2026-10-11
+
+> **Open Design 真机修复版**：三轮真机冒烟测试定位并修复 4 处适配器缺陷，
+> 并**接通此前零调用方的产物导出链路**（zip / 独立 HTML 双格式均已真机验证）。
+
+**本版无破坏性变更，工具面不变（仍 8 个工具），升级无需改调用方。**
+新增可选参数 `exportKind`（`html` / `zip`）：任务成功结束后自动把产物导出到 `projectPath`。
+
+### 新增
+
+**产物导出链路（此前 `exportArtifact` 零调用方，从未接上）**
+
+`export.ts` 早先已实现完整导出逻辑并有单测，但 `run.ts` 从未调用它，
+schema 也没有 `exportKind` 字段——即「判据齐全、接线缺失」。
+本版补齐三段：新增 `cdp.setDownloadDir` → `exportArtifact` 主流程接入 →
+`run.ts` 在 `finished` 终态调用；`exportKind` 参数贯通 schema / adapter / task / context / handlers 五处传递链。
+
+**关键发现（推翻了原实现的核心假设）**：Open Design 0.24.1 的导出是**浏览器式下载**
+（blob → Electron `will-download`），**不弹**原生保存对话框——点完只出现一个无子控件的
+`blob:od://app/<uuid>` 空壳窗口，下载停在 `~/Downloads/<uuid>.tmp` 不再增长，产物永远等不到。
+所以 `saveViaNativeDialog`（填地址栏 + 点保存）那条路在 0.24.1 上不适用。
+正解：先用 CDP `Page.setDownloadBehavior` 把下载目录指向 `projectPath`，再点菜单项，
+文件**直接落盘**。同时把 `saveViaNativeDialog` 降级为**可选兜底**（短预算试一次，
+失败不 return，继续走「等产物落盘」——那才是唯一成败判据）。
+
+### 修复
+
+**① 首页入口漂移 → `selector_drift` 硬失败**
+
+首页 `od://app/` 与会话页 `.../files/` 是**两个互斥形态**：`home-hero` / `working-dir-trigger`
+只在首页，会话页只有 `workspace-home-chrome`（aria=`主页`）。
+`OPEN_DESIGN_HOME_ENTRY_SELECTOR` 原缺该入口 → 会话页点空气 → 回不了首页 →
+布局守卫在会话页检查 → `title` 恒 0 → 硬失败。补入口；
+并固化 `title` 的「**仅首页命中**」语义（它被 `ensureHomePage` 用作「是否已在首页」判据，
+一旦混入会话页也存在的键，停留会话页会被误判成已在首页，后续首页专属控件必然 0 命中）。
+
+**② 失败态未接线 → 失败界面上空等到时限**
+
+`liveness.errorText → failed` 的判据与单测**早就齐备**，但 `cdp.OpenDesignPollSnapshot`、
+`pollExpression`、`run.ts` 的 poll 组装**三层从未接线**。真机表现：UI 已显示
+`chat-run-error-description`「AI 未能生成内容，请重新发起任务」，适配器仍报 `running`
+空等 10 分钟以上直到时限。补齐三层并同步 `fake-cdp` 桩。
+
+**③ 工作目录回读假失败（`title` 形态判据）**
+
+`working-dir-trigger` 的 `title` 属性**语义随状态变化**：空态是 tooltip
+（「让 Agent 可读取该本地目录（不会导入到 Design Files）」），已绑定态才是**完整路径**；
+而其 `innerText` 只给末段目录名。原判据只读 `innerText`，于是只能依赖
+`app-config.json` 的 `recentLinkedDirs` 旁证——而该文件**异步落盘**
+（真机时序实测：对话框 08:30:30.6 完成，config 直到 08:30:38.8 才写盘，晚 8.2 秒），
+远超回读预算，于是**绑定明明成功却被判 `readback` 假失败**。
+改为「`title` **像路径**才采信」（盘符 / 正斜杠 / UNC），空态回落 `innerText`。
+
+### 验证
+
+- typecheck 绿；lint 绿
+- opendesign 全族 9 文件 129 测试通过；`fake-cdp` 全部 8 个消费方 115 测试通过
+- 三处修复各自**反证**（回滚后对应用例转红，证明测试有辨别力）
+- 导出链路**端到端真机验证**（走真实实现，非手搓探针）：zip →
+  `Website-Clone.zip`（魔数 `504b0304`、`testzip()` 无损坏、3 条目），解压后入口
+  `minecraft-promo.html`；html → `minecraft-promo.html`（178065 字节）。两种格式各跑两轮全通过。
+
+---
+
 ## [0.9.6] — 2026-10-10
 
 > **MiniMax Code 真机修复版**：修复两处适配器缺陷（项目点选恒失败 / 子菜单回读太早）

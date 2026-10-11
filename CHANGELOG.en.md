@@ -8,6 +8,83 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.9.7] — 2026-10-11
+
+> **Open Design on-device fix release**: three rounds of real-machine smoke testing located and
+> fixed 4 adapter defects, and **wired up the artifact export path** that previously had zero callers
+> (both zip and standalone HTML verified on a real machine).
+
+**No breaking changes; tool surface unchanged (still 8 tools); no caller changes needed.**
+New optional parameter `exportKind` (`html` / `zip`): after a task finishes successfully,
+the artifact is exported to `projectPath` automatically.
+
+### Added
+
+**Artifact export path (previously `exportArtifact` had zero callers — never wired)**
+
+`export.ts` already contained the full export logic with unit tests, but `run.ts` never called it
+and the schema had no `exportKind` field — a classic "predicate complete, wiring missing" gap.
+This release completes the chain: new `cdp.setDownloadDir` → `exportArtifact` main flow →
+`run.ts` calls it on the `finished` terminal state; `exportKind` is threaded through all five
+layers (schema / adapter / task / context / handlers).
+
+**Key finding (overturns the original implementation's core assumption)**: Open Design 0.24.1
+exports via a **browser-style download** (blob → Electron `will-download`) and does **not** show a
+native save dialog. Clicking the menu item only spawns a childless `blob:od://app/<uuid>` shell
+window, and the download stalls at `~/Downloads/<uuid>.tmp` — the artifact never arrives.
+So the old `saveViaNativeDialog` route (fill address bar + click save) does not apply on 0.24.1.
+Correct approach: point the download directory at `projectPath` via CDP `Page.setDownloadBehavior`
+first, then click the menu item — the file lands directly. `saveViaNativeDialog` is demoted to an
+**optional fallback** (one short-budget attempt; on failure it does not return, the flow continues
+to "wait for the artifact to land" — the only real success criterion).
+
+### Fixed
+
+**① Home entry drift → `selector_drift` hard failure**
+
+The home page `od://app/` and the conversation page `.../files/` are **two mutually exclusive
+layouts**: `home-hero` / `working-dir-trigger` exist only on home, while the conversation page only
+has `workspace-home-chrome` (aria=`主页` / "Home"). `OPEN_DESIGN_HOME_ENTRY_SELECTOR` lacked that
+entry → clicking air on the conversation page → could not return home → the layout guard ran on the
+conversation page → `title` count was always 0 → hard failure. The entry was added, and `title`'s
+**"home-only" semantics** were pinned down (it is used by `ensureHomePage` to decide "are we already
+home"; mixing in keys that also exist on the conversation page makes the adapter think it is home
+and every home-only control then matches 0).
+
+**② Failure state not wired → waited until the deadline on a failed screen**
+
+The `liveness.errorText → failed` predicate and its unit tests were **already in place**, but
+`cdp.OpenDesignPollSnapshot`, `pollExpression`, and the `run.ts` poll assembly **were never wired
+across all three layers**. Real-machine symptom: the UI already showed
+`chat-run-error-description` ("AI could not generate content, please retry"), yet the adapter kept
+reporting `running` for over 10 minutes until the deadline. All three layers were completed, and the
+`fake-cdp` stub was synced.
+
+**③ Working-directory readback false failure (`title` shape predicate)**
+
+The `working-dir-trigger` `title` attribute **changes meaning with state**: when empty it is a
+tooltip ("Let the Agent read this local directory (it will not be imported into Design Files)"),
+and only when bound does it hold the **full path**; its `innerText` only shows the last path segment.
+The old predicate read `innerText` only, so it had to rely on the `recentLinkedDirs` sidecar in
+`app-config.json` — but that file is written **asynchronously** (measured on a real machine: the
+dialog completed at 08:30:30.6, yet the config was not flushed until 08:30:38.8 — 8.2 seconds later),
+far beyond the readback budget, so a **successful binding was reported as a `readback` false failure**.
+Now `title` is trusted only when it **looks like a path** (drive letter / forward slash / UNC),
+falling back to `innerText` otherwise.
+
+### Verification
+
+- typecheck green; lint green
+- Whole opendesign family: 9 files / 129 tests pass; all 8 `fake-cdp` consumers: 115 tests pass
+- Each of the three fixes has a **counter-proof** (rolling it back turns the corresponding case red,
+  proving the tests have discriminating power)
+- Export path **end-to-end verified on a real machine** (through the real implementation, not a
+  hand-rolled probe): zip → `Website-Clone.zip` (magic `504b0304`, `testzip()` clean, 3 entries),
+  extracted entry `minecraft-promo.html`; html → `minecraft-promo.html` (178065 bytes).
+  Both formats ran twice, all green.
+
+---
+
 ## [0.9.6] — 2026-10-10
 
 > **MiniMax Code real-machine fix release**: fixes two adapter defects (project selection
