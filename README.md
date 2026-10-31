@@ -98,7 +98,7 @@ Codex · TraeWork · ZCode · Kimi Code · Qoder CN · Open Design · MiniMax Co
 
 ## 项目图解
 
-五幅概念插画，概括本 server 的形态与机制（插画为概念示意，非逐字对应的结构图）。
+五幅概念插画，概括本 server 的形态与机制（插画为概念示意，非逐字对应的结构图）；其后是按源码实测规模绘制的**结构导图**，用于快速建立分层认知。
 
 <p align="center">
   <img src="./assets/fig-architecture-zh.png" alt="总体架构：调度 / 执行面 / 客观验收仪三路汇入一个编排核心" width="49%">
@@ -118,6 +118,12 @@ Codex · TraeWork · ZCode · Kimi Code · Qoder CN · Open Design · MiniMax Co
   <img src="./assets/fig-tool-surface-zh.png" alt="MCP 工具面：8 个工具 · 派单 · 查询 · 验收" width="49%">
   <br>
   <b>MCP 工具面</b> —— 8 个工具 · 派单 · 查询 · 验收
+</p>
+
+<p align="center">
+  <img src="./assets/fig-project-map.svg" alt="项目结构导图：运行形态 · 五层架构 · 执行面 · 验收面 · 工程化" width="100%">
+  <br>
+  <b>项目结构导图</b> —— 运行形态 · 五层架构 · 执行面 · 验收面 · 工程化（按 0.9.7 源码实测规模标注）
 </p>
 
 ## 为什么需要编排层与验收仪

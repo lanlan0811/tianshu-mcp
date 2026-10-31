@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="840" height="1120" viewBox="0 0 840 1120" role="img" aria-label="tianshu-mcp 项目结构导图">
+  <defs>
+    <style>
+      .bg { fill: #fbfcfe; }
+      .title { font: 600 22px "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; fill: #0f172a; }
+      .subtitle { font: 400 13px "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; fill: #64748b; }
+      .root { font: 600 17px "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; fill: #ffffff; }
+      .root-sub { font: 400 12px "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; fill: #cbd5e1; }
+      .branch { font: 600 14px "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; }
+      .leaf { font: 400 13px "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; fill: #334155; }
+      .leaf-key { font: 600 13px "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; fill: #0f172a; }
+      .edge { fill: none; stroke-width: 1.6; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="840" height="1120"/>
+
+  <text class="title" x="40" y="44">tianshu-mcp · 项目结构导图</text>
+  <text class="subtitle" x="40" y="70">0.9.7 实测 · src 45 904 行 / 168 文件 · 各层按代码量标注</text>
+
+  <!-- 根节点 -->
+  <rect x="40" y="541" width="210" height="88" rx="12" fill="#1e293b"/>
+  <text class="root" x="60" y="573">tianshu-mcp 0.9.7</text>
+  <text class="root-sub" x="60" y="595">MCP server（stdio）</text>
+  <text class="root-sub" x="60" y="613">调度 · 执行 · 验收</text>
+
+  <!-- 运行形态 -->
+  <path class="edge" stroke="#0ea5e9" d="M250,585 C275,585 280,179 300,179"/>
+  <rect x="300" y="156" width="190" height="46" rx="10" fill="#e0f2fe" stroke="#0ea5e9"/>
+  <text class="branch" fill="#0369a1" x="316" y="184">运行形态</text>
+  <path class="edge" stroke="#0ea5e9" d="M490,179 C510,179 515,150 532,150"/>
+  <path class="edge" stroke="#0ea5e9" d="M490,179 C510,179 515,208 532,208"/>
+  <circle cx="536" cy="150" r="4" fill="#0ea5e9"/>
+  <circle cx="536" cy="208" r="4" fill="#0ea5e9"/>
+  <text class="leaf" x="552" y="155">天枢 tools/call → 文本 + meta</text>
+  <text class="leaf" x="552" y="213">双交付面：MCP server / 日志台 GUI</text>
+
+  <!-- 架构分层 -->
+  <path class="edge" stroke="#6366f1" d="M250,585 C275,585 280,435 300,435"/>
+  <rect x="300" y="412" width="190" height="46" rx="10" fill="#eef2ff" stroke="#6366f1"/>
+  <text class="branch" fill="#4338ca" x="316" y="440">架构分层 45 904 行</text>
+  <path class="edge" stroke="#6366f1" d="M490,435 C510,435 515,290 532,290"/>
+  <path class="edge" stroke="#6366f1" d="M490,435 C510,435 515,348 532,348"/>
+  <path class="edge" stroke="#6366f1" d="M490,435 C510,435 515,406 532,406"/>
+  <path class="edge" stroke="#6366f1" d="M490,435 C510,435 515,464 532,464"/>
+  <path class="edge" stroke="#6366f1" d="M490,435 C510,435 515,522 532,522"/>
+  <path class="edge" stroke="#6366f1" d="M490,435 C510,435 515,580 532,580"/>
+  <circle cx="536" cy="290" r="4" fill="#6366f1"/>
+  <circle cx="536" cy="348" r="4" fill="#6366f1"/>
+  <circle cx="536" cy="406" r="4" fill="#6366f1"/>
+  <circle cx="536" cy="464" r="4" fill="#6366f1"/>
+  <circle cx="536" cy="522" r="4" fill="#6366f1"/>
+  <circle cx="536" cy="580" r="4" fill="#6366f1"/>
+  <text class="leaf" x="552" y="295"><tspan class="leaf-key">L1 协议边</tspan> 2 026 · 8 个工具</text>
+  <text class="leaf" x="552" y="353"><tspan class="leaf-key">L2 任务域</tspan> 2 088 · 10 态状态机</text>
+  <text class="leaf" x="552" y="411"><tspan class="leaf-key">L3 编排</tspan> 995 · 验收返修闭环</text>
+  <text class="leaf" x="552" y="469"><tspan class="leaf-key">L4a 执行面</tspan> 31 896（69.5%）</text>
+  <text class="leaf" x="552" y="527"><tspan class="leaf-key">L4b 验收面</tspan> 6 090 · verify + visual</text>
+  <text class="leaf" x="552" y="585"><tspan class="leaf-key">L5 基础</tspan> 2 579 · config + util</text>
+
+  <!-- 执行面 -->
+  <path class="edge" stroke="#f59e0b" d="M250,585 C275,585 280,687 300,687"/>
+  <rect x="300" y="664" width="190" height="46" rx="10" fill="#fef3c7" stroke="#f59e0b"/>
+  <text class="branch" fill="#b45309" x="316" y="692">执行面 · 7 adapter</text>
+  <path class="edge" stroke="#f59e0b" d="M490,687 C510,687 515,658 532,658"/>
+  <path class="edge" stroke="#f59e0b" d="M490,687 C510,687 515,716 532,716"/>
+  <circle cx="536" cy="658" r="4" fill="#f59e0b"/>
+  <circle cx="536" cy="716" r="4" fill="#f59e0b"/>
+  <text class="leaf" x="552" y="663">7 个 GUI adapter（4–19 文件）</text>
+  <text class="leaf" x="552" y="721">CDP 驱动 · 可执行探测 · 状态回读</text>
+
+  <!-- 验收面 -->
+  <path class="edge" stroke="#10b981" d="M250,585 C275,585 280,825 300,825"/>
+  <rect x="300" y="802" width="190" height="46" rx="10" fill="#d1fae5" stroke="#10b981"/>
+  <text class="branch" fill="#047857" x="316" y="830">验收面</text>
+  <path class="edge" stroke="#10b981" d="M490,825 C510,825 515,796 532,796"/>
+  <path class="edge" stroke="#10b981" d="M490,825 C510,825 515,854 532,854"/>
+  <circle cx="536" cy="796" r="4" fill="#10b981"/>
+  <circle cx="536" cy="854" r="4" fill="#10b981"/>
+  <text class="leaf" x="552" y="801">verify：git 基线 · 命令 · 代码分析</text>
+  <text class="leaf" x="552" y="859">visual：像素比对 · 四联图</text>
+
+  <!-- 工程化 -->
+  <path class="edge" stroke="#8b5cf6" d="M250,585 C275,585 280,992 300,992"/>
+  <rect x="300" y="969" width="190" height="46" rx="10" fill="#ede9fe" stroke="#8b5cf6"/>
+  <text class="branch" fill="#6d28d9" x="316" y="997">工程化</text>
+  <path class="edge" stroke="#8b5cf6" d="M490,992 C510,992 515,934 532,934"/>
+  <path class="edge" stroke="#8b5cf6" d="M490,992 C510,992 515,992 532,992"/>
+  <path class="edge" stroke="#8b5cf6" d="M490,992 C510,992 515,1050 532,1050"/>
+  <circle cx="536" cy="934" r="4" fill="#8b5cf6"/>
+  <circle cx="536" cy="992" r="4" fill="#8b5cf6"/>
+  <circle cx="536" cy="1050" r="4" fill="#8b5cf6"/>
+  <text class="leaf" x="552" y="939">vitest 双 project · 1 756 用例</text>
+  <text class="leaf" x="552" y="997">CI 3 OS × 3 Node · 严格 stdio</text>
+  <text class="leaf" x="552" y="1055">6 个运行时依赖 · 双 tsconfig</text>
+
+  <text class="subtitle" x="40" y="1092">依赖严格单向：L1 → L2 → L3 → {L4a, L4b} → L5；L4a 与 L4b 互不依赖，只在 L3 汇合</text>
+</svg>

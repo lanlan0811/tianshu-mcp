@@ -98,7 +98,7 @@ Codex · TraeWork · ZCode · Kimi Code · Qoder CN · Open Design · MiniMax Co
 
 ## Illustrated overview
 
-Five conceptual illustrations summarizing the shape and mechanisms of this server (they are conceptual, not literal structural diagrams).
+Five conceptual illustrations summarizing the shape and mechanisms of this server (they are conceptual, not literal structural diagrams); the last figure is a **structure map** drawn to measured source size, for building a quick mental model of the layers.
 
 <p align="center">
   <img src="./assets/fig-architecture-en.png" alt="Overall architecture: scheduling / execution / verification converging into one orchestration core" width="49%">
@@ -118,6 +118,12 @@ Five conceptual illustrations summarizing the shape and mechanisms of this serve
   <img src="./assets/fig-tool-surface-en.png" alt="MCP tool surface: 8 tools · dispatch · query · verify" width="49%">
   <br>
   <b>MCP Tool Surface</b> — 8 tools · dispatch · query · verify
+</p>
+
+<p align="center">
+  <img src="./assets/fig-project-map.svg" alt="Project structure map: runtime shape · five layers · execution · verification · engineering" width="100%">
+  <br>
+  <b>Project Structure Map</b> — runtime shape · five layers · execution · verification · engineering (measured at 0.9.7)
 </p>
 
 ## Why an orchestration layer and acceptance gate
