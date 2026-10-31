@@ -123,7 +123,7 @@ Codex · TraeWork · ZCode · Kimi Code · Qoder CN · Open Design · MiniMax Co
 <p align="center">
   <img src="./assets/fig-project-map.svg" alt="项目结构导图：运行形态 · 五层架构 · 执行面 · 验收面 · 工程化" width="100%">
   <br>
-  <b>项目结构导图</b> —— 运行形态 · 五层架构 · 执行面 · 验收面 · 工程化（按 0.9.7 源码实测规模标注）
+  <b>项目结构导图</b> —— 运行形态 · 五层架构 · 执行面 · 验收面 · 工程化（按源码实测规模标注）
 </p>
 
 ## 为什么需要编排层与验收仪

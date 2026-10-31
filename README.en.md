@@ -123,7 +123,7 @@ Five conceptual illustrations summarizing the shape and mechanisms of this serve
 <p align="center">
   <img src="./assets/fig-project-map.svg" alt="Project structure map: runtime shape · five layers · execution · verification · engineering" width="100%">
   <br>
-  <b>Project Structure Map</b> — runtime shape · five layers · execution · verification · engineering (measured at 0.9.7)
+  <b>Project Structure Map</b> — runtime shape · five layers · execution · verification · engineering (measured from source)
 </p>
 
 ## Why an orchestration layer and acceptance gate
