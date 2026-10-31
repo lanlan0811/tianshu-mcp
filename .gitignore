@@ -44,3 +44,9 @@ mcp-gui/src-tauri/Cargo.lock
 
 # macOS 系统文件
 .DS_Store
+# Arcline 项目级数据（会话原文、密钥引用、工具缓存）默认不提交；
+# 但 settings.json 与 skills/ 是团队共享的权限策略与能力包，建议入库。
+.arcline/*
+!.arcline/settings.json
+!.arcline/skills/
+!.arcline/skills/**
