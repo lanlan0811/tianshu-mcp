@@ -1,5 +1,16 @@
 # HANDOFF.md — 项目交接说明
 
+> **本轮（0.9.8 → 1.0.0-beta.3）交付 · 主题「移除 TraeWork 与 Qoder CN 支持」**：6 个版本，破坏性变更。
+> 计划原文见 `.claude/plans/remove-traework-qoder-agents.md`，逐版细节以 `CHANGELOG.md` 为准。
+>
+> - **0.9.8 · 共享 CDP 底座迁址（纯重构，零行为变化）**：`TraeworkCdpClient` 是**六个 GUI 适配器共用的传输底座**，
+>   直接删 `src/agents/traework/` 会一次性打挂 codex / zcode / kimicode / opendesign / minimax。
+>   故先迁至 `src/agents/cdp/client.ts` 改名 `GuiCdpClient`，并把「传输 + 通用输入原语」与
+>   「选择器语义层」切开：选择器相关的 exists / text / click / focus / center / `interpretLiveness`
+>   留在 `traework/cdp/client.ts` 的子类里，共享传输不再 import 任何选择器表。
+>
+> **历史快照（0.8.2 → 0.9.4）**
+>
 > **本轮（0.8.2 → 0.9.4）交付**：7 个版本累积。**v0.9.0 是破坏性变更（工具面 13 → 8）**，升级调用方前
 > 必读下方迁移映射；其余六版为工具面瘦身与三个 GUI adapter 的真机冒烟修复。逐版细节以 `CHANGELOG.md` 为准。
 >

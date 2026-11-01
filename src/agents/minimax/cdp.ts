@@ -9,7 +9,7 @@
  *     → 模型列表、**以及悬停模型项后展开的推理等级/上下文窗口二级子菜单**；
  *   - 截图页：title `Rsbuild App`，url `.../react-screenshots/dist/electron.html` → 必须排除。
  *
- * 因此本类内部持有**两个** TraeworkCdpClient：主窗口按 targetRank 收敛，
+ * 因此本类内部持有**两个** GuiCdpClient：主窗口按 targetRank 收敛，
  * 弹层只在需要时惰性连接（rank 只认 model-menu）。
  *
  * 二级子菜单的时序：**悬停**（mouseMoved，不按鼠标键）某个带 aria-haspopup="menu" 的模型项后，
@@ -17,10 +17,10 @@
  * （需数百毫秒），所以 submenuOpen() 以「组已渲染」为收敛判据而非盲等。
  */
 import {
-  TraeworkCdpClient,
+  GuiCdpClient,
   CdpDisconnectedError,
   CdpUnavailableError,
-} from "../traework/cdp/client.js";
+} from "../cdp/client.js";
 import { MM_MAIN_SELECTORS, MM_MENU_SELECTORS, mainSpec, menuSpec } from "./selectors.js";
 import {
   contextOptionsExpression,
@@ -96,7 +96,7 @@ export interface MinimaxClickExactResult {
   available: string[];
 }
 
-/** CDP page target 的最小可判定字段（TraeworkCdpClient 的 CdpPageTarget 结构兼容） */
+/** CDP page target 的最小可判定字段（GuiCdpClient 的 CdpPageTarget 结构兼容） */
 export interface MinimaxTargetLike {
   type?: string;
   title?: string;
@@ -126,7 +126,7 @@ export function minimaxMenuTargetRank(target: MinimaxTargetLike): number {
 
 export type MinimaxPageRole = "main" | "menu";
 
-/** 页面级 CDP 客户端（真实实现为 TraeworkCdpClient；单测注入内存桩） */
+/** 页面级 CDP 客户端（真实实现为 GuiCdpClient；单测注入内存桩） */
 export interface MinimaxPageClient {
   connect(): Promise<void>;
   disconnect(): void;
@@ -137,7 +137,7 @@ export interface MinimaxPageClient {
 }
 
 export interface MinimaxCdpDeps {
-  /** 按角色创建页面客户端；缺省创建 TraeworkCdpClient（带各自的 targetRank） */
+  /** 按角色创建页面客户端；缺省创建 GuiCdpClient（带各自的 targetRank） */
   createClient?: (role: MinimaxPageRole) => MinimaxPageClient;
 }
 
@@ -200,7 +200,7 @@ export class MinimaxCdpClient {
     const create =
       deps.createClient ??
       ((role: MinimaxPageRole) =>
-        new TraeworkCdpClient({
+        new GuiCdpClient({
           port,
           sendTimeoutMs,
           appLabel: "MiniMax Code",

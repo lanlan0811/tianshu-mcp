@@ -1,7 +1,7 @@
 /**
  * Open Design 的 CDP 传输层。
  *
- * **为什么不用 `TraeworkCdpClient`**：既有 GUI 传输在 `connect()` 里走 HTTP `/json` 取页面
+ * **为什么不用 `GuiCdpClient`**：既有 GUI 传输在 `connect()` 里走 HTTP `/json` 取页面
  * WebSocket 地址。真机实测（Open Design 0.24.1 / Electron 41.3.0）发现：浏览器进程的
  * `/json/version` 正常，但 `/json` 与 `/json/list` 会**连接成功却长时间无响应**
  * （`Target` 枚举走 UI 线程，产品主线程在启动期被自身的计费/遥测请求占住时即挂起）。

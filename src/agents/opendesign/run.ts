@@ -95,7 +95,7 @@ export interface OpenDesignRunDeps {
   listProcesses: (options?: OpenDesignInstanceOptions) => Promise<OpenDesignProcess[]>;
   /** CDP 端口产品校验（单测注入即不必真的起服务） */
   probePort: typeof probeOpenDesignPort;
-  /** 页面级传输（真实实现为 TraeworkCdpClient 注入主窗口排序；单测注入内存桩） */
+  /** 页面级传输（真实实现为 GuiCdpClient 注入主窗口排序；单测注入内存桩） */
   createPage: (port: number, sendTimeoutMs: number, overrides: Record<string, string>) => KimicodePageClient;
   /** 语义操作层（单测可替换，默认用真实 OpenDesignCdpClient 包住 createPage 的结果） */
   makeClient: (page: KimicodePageClient, overrides: Record<string, string>) => OpenDesignCdpClient;

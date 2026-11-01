@@ -1,8 +1,8 @@
 import {
-  TraeworkCdpClient,
+  GuiCdpClient,
   CdpDisconnectedError,
   CdpUnavailableError,
-} from "../traework/cdp/client.js";
+} from "../cdp/client.js";
 import { candidateExpr, type ZcodeSelectorKey } from "./selectors.js";
 import type { ZcodePoll } from "./liveness.js";
 import { projectDisplayName, type ZcodeProjectItem } from "./project.js";
@@ -137,13 +137,13 @@ const PROJECT_MENU_POLL_MS = 100;
 const TRIGGER_RECLICK_MS = 1_500;
 
 export class ZcodeCdpClient {
-  private readonly inner: TraeworkCdpClient;
+  private readonly inner: GuiCdpClient;
   constructor(
     port: number,
     sendTimeoutMs: number,
     private readonly selectors: Record<string, string> = {},
   ) {
-    this.inner = new TraeworkCdpClient({ port, sendTimeoutMs });
+    this.inner = new GuiCdpClient({ port, sendTimeoutMs });
   }
   connect(): Promise<void> {
     return this.inner.connect();

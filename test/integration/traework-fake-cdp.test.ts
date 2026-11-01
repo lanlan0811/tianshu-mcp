@@ -10,7 +10,7 @@ import fs from "node:fs";
 import { makeTmpRoot } from "../test-utils.js";
 import { FakeCdpClient, makeFakeState, extractMarker, type FakeDomState } from "../fake-cdp.js";
 import { runTraeworkTask, type TraeworkRunDeps } from "../../src/agents/traework/run.js";
-import { CdpDisconnectedError } from "../../src/agents/traework/cdp/client.js";
+import { CdpDisconnectedError } from "../../src/agents/cdp/client.js";
 import type { TaskContext, ResolvedAgent, AgentRunLogger } from "../../src/agents/adapter.js";
 
 const silentLogger: AgentRunLogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };

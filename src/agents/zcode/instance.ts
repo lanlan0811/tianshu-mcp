@@ -3,7 +3,7 @@ import { promisify } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
 import { spawn, execFile, type ChildProcess } from "node:child_process";
 import path from "node:path";
-import { TraeworkCdpClient } from "../traework/cdp/client.js";
+import { GuiCdpClient } from "../cdp/client.js";
 import type { GuiProfile } from "../../config/schema.js";
 import type { AgentRunLogger } from "../adapter.js";
 import { execFileAsync } from "../../verify/exec.js";
@@ -125,7 +125,7 @@ export async function probeZcodePort(
   if (!owner && process.platform === "darwin" && roots.length) owner = roots[0];
   if (!owner) return null;
   try {
-    const targets = await TraeworkCdpClient.listTargets(port, 1500);
+    const targets = await GuiCdpClient.listTargets(port, 1500);
     const page = targets.find((t) => t.type === "page" && productTarget(t.title, t.url));
     return page ? { port, pid: owner.pid, title: page.title, url: page.url } : null;
   } catch {

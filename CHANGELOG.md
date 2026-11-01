@@ -7,6 +7,41 @@
 
 ---
 
+## [0.9.8] — 2026-11-01
+
+> **共享 CDP 底座迁址改名（纯重构，零行为变化）**：把被六个 GUI 适配器共用的
+> `TraeworkCdpClient` 迁出 `traework/` 目录，与任何产品名彻底脱钩。这是「移除 TraeWork
+> 与 Qoder CN」六版计划的第 1 版——先做高风险重构并用完整回归确认零行为变化，再动删除。
+
+**本版无破坏性变更、无新增参数、工具面不变（仍 8 个工具）。**
+
+### 变更
+
+- `src/agents/traework/cdp/client.ts` → `src/agents/cdp/client.ts`，类名
+  `TraeworkCdpClient` → `GuiCdpClient`。错误类 `CdpDisconnectedError` /
+  `CdpUnavailableError` 不改名（语义中性、引用点 20+ 处）。
+- 传输层与选择器层分离：`src/agents/cdp/client.ts` 只放「连接 / 命令 / 求值 /
+  `listTargets` / `probe` / 坐标点击 / 按键 / 可见标签诊断」与语义中性的存活探针
+  `probeSignals(candidates)`；`src/agents/traework/cdp/client.ts` 变成子类，
+  只放必须结合 `SELECTORS` 的 `exists` / `text` / `click` / `focus` / `center` /
+  `probeLiveness` 与 `interpretLiveness`。共享传输从此**不 import 任何选择器表**。
+- `src/agents/traework/` 内部保留再导出薄壳，使本版成为一次纯粹的机械改名
+  （0.9.9 删目录时一并去掉）。
+- codex / zcode / kimicode / minimax / opendesign / qoder 六个适配器里提到旧类名的注释同步更新。
+
+### 为什么不能直接删 `src/agents/traework/`
+
+`TraeworkCdpClient` 承载的是**通用 CDP 传输**，被 codex / zcode / kimicode / minimax /
+opendesign / qoder 六个适配器复用；直接删目录会一次性打挂其中五个。必须先迁址。
+
+### 测试
+
+- `test/unit/traework-cdp-client.test.ts` → `test/unit/gui-cdp-client.test.ts`（改测传输层，
+  锁 `send` 超时 / `onclose` 拒绝全部 pending / `appLabel` 文案）。
+- 新增 `test/unit/traework-client.test.ts`：锁住选择器语义层的 `probeLiveness` 仍是**单次**求值
+  （分次读取会产生观测竞态）。
+- `tsc --noEmit` / `eslint --max-warnings 0` 全绿；全量单元 + 集成 + 协议测试通过。
+
 ## [0.9.7] — 2026-10-11
 
 > **Open Design 真机修复版**：三轮真机冒烟测试定位并修复 4 处适配器缺陷，

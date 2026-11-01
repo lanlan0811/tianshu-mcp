@@ -1,4 +1,4 @@
-import { TraeworkCdpClient } from '../traework/cdp/client.js';
+import { GuiCdpClient } from '../cdp/client.js';
 import { QODER_SELECTORS, qoderCandidates, qoderPrimary, type QoderSelectorKey } from './selectors.js';
 import type { QoderPoll } from './liveness.js';
 import { visibleLabelsExpr, normalizeLabels } from '../gui-diagnostics.js';
@@ -23,9 +23,9 @@ export function qoderTargetRank(t: {url?: string}): number {
 const FOCUS_SETTLE_MS = 1_500;
 
 export class QoderCdpClient {
-  private readonly client: TraeworkCdpClient;
+  private readonly client: GuiCdpClient;
   constructor(port: number, private readonly timeout: number, private readonly overrides: Record<string,string> = {}) {
-    this.client = new TraeworkCdpClient({
+    this.client = new GuiCdpClient({
       port,
       sendTimeoutMs: timeout,
       appLabel: "Qoder",

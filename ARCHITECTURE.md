@@ -520,6 +520,7 @@ interface AgentAdapter {
 **唯一的双路径接缝**：`run()` 存在时，`TaskOrchestrator` 不再 spawn 子进程，而是调用它（GUI adapter）；否则走 `runChild()`（CLI adapter）。
 
 - **CLI 路径**（`src/agents/cli.ts` + `src/agents/spawn.ts`）：`cross-spawn` 拉起子进程，stdout/stderr 落日志，退出码判定；`promptMode` 支持 `arg` / `stdin` / `file` 三种任务书投递方式。
+- **共享传输**（`src/agents/cdp/client.ts`，v0.9.8）：`GuiCdpClient` 承载全部 GUI adapter 共用的页面级传输——WebSocket 连接、`send` 超时、`CdpDisconnectedError` / `CdpUnavailableError` 断线语义、`listTargets` / `probe` 就绪探测、坐标点击与按键、可见标签诊断，以及语义中性的存活探针 `probeSignals(candidates)`。它**不 import 任何选择器表**：语义键相关的 `exists` / `text` / `click` / `focus` / `center` 属于各适配器自己的层（如 `traework/cdp/client.ts` 的子类）。这样删任何一个产品的选择器都不会波及共享传输。
 - **GUI 路径**：七个 adapter 的 `buildInvocation()` 直接抛错，`run()` 承担全部 CDP 编排。Codex / ZCode / Kimi Code / Qoder CN / Open Design / MiniMax Code **六个 adapter 各带一道模块级串行门**（同一适配器的任务排队；排队中被取消者直接返回 `aborted` 而不越位）；TraeWork 没有串行门，它依赖「每项目串行队列 + 全局并发闸」这一层。
 
 `AgentRunResult` 是跨层信息载体，关键字段：

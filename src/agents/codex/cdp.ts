@@ -1,10 +1,10 @@
 /**
- * CodexCdpClient：在 TraeworkCdpClient 底座之上，提供 Codex 桌面端的语义操作。
+ * CodexCdpClient：在 GuiCdpClient 底座之上，提供 Codex 桌面端的语义操作。
  *
  * Codex 前端约束（实测）：几乎无 data-testid，定位依赖 aria-label / 可见文本 +
  * 结构选择器兜底，故本客户端统一走 selectors.ts 的 resolve 逻辑，并支持 profile 覆盖。
  */
-import { TraeworkCdpClient, CdpDisconnectedError, CdpUnavailableError } from "../traework/cdp/client.js";
+import { GuiCdpClient, CdpDisconnectedError, CdpUnavailableError } from "../cdp/client.js";
 import { type CodexSelectorKey, cssCandidates, resolveFnSource, specArgs } from "./selectors.js";
 import { visibleLabelsExpr, normalizeLabels } from "../gui-diagnostics.js";
 
@@ -53,13 +53,13 @@ export interface CodexPoll {
 }
 
 export class CodexCdpClient {
-  private readonly inner: TraeworkCdpClient;
+  private readonly inner: GuiCdpClient;
   constructor(
     port: number,
     sendTimeoutMs: number,
     private readonly selectors: Record<string, string> = {},
   ) {
-    this.inner = new TraeworkCdpClient({
+    this.inner = new GuiCdpClient({
       port,
       sendTimeoutMs,
       appLabel: "Codex",

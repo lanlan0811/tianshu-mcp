@@ -403,6 +403,7 @@ run_task(projectPath=D:/xxx/my-app, task="…任务书…", agentId=codex,
 | Codex 模型回读 | 0.8.2 | 模型触发器回读改读结构（#34：真机按钮的 `innerText` 混入整条思考等级条——9 层轮播仅当前档 `opacity:1`，其余 `display:block`——旧实现整串当型号 → 三轮后 `model_mismatch`，阻断全部带 `model` 的 Codex 派发）；三层回退（权威属性 → 结构节点 → innerText 兜底），`matches()` 判据未动 |
 | TraeWork 绑定链路 | 0.8.3 | footer 点击改「副作用驱动三级阶梯」（#38：`element.click()` 返回 true ≠ 原生弹窗已唤起——旧实现据此白等满 20s 无补救；现以「对话框是否出现」为判据、坐标点击优先，真机 20s → 5.9s）；总探测预算不再膨胀（检测点移到探测前，真机 28.2s → 19.2s）；逻辑性 setup 失败不再落 `errorType=spawn`（新增 `setup_failed`，由适配器自归类，其余 6 个 agent 零行为变化） |
 | 工具面瘦身 | 0.8.4 | `run_task` / `verify_task` 的 `acceptanceOverride` 线上声明骨架化——实测 `tools/list` **35581 → 11717 字符（−67.1%）**；根因是 `VisualConfigSchema`（9579 字符）在两个工具里各内联一份（MCP 每工具独立序列化，`$ref` 不可跨工具共享）。工具名 / 参数集 / 校验语义全部不变；**校验下沉**（handler 内严格复核）与本改动成对实施，否则 `visual` 转不透明后其内部非法输入会 fail-open |
+| CDP 底座重构 | 0.9.8 | `TraeworkCdpClient`（六个 GUI 适配器共用的传输底座）迁至 `src/agents/cdp/client.ts` 改名 `GuiCdpClient`，并把「传输 + 通用输入原语」与「选择器语义层」切开——共享传输不再 import 任何选择器表，为后续删除 TraeWork / Qoder CN 铺路。纯重构，零行为变化 |
 | 日志台 GUI | `gui-v*`（独立线） | `mcp-gui/` 本地只读日志台（Tauri 2.x + Vue 3），独立版本与 tag，**不随 MCP 主包发布** |
 > 完整逐版记录见 [CHANGELOG.md](CHANGELOG.md)，交接状态与排障手册见 [HANDOFF.md](HANDOFF.md)，工程质量口径见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 

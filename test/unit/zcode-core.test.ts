@@ -8,7 +8,7 @@ import {
   remoteDebugPort,
   rootZcodeProcesses,
 } from "../../src/agents/zcode/instance.js";
-import { TraeworkCdpClient } from "../../src/agents/traework/cdp/client.js";
+import { GuiCdpClient } from "../../src/agents/cdp/client.js";
 import {
   CdpDisconnectedError,
   CdpUnavailableError,
@@ -114,7 +114,7 @@ describe("ZCode 安装与模型", () => {
   });
   it("CDP 端口必须同时匹配 ZCode 根进程和产品页面", async () => {
     const rows = [{ pid: 10, commandLine: "ZCode.exe --remote-debugging-port=9333" }];
-    const targets = vi.spyOn(TraeworkCdpClient, "listTargets");
+    const targets = vi.spyOn(GuiCdpClient, "listTargets");
     targets.mockResolvedValue([
       {
         type: "page",

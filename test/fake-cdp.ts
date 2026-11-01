@@ -90,7 +90,7 @@ export function makeFakeState(over: Partial<FakeDomState> = {}): FakeDomState {
   };
 }
 
-/** 与 TraeworkCdpClient 结构兼容的最小假实现 */
+/** 与 GuiCdpClient 结构兼容的最小假实现 */
 export class FakeCdpClient {
   readonly port: number;
   constructor(

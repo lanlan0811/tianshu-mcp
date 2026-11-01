@@ -7,7 +7,7 @@
 import net from "node:net";
 import path from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
-import { TraeworkCdpClient } from "../traework/cdp/client.js";
+import { GuiCdpClient } from "../cdp/client.js";
 import type { GuiProfile } from "../../config/schema.js";
 import type { AgentRunLogger } from "../adapter.js";
 import { activateCodexApp, buildActivationArgs, buildSpawnArgs } from "./launcher.js";
@@ -152,7 +152,7 @@ export async function probeCodexPort(
   const owner = rootCodexProcesses(rows).find((p) => remoteDebugPort(p.commandLine) === port);
   if (!owner) return null;
   try {
-    const targets = await TraeworkCdpClient.listTargets(port, 1500);
+    const targets = await GuiCdpClient.listTargets(port, 1500);
     const page = pickCodexPage(targets);
     return page && isCodexTarget(page.title, page.url)
       ? {

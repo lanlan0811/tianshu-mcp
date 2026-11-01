@@ -8,6 +8,48 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.9.8] — 2026-11-01
+
+> **Shared CDP transport moved out and renamed (pure refactor, zero behaviour change)**:
+> `TraeworkCdpClient`, reused by six GUI adapters, leaves the `traework/` directory and is fully
+> decoupled from any product name. This is release 1 of the six-release plan "remove TraeWork
+> and Qoder CN support" — do the high-risk refactor first, prove zero behaviour change with a
+> full regression, then delete.
+
+**No breaking changes, no new parameters, tool surface unchanged (still 8 tools).**
+
+### Changed
+
+- `src/agents/traework/cdp/client.ts` → `src/agents/cdp/client.ts`, class
+  `TraeworkCdpClient` → `GuiCdpClient`. The error classes `CdpDisconnectedError` /
+  `CdpUnavailableError` keep their names (neutral semantics, 20+ references).
+- Transport split from selector semantics: `src/agents/cdp/client.ts` holds only
+  connect / command / evaluate / `listTargets` / `probe` / coordinate clicks / key presses /
+  visible-label diagnostics plus the semantically neutral liveness probe
+  `probeSignals(candidates)`; `src/agents/traework/cdp/client.ts` becomes a subclass holding
+  only what needs `SELECTORS` — `exists` / `text` / `click` / `focus` / `center` /
+  `probeLiveness` and `interpretLiveness`. The shared transport now **imports no selector
+  table at all**.
+- Re-export shells remain inside `src/agents/traework/`, making this release a purely
+  mechanical rename (removed together with the directory in 0.9.9).
+- Comments naming the old class in the codex / zcode / kimicode / minimax / opendesign / qoder
+  adapters were updated.
+
+### Why `src/agents/traework/` cannot simply be deleted
+
+`TraeworkCdpClient` carries the **generic CDP transport** reused by codex / zcode / kimicode /
+minimax / opendesign / qoder; deleting the directory outright would break five of them at once.
+The move has to happen first.
+
+### Tests
+
+- `test/unit/traework-cdp-client.test.ts` → `test/unit/gui-cdp-client.test.ts` (now tests the
+  transport: `send` timeouts / `onclose` rejecting every pending request / `appLabel` message).
+- New `test/unit/traework-client.test.ts`: locks that the selector layer's `probeLiveness` is
+  still a **single** evaluation (reading it in pieces would create an observation race).
+- `tsc --noEmit` / `eslint --max-warnings 0` green; the full unit + integration + protocol
+  suites pass.
+
 ## [0.9.7] — 2026-10-11
 
 > **Open Design on-device fix release**: three rounds of real-machine smoke testing located and

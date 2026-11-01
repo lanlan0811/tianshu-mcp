@@ -1,7 +1,7 @@
 /**
  * Open Design 的 CDP 客户端装配与页面操作原语。
  *
- * 复用 `TraeworkCdpClient` 作为**页面级传输**（WebSocket / send 超时 / 断线语义已经打磨过），
+ * 复用 `GuiCdpClient` 作为**页面级传输**（WebSocket / send 超时 / 断线语义已经打磨过），
  * 只注入本产品的**目标排序**；在其之上封装本产品需要的语义操作（12 步流程全部走这一层，
  * 绝不在 `run.ts` 里直接拼页面表达式——两处各写一套必然漂移）。
  *
@@ -11,7 +11,7 @@
  * 2. **每次「点击成功」都要回读确认**（面板是否真的展开、菜单项是否真的出现），
  *    点击本身只代表事件已派发。
  */
-import { TraeworkCdpClient } from "../traework/cdp/client.js";
+import { GuiCdpClient } from "../cdp/client.js";
 import type { KimicodePageClient, KimicodePageRole } from "../kimicode/cdp.js";
 import { OPEN_DESIGN_DOM, type SelectorOverrides } from "./dom.js";
 import {
@@ -85,7 +85,7 @@ export function openDesignOverlayTargetRank(target: OpenDesignTargetLike): numbe
 }
 
 export interface OpenDesignCdpDeps {
-  /** 按角色创建页面客户端；缺省创建 TraeworkCdpClient（带各自的 targetRank） */
+  /** 按角色创建页面客户端；缺省创建 GuiCdpClient（带各自的 targetRank） */
   createClient?: (role: KimicodePageRole) => KimicodePageClient;
 }
 
@@ -100,7 +100,7 @@ export function createOpenDesignPageClient(
   deps: OpenDesignCdpDeps = {},
 ): KimicodePageClient {
   if (deps.createClient) return deps.createClient(role);
-  return new TraeworkCdpClient({
+  return new GuiCdpClient({
     port,
     sendTimeoutMs,
     appLabel: "Open Design",
@@ -198,7 +198,7 @@ export interface OpenDesignPollSnapshot {
 
 /**
  * 运行检测的单次快照表达式：一次页面求值取回全部信号，避免多次 CDP 往返产生观测竞态
- * （与 `TraeworkCdpClient.probeLiveness` 同一取舍）。
+ * （与 `GuiCdpClient.probeLiveness` 同一取舍）。
  * 字段与 `liveness.OpenDesignPoll` 一一对应，改名必须同步两处。
  */
 export function pollExpression(overrides: SelectorOverrides = {}): string {

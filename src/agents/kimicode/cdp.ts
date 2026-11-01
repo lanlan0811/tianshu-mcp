@@ -9,15 +9,15 @@
  *     → 模型菜单、思考档位、执行模式菜单渲染在这里；
  *   - 截图窗口：`app://renderer/screenshot/index.html` → 必须排除。
  *
- * 因此本类内部持有**两个** TraeworkCdpClient：主窗口按 targetRank 收敛（排除 overlay/screenshot），
+ * 因此本类内部持有**两个** GuiCdpClient：主窗口按 targetRank 收敛（排除 overlay/screenshot），
  * 浮层只在需要时惰性连接（rank 只认 browser-overlay）。主窗口 URL 在草稿页 ↔ 会话页之间变化
  * **不会**改变 target id，WS 连接可长期保持。
  */
 import {
-  TraeworkCdpClient,
+  GuiCdpClient,
   CdpDisconnectedError,
   CdpUnavailableError,
-} from "../traework/cdp/client.js";
+} from "../cdp/client.js";
 import { KIMICODE_OVERLAY_SELECTORS, KIMICODE_SELECTORS, mainSpec, overlaySpec } from "./selectors.js";
 import {
   conversationTextExpression,
@@ -89,7 +89,7 @@ export interface KimicodeModelDialogItem {
   current: boolean;
 }
 
-/** CDP page target 的最小可判定字段（TraeworkCdpClient 的 CdpPageTarget 结构兼容） */
+/** CDP page target 的最小可判定字段（GuiCdpClient 的 CdpPageTarget 结构兼容） */
 export interface KimicodeTargetLike {
   type?: string;
   title?: string;
@@ -119,7 +119,7 @@ export function kimicodeOverlayTargetRank(target: KimicodeTargetLike): number {
 
 export type KimicodePageRole = "main" | "overlay";
 
-/** 页面级 CDP 客户端（真实实现为 TraeworkCdpClient；单测注入内存桩） */
+/** 页面级 CDP 客户端（真实实现为 GuiCdpClient；单测注入内存桩） */
 export interface KimicodePageClient {
   connect(): Promise<void>;
   disconnect(): void;
@@ -130,7 +130,7 @@ export interface KimicodePageClient {
 }
 
 export interface KimicodeCdpDeps {
-  /** 按角色创建页面客户端；缺省创建 TraeworkCdpClient（带各自的 targetRank） */
+  /** 按角色创建页面客户端；缺省创建 GuiCdpClient（带各自的 targetRank） */
   createClient?: (role: KimicodePageRole) => KimicodePageClient;
 }
 
@@ -195,7 +195,7 @@ export class KimicodeCdpClient {
     const create =
       deps.createClient ??
       ((role: KimicodePageRole) =>
-        new TraeworkCdpClient({
+        new GuiCdpClient({
           port,
           sendTimeoutMs,
           appLabel: "Kimi Code",
