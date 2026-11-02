@@ -7,6 +7,30 @@
 
 ---
 
+## [1.0.0-beta.1] — 2026-11-03
+
+> **参数面收敛**：移除 TraeWork 专属的 `mode` 字段与全部透传，并把已废弃的 `TraeworkMode`
+> 类型中性化——`grep traework src/` 归零。这是「移除 TraeWork 与 Qoder CN」六版计划的第 4 版。
+
+**无行为变化**：工具名 / 参数集 / 校验语义均不变（`mode` 仍在 schema 里、仍被统一拒绝）。
+
+### 变更
+
+- 删 `mode` 字段与透传链：`src/agents/adapter.ts` 的 `TaskContext.mode`、`src/tasks/task.ts` 的
+  `TaskMeta.mode`、`src/tasks/task-manager.ts` 的 `NewTaskInput.mode` 与落盘、`src/mcp/formatter.ts`
+  的 `MetaBlockFields.mode`、`src/mcp/context.ts` 与 `src/mcp/handlers.ts` 的三处透传。
+- `TraeworkModeSchema` / `TraeworkMode` → `DeprecatedPanelModeSchema` / `DeprecatedPanelMode`；
+  `RunTaskParamsSchema.mode` 仍保留该键（**已废弃的显式拒绝**）：传入得到统一迁移文案
+  （改用 `designDirection`），而不是被裸 `z.object` 静默 strip。
+- 效果：`grep -rin traework src/` 零命中。
+
+### 测试
+
+- 既有 `test/unit/zcode-handler.test.ts` 锁「传 `mode` → 统一废弃文案且不提交任务」；
+  `test/unit/registry-driver.test.ts` 锁 registry 的 driver/adapter 选择。
+
+---
+
 ## [0.9.10] — 2026-11-02
 
 > **移除 Qoder CN 调用支持（BREAKING）**：整个 `src/agents/qoder/` 目录删除，

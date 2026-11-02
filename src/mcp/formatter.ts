@@ -15,8 +15,6 @@ export interface MetaBlockFields {
   projectPath?: string;
   /** GUI 类 agent 使用的模型 */
   model?: string;
-  /** 已废弃的面板模式（仅回显旧任务快照） */
-  mode?: string;
   round?: number;
   checks?: { name: string; passed: boolean; durationMs: number }[];
   changedFiles?: string[];
@@ -121,7 +119,6 @@ export function metaFromTask(meta: TaskMeta, extra?: Partial<MetaBlockFields>): 
     agentId: meta.agentId,
     projectPath: meta.projectPath,
     model: meta.model,
-    mode: meta.mode,
     round: meta.roundsUsed,
     changedFiles: meta.changedFiles,
     diffstat: meta.diffstat,

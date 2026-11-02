@@ -17,9 +17,9 @@ const AbsPath = z.string().min(1, "projectPath 不能为空");
  * 之所以不直接删键：schema 是裸 `z.object`（未知键被静默 strip），
  * 删掉后旧调用方只会发现参数「消失」，拿不到任何解释。
  */
-export const TraeworkModeSchema = z.enum(["Work", "Code", "Design"]);
-/** 已废弃的面板模式类型（仅为旧任务快照与迁移文案保留）。 */
-export type TraeworkMode = z.infer<typeof TraeworkModeSchema>;
+export const DeprecatedPanelModeSchema = z.enum(["Work", "Code", "Design"]);
+/** 已废弃的面板模式类型（仅为迁移文案保留；无任何运行时消费方）。 */
+export type DeprecatedPanelMode = z.infer<typeof DeprecatedPanelModeSchema>;
 
 /**
  * 思考等级：接受中英双语写法，Codex 内部归一为 low/medium/high。
@@ -182,9 +182,9 @@ export const RunTaskParamsSchema = z.object({
    *
    * 原消费者已移除，当前**无任何适配器消费**该参数；传入会被 handler 统一拒绝，
    * 并提示改用 `designDirection`（Open Design 的设计方向）。
-   * 键仍保留在 schema 里，是为了给出可读的迁移文案——见 `TraeworkModeSchema` 的注释。
+   * 键仍保留在 schema 里，是为了给出可读的迁移文案——见 `DeprecatedPanelModeSchema` 的注释。
    */
-  mode: TraeworkModeSchema.optional(),
+  mode: DeprecatedPanelModeSchema.optional(),
   /**
    * 计划文档路径（Codex）：相对项目根或绝对路径。
    * 会被拼进初始开发指令「根据计划文档(<planDoc>)…」。

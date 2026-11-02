@@ -58,7 +58,6 @@ export function makeBuildCtx(services: AppServices) {
     designDirection: meta.designDirection,
     exportKind: meta.exportKind,
     contextWindow: meta.contextWindow,
-    mode: meta.mode,
     allowCreateProject: meta.allowCreateProject,
     round,
     feedback,

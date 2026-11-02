@@ -8,6 +8,35 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [1.0.0-beta.1] — 2026-11-03
+
+> **Parameter-surface convergence**: removes the TraeWork-specific `mode` field and all its
+> pass-through, and neutralises the deprecated `TraeworkMode` type — `grep traework src/` is now
+> zero. This is release 4 of the six-release plan "remove TraeWork and Qoder CN support".
+
+**No behaviour change**: tool names / parameter sets / validation semantics are unchanged (`mode`
+stays in the schema and is still rejected uniformly).
+
+### Changed
+
+- Removed the `mode` field and its pass-through chain: `TaskContext.mode` in
+  `src/agents/adapter.ts`, `TaskMeta.mode` in `src/tasks/task.ts`, `NewTaskInput.mode` and its
+  persistence in `src/tasks/task-manager.ts`, `MetaBlockFields.mode` in `src/mcp/formatter.ts`, and
+  the three pass-throughs in `src/mcp/context.ts` / `src/mcp/handlers.ts`.
+- `TraeworkModeSchema` / `TraeworkMode` → `DeprecatedPanelModeSchema` / `DeprecatedPanelMode`; the
+  `mode` key stays in `RunTaskParamsSchema` as an **explicit deprecation rejection**: passing it
+  yields the unified migration message (use `designDirection`) instead of being silently stripped
+  by the bare `z.object`.
+- Effect: `grep -rin traework src/` returns zero hits.
+
+### Tests
+
+- The existing `test/unit/zcode-handler.test.ts` locks "passing `mode` → the unified deprecation
+  message and no task submitted"; `test/unit/registry-driver.test.ts` locks the registry's
+  driver/adapter selection.
+
+---
+
 ## [0.9.10] — 2026-11-02
 
 > **Qoder CN dispatch support removed (BREAKING)**: the whole `src/agents/qoder/` directory is

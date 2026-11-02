@@ -145,7 +145,6 @@ function runTaskKeyedFields(args: RunTaskParams): Record<string, unknown> {
     designSystem: args.designSystem,
     designDirection: args.designDirection,
     exportKind: args.exportKind,
-    mode: args.mode,
     allowCreateProject: args.allowCreateProject,
     autoVerify: args.autoVerify,
     autoFixRounds: args.autoFixRounds,
@@ -493,7 +492,6 @@ function runTaskHandler(
         designDirection: args.designDirection,
         exportKind: args.exportKind,
             contextWindow: args.contextWindow,
-        mode: args.mode,
         allowCreateProject: args.allowCreateProject,
         autoVerify: args.autoVerify ?? defaults.defaultAutoVerify,
         autoFixRounds:
@@ -655,7 +653,6 @@ async function runTaskWithoutProject(
       designSystem: args.designSystem,
       designDirection: args.designDirection,
       exportKind: args.exportKind,
-        mode: args.mode,
       allowCreateProject: args.allowCreateProject,
       autoVerify: false,
       autoFixRounds: 0,

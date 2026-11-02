@@ -3,7 +3,6 @@
  * 状态机见开发计划 §6：queued → running → … → succeeded/failed/cancelled/interrupted。
  */
 import type {
-  TraeworkMode,
   ReasoningLevel,
   IdempotencyScope,
   PartialAcceptanceConfig,
@@ -166,11 +165,6 @@ export interface TaskMeta {
   /** MiniMax Code 原会话锚点（id 来自主窗口 URL；标题来自侧栏会话列表） */
   minimaxSessionId?: string;
   minimaxSessionTitle?: string;
-  /**
-   * 已废弃的面板模式。原消费者已移除，现无任何消费者；
-   * 仅为读取旧任务快照与给出迁移文案而保留字段。
-   */
-  mode?: TraeworkMode;
   /**
    * ZCode 专用：目标项目未登记时是否允许自动导入。省略视为允许；
    * 显式 false 时驱动层在导入动作之前停止派发（project_not_registered）。

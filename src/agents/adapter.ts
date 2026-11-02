@@ -61,11 +61,6 @@ export interface TaskContext {
    */
   contextWindow?: string;
   /**
-   * 已废弃的面板模式。原消费者已移除，现由 `handlers.ts` 统一拒绝并提示迁移；
-   * 保留字段只为让旧调用方拿到可读文案，而不是被静默丢弃。
-   */
-  mode?: string;
-  /**
    * ZCode：目标项目未登记时是否允许自动导入（添加项目）。省略视为允许，
    * 显式 false 时驱动层必须在任何导入动作之前停止派发。
    */

@@ -18,7 +18,6 @@ import {
   guiStopDisclosure,
 } from "./task.js";
 import type {
-  TraeworkMode,
   ReasoningLevel,
   IdempotencyScope,
   PartialAcceptanceConfig,
@@ -58,11 +57,6 @@ export interface NewTaskInput {
   exportTimeoutMs?: number;
   /** MiniMax Code 上下文窗口（界面候选文本）；其他 agent 忽略 */
   contextWindow?: string;
-  /**
-   * 已废弃的面板模式。原消费者已移除，现无任何消费者；
-   * 仅为读取旧任务快照与给出迁移文案而保留字段。
-   */
-  mode?: TraeworkMode;
   /** ZCode 专用：目标项目未登记时是否允许自动导入（省略 = 允许）。 */
   allowCreateProject?: boolean;
   autoVerify: boolean;
@@ -288,7 +282,6 @@ export class TaskManager {
       exportKind: input.exportKind,
       exportTimeoutMs: input.exportTimeoutMs,
       contextWindow: input.contextWindow,
-      mode: input.mode,
       allowCreateProject: input.allowCreateProject,
       autoVerify: input.autoVerify,
       autoFixRounds: input.autoFixRounds,

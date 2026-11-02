@@ -25,6 +25,11 @@
 >   `test/integration/legacy-removed-agent-rework.test.ts` 锁死「历史 `agentId:"qoder"` 任务重跑
 >   必须硬失败 `agent_unresolved`，绝不被 CLI adapter 兜底」。其余五个 agent 零行为变化。
 >
+> - **1.0.0-beta.1 · 参数面收敛（无行为变化）**：删 `mode` 字段与全部透传（TaskContext /
+>   TaskMeta / NewTaskInput / formatter / context / handlers 六处）；`mode` 作为「已废弃的显式拒绝」
+>   保留在 `RunTaskParamsSchema`（传入得统一迁移文案，而非被裸 `z.object` 静默 strip）；
+>   `TraeworkMode` 类型中性化为 `DeprecatedPanelMode`——`grep -rin traework src/` 归零。
+>
 > **历史快照（0.8.2 → 0.9.4）**
 >
 > **本轮（0.8.2 → 0.9.4）交付**：7 个版本累积。**v0.9.0 是破坏性变更（工具面 13 → 8）**，升级调用方前
