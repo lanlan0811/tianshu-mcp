@@ -30,6 +30,12 @@
 >   保留在 `RunTaskParamsSchema`（传入得统一迁移文案，而非被裸 `z.object` 静默 strip）；
 >   `TraeworkMode` 类型中性化为 `DeprecatedPanelMode`——`grep -rin traework src/` 归零。
 >
+> - **1.0.0-beta.2 · 测试与脚本面收口（无行为变化）**：删 `probe/smoke-{traework,qoder}.mjs` 与
+>   `docs/{traework,qoder}-cdp*.md`、`docs/qoder-evidence/`；`package.json` 的 `files`/`scripts`/`keywords`
+>   与 CI 两个必需文件清单（`ci.yml` pack-check、`release.yml` REQUIRED）同步；ISSUE_TEMPLATE 选项与
+>   `mcp-gui` scanner 测试 fixture 一并收口。**注**：主体已在 0.9.10 提前落地（CI pack-check 因 qoder
+>   必需文件缺失变红所迫），本版收尾剩余项。
+>
 > **历史快照（0.8.2 → 0.9.4）**
 >
 > **本轮（0.8.2 → 0.9.4）交付**：7 个版本累积。**v0.9.0 是破坏性变更（工具面 13 → 8）**，升级调用方前

@@ -1,6 +1,6 @@
 # ARCHITECTURE.md — tianshu-mcp Architecture
 
-> Applies to version `1.0.0-beta.1` (2026-11-03).
+> Applies to version `1.0.0-beta.2` (2026-11-03).
 > This document describes the **system structure and module boundaries** for developers who will modify this repository; the version marker is only bumped on release commits, and the latest release notes live in `docs/release-v<latest>.md`.
 > This document describes the **system structure and module boundaries** for developers who will modify this repository.
 > For installation, usage, and host integration see [README.en.md](README.en.md); for handover status, troubleshooting, and lessons learned see [HANDOFF.md](HANDOFF.md).

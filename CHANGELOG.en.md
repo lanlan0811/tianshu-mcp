@@ -8,6 +8,35 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [1.0.0-beta.2] — 2026-11-03
+
+> **Test and script surface cleanup**: deletes the two removed agents' probe/smoke scripts and CDP
+> docs, and syncs the packaging and CI required lists.
+
+**No behaviour change.**
+
+### Removed
+
+- `scripts/probe-traework.mjs`, `scripts/smoke-traework.mjs`, `scripts/probe-qoder.mjs`,
+  `scripts/smoke-qoder.mjs` (all import deleted dist paths — already dead code).
+- `docs/traework-cdp.{md,en.md}`, `docs/qoder-cdp.{md,en.md}`, `docs/qoder-evidence/`.
+
+### Changed
+
+- `package.json`: dropped the above scripts/docs from `files`, dropped `smoke:traework` /
+  `probe:traework` / `probe:qoder` from `scripts`, and dropped `traework` from `keywords`.
+- Removed the qoder entries from the required-file lists in `.github/workflows/ci.yml` (pack-check)
+  and `release.yml` (REQUIRED) — otherwise CI would go red.
+- Synced the agent options in `.github/ISSUE_TEMPLATE/{bug_report,feature_request}.md`.
+- Swapped the `agentId` in the `mcp-gui/src-tauri/src/scanner.rs` test fixture to an agent that
+  still exists.
+
+> This cleanup belonged in 1.0.0-beta.2; because CI's pack-check went red right after 0.9.10 was
+> pushed (missing qoder required files), it was pulled forward into the 0.9.10 cleanup commit, and
+> this release finishes the remainder.
+
+---
+
 ## [1.0.0-beta.1] — 2026-11-03
 
 > **Parameter-surface convergence**: removes the TraeWork-specific `mode` field and all its

@@ -7,6 +7,32 @@
 
 ---
 
+## [1.0.0-beta.2] — 2026-11-03
+
+> **测试与脚本面收口**：删除两个已移除 agent 的探针/冒烟脚本与 CDP 文档，同步打包与 CI 必需清单。
+
+**无行为变化。**
+
+### 移除
+
+- `scripts/probe-traework.mjs`、`scripts/smoke-traework.mjs`、`scripts/probe-qoder.mjs`、
+  `scripts/smoke-qoder.mjs`（均 import 已删除的 dist 路径，已是死代码）。
+- `docs/traework-cdp.{md,en.md}`、`docs/qoder-cdp.{md,en.md}`、`docs/qoder-evidence/`。
+
+### 变更
+
+- `package.json`：`files` 去掉上述脚本与文档、`scripts` 去掉 `smoke:traework` / `probe:traework` /
+  `probe:qoder`、`keywords` 去掉 `traework`。
+- `.github/workflows/ci.yml`（pack-check）与 `release.yml`（REQUIRED）的必需文件清单去掉 qoder 项
+  （不改则 CI 必红）。
+- `.github/ISSUE_TEMPLATE/{bug_report,feature_request}.md` 的 agent 选项同步。
+- `mcp-gui/src-tauri/src/scanner.rs` 测试 fixture 的 `agentId` 换成仍在的 agent。
+
+> 这些清理本应在 1.0.0-beta.2 完成，因 0.9.10 推送后 CI 的 pack-check 因 qoder 必需文件缺失而变红，
+> 已提前到 0.9.10 的清理提交中一并落地；本版收尾剩余项。
+
+---
+
 ## [1.0.0-beta.1] — 2026-11-03
 
 > **参数面收敛**：移除 TraeWork 专属的 `mode` 字段与全部透传，并把已废弃的 `TraeworkMode`

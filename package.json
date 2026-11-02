@@ -1,6 +1,6 @@
 {
   "name": "tianshu-mcp",
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0-beta.2",
   "description": "天枢 × AI-Agent 编排 MCP server —— 驱动 Codex、ZCode、Kimi Code、Open Design 与 MiniMax Code 完成项目开发、验收、失败返修与再验收闭环。",
   "type": "module",
   "license": "Apache-2.0",

@@ -405,6 +405,7 @@ run_task(projectPath=D:/xxx/my-app, task="…任务书…", agentId=codex,
 | 移除 TraeWork | 0.9.9 | **破坏性**：彻底移除 `traework` agent 的调用支持（目录 / 测试 / registry 接线 / 文档全量清理）；`driver="gui"` 缺省回落到该适配器的历史行为一并取消，改为 **fail-closed 报错**并给出迁移路径；`mode` 参数随之废弃（统一拒绝文案）。其余六个 agent 零行为变化 |
 | 移除 Qoder CN | 0.9.10 | **破坏性**：彻底移除 `qoder` agent 的调用支持（目录 / 测试 / registry 接线 / fix-loop 分支 / 文档全量清理）；`modelSource` 参数随之废弃（统一拒绝文案）；顺带修正 `actualModel` 落盘（原被 qoder 门挡住，Open Design 的模型回读此前从未写入）。其余五个 agent 零行为变化 |
 | 参数面收敛 | 1.0.0-beta.1 | 移除 TraeWork 专属的 `mode` 字段与全部透传（TaskContext / TaskMeta / NewTaskInput / formatter / context / handlers）；`mode` 作为「已废弃的显式拒绝」保留在 schema（传入得统一迁移文案，而非被静默 strip）；`TraeworkMode` 类型中性化为 `DeprecatedPanelMode`（`grep traework src/` 归零）。无行为变化 |
+| 脚本与 CI 收口 | 1.0.0-beta.2 | 删已移除 agent 的探针/冒烟脚本与 CDP 文档（`probe/smoke-{traework,qoder}.mjs`、`docs/{traework,qoder}-cdp*.md`、`docs/qoder-evidence/`）；`package.json` 的 `files`/`scripts`/`keywords` 与 CI 两个必需文件清单同步。无行为变化 |
 | 日志台 GUI | `gui-v*`（独立线） | `mcp-gui/` 本地只读日志台（Tauri 2.x + Vue 3），独立版本与 tag，**不随 MCP 主包发布** |
 > 完整逐版记录见 [CHANGELOG.md](CHANGELOG.md)，交接状态与排障手册见 [HANDOFF.md](HANDOFF.md)，工程质量口径见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 

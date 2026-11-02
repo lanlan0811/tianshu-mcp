@@ -282,7 +282,7 @@ mod tests {
         .expect("写快照");
         std::fs::write(
             home.join("tasks/tsk_2/task.json"),
-            r#"{"status":"running","agentId":"traework","task":"b","updatedAt":"2026-09-26T12:00:00Z"}"#,
+            r#"{"status":"running","agentId":"codex","task":"b","updatedAt":"2026-09-26T12:00:00Z"}"#,
         )
         .expect("写快照");
 
