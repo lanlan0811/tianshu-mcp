@@ -45,7 +45,7 @@ export interface CdpClientOptions {
   /**
    * 错误文案里出现的应用名。本类被多个 GUI 适配器复用，
    * 若硬编码单一名字，「连不上」提示会把用户引到**错误的程序**去排查。
-   * 缺省 `TraeWork` 仅为向后兼容；新调用方应显式传入自己的应用名。
+   * 各适配器都应显式传入自己的应用名；未传时文案回退为通用的「GUI 应用」。
    */
   appLabel?: string;
 }
@@ -92,7 +92,7 @@ export class GuiCdpClient {
 
   /** 错误文案用的应用名（见 `CdpClientOptions.appLabel` 的复用说明） */
   private appLabel(): string {
-    return this.opts.appLabel ?? "TraeWork";
+    return this.opts.appLabel ?? "GUI 应用";
   }
 
   get connected(): boolean {
@@ -158,7 +158,7 @@ export class GuiCdpClient {
     }
     const page = this.pickTarget(targets);
     if (!page) {
-      throw new CdpUnavailableError(`端口 ${this.port} 上没有页面目标（TraeWork 可能仍在启动中）`);
+      throw new CdpUnavailableError(`端口 ${this.port} 上没有页面目标（${this.appLabel()} 可能仍在启动中）`);
     }
     const ws = new WebSocket(page.webSocketDebuggerUrl) as unknown as CdpWebSocket;
     this.ws = ws;

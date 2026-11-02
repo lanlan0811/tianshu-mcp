@@ -130,66 +130,6 @@ export const BUILTIN_PROFILES: Record<string, AgentProfile> = {
     },
     note: "ZCode Electron CDP GUI adapter。macOS 真机闭环证据完成前保持 research；已安装环境可探测和执行。",
   },
-  traework: {
-    displayName: "TraeWork (TRAE SOLO CN)",
-    type: "cli",
-    driver: "gui",
-    adapter: "traework-gui",
-    status: "ready",
-    command: null,
-    argsTemplate: [],
-    promptMode: "arg",
-    cwd: "task",
-    env: {},
-    timeoutMs: 30 * 60_000,
-    killTree: "taskkill",
-    authNote: "复用 TraeWork 桌面端登录态；窗口需保持可见（发送依赖模拟输入）",
-    executableDiscovery: {
-      // issue #23 C3：原先写成 {APPDATA}/TRAE SOLO CN（Roaming），实际安装在
-      // {LOCALAPPDATA}/Programs（Local）。补 preferredDrives + relativePaths + 注册表探测
-      // （由 traework/discovery.ts 消费），Windows 只认 TRAE SOLO CN.exe。
-      dirs: [
-        "{LOCALAPPDATA}/Programs/TRAE SOLO CN",
-        "{LOCALAPPDATA}/TRAE SOLO CN",
-        "{PROGRAMFILES}/TRAE SOLO CN",
-        "{PROGRAMFILES(X86)}/TRAE SOLO CN",
-        "/Applications/TraeWork.app/Contents/MacOS",
-        "/Applications/Trae CN.app/Contents/MacOS",
-      ],
-      fileNames:
-        process.platform === "darwin"
-          ? ["TRAE SOLO CN", "TraeWork", "Trae CN"]
-          : ["TRAE SOLO CN.exe"],
-      fallbackCommand: undefined,
-      preferredDrives: ["D:"],
-      relativePaths: ["TRAE Work CN/TRAE SOLO CN.exe"],
-      installRelativeExe: [],
-      scanRoots: [],
-    },
-    gui: {
-      ...ZCODE_SETUP_DEFAULTS,
-      cdpPort: 9222,
-      cdpPortAuto: true,
-      cdpPortRange: 20,
-      exeArgs: ["--remote-debugging-port=<port>"],
-      windowMode: "reuse",
-      launchTimeoutMs: 60_000,
-      pollIntervalMs: 3_000,
-      stableRounds: 12,
-      idleTimeoutMs: 10 * 60_000,
-      stallTimeoutMs: 5 * 60_000,
-      cancelWaitMs: 15_000,
-      cdpSendTimeoutMs: 15_000,
-      progressIntervalMs: 30_000,
-      modelSwitch: true,
-      modeSwitch: true,
-      freshSession: true,
-      selectors: {},
-      modelRequired: false,
-      activation: "spawn",
-    },
-    note: "GUI 驱动（CDP）：T1 旧结论（无头 CLI 不存在）成立，但实测 --remote-debugging-port 可驱动聊天 UI（v1.107.1 已验证连接与关键选择器）。详见 docs/traework-cdp.md",
-  },
   kimicode: {
     displayName: "Kimi Code (Kimi Code 桌面端)",
     type: "cli",
@@ -287,8 +227,8 @@ export const BUILTIN_PROFILES: Record<string, AgentProfile> = {
     },
     gui: {
       ...ZCODE_SETUP_DEFAULTS,
-      // 端口基准 9889：实测已占用的基准为 traework 9222 / zcode 9333 / codex 9333 /
-      // kimicode 9666 / qoder 9777（qoder 区段 9777-9796），9889-9898 与它们均不重叠。
+      // 端口基准 9889：实测已占用的基准为 zcode 9333 / codex 9333 / kimicode 9666 /
+      // qoder 9777（qoder 区段 9777-9796），9889-9898 与它们均不重叠。
       cdpPort: 9889,
       cdpPortAuto: true,
       cdpPortRange: 10,
@@ -316,7 +256,7 @@ export const BUILTIN_PROFILES: Record<string, AgentProfile> = {
       cdpSendTimeoutMs: 15_000,
       progressIntervalMs: 30_000,
       modelSwitch: true,
-      // modeSwitch 走 Open Design 自己的「设计方向」菜单（与 TraeWork 的 Work/Code/Design 无关）
+      // modeSwitch 走 Open Design 自己的「设计方向」菜单（与已废弃的面板模式参数无关）
       modeSwitch: true,
       freshSession: true,
       selectors: {},

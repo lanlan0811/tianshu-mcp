@@ -9,9 +9,16 @@ import { VisualConfigSchema } from "../visual/schema.js";
 
 const AbsPath = z.string().min(1, "projectPath 不能为空");
 
-/** TraeWork 面板模式（Work=自带 agent 循环；Code=纯编码；Design=设计） */
+/**
+ * 已废弃：早期 GUI 适配器的 Work/Code/Design 面板模式。
+ *
+ * 保留该键只为给出**可读的迁移文案**——原消费者已移除，现无任何适配器消费它，
+ * `handlers.ts` 会统一拒绝并提示改用 `designDirection`（Open Design）。
+ * 之所以不直接删键：schema 是裸 `z.object`（未知键被静默 strip），
+ * 删掉后旧调用方只会发现参数「消失」，拿不到任何解释。
+ */
 export const TraeworkModeSchema = z.enum(["Work", "Code", "Design"]);
-/** TraeWork 面板模式类型（单一真源，供 adapter/task/ui 共用） */
+/** 已废弃的面板模式类型（仅为旧任务快照与迁移文案保留）。 */
 export type TraeworkMode = z.infer<typeof TraeworkModeSchema>;
 
 /**
@@ -156,7 +163,7 @@ export const RunTaskParamsSchema = z.object({
   task: z.string().min(1, "task 任务书不能为空"),
   agentId: z.string().min(1).optional(),
   /**
-   * 目标 agent 使用的模型（GUI 类 agent 如 traework/codex 用；CLI 类 agent 忽略）。
+   * 目标 agent 使用的模型（GUI 类 agent 用；CLI 类 agent 忽略）。
    * 例：GLM-5.3 / DeepSeek-V4-Flash / GPT-5.6 Sol。未传时沿用 agent 侧当前选择。
    */
   model: z.string().min(1).optional(),
@@ -168,9 +175,11 @@ export const RunTaskParamsSchema = z.object({
   /** Qoder CN model group; omitted means unique exact match across groups. */
   modelSource: z.enum(["default", "custom"]).optional(),
   /**
-   * TraeWork 面板模式（仅 GUI 类 agent traework 生效）。
-   * 未传时从任务书文本识别「切换 Work/Code/Design 模式」，仍识别不到则保持 Work。
-   * 项目文件夹绑定固定发生在 Work 模式，随后再切到目标模式。
+   * **已废弃**：早期 GUI 适配器的面板模式（Work / Code / Design）。
+   *
+   * 原消费者已移除，当前**无任何适配器消费**该参数；传入会被 handler 统一拒绝，
+   * 并提示改用 `designDirection`（Open Design 的设计方向）。
+   * 键仍保留在 schema 里，是为了给出可读的迁移文案——见 `TraeworkModeSchema` 的注释。
    */
   mode: TraeworkModeSchema.optional(),
   /**
@@ -190,8 +199,8 @@ export const RunTaskParamsSchema = z.object({
    * 设计方向（仅 opendesign-gui 生效）：只支持「原型 / 文档 / 网站复刻」
    * （prototype / document / clone 亦可）。其他 UI 方向（幻灯片/图片/HyperFrames）显式拒绝。
    *
-   * 刻意**不复用** `mode`：`mode` 是 TraeWork 的 Work/Code/Design 面板模式，
-   * 两者混在一个枚举里会让 TraeWork 的模式识别（detectModeFromText）分支失真。
+   * 刻意**不复用**已废弃的 `mode`：后者是早期适配器的 Work/Code/Design 面板模式，
+   * 与「设计方向」是两件事，混在一个枚举里会让语义失真。
    */
   designDirection: z.string().min(1).optional(),
   /**
@@ -528,7 +537,7 @@ export const ExecutableDiscoverySchema = z.object({
 });
 
 /**
- * GUI 驱动配置（driver="gui" 的 agent 使用，如 traework）。
+ * GUI 驱动配置（driver="gui" 的 agent 使用，如 codex / zcode / kimicode / opendesign / minimax）。
  * 所有字段均可由数据目录 agent-profiles.json 覆盖，代码只给默认值与探测规则。
  */
 export const ZCODE_SETUP_DEFAULTS = {
@@ -566,7 +575,7 @@ export const GuiProfileSchema = z.object({
    * （button.ws-chip 是否挂载），ZCode 不使用该字段。
    *
    * 刻意用 `.optional()` 而不是 `.default()`：`.default()` 会让该键在 GuiProfile 的输出类型里
-   * 变成必填，迫使既有 ZCode/TraeWork profile 的对象字面量一起改（它们用显式字面量而非展开）。
+   * 变成必填，迫使既有 GUI profile 的对象字面量一起改（它们用显式字面量而非展开）。
    * 默认值由 ZCODE_SETUP_DEFAULTS.workspaceTriggerTimeoutMs 在读取点提供，语义等价且不改既有键。
    */
   workspaceTriggerTimeoutMs: z.number().int().positive().optional(),
@@ -637,7 +646,7 @@ export const GuiProfileSchema = z.object({
   /** agent 级自动返修默认轮数。 */
   defaultAutoFixRounds: z.number().int().min(0).max(10).optional(),
   /**
-   * GUI 启动通道：spawn=直接以子进程启动 exe（ZCode/TraeWork）；
+   * GUI 启动通道：spawn=直接以子进程启动 exe（ZCode / Kimi Code / MiniMax Code / Open Design）；
    * msix-com=Windows MSIX 应用经 IApplicationActivationManager COM 激活（Codex 桌面端）。
    */
   activation: z.enum(["spawn", "msix-com"]).default("spawn"),
@@ -767,10 +776,15 @@ export const AgentProfileSchema = z.object({
    * 决定 registry 构造哪个 adapter、orchestrator 走哪条执行路径。
    */
   driver: z.enum(["spawn", "gui"]).default("spawn"),
-  /** GUI adapter 显式判别；旧 profile 缺省时保持 TraeWork 兼容行为。 */
+  /**
+   * GUI adapter 显式判别。**没有缺省**：`driver="gui"` 必须指定 adapter，
+   * 否则 schema 直接拒绝（见下方 `AgentProfileSchema` 的 superRefine）。
+   *
+   * 旧版在这里静默回落到一个已移除的 GUI 适配器；该缺省已取消——
+   * 继续静默回落只会把用户自定义 profile 接到一个不存在的实现上。
+   */
   adapter: z
     .enum([
-      "traework-gui",
       "zcode-gui",
       "codex-gui",
       "kimicode-gui",
@@ -799,6 +813,20 @@ export const AgentProfileSchema = z.object({
   /** MiniMax Code 专属配置（adapter="minimax-gui" 时使用） */
   minimax: MinimaxProfileSchema.optional(),
   note: z.string().optional(),
+}).superRefine((profile, ctx) => {
+  // fail-closed：driver="gui" 必须显式给出 adapter。
+  // 旧版缺省回落到一个已移除的 GUI 适配器，该默认已取消——
+  // 静默换用别的实现会让用户的 GUI profile 接到完全不同的产品上。
+  if (profile.driver === "gui" && !profile.adapter) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["adapter"],
+      message:
+        'profile 声明了 driver="gui" 但未指定 adapter；旧版默认回落到一个已移除的 GUI 适配器，' +
+        "该默认已取消。请显式填写 adapter（可选：" +
+        "codex-gui / zcode-gui / kimicode-gui / opendesign-gui / minimax-gui / qoder-gui）",
+    });
+  }
 });
 export type AgentProfile = z.infer<typeof AgentProfileSchema>;
 

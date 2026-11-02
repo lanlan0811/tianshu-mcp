@@ -58,7 +58,7 @@ export const MINIMAX_PROFILE = AgentProfileSchema.parse({
     dialogProbeTimeoutMs: 30_000,
     dialogOperationTimeoutMs: 60_000,
     setupRecoveryMaxRetries: 2,
-    // 端口基准 9999：与 traework 9222 / zcode·codex 9333 / kimicode 9666 / qoder 9777 / opendesign 9889 不重叠。
+    // 端口基准 9999：与 zcode·codex 9333 / kimicode 9666 / qoder 9777 / opendesign 9889 不重叠。
     cdpPort: 9999,
     cdpPortAuto: true,
     cdpPortRange: 10,

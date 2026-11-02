@@ -13,7 +13,7 @@ built-in (`src/agents/builtin.ts`) → user `agent-profiles.json` overrides by `
 > **`shutdown.guiStopWaitMs` (15000)** — the **globally shared** bound for a GUI task's "best-effort stop click plus
 > bounded idle wait" when the server shuts down (issue #14). If it expires without a confirmation, the terminal message
 > states the stop is unconfirmed and sets `guiStopUnconfirmed`; it never claims the stop happened. Raising it improves
-> the confirmation rate at the cost of a slower exit. ZCode and TraeWork never click stop, so for them the outcome is
+> the confirmation rate at the cost of a slower exit. ZCode never clicks stop, so for it the outcome is
 > always "no stop result to confirm".
 
 ## Fields
@@ -25,7 +25,7 @@ built-in (`src/agents/builtin.ts`) → user `agent-profiles.json` overrides by `
       "displayName": "…",
       "type": "cli",                 // only cli today
       "driver": "spawn",             // spawn = external child process (default); gui = desktop UI automation
-      "adapter": "zcode-gui",        // GUI discriminator: traework-gui | zcode-gui | codex-gui | kimicode-gui | qoder-gui | opendesign-gui | minimax-gui; missing keeps legacy TraeWork behavior
+      "adapter": "zcode-gui",        // required when driver=gui (no default): zcode-gui | codex-gui | kimicode-gui | qoder-gui | opendesign-gui | minimax-gui
       "status": "ready",             // ready | research | unsupported
       "command": null,               // absolute path; null + discovery = auto-probe
       "argsTemplate": ["exec", "<prompt:arg>"],
@@ -41,7 +41,7 @@ built-in (`src/agents/builtin.ts`) → user `agent-profiles.json` overrides by `
         "preferredDrives": ["D:"],
         "relativePaths": ["Z-Code/ZCode/ZCode.exe"]
       },
-      "gui": {                       // only for driver="gui" (e.g. traework)
+      "gui": {                       // only for driver="gui" (e.g. zcode)
         "cdpPort": 9222, "cdpPortAuto": true, "cdpPortRange": 20,
         "exeArgs": ["--remote-debugging-port=<port>"], "windowMode": "reuse",
         "launchTimeoutMs": 60000, "pollIntervalMs": 3000, "stableRounds": 12,
@@ -67,11 +67,11 @@ built-in (`src/agents/builtin.ts`) → user `agent-profiles.json` overrides by `
 | value | meaning |
 |---|---|
 | `spawn` (default) | launches an external CLI child process (`argsTemplate` + `promptMode`); success is decided by exit code |
-| `gui` | drives a desktop UI over CDP (currently `traework` / `zcode` / `codex` / `kimicode` / `qoder` / `opendesign` / `minimax`); no child process, and `run_task` may pass `model` to pick its model |
+| `gui` | drives a desktop UI over CDP (currently `zcode` / `codex` / `kimicode` / `qoder` / `opendesign` / `minimax`); no child process, and `run_task` may pass `model` to pick its model |
 
-> With `driver=gui`, `argsTemplate`/`promptMode` are unused. An explicit `adapter` isolates each GUI implementation; a legacy profile without it keeps TraeWork behavior. See [traework-cdp.en.md](traework-cdp.en.md), [zcode-cdp.en.md](zcode-cdp.en.md), [codex-gui-cdp.en.md](codex-gui-cdp.en.md), [kimi-cdp.en.md](kimi-cdp.en.md), [qoder-cdp.en.md](qoder-cdp.en.md), [opendesign-cdp.en.md](opendesign-cdp.en.md) and [minimax-cdp.en.md](minimax-cdp.en.md).
+> With `driver=gui`, `argsTemplate`/`promptMode` are unused. **`adapter` is required when `driver=gui` and has no default**: `AgentProfileSchema`'s `superRefine` rejects a profile that declares `gui` without one (older versions silently fell back to a since-removed adapter). See [zcode-cdp.en.md](zcode-cdp.en.md), [codex-gui-cdp.en.md](codex-gui-cdp.en.md), [kimi-cdp.en.md](kimi-cdp.en.md), [qoder-cdp.en.md](qoder-cdp.en.md), [opendesign-cdp.en.md](opendesign-cdp.en.md) and [minimax-cdp.en.md](minimax-cdp.en.md).
 
-TraeWork liveness fields: `stableRounds` only confirms that the DOM is stable; `idle` is returned only after another
+GUI liveness fields: `stableRounds` only confirms that the DOM is stable; `idle` is returned only after another
 `idleTimeoutMs` without changes or authoritative running signals. `cdpSendTimeoutMs` bounds one CDP command, while
 `progressIntervalMs` controls progress events visible through `query_task`. Idle, timeout, cancellation, and CDP loss
 retain the instance and expose `agentEndReason` / `keptInstance` in metadata.
@@ -98,8 +98,6 @@ retain the instance and expose `agentEndReason` / `keptInstance` in metadata.
 
 `ready` means command/discovery is usable and its release evidence is complete. `research` means an implementation exists but hardware evidence is incomplete: `run_task` is allowed when installation discovery succeeds and otherwise fails with a diagnostic. `unsupported` means explicitly not drivable.
 
-> `traework` moved from `unsupported` to `ready` + `driver=gui` on 2026-09-08 (CDP-driven desktop UI; see [traework-cdp.en.md](traework-cdp.en.md)).
-
 > `zcode` uses `driver=gui` + `adapter=zcode-gui`. It requires `provider/model`, confirms Full Access, and defaults to two automatic repair rounds. The Windows hardware loop is complete; the built-in profile remains `research` until the macOS hardware loop is recorded.
 
 > `codex` uses `driver=gui` + `adapter=codex-gui` + `activation=msix-com`. Task parameters include `model` (**required**; take it from the panel, as names drift across versions — on 26.917 this machine listed e.g. `5.6 Terra`), `reasoningLevel` (低/中/高 or low/medium/high), `planDoc` and `designSystem`; it confirms Full Access and defaults to five automatic repair rounds. Machine-verified on Windows; the built-in macOS status is `research`. See [codex-gui-cdp.en.md](codex-gui-cdp.en.md).
@@ -125,7 +123,7 @@ Per-agent applicability and semantics:
 | `codex` | `low` / `medium` / `high` | When omitted, the Codex panel's current level is kept |
 | `kimicode` | official models `low` / `high` / `max`; unofficial models `on` / `off` | The tier set comes from **the tier labels the UI actually renders** (no built-in model list). When omitted, official tiers keep the UI's current value and unofficial tiers force `on`. Requesting a tier the UI does not render fails loudly with `model_mismatch` **before sending** and is never silently kept |
 | `qoder` | 低 / 中 / 高 / 极高 (`xhigh`) / 最大 (`max`) / 关闭思考 (`off`) | The available set comes from **the options the selected model actually renders in Model Management**. An unsupported tier fails **before sending**; silent downgrades are forbidden. When omitted, the UI's current value is kept and reported; after saving, the dialog is reopened for readback, and the change persists as a global preference |
-| `traework` / `zcode` / spawn agents | not applicable | Ignored, or rejected per that adapter's semantics |
+| `zcode` / spawn agents | not applicable | Ignored, or rejected per that adapter's semantics |
 
 ## Real-machine sample
 

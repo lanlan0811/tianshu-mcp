@@ -43,14 +43,14 @@ describe("S6 MCP 版本单一来源", () => {
   });
 });
 
-describe("TraeWork 结束元数据", () => {
+describe("GUI 结束元数据", () => {
   it("metaFromTask 透传 agentEndReason / keptInstance", () => {
     const task = {
       taskId: "tsk_meta",
       status: "failed",
       projectPath: "d:/demo",
       displayPath: "D:\\demo",
-      agentId: "traework",
+      agentId: "codex",
       task: "demo",
       autoVerify: true,
       autoFixRounds: 0,

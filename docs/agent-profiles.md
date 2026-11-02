@@ -6,7 +6,7 @@
 
 | 级别 | 文件 | 说明 |
 |---|---|---|
-| 内置 | `src/agents/builtin.ts` | 代码内置默认 profiles（codex/zcode/traework/kimicode）；随版本更新 |
+| 内置 | `src/agents/builtin.ts` | 代码内置默认 profiles（codex/zcode/kimicode/qoder/opendesign/minimax）；随版本更新 |
 | 用户级 | `~/.tianshu-mcp/agent-profiles.json`（`TIANSHU_MCP_HOME` 可覆盖） | 整键覆盖内置同名 profile |
 
 合并规则：先内置，再用户级覆盖（同 `id` 用户级胜出）。
@@ -16,7 +16,7 @@
 > `skills.backupKeep`（默认 3，覆盖后保留的历史技能备份个数，`0` = 不清理），以及 **`shutdown.guiStopWaitMs`（默认 15000）**——
 > 后者是 server 退出时 GUI 任务「尽力点击界面停止 + 有界等待空闲」的**全局共享**上限（issue #14）。
 > 到期仍未确认空闲时终态如实写「未确认停止」并置 `guiStopUnconfirmed`，绝不谎报已停止；调大它可提高确认成功率，
-> 代价是退出变慢。ZCode / TraeWork 不点停止按钮，因此对它们只会落「无停止结果可确认」。
+> 代价是退出变慢。ZCode 不点停止按钮，因此对它只会落「无停止结果可确认」。
 
 ## Profile 字段
 
@@ -27,7 +27,7 @@
       "displayName": "Codex (OpenAI 桌面端 CLI)",   // 展示名
       "type": "cli",                                  // 目前仅 cli
       "driver": "spawn",                              // spawn=外部子进程（默认）；gui=桌面 UI 自动化
-      "adapter": "zcode-gui",                         // GUI 可选：traework-gui | zcode-gui | codex-gui | kimicode-gui | qoder-gui | opendesign-gui | minimax-gui；旧缺省按 TraeWork 兼容
+      "adapter": "zcode-gui",                         // GUI 必填（无缺省）：zcode-gui | codex-gui | kimicode-gui | qoder-gui | opendesign-gui | minimax-gui
       "status": "ready",                              // ready | research | unsupported
       "command": null,                                // 可执行；null + discovery 则自动探测
       "argsTemplate": ["exec", "<prompt:arg>", "--skip-git-repo-check"],
@@ -44,7 +44,7 @@
         "preferredDrives": ["D:"],                    // Windows 固定盘优先级
         "relativePaths": ["Z-Code/ZCode/ZCode.exe"]   // 相对盘根候选
       },
-      "gui": {                                        // 仅 driver="gui" 使用（如 traework）
+      "gui": {                                        // 仅 driver="gui" 使用（如 zcode）
         "cdpPort": 9222, "cdpPortAuto": true, "cdpPortRange": 20,
         "exeArgs": ["--remote-debugging-port=<port>"], "windowMode": "reuse",
         "launchTimeoutMs": 60000, "pollIntervalMs": 3000, "stableRounds": 12,
@@ -70,11 +70,11 @@
 | 值 | 说明 |
 |---|---|
 | `spawn`（默认） | 拉起外部 CLI 子进程（`argsTemplate` + `promptMode`），结果按退出码判定 |
-| `gui` | 通过 CDP 驱动桌面 UI（当前为 `traework` / `zcode` / `codex` / `kimicode` / `qoder` / `opendesign` / `minimax`）；不 spawn 子进程，`run_task` 可传 `model` 指定其模型 |
+| `gui` | 通过 CDP 驱动桌面 UI（当前为 `zcode` / `codex` / `kimicode` / `qoder` / `opendesign` / `minimax`）；不 spawn 子进程，`run_task` 可传 `model` 指定其模型 |
 
-> `driver=gui` 时 `argsTemplate`/`promptMode` 不生效。显式 `adapter` 用于隔离各 GUI 实现；旧 profile 缺失该字段时仍按 TraeWork 行为兼容。分别见 traework-cdp.md、zcode-cdp.md、codex-gui-cdp.md、kimi-cdp.md、qoder-cdp.md、opendesign-cdp.md 与 minimax-cdp.md。
+> `driver=gui` 时 `argsTemplate`/`promptMode` 不生效。**`adapter` 在 `driver=gui` 时必填、无缺省**：`AgentProfileSchema` 的 `superRefine` 会在解析阶段拒绝「声明了 gui 却没写 adapter」的 profile（旧版会静默回落到一个已移除的适配器）。分别见 zcode-cdp.md、codex-gui-cdp.md、kimi-cdp.md、qoder-cdp.md、opendesign-cdp.md 与 minimax-cdp.md。
 
-TraeWork 存活检测相关字段：`stableRounds` 仅确认 DOM 已稳定；随后还需持续 `idleTimeoutMs` 无变化且无运行信号才返回
+GUI 存活检测相关字段：`stableRounds` 仅确认 DOM 已稳定；随后还需持续 `idleTimeoutMs` 无变化且无运行信号才返回
 `idle`。`cdpSendTimeoutMs` 限制单次 CDP 命令等待，`progressIntervalMs` 控制 `query_task` 可见的进度事件频率。
 空闲、超时、取消与 CDP 断开会保留实例，并在 meta 中返回 `agentEndReason` / `keptInstance`。
 
@@ -409,8 +409,6 @@ TraeWork 存活检测相关字段：`stableRounds` 仅确认 DOM 已稳定；随
 | `research` | 实现已存在，但真机证据尚未完整（当前为 zcode） | 安装探测成功时可跑；否则立即失败并说明原因 |
 | `unsupported` | 明确不支持（见 adapter-matrix.md） | 同上 |
 
-> `traework` 已于 2026-09-08 由 `unsupported` 改为 `ready` + `driver=gui`（CDP 驱动桌面 UI，见 [traework-cdp.md](traework-cdp.md)）。
-
 > `zcode` 使用 `driver=gui` + `adapter=zcode-gui`。`model` 必须是 `供应商/模型`，默认权限为“完全访问”、默认自动返修 2 轮。Windows 真机闭环已完成；macOS 真机证据完成前内置状态保持 `research`。
 
 > `codex` 使用 `driver=gui` + `adapter=codex-gui` + `activation=msix-com`。任务参数含 `model`（**必填**，以面板实际候选为准，型号名随版本漂移；本机 26.917 实测如 `5.6 Terra`）、`reasoningLevel`（低/中/高 或 low/medium/high）、`planDoc`、`designSystem`；默认权限“完全访问”、默认自动返修 5 轮。Windows 真机已验证；macOS 内置状态为 `research`。详见 [codex-gui-cdp.md](codex-gui-cdp.md)。
@@ -436,7 +434,7 @@ TraeWork 存活检测相关字段：`stableRounds` 仅确认 DOM 已稳定；随
 | `codex` | `low` / `medium` / `high` | 不传沿用 Codex 面板当前等级 |
 | `kimicode` | 官方模型 `low` / `high` / `max`；非官方模型 `on` / `off` | 档位集合以**界面实际渲染的档位标签**为准（不内置模型名单）；不传时官方档位沿用界面当前值、非官方档位强制 `on`；请求界面不存在的档位在**发送前**以 `model_mismatch` 响亮报错，绝不静默沿用 |
 | `qoder` | 低 / 中 / 高 / 极高（`xhigh`）/ 最大（`max`）/ 关闭思考（`off`） | 可用档位以**该模型在「模型管理」中实际渲染的选项**为准；不支持的档位在**发送前**报错，禁止静默降级。不传时沿用界面当前值并记录；保存后重新打开回读验证，修改会保留为全局偏好 |
-| `traework` / `zcode` / spawn 类 | 不适用 | 传入会被忽略或按各 adapter 语义拒绝 |
+| `zcode` / spawn 类 | 不适用 | 传入会被忽略或按各 adapter 语义拒绝 |
 
 ## 常见问题
 

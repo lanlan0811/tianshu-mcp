@@ -8,7 +8,7 @@
  * 4. 失败态：出现「继续」按钮（`button.ui-button--secondary`）或 panes 内出现
  *    「模型请求失败」/`provider.auth_error` 等文案——**绝不能判完成**。
  *
- * 关键纪律（ZCode/TraeWork 的教训）：
+ * 关键纪律（ZCode 与其它 adapter 的教训）：
  * - 长思考期间文本可能长时间不变，但停止按钮在 → 必须判 running 并**清零**稳定轮与空闲计时；
  * - 「文本静止 N 秒」永远不能单独作为完成判据，必须先达到 stableRounds 才开始空闲计时；
  * - 停止按钮恒可见且文本停滞超过 stallTimeoutMs → 判等待用户（打破「恒可见 → 恒 running」死锁）；

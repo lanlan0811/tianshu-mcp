@@ -61,25 +61,26 @@ describe("GuiCdpClient 健壮性", () => {
   /**
    * 回归锁：连不上端口时的提示文案必须指向**当前应用**（真机 2026-10-08）。
    *
-   * `GuiCdpClient` 被多个 GUI 适配器复用。文案原先硬编码「TraeWork」，于是 Codex 任务
-   * 在进程退出后报的是「请确认 **TraeWork** 以 --remote-debugging-port=9333 启动」——
+   * `GuiCdpClient` 被多个 GUI 适配器复用。文案曾硬编码某个产品名，于是别的适配器任务
+   * 在该进程退出后报的是「请确认 **<别的产品>** 以 --remote-debugging-port=9333 启动」——
    * 用户会去翻一个跟本次失败毫无关系的程序。
    */
-  it("连接失败文案使用 appLabel 指定的应用名，缺省仍为 TraeWork", async () => {
+  it("连接失败文案使用 appLabel 指定的应用名，缺省为通用称呼", async () => {
     // 让 listTargets 失败（模拟 ECONNREFUSED）
     const orig = GuiCdpClient.listTargets;
     GuiCdpClient.listTargets = vi.fn(async () => {
       throw new Error("connect ECONNREFUSED 127.0.0.1:9333");
     }) as typeof GuiCdpClient.listTargets;
     try {
-      // ① 显式传 Codex → 文案必须说 Codex，且不得出现 TraeWork
+      // ① 显式传 Codex → 文案必须说 Codex，不得出现别的产品名
       const codex = new GuiCdpClient({ port: 9333, appLabel: "Codex" });
       await expect(codex.connect()).rejects.toThrow(/请确认 Codex 以 --remote-debugging-port=9333/);
-      await expect(codex.connect()).rejects.not.toThrow(/TraeWork/);
+      await expect(codex.connect()).rejects.not.toThrow(/GUI 应用/);
 
-      // ② 未传 → 向后兼容，仍是 TraeWork
+      // ② 未传 → 通用称呼（不再指向任何具体产品）
       const legacy = new GuiCdpClient({ port: 9333 });
-      await expect(legacy.connect()).rejects.toThrow(/请确认 TraeWork 以 --remote-debugging-port=9333/);
+      await expect(legacy.connect()).rejects.toThrow(/请确认 GUI 应用 以 --remote-debugging-port=9333/);
+      await expect(legacy.connect()).rejects.not.toThrow(/Codex/);
 
       // ③ 其余复用方各自的名字也生效（真机错误形态逐字核对）
       for (const [label, port] of [

@@ -1,6 +1,6 @@
 # ARCHITECTURE.md — tianshu-mcp 架构说明
 
-> 适用版本：`0.9.4`（2026-10-09）。
+> 适用版本：`0.9.9`（2026-11-02）。
 > 本文描述**系统结构与模块边界**，面向要改动本仓库的开发者；版本号只在发布时随提交更新，最新发布说明见 `docs/release-v<最新版本>.md`。
 > 本文描述**系统结构与模块边界**，面向要改动本仓库的开发者。
 > 运行方式、安装步骤与用法见 [README.md](README.md)；交接状态、排障手册与踩坑记录见 [HANDOFF.md](HANDOFF.md)。
@@ -13,7 +13,7 @@
 `tianshu-mcp` 是一个**被天枢（Tianshu）当作标准 MCP server 接入的编排层**。天枢是总指挥与用户交互面，本 server 承担三件事：
 
 1. **调度**——任务队列、并发闸、状态机、超时与取消；
-2. **执行面**——把任务书送达外部 AI-Agent（Codex 桌面端 / TraeWork / ZCode / 任意 CLI）；
+2. **执行面**——把任务书送达外部 AI-Agent（Codex 桌面端 / ZCode / 任意 CLI）；
 3. **客观验收仪**——相对 git 基线做命令检查、代码分析与（可选）视觉像素比对，产出报告。
 
 ```text
@@ -42,7 +42,7 @@
 |---|---|---|
 | C1 | 天枢的 MCP 工具**只回文本**：`content[]` 的 `text` 被拼成字符串，`isError` 透传 | 所有结果统一为「人类可读文本 + `---tianshu-mcp-meta---` JSON 块」；不依赖 resources / prompts（`src/mcp/formatter.ts`） |
 | C2 | 天枢**按次同步**调用 `tools/call` | 长任务必须异步化：`run_task` 秒回 `taskId`，用 `query_task` 轮询；无服务端推送 |
-| C3 | TraeWork 的 agent 请求在 TTNet 层 TDE 加密，无法在客户端外构造 | 唯一可行路径是 **CDP 驱动桌面 UI**，从 DOM 提取结果（`src/agents/traework/`） |
+| C3 | 桌面 agent 的请求在传输层加密（如 ZCode 的 TTNet 层 TDE），无法在客户端外构造 | 唯一可行路径是 **CDP 驱动桌面 UI**，从 DOM 提取结果（`src/agents/cdp/client.ts` + 各适配器的语义层） |
 | C4 | Codex 桌面端是 **MSIX 商店包**，GUI 宿主无法 `CreateProcess` 直启 | 必须经 `IApplicationActivationManager` COM 激活并注入专属 `--user-data-dir` 才能开 CDP 端口（`src/agents/codex/launcher.ts`） |
 
 ZCode 属于同类问题：无随包 headless CLI，故同样走 CDP（M2 已实测定论）。
@@ -195,7 +195,7 @@ resolveDataHome → Logger → DataHome(BUILTIN_PROFILES) → init()
 ---tianshu-mcp-meta---
 ```
 
-**参数校验是两段式的**：`server.ts` 先用 `inputSchema.safeParse()` 做协议级校验（失败回 `Error: 参数不合法 — <path>: <message>`）；handler 内再做语义闸门，例如 `projectPath` 安全校验（绝对路径 + 存在 + realpath 归一 + 拒绝主目录与根级/系统目录）、`mode` 仅 TraeWork 可用的拒绝、`allowCreateProject` 仅 ZCode 可用等。
+**参数校验是两段式的**：`server.ts` 先用 `inputSchema.safeParse()` 做协议级校验（失败回 `Error: 参数不合法 — <path>: <message>`）；handler 内再做语义闸门，例如 `projectPath` 安全校验（绝对路径 + 存在 + realpath 归一 + 拒绝主目录与根级/系统目录）、已废弃 `mode` 的统一拒绝、`allowCreateProject` 仅 ZCode 可用等。
 
 进度**只落盘、不推送**：GUI adapter 按 `gui.progressIntervalMs`（默认 30s）回报进度，`TaskOrchestrator` 写成 `task.jsonl` 的 `note` 事件并刷新快照的 `progressSummary` / `lastRunSignal`；`query_task` 每次读取最新快照与事件流，因此轮询者看到的是「最后一次落盘的进度」。除自由文本进度外还有**语义化**的细粒度事件流（`onEvent`，issue #18），见 §5.8——两者同写 `task.jsonl`：`note` 承载自由文本，细粒度事件承载节点语义。
 
@@ -261,7 +261,7 @@ GUI agent 的取消是**尽力而为且诚实回报**，但各适配器能力不
 | 适配器 | 取消时是否点界面停止 | 是否回传 `guiStop` |
 |---|---|---|
 | Codex / Kimi Code / Qoder CN | 点停止按钮 + `cancelWaitMs` 内有界等待空闲 | 是（`idle=false` 时终态必须明示未确认停止） |
-| ZCode / TraeWork | **不点停止按钮**，只终止 MCP 侧观察并保留实例 | 否（终态文案按「无停止结果可确认」如实披露） |
+| ZCode | **不点停止按钮**，只终止 MCP 侧观察并保留实例 | 否（终态文案按「无停止结果可确认」如实披露） |
 
 关停路径 `shutdownInterrupt()`（issue #14）：abort 全部控制器 → **spawn 类每任务有界等待 2s；GUI 类等到共享的 `shutdown.guiStopWaitMs`（默认 15s）全局 deadline** → 把 `running` 与 `queued` 一并标 `interrupted`。GUI 任务的终态文案按 `guiStop` 如实分流（已确认停止 / 未确认停止 / 无停止结果），**绝不写只对 spawn 子进程成立的「进程已终止」**。
 
@@ -338,7 +338,7 @@ GUI agent 的取消是**尽力而为且诚实回报**，但各适配器能力不
 | 内存有界 | 在**读取侧**：新增 `readTextTail(p, maxBytes)`（`src/util/fs.ts`）+ `TaskStore.readRecentAgentEvents(taskId, limit, maxBytes=64KiB)`，只读尾部窗口，内存占用与文件总大小解耦。`readTextTail` 保证从完整行开始（截断点落在换行符上时不丢整行） |
 | 上报健壮性 | 适配器一律经 `makeEmitter`：未提供钩子时空操作，且**吞掉上报异常**——事件上报属观测能力，绝不允许影响任务本体 |
 | 暴露 | `query_task` 的 `eventLimit`（1..50，缺省 10）；`MetaBlockFields.recentEvents`（经 `metaFromTask(meta, extra)` 的 `...extra` 透传）+ 文本区「最近事件」段落。未上报的适配器返回空数组，其余字段与 v0.6.2 一致 |
-| 本版范围 | 只有 **codex** 与 **traework** 真正上报（各 4 个发射点）；zcode / kimicode / qoder 与全部 CLI 适配器保留接口、暂不上报 |
+| 本版范围 | 目前只有 **codex** 与 **opendesign** 真正上报；zcode / kimicode / qoder / minimax 与全部 CLI 适配器保留接口、暂不上报 |
 | 与 `note` 的关系 | `note` 语义不变，仍是进度 / 审计通道（承载 `progressSummary` / `lastRunSignal`）；`recentEvents` 只过滤词表内 5 类，不混入 `note` |
 
 **如实披露**：事件属观测能力而非交付保证——不保证送达，`query_task` 只反映「最后一次落盘的事件」；`file_modification_started` 是启发式推断，确切改动证据请看验收报告的 `changedFiles` / `diffstat`。详见 [事件流](docs/event-stream.md)。
@@ -500,7 +500,7 @@ GUI agent 的取消是**尽力而为且诚实回报**，但各适配器能力不
 | 需要 `projectPath` | 无项目模式没有可静态分析的文件树与基线，`runTasksWithoutProject` 显式拒绝而不是退化成普通任务 |
 | 方案文档落在**项目内** | `.tianshu-mcp/dry-run-plan-<taskId>.md`：`planDoc` 只能读项目文件，放任务数据目录会让 agent 够不到。`meta.dryRunPlanDoc` 报**项目相对路径** |
 
-**如实披露**：预演仍是一次真实的 agent 调用（消耗额度与时间）；只读约束靠任务书指令 + 事后门禁，**违反会被拦下并如实报告，但已发生的改动不会自动回滚**（MCP 从不自动 commit/stash/checkout）；静态检查只能验证「文件存在、位置对得上、无明显矛盾」，**无法判断方案本身是否合理** —— 那正是「先审」要人工做的事。另：`planDoc` 目前只由 **Codex 与 Qoder CN** 消费，CLI 类与 ZCode/Kimi Code/TraeWork 不读取，对这些 agent 需把方案路径写进 `task` 文本。详见 [dryRun 干跑模式](docs/dry-run.md)。
+**如实披露**：预演仍是一次真实的 agent 调用（消耗额度与时间）；只读约束靠任务书指令 + 事后门禁，**违反会被拦下并如实报告，但已发生的改动不会自动回滚**（MCP 从不自动 commit/stash/checkout）；静态检查只能验证「文件存在、位置对得上、无明显矛盾」，**无法判断方案本身是否合理** —— 那正是「先审」要人工做的事。另：`planDoc` 目前只由 **Codex 与 Qoder CN** 消费，CLI 类与 ZCode/Kimi Code 不读取，对这些 agent 需把方案路径写进 `task` 文本。详见 [dryRun 干跑模式](docs/dry-run.md)。
 
 ---
 
@@ -520,8 +520,8 @@ interface AgentAdapter {
 **唯一的双路径接缝**：`run()` 存在时，`TaskOrchestrator` 不再 spawn 子进程，而是调用它（GUI adapter）；否则走 `runChild()`（CLI adapter）。
 
 - **CLI 路径**（`src/agents/cli.ts` + `src/agents/spawn.ts`）：`cross-spawn` 拉起子进程，stdout/stderr 落日志，退出码判定；`promptMode` 支持 `arg` / `stdin` / `file` 三种任务书投递方式。
-- **共享传输**（`src/agents/cdp/client.ts`，v0.9.8）：`GuiCdpClient` 承载全部 GUI adapter 共用的页面级传输——WebSocket 连接、`send` 超时、`CdpDisconnectedError` / `CdpUnavailableError` 断线语义、`listTargets` / `probe` 就绪探测、坐标点击与按键、可见标签诊断，以及语义中性的存活探针 `probeSignals(candidates)`。它**不 import 任何选择器表**：语义键相关的 `exists` / `text` / `click` / `focus` / `center` 属于各适配器自己的层（如 `traework/cdp/client.ts` 的子类）。这样删任何一个产品的选择器都不会波及共享传输。
-- **GUI 路径**：七个 adapter 的 `buildInvocation()` 直接抛错，`run()` 承担全部 CDP 编排。Codex / ZCode / Kimi Code / Qoder CN / Open Design / MiniMax Code **六个 adapter 各带一道模块级串行门**（同一适配器的任务排队；排队中被取消者直接返回 `aborted` 而不越位）；TraeWork 没有串行门，它依赖「每项目串行队列 + 全局并发闸」这一层。
+- **共享传输**（`src/agents/cdp/client.ts`，v0.9.8）：`GuiCdpClient` 承载全部 GUI adapter 共用的页面级传输——WebSocket 连接、`send` 超时、`CdpDisconnectedError` / `CdpUnavailableError` 断线语义、`listTargets` / `probe` 就绪探测、坐标点击与按键、可见标签诊断，以及语义中性的存活探针 `probeSignals(candidates)`。它**不 import 任何选择器表**：语义键相关的 `exists` / `text` / `click` / `focus` / `center` 属于各适配器自己的层。这样删任何一个产品的选择器都不会波及共享传输。
+- **GUI 路径**：六个 adapter 的 `buildInvocation()` 直接抛错，`run()` 承担全部 CDP 编排。Codex / ZCode / Kimi Code / Qoder CN / Open Design / MiniMax Code **各带一道模块级串行门**（同一适配器的任务排队；排队中被取消者直接返回 `aborted` 而不越位）。
 
 `AgentRunResult` 是跨层信息载体，关键字段：
 
@@ -535,16 +535,7 @@ interface AgentAdapter {
 | `session / keptInstance` | 会话锚点与实例是否保留，供 `manage_task(action="continue")` 恢复 |
 | `progressSummary` | 落盘进 `query_task` 可见的进度 |
 
-### 8.2 七个 GUI driver 的执行顺序（实测结论，勿随意调整）
-
-**TraeWork**（CDP 驱动 TRAE SOLO CN）：
-
-```text
-确保实例可用 → 等待 UI 就绪 → 新建会话 → 切到目标模式 → 在目标模式内绑定项目
-  → 切模型 → 发送 → 轮询到完成
-```
-
-> Work / Code / Design **各自维护独立的项目绑定**，切模式会把输入栏项目换成该模式上次使用的项目。因此必须**先切模式、再在目标模式里绑定**，绑定后复核「模式 + 项目」双双就位，任一不符即响亮失败。
+### 8.2 六个 GUI driver 的执行顺序（实测结论，勿随意调整）
 
 **ZCode**（CDP 驱动，无项目派发自 v0.5.2 起）：
 
@@ -678,7 +669,7 @@ MSIX 发现（Appx 查询优先 + 扫盘回退） → COM 激活 + 专属 user-d
 
 ### 8.3 完成判定：运行信号优先，完成标志其次
 
-七个 driver 共用同一条判据原则（实现分别在各自的 `liveness.ts`）：
+六个 driver 共用同一条判据原则（实现分别在各自的 `liveness.ts`）：
 
 ```text
 运行信号存在（停止按钮 / loading 指示 / 活跃工具调用）  → 仍在运行，一律不结束
@@ -713,26 +704,26 @@ DOM 完成标志出现（"由AI生成" 等）                      → 判定完
 
 `endReason`（每个 agent 实际产出的取值，按适配器代码归纳）：
 
-| Codex | TraeWork | ZCode | Kimi Code | Qoder CN |
-|---|---|---|---|---|
-| `reply_stable`（成功） | `completion_mark`（成功） | `reply_stable`（成功） | `reply_stable`（成功） | `completion_mark`（成功） |
-| `aborted` | `ask_user`（成功但被阻塞） | `aborted` | `aborted` | `aborted` |
-| `task_timeout` | `timeout` | `task_timeout` | `task_timeout` | `task_timeout` |
-| `idle_timeout` | `idle_no_completion` | `idle_timeout` | `idle_timeout` | **不产出**（静止但无完成证据 → `setup_recovery`） |
-| `needs_user` | `setup_failed` | `needs_user` | `needs_user` | `needs_user`（`pause()` 以 kind 同时充当 endReason） |
-| `setup_failed` | `cdp_lost` | `setup_failed` | `setup_failed` | `unsupported_platform`（非 Windows） |
-| `instance_busy` | — | `cdp_disconnected` | `instance_busy` | `qoder_error`（运行期错误，原文带具体原因） |
-| `project_ambiguous` | — | `project_ambiguous` | — | — |
-| `project_create_failed` | — | `project_mismatch` | — | — |
-| `project_mismatch` | — | `project_not_registered` | — | — |
-| `model_unavailable` | — | `model_unavailable` | `model_unavailable` | — |
-| `model_mismatch` | — | `model_mismatch` | `model_mismatch` | — |
-| `permission_unknown` | — | `permission_unknown` | `permission_unknown` | — |
-| `input_mismatch` | — | `input_mismatch` | `input_mismatch` | — |
-| `send_unknown` | — | `send_unknown` | `send_unknown` | — |
-| `cdp_disconnected` | — | `session_lost` | `cdp_disconnected` | — |
-| `internal` | — | `internal` | `internal` | — |
-| — | — | — | `agent_error`（界面出现「继续」按钮或失败文案） | — |
+| Codex | ZCode | Kimi Code | Qoder CN |
+|---|---|---|---|
+| `reply_stable`（成功） | `reply_stable`（成功） | `reply_stable`（成功） | `completion_mark`（成功） |
+| `aborted` | `aborted` | `aborted` | `aborted` |
+| `task_timeout` | `task_timeout` | `task_timeout` | `task_timeout` |
+| `idle_timeout` | `idle_timeout` | `idle_timeout` | **不产出**（静止但无完成证据 → `setup_recovery`） |
+| `needs_user` | `needs_user` | `needs_user` | `needs_user`（`pause()` 以 kind 同时充当 endReason） |
+| `setup_failed` | `setup_failed` | `setup_failed` | `unsupported_platform`（非 Windows） |
+| `instance_busy` | `cdp_disconnected` | `instance_busy` | `qoder_error`（运行期错误，原文带具体原因） |
+| `project_ambiguous` | `project_ambiguous` | — | — |
+| `project_create_failed` | `project_mismatch` | — | — |
+| `project_mismatch` | `project_not_registered` | — | — |
+| `model_unavailable` | `model_unavailable` | `model_unavailable` | — |
+| `model_mismatch` | `model_mismatch` | `model_mismatch` | — |
+| `permission_unknown` | `permission_unknown` | `permission_unknown` | — |
+| `input_mismatch` | `input_mismatch` | `input_mismatch` | — |
+| `send_unknown` | `send_unknown` | `send_unknown` | — |
+| `cdp_disconnected` | `session_lost` | `cdp_disconnected` | — |
+| `internal` | `internal` | `internal` | — |
+| — | — | `agent_error`（界面出现「继续」按钮或失败文案） | — |
 
 > Kimi Code 以**工作区**（而非项目）组织任务，因此不产出 `project_*` 系列；绑定失败统一走
 > `setup_failed` 或 `needs_user(setup_recovery / system_permission)`。
@@ -796,19 +787,18 @@ DOM 完成标志出现（"由AI生成" 等）                      → 判定完
 > MiniMax Code 的 `continue` 按 kind 分派）。
 > **Open Design 产出 5 种 kind**（`login_required` / `user_confirmation` / `system_permission` / `setup_recovery` / `close_existing_instance`），
 > 唯独不产出 `agent_question`（它的「向用户提问」不表现为可回填的答题控件）。
-> TraeWork 不产出 `needsUserKind`：它的「向用户提问」被当作正常结束（`ask_user`）并释放实例，且**完全不读 `ctx.resume`**——所以 `manage_task(action="continue")` 对它无意义。
 
 ### 8.5 注册表与可执行探测（`src/agents/registry.ts`）
 
-- 构造时预注册八个 `CliAdapter` 基座（codex / zcode / traework / kimicode / qoder / opendesign / minimax / stub），随后按 `profile.adapter` 换装 GUI 实现（`codex-gui` / `zcode-gui` / `traework-gui` / `kimicode-gui` / `qoder-gui` / `opendesign-gui` / `minimax-gui`）；仅当实现类变化时才重建。
+- 构造时预注册七个 `CliAdapter` 基座（codex / zcode / kimicode / qoder / opendesign / minimax / stub），随后按 `profile.adapter` 换装 GUI 实现（`codex-gui` / `zcode-gui` / `kimicode-gui` / `qoder-gui` / `opendesign-gui` / `minimax-gui`）；仅当实现类变化时才重建。**`driver="gui"` 却不写 `adapter` 已无缺省**：`AgentProfileSchema` 的 `superRefine` 在解析阶段即 fail-closed 报错（旧版会静默回落到一个已移除的适配器），registry 侧另有一道防御性兜底。
 - `resolve(agentId)` 按 profile 的 `status` 分支：
   - `unsupported` → 直接失败；
   - `research` → ZCode 走专用 `discoverZcode`，其他走通用探测；
   - `ready` → 顺序为「显式绝对路径 → 发现目录扫描 → PATH（`where` / `which`）」；占位符命令（`<...>`）被拒绝。
-- 特殊探测分支：`codex-gui` 走 `discoverCodex`（Appx 查询 + 扫盘），`kimicode-gui` 走 `discoverKimicode`（盘根相对路径 + 标准目录 + macOS bundle），`qoder-gui` 走 `discoverQoder`，`traework-gui` 走 `discoverTraework`，`opendesign-gui` 走 `discoverOpenDesign`，`minimax-gui` 走 `discoverMinimax`（其中 `traework-gui` / `qoder-gui` / `opendesign-gui` / `minimax-gui` **额外要求 `process.platform === "win32"`**——非 Windows 直接 `ok:false`，即使探测到安装也不允许派发）。七个 `discovery.ts` 共用同一顺序骨架：显式路径 → 固定盘相对路径（`preferredDrives` 优先）→ 注册表 `InstallLocation` → 快捷键（qoder/traework）→ 标准目录（含 macOS bundle）→ PATH。
+- 特殊探测分支：`codex-gui` 走 `discoverCodex`（Appx 查询 + 扫盘），`kimicode-gui` 走 `discoverKimicode`（盘根相对路径 + 标准目录 + macOS bundle），`qoder-gui` 走 `discoverQoder`，`opendesign-gui` 走 `discoverOpenDesign`，`minimax-gui` 走 `discoverMinimax`（其中 `qoder-gui` / `opendesign-gui` / `minimax-gui` **额外要求 `process.platform === "win32"`**——非 Windows 直接 `ok:false`，即使探测到安装也不允许派发）。六个 `discovery.ts` 共用同一顺序骨架：显式路径 → 固定盘相对路径（`preferredDrives` 优先）→ 注册表 `InstallLocation` → 快捷键（qoder）→ 标准目录（含 macOS bundle）→ PATH。
 - `profile.adapter` 显式判别优先于 `driver`：`driver:"spawn"` + `adapter:"codex-gui"` 仍会换装 GUI 实现。`ensureAdapterFor` 只在**实现类变化**时重建，因此 ad hoc 换装不会打断正在运行的任务。
-- 选择器覆盖机制：TraeWork / ZCode / Codex / Kimi Code / Qoder CN / **Open Design** / **MiniMax Code** 均为「**覆盖优先 → primary → 回退链**」（Kimi Code 的 overlay 选择器用 `overlay.<key>` 命名空间）。Qoder CN 自 v0.6.2 起由单值覆盖升级为与 Codex 同构的分层结构（`QoderSelectorSpec`：`primary/fallbacks/texts/ariaLabels/ariaPatterns/verifiedVersion`），`QoderCdpClient` 的 `selector()` 仍返回字符串首选以保持既有语义，另增 `candidates()/existsKey()/clickKey()` 按候选顺序「先探测后点击」。
-- 选择器漂移诊断（v0.6.2，issue #23）：`src/agents/gui-diagnostics.ts` 提供 `visibleLabelsExpr()`（页面内表达式，收集可见候选 aria-label / 短文本）与 `withDiagnostics()`（幂等追加「页面可见候选=[…]」后缀）。codex / qoder / traework 三者在选择器解析失败时统一附上该信息，便于一步定位漂移；各 agent 的 `selectors.ts` 以 `verifiedVersion` 记录实测版本。
+- 选择器覆盖机制：ZCode / Codex / Kimi Code / Qoder CN / **Open Design** / **MiniMax Code** 均为「**覆盖优先 → primary → 回退链**」（Kimi Code 的 overlay 选择器用 `overlay.<key>` 命名空间）。Qoder CN 自 v0.6.2 起由单值覆盖升级为与 Codex 同构的分层结构（`QoderSelectorSpec`：`primary/fallbacks/texts/ariaLabels/ariaPatterns/verifiedVersion`），`QoderCdpClient` 的 `selector()` 仍返回字符串首选以保持既有语义，另增 `candidates()/existsKey()/clickKey()` 按候选顺序「先探测后点击」。
+- 选择器漂移诊断（v0.6.2，issue #23）：`src/agents/gui-diagnostics.ts` 提供 `visibleLabelsExpr()`（页面内表达式，收集可见候选 aria-label / 短文本）与 `withDiagnostics()`（幂等追加「页面可见候选=[…]」后缀）。codex / qoder 等在选择器解析失败时统一附上该信息，便于一步定位漂移；各 agent 的 `selectors.ts` 以 `verifiedVersion` 记录实测版本。
 - 目录扫描按深度 6 内查找候选，跳过 `node_modules` 与点目录，**取 mtime 最新者**。
 - profile 热加载靠 sha256 内容指纹（不是 mtime），因此同一时间戳内的修改也能被感知。
 - `query_info(type=profiles)` 列出所有已注册 adapter 键与 profile 键的并集（未解析成功的自定义 profile 也会出现），并逐条给出 `[PASS]/[FAIL]` 与探测来源。
@@ -818,11 +808,11 @@ DOM 完成标志出现（"由AI生成" 等）                      → 判定完
 | 环节 | 机制 |
 |---|---|
 | 启动 | 六处统一走 `guiInstanceSpawnOptions()`：**无条件** `detached: true` + `unref()`（`stdio:"ignore"`）；Open Design 另用 `guiInstanceDiagSpawnOptions()` 变体（stderr 收成有界管道，用于启动失败排查） |
-| 复用 | 优先复用受管实例（Codex 以专属 `--user-data-dir` 判等；ZCode / Kimi Code / Qoder CN / Open Design / MiniMax Code 扫端口范围；TraeWork 直接探测端口）。**Qoder CN 只在不存在根进程时才 spawn，并在启动器转发退出时复用既有 CDP 端口**（Open Design / MiniMax Code 同此转发复用语义） |
+| 复用 | 优先复用受管实例（Codex 以专属 `--user-data-dir` 判等；ZCode / Kimi Code / Qoder CN / Open Design / MiniMax Code 扫端口范围）。**Qoder CN 只在不存在根进程时才 spawn，并在启动器转发退出时复用既有 CDP 端口**（Open Design / MiniMax Code 同此转发复用语义） |
 | 附着 | CDP 连接必须完成一次真实 DOM 往返（`exists("chatInput")`）才被接受 |
 | 存活探测 | 每 tick 一次 DOM 求值，交给各自的 `judge*Poll` 判定 |
-| 保留 | Codex / ZCode / Kimi Code / Qoder CN / Open Design / MiniMax Code 几乎在所有返回路径都置 `keptInstance: true` 且从不杀进程；TraeWork 仅在干净完成（`completion_mark` / `ask_user`）时释放自己启动的实例，此时才返回 `keptInstance:false` |
-| 归属核对 | TraeWork 释放前**重读实时命令行**，要求同时含记录的 `--remote-debugging-port=<port>` 与 exe 名，读不到或不匹配就放弃（避免误杀），且 `taskkill` **不带 `/T`**；Codex 只停受管实例 |
+| 保留 | Codex / ZCode / Kimi Code / Qoder CN / Open Design / MiniMax Code 几乎在所有返回路径都置 `keptInstance: true` 且从不杀进程 |
+| 归属核对 | 释放受管实例前**重读实时命令行**，要求同时含记录的 `--remote-debugging-port=<port>` 与 exe 名，读不到或不匹配就放弃（避免误杀），且 `taskkill` **不带 `/T`**；Codex 只停受管实例 |
 | 孤儿处理 | ZCode / Kimi Code / Qoder CN / Open Design / MiniMax Code 遇到「活着但没开 CDP 端口」的实例 → `needs_user(close_existing_instance)`，交由用户处理，绝不盲杀（Codex 的 `ensureInstance` 声明了 `needsClose` 但从不返回 true，故它没有这条路径） |
 
 > **`detached: true` 是不变量而非平台偏好**：桌面实例必须跨 MCP server 退出继续存活，才能兑现 `keptInstance` 的语义。v0.5.3 之前按平台分支（Windows 上不 detached）导致 server 一退出 GUI 就被连坐杀掉，已修复。
@@ -913,7 +903,7 @@ CLI 子命令族（`node dist/index.js visual ...`）：`init`（写入禁用的
 
 | 组 | 字段 |
 |---|---|
-| 身份与形态 | `id`、`displayName`、`type`、`driver`(spawn\|gui)、`adapter`(traework-gui\|zcode-gui\|codex-gui\|kimicode-gui\|qoder-gui\|opendesign-gui\|minimax-gui)、`status`(ready\|research\|unsupported) |
+| 身份与形态 | `id`、`displayName`、`type`、`driver`(spawn\|gui)、`adapter`(zcode-gui\|codex-gui\|kimicode-gui\|qoder-gui\|opendesign-gui\|minimax-gui)、`status`(ready\|research\|unsupported) |
 | CLI 执行 | `command`、`argsTemplate`、`promptMode`(arg\|stdin\|file)、`cwd`(task\|home)、`env`、`timeoutMs`、`killTree` |
 | 可执行探测 | `executableDiscovery`：`dirs`、`fileNames`、`fallbackCommand`、`preferredDrives`、`appxPackageName`、`scanRoots`… |
 | GUI 编排 | `gui`：`cdpPort`(9222)、`cdpPortRange`、`exePath`、`windowMode`、`launchTimeoutMs`(60s)、`pollIntervalMs`(3s)、`stableRounds`(12)、`idleTimeoutMs`(10min)、`stallTimeoutMs`(300s)、`cancelWaitMs`(15s)、`cdpSendTimeoutMs`(15s)、`progressIntervalMs`(30s)、`projectTriggerTimeoutMs`(15s)、`workspaceTriggerTimeoutMs`(15s，Kimi Code 草稿页判据)、`selectors`、`defaultPermissionMode`、`defaultAutoFixRounds`、`activation`(spawn\|msix-com)、`userDataDir`、`fixPlanDir`… |
@@ -937,7 +927,7 @@ CLI 子命令族（`node dist/index.js visual ...`）：`init`（写入禁用的
 | 进程树终止（执行型） | Windows：`taskkill /pid <pid> /T /F`；POSIX：进程组 SIGTERM → 800ms 后 SIGKILL |
 | 进程枚举 | Windows：PowerShell `Get-CimInstance Win32_Process`；POSIX：`ps -axo pid=,command=` |
 | 可执行查找 | Windows：`where`；POSIX：`which` |
-| 原生对话框自动化 | Windows：PowerShell + UIA；macOS：`osascript` / System Events（ZCode 已实现双分支；Codex 与 TraeWork 的原生对话框**仅 Windows 实现，macOS fail-closed**） |
+| 原生对话框自动化 | Windows：PowerShell + UIA；macOS：`osascript` / System Events（ZCode 已实现双分支；Codex 的原生对话框**仅 Windows 实现，macOS fail-closed**） |
 | 驱动器枚举 | 不硬编码盘符，经 WMI 查询固定盘 |
 | 版本号 / AUMID | 一律动态发现，不写死 |
 
@@ -949,9 +939,9 @@ CLI 子命令族（`node dist/index.js visual ...`）：`init`（写入禁用的
 
 违反任一条即造成运行时损坏或事故：
 
-1. **绝不按进程树盲杀 TraeWork**：只终止本模块创建、且命令行核对通过的 PID，且不带 `/T`。（历史事故：验证期 `taskkill /PID <pid> /T /F` 误杀用户正在使用的实例。）
+1. **绝不按进程树盲杀 GUI 实例**：只终止本模块创建、且命令行核对通过的 PID，且不带 `/T`。（历史事故：验证期 `taskkill /PID <pid> /T /F` 误杀用户正在使用的实例。）
 2. **默认复用用户实例**：`gui.windowMode = "reuse"`，绝不新起第二个；受管实例（Codex / ZCode 以专属 `user-data-dir` 启动）也不触碰用户手动打开的实例。
-3. **computer-use 白名单**：仅允许 TraeWork 文件夹选择对话框（窗口标题 + 宿主进程双校验），其他窗口一律 `COMPUTER_USE_DENIED`。
+3. **computer-use 白名单**：原生文件夹选择对话框须经窗口标题 + 宿主进程双校验，其他窗口一律 `COMPUTER_USE_DENIED`。
 4. **凭证零管理**：不读取 / 解密 / 转发任何 agent 凭证；GUI adapter 只驱动 UI。**AI 内容校验（v0.5.4）同样适用**：不实现模型/厂商 HTTP 客户端、不读密钥，判定委托用户自备命令；外发闸门只在契约层强制（未放行 `allowRemote` 时 schema 拒绝 `<image:base64:file>`），**无法在系统层阻止用户命令外传图片**，此边界必须如实告知（见 `SECURITY.md`）。
 5. **命令不拼 shell**：验收命令是结构化 argv，`shell:false`。
 6. **不自动 commit / stash / 回滚**：动工前采集 git 基线，报告相对基线计算。
@@ -1003,7 +993,7 @@ CLI 子命令族（`node dist/index.js visual ...`）：`init`（写入禁用的
 | 层级 | 位置 | 覆盖 |
 |---|---|---|
 | 单元 | `test/unit/` | 纯函数与组件逻辑：七个 driver 的 reply / selectors / launcher / liveness / recovery、验收引擎（含并行）、基线归因、原子写、热加载、路径闸门、视觉模块 |
-| 集成 | `test/integration/` | stub-agent 三剧本、取消 / 超时 / 基线、假 CDP 的 TraeWork / Codex / ZCode / Kimi Code / Qoder CN / Open Design 全流程与返修循环、竞态回归、视觉 services / capture / flow |
+| 集成 | `test/integration/` | stub-agent 三剧本、取消 / 超时 / 基线、假 CDP 的 Codex / ZCode / Kimi Code / Qoder CN / Open Design / MiniMax Code 全流程与返修循环、竞态回归、视觉 services / capture / flow |
 | 协议 | `test/protocol/` | 官方 SDK 客户端断言 8 工具面与返回格式 |
 | 真机（手动） | `scripts/probe-*.mjs`、`scripts/smoke-zcode.mjs`、`scripts/evidence-visual-windows.mjs` | 需真实客户端 / 已安装浏览器 |
 | 消费者 | `scripts/check-visual-consumer.mjs` | 从生产 tarball 装到无开发依赖目录，跑真实浏览器视觉验收与离线报告 |
@@ -1032,7 +1022,7 @@ CLI 子命令族（`node dist/index.js visual ...`）：`init`（写入禁用的
 1. **UI 信号是唯一可靠完成判据**——七个 GUI driver 都依赖 DOM 结构与可见信号。客户端升级可能使选择器漂移；先在 `selectors.ts` 或 profile 覆盖处修复，真机复验不可省。
 2. **`needs_user` 状态下无法停止 GUI 内会话**——MCP 侧无 CDP 连接。终态文案会诚实提示。临时 CDP 连接停车已在 `CHANGELOG.md` 的「计划中」。
 3. **单会话串行**——GUI 是单会话资源，同项目任务被 `projectBusy()` 串行化，全局并发受 `maxRunning` 限制。这是设计约束，不是缺陷。
-4. **macOS 验证矩阵不完整**——Codex 与 ZCode 的 macOS 基本闭环已真机验证，但取消/返修/`continue_task`/新建项目矩阵未覆盖，故二者 darwin 仍标 `research`；TraeWork、Kimi Code、Qoder CN、Open Design、MiniMax Code 的 macOS 分支 fail-closed（Kimi Code / Qoder CN / Open Design / MiniMax Code 的 darwin 为 `research`，TraeWork 在非 Windows 直接 `ok:false`）。
+4. **macOS 验证矩阵不完整**——Codex 与 ZCode 的 macOS 基本闭环已真机验证，但取消/返修/`continue_task`/新建项目矩阵未覆盖，故二者 darwin 仍标 `research`；Kimi Code、Qoder CN、Open Design、MiniMax Code 的 macOS 分支 fail-closed（darwin 为 `research`）。
 5. **无项目派发仅 ZCode 且仅 Windows 实测**；ZCode 未登记项目的自动导入在 Windows 上不可用（需先手动登记，或传 `allowCreateProject=false` 显式失败）。**Kimi Code 完全不支持无项目派发**（必须绑定工作区）。
 6. **Kimi Code 的取消/提问续答/同名工作区歧义仅由 hermetic 集成测试覆盖**（未在真机点停、未触发真实提问卡片）。
 7. **视觉模块的平台证据边界**——macOS 证据来自 CI 托管 runner，未在维护者个人 macOS 设备复验。
@@ -1266,7 +1256,6 @@ ID 走字符白名单 `[A-Za-z0-9_-]`（ID 会拼进 `tasks/<id>/…` 路径）�
 |---|---|
 | 安装、接入天枢、工具用法 | [README.md](README.md) / [README.en.md](README.en.md) |
 | 交接状态、排障手册、踩坑记录 | [HANDOFF.md](HANDOFF.md) |
-| TraeWork GUI 驱动细节 | [docs/traework-cdp.md](docs/traework-cdp.md) |
 | Codex 桌面端 GUI 驱动细节 | [docs/codex-gui-cdp.md](docs/codex-gui-cdp.md) |
 | ZCode GUI 驱动细节 | [docs/zcode-cdp.md](docs/zcode-cdp.md) |
 | Kimi Code GUI 驱动细节 | [docs/kimi-cdp.md](docs/kimi-cdp.md) |

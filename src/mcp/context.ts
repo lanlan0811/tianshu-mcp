@@ -15,10 +15,10 @@ export interface AppServices {
 /**
  * dryRun 的只读预演约束（issue #21）。
  *
- * 注入点刻意选在这里而不是各个适配器的 prompt builder：全部 5 个适配器的提示词构造
- * 都会拼 `ctx.context`（codex `input.ts`、traework `ui/composer.ts`、cli `cli.ts`、
- * zcode/kimicode `run.ts`），因此**一次改动即覆盖全部适配器**；且 dryRun 是 round 0 的
- * 首次派发，zcode/kimicode 仅在 `initialDispatch` 时附加 context 的守卫不会把它吞掉。
+ * 注入点刻意选在这里而不是各个适配器的 prompt builder：全部 GUI / CLI 适配器的提示词构造
+ * 都会拼 `ctx.context`（codex `input.ts`、cli `cli.ts`、zcode/kimicode/opendesign/minimax `run.ts`），
+ * 因此**一次改动即覆盖全部适配器**；且 dryRun 是 round 0 的首次派发，
+ * 仅在 `initialDispatch` 时附加 context 的守卫不会把它吞掉。
  */
 export const DRY_RUN_CONSTRAINT = [
   "【本任务是 dryRun 只读预演 —— 必须严格遵守】",

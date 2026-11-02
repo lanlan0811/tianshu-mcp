@@ -1,86 +1,87 @@
 /**
- * 用户级验收（issue #38 问题 B）：端到端跑一次「绑定失败」的 traework 任务，
+ * 用户级验收（issue #38 问题 B）：端到端跑一次「setup 阶段失败」的任务，
  * 断言**实际落盘的 task.json**（用户用 query_task / GUI 看到的就是这份文件）。
  *
- * 链路：TaskManager.submit → TaskOrchestrator → TraeworkGuiAdapter（真实）→
- *       runTraeworkTask（真实）→ bindProject 失败 → hardFailure + errorType
+ * 链路：TaskManager.submit → TaskOrchestrator → AgentAdapter.run（真实编排层）
+ *       → 适配器声明 hardFailure + errorType="setup_failed"
  *       → fix-loop 映射 → task.json 落盘。
  *
- * 假 CDP 模拟「下拉不含目标项目 + footer 点不出原生对话框」这一 #35 记录的失败场景。
+ * 本用例考的是**失败性质归类与验收跳过**，与具体 agent 无关：适配器用一个只实现
+ * `run()` 的桩替代（历史上的实现是某个 GUI 适配器的 `bindProject` 失败路径，
+ * 该 agent 移除后改由桩直接声明同样的失败形态）。
  */
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { makeTmpRoot, rmrf, gitInitAndCommit } from "../test-utils.js";
-import { FakeCdpClient, makeFakeState, type FakeDomState } from "../fake-cdp.js";
 import { DataHome } from "../../src/config/store.js";
 import { AgentProfileSchema } from "../../src/config/schema.js";
 import { TaskStore } from "../../src/tasks/task-store.js";
 import { TaskManager } from "../../src/tasks/task-manager.js";
 import { AgentAdapterRegistry } from "../../src/agents/registry.js";
 import { AcceptanceEngine } from "../../src/verify/acceptance.js";
-import { TraeworkGuiAdapter } from "../../src/agents/traework/adapter.js";
-import { type TraeworkRunDeps } from "../../src/agents/traework/run.js";
 import { normPath } from "../../src/util/path.js";
 import { makeBuildCtx } from "../../src/mcp/context.js";
 import { Logger } from "../../src/util/log.js";
-import type { AgentRunResult, ResolvedAgent, TaskContext } from "../../src/agents/adapter.js";
+import type {
+  AgentAdapter,
+  AgentRunResult,
+  ResolvedAgent,
+  SpawnInvocation,
+  TaskContext,
+} from "../../src/agents/adapter.js";
+import type { SpawnResult } from "../../src/agents/spawn.js";
 
 const silentLogger = new Logger(null, "error");
 const cleanup: string[] = [];
 
-function makeGuiProfile() {
-  return AgentProfileSchema.parse({
-    displayName: "TraeWork (acceptance)",
-    type: "cli",
-    driver: "gui",
-    status: "ready",
-    command: process.execPath,
-    gui: { cdpPort: 9222, pollIntervalMs: 1, stableRounds: 2, freshSession: true, modelSwitch: true, selectors: {} },
-  });
+/**
+ * 只实现 `run()` 的桩适配器：直接声明「setup 阶段逻辑性失败」。
+ *
+ * 与真实 GUI 适配器一致的两点：① `buildInvocation()` 直接抛错（不走 spawn）；
+ * ② `hardFailure: true` + `errorType: "setup_failed"` —— 编排层据此归类，
+ * 不进验收、不进返修。
+ */
+class SetupFailedAdapter implements AgentAdapter {
+  constructor(readonly id: string) {}
+
+  buildInvocation(): SpawnInvocation {
+    throw new Error("测试桩不通过 spawn 执行");
+  }
+
+  parseExit(res: SpawnResult): AgentRunResult {
+    return { ...res, hardFailure: Boolean(res.error && res.exitCode === null) };
+  }
+
+  async run(ctx: TaskContext, _resolved: ResolvedAgent): Promise<AgentRunResult> {
+    return {
+      ok: false,
+      exitCode: null,
+      timeout: false,
+      killed: false,
+      durationMs: 1,
+      logFile: path.join(ctx.taskDir, `agent-${ctx.round}.log`),
+      hardFailure: true,
+      errorType: "setup_failed",
+      error: "项目文件夹绑定失败：下拉未命中且原生对话框未弹出",
+      keptInstance: true,
+    };
+  }
 }
 
 /**
- * 真实 TraeworkGuiAdapter 子类：run() 调真实 runTraeworkTask，只把 CDP/原生对话框换成桩。
- * 剧本：下拉存在「另一个项目」但**不含目标项目** → 走原生对话框 → footer 点不出弹窗 → 绑定失败。
+ * 桩用的 profile：`driver="spawn"` 且 `command` 指向当前 Node 可执行文件——
+ * 这样 `registry.resolve()` 无需任何真机安装即可通过。适配器由 `register()` 直接注入，
+ * 不经过 profile 的 adapter 分支（本用例考的不是适配器选择）。
  */
-class UnboundProjectAdapter extends TraeworkGuiAdapter {
-  constructor(private readonly projectPath: string) {
-    super("traework");
-  }
-
-  override async run(
-    ctx: TaskContext,
-    resolved: ResolvedAgent,
-    opts: Parameters<NonNullable<TraeworkGuiAdapter["run"]>>[2],
-  ): Promise<AgentRunResult> {
-    const { runTraeworkTask } = await import("../../src/agents/traework/run.js");
-    const state: FakeDomState = makeFakeState({
-      projectItems: [{ name: "some-other-project", subtitle: "" }], // 目标项目不在下拉
-      footerDialogOpensOn: "never", // footer 点不出原生对话框
-    });
-    const deps: Partial<TraeworkRunDeps> = {
-      createClient: () => new FakeCdpClient(9222, state) as never,
-      probeReady: async (port) => ({ port, title: "TraeWork CN" }),
-      launch: () => {
-        throw new Error("测试应复用实例");
-      },
-      waitReady: async (port) => ({ port, title: "TraeWork CN" }),
-      release: async () => ({ released: true, reason: "已终止" }),
-      resolvePort: async (gui) => gui.cdpPort,
-      sleep: (ms) => new Promise((r) => setTimeout(r, Math.min(ms, 2))),
-      dialogWaitTimeoutMs: 100,
-    };
-    return runTraeworkTask({
-      ctx,
-      resolved,
-      opts,
-      logFile: path.join(ctx.taskDir, `agent-${ctx.round}.log`),
-      startedAt: Date.now(),
-      logger: opts.logger,
-      deps,
-    });
-  }
+function makeStubProfile() {
+  return AgentProfileSchema.parse({
+    displayName: "Codex (acceptance stub)",
+    type: "cli",
+    driver: "spawn",
+    status: "ready",
+    command: process.execPath,
+  });
 }
 
 let projectPath: string;
@@ -89,15 +90,6 @@ let manager: TaskManager;
 let store: TaskStore;
 
 beforeAll(async () => {
-  vi.doMock("../../src/agents/traework/computeruse/dialog.js", () => ({
-    findFolderDialog: async () => ({ found: false, windowTitle: "", processName: "", hwnd: 0 }),
-    closeStaleFolderDialogs: async () => 0,
-    pickFolderViaNativeDialog: async () => ({ ok: false, message: "未检测到原生对话框" }),
-    localizeDialogMessage: (m: string) => m,
-    toNativeWindowsPath: (p: string) => p,
-  }));
-
-  // 项目目录：存在但未在 Code 模式下绑定过（模拟 issue #35 的前提）
   projectPath = await makeTmpRoot("issue38-acceptance-proj");
   cleanup.push(projectPath);
   fs.writeFileSync(path.join(projectPath, "README.md"), "# demo\n", "utf8");
@@ -105,7 +97,7 @@ beforeAll(async () => {
 
   home = await makeTmpRoot("issue38-acceptance-home");
   cleanup.push(home);
-  const dataHome = new DataHome(home, silentLogger, { traework: makeGuiProfile() });
+  const dataHome = new DataHome(home, silentLogger, { codex: makeStubProfile() });
   await dataHome.init();
   store = new TaskStore(home, silentLogger);
   const registry = new AgentAdapterRegistry(() => dataHome.loadProfiles(), silentLogger);
@@ -118,21 +110,19 @@ beforeAll(async () => {
     makeBuildCtx({ store, dataHome }),
   );
   await manager.initialize(2);
-  registry.register("traework", new UnboundProjectAdapter(projectPath));
+  registry.register("codex", new SetupFailedAdapter("codex"));
 }, 60_000);
 
 afterAll(async () => {
-  vi.doUnmock("../../src/agents/traework/computeruse/dialog.js");
   await Promise.all(cleanup.splice(0).map((d) => rmrf(d)));
 });
 
-describe("用户级验收：绑定失败的 traework 任务落盘形态（issue #38 问题 B）", () => {
-  it("派发到未绑定目录 → task.json 的 errorType 为 setup_failed 且文案点明 setup 阶段失败", async () => {
+describe("用户级验收：setup 阶段失败的任务落盘形态（issue #38 问题 B）", () => {
+  it("派发 → task.json 的 errorType 为 setup_failed 且文案点明 setup 阶段失败", async () => {
     const meta = await manager.submit({
       projectPath: normPath(projectPath),
       displayPath: projectPath,
-      agentId: "traework",
-      mode: "Code",
+      agentId: "codex",
       task: "在空项目里生成 result.txt",
       autoVerify: true,
       autoFixRounds: 0,
@@ -155,17 +145,10 @@ describe("用户级验收：绑定失败的 traework 任务落盘形态（issue 
       errorType: string | null;
       lastMessage?: string;
       agentId: string;
-      mode?: string;
     };
 
-    console.log("[验收] task.json 落盘内容:");
-    console.log("  status     =", snap.status);
-    console.log("  errorType  =", snap.errorType);
-    console.log("  mode       =", snap.mode);
-    console.log("  lastMessage=", (snap.lastMessage ?? "").slice(0, 160));
-
     expect(snap.status).toBe("failed");
-    expect(snap.agentId).toBe("traework");
+    expect(snap.agentId).toBe("codex");
     // 核心断言：不再是 spawn
     expect(snap.errorType).toBe("setup_failed");
     expect(snap.errorType).not.toBe("spawn");

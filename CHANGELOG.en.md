@@ -8,6 +8,55 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.9.9] — 2026-11-02
+
+> **TraeWork dispatch support removed (BREAKING)**: the whole `src/agents/traework/` directory is
+> deleted and `traework` is no longer a usable agentId. This is release 2 of the six-release plan
+> "remove TraeWork and Qoder CN support".
+
+**Breaking change**: a host that pinned `agentId: "traework"` in its config will fail after upgrading
+(`agent_unresolved`).
+
+### Removed
+
+- The entire `src/agents/traework/` directory (12 files): `adapter.ts` / `discovery.ts` /
+  `launcher.ts` / `run.ts` / `cdp/client.ts` (the 0.9.8 shell) / `cdp/selectors.ts` /
+  `computeruse/*` / `ui/*`.
+- The `traework` profile block in `src/agents/builtin.ts`; the `TraeworkGuiAdapter` /
+  `discoverTraework` wiring and the default CLI list entry in `src/agents/registry.ts`.
+- 15 traework test files; the fake-CDP driving approach from `test/integration/traework-fake-cdp.test.ts`
+  is kept in `test/fake-cdp.ts` (still serving kimicode / opendesign).
+
+### Changed (behaviour changes worth noting)
+
+- **The `driver="gui"` fallback is gone**: previously "`driver="gui"` without an `adapter`" silently
+  fell back to `traework-gui`; now `AgentProfileSchema.superRefine` **fails closed** with a message
+  that gives an actionable migration path (listing every valid adapter). A user GUI profile relying on
+  that old default must add `adapter` explicitly after upgrading.
+- **The `mode` parameter is deprecated**: it was TraeWork's Work/Code/Design panel mode and lost every
+  consumer when the adapter was removed. Now **any agent** passing `mode` is rejected uniformly by the
+  handler with a pointer to `designDirection` (Open Design). (Previously five GUI agents each answered
+  "mode unsupported"; this is consolidated into one actionable migration message.)
+- `query_info(type="profiles")` no longer returns `traework`; `run_task(agentId="traework")` →
+  `agent_unresolved`.
+
+### Unchanged
+
+- The other six agents (codex / zcode / kimicode / qoder / opendesign / minimax) and `stub` are
+  behaviourally unchanged; the shared CDP transport (`GuiCdpClient`) is untouched.
+- The tool surface is still 8 tools.
+
+### Tests
+
+- `test/unit/traework-driver.test.ts` → `test/unit/registry-driver.test.ts` (now tests the registry's
+  driver/adapter selection and its fail-closed behaviour).
+- `test/unit/traework-repair-plan.test.ts` → `test/unit/repair-plan.test.ts` (unrelated to TraeWork;
+  rename only).
+- `issue38-acceptance-setup-failed` / `last-run-signal-contract` / `gui-stop-disclosure` /
+  `protocol-text` / `zcode-handler` were rewritten to use agents that still exist.
+
+---
+
 ## [0.9.8] — 2026-11-01
 
 > **Shared CDP transport moved out and renamed (pure refactor, zero behaviour change)**:

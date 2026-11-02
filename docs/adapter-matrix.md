@@ -10,7 +10,6 @@
 |---|---|---|---|---|---|---|
 | **Codex**（OpenAI 桌面端） | **MSIX GUI + CDP**（`codex-gui` adapter） | ✅ **Windows 真机已验证**（COM 激活 + CDP + 关键选择器 + 验收返修闭环，2026-09-11；见 [codex-windows-smoke.md](codex-windows-smoke.md)；macOS 标 research） | Appx 查询优先（`Get-AppxPackage` → InstallLocation）→ 扫盘 `WindowsApps\OpenAI.Codex_*` 取最新版本 | 复用 `~/.codex`（auth.json），与用户手动打开的实例共享 | DOM 回读项目、模型/思考等级、权限、回复 | GUI 宿主 `app\ChatGPT.exe` 无法直启（策略拒绝），须 `IApplicationActivationManager` 激活并注入专属 `--user-data-dir`；见 [codex-gui-cdp.md](codex-gui-cdp.md) |
 | **Zcode**（ZCode 桌面） | Electron + 独立 `zcode-gui` CDP adapter | **research（Windows 3.11.2 选择器已适配，macOS 待补齐）** | 数据驱动固定盘/注册表/标准目录/macOS bundle | 复用本机登录态 | 模型直选 + provider/family 兜底；composer 项目复选项与绑定回读 | Windows 证据见 [zcode-windows-smoke.md](zcode-windows-smoke.md)；无头 CLI 仍不存在 |
-| **TraeWork / TRAE SOLO CN** | 桌面 IDE（2026-09-23 实测注册表 `0.1.64` / 文件版本 `2.3.82597`；早期文档记的 v1.107.1 为旧串）+ **CDP GUI 驱动** | ✅ **已接入并真机验证**（2026-09-08；见 T1 更正与 [traework-cdp.md](traework-cdp.md)）；安装发现于 2026-09-23 补齐 `discovery.ts`（issue #23） | 无头 CLI 不存在；以 `--remote-debugging-port` 驱动聊天 UI。发现顺序：显式路径 → 固定盘相对路径 → 注册表 `InstallLocation` → 快捷键 → 标准目录 → PATH；Windows 只认 `TRAE SOLO CN.exe` | 复用 TraeWork 桌面端登录态（本 MCP 不读取凭证） | 从 DOM 提取回复；项目文件由 TraeWork 自身写入 | `byted-solo.builtin-mcp` 是 MCP 客户端扩展，非被驱动接口。**端口未就绪**时输出诊断（子进程退出码 / 端口监听者 / 既有实例），只诊断不改启动策略 |
 | **Kimi Code**（Moonshot AI 桌面端） | 普通 Electron 安装（实测 1.0.2）+ 独立 `kimicode-gui` CDP adapter | **Windows 真机已验证**（成功路径、未登记工作区导入 + 自动验收、失败→返修→再验收同会话闭环）；macOS 标 `research` 且 fail-closed | 标准目录 `{PROGRAMFILES}/Kimi Code` 等 + D 盘优先 + 相对路径模板（`Kimi-Code/Kimi Code/Kimi Code.exe` 等）；macOS 探测 `Kimi Code.app` bundle | 复用本机 Kimi Code 登录态；检测到**未开启 CDP 的既有实例**转 `needs_user(close_existing_instance)`，绝不盲杀 | DOM 回读工作区（**完整路径**）、模型与思考档位（pill）、执行模式、会话 id 与回复 | 以 `--remote-debugging-port` 注入即可，**无需 MSIX COM 激活**。**双渲染进程**：模型/思考档位/执行模式菜单渲染在 `Kimi Browser Overlay` 浮层窗口，工作区菜单与「切换模型」对话框在主窗口。以**工作区**（任务文件夹）组织任务，**不支持无项目派发**；未登记工作区经原生「添加工作区」对话框导入。模型三级选择（pill 回读 → overlay 快捷菜单 → 「更多模型…」对话框）；思考档位按**界面实际档位集合**校验（官方 `Low/High/Max`，非官方 `On/Off`）；执行模式强制「完全自动」。运行检测：`button.stop`（`aria-label="中断"`）/ `send.is-starting`。取消照 Codex M14 语义（尽力点停 + `cancelWaitMs` 有界等待，未确认时如实标注）；`needs_user` 六类均由 `continue_task` 恢复。详见 [kimi-cdp.md](kimi-cdp.md) |
 | **Qoder CN**（Qoder 桌面端，仅 CN） | 桌面端 + 独立 `qoder-gui` CDP adapter | ✅ **Windows 真机已验证**（已有工作区默认模型开发、新登记工作区自定义模型开发、受控失败→落计划→原会话返修→再验收，2026-09-22；2026-09-29 补 Qoder CN 0.4.2/0.4.3 适配——模型菜单平铺化、工作区 picker 候选顺序、无 title 容器读回）；macOS 标 `research` 且 fail-closed | 显式 `gui.exePath` → D 盘优先候选 → 相对路径模板（`Qoder CN/Qoder CN.exe`）→ 标准目录 `{LOCALAPPDATA}/Programs/Qoder CN` 等；macOS 探测 `Qoder CN.app` bundle | 复用本机 Qoder CN 登录态；已有实例无可用 CDP 时**保留现场**转 `needs_user`，绝不关闭或重启 | DOM 回读工作区（**完整路径**）、默认/自定义模型分组、思考等级（模型管理保存后回读）、本轮回复与会话 id | `modelSource=default/custom` 消除跨组重名（0.4.2 起菜单平铺、无分组，可省略）；思考等级为**全局偏好**（不自动还原），权限模式沿用、不自动开启“完全访问”。未登记目录按「新的任务 → 工作区 → 新建工作区 → 添加可读写文件夹」经原生对话框导入；发送与答题提交前落检查点，未确认回执**不自动重发**。详见 [qoder-cdp.md](qoder-cdp.md) |
 | **Open Design**（Open Design 桌面端） | 普通 Electron 安装（实测 0.24.1，内嵌 Node 的外层启动器）+ 独立 `opendesign-gui` CDP adapter | ✅ **已接线**（`selectors.ts` 的 `primary` 全部落地，证据取自产品 Web 前端产物里的 `data-testid` 钩子；12 步执行链 + 验收-返修闭环已接线，Windows 真机取证）；macOS 标 `research` 且 fail-closed | 显式 `gui.exePath` → D 盘优先 + 相对路径模板（`Open Design/Open Design.exe`）→ 注册表卸载信息 → 标准目录 `{PROGRAMFILES}/Open Design` 等；版本与命名空间从 `<安装目录>/resources/open-design-config.json` 读取 | 复用本机登录态与数据目录（`%APPDATA%\Open Design\namespaces\<namespace>`；**产品会覆盖 `--user-data-dir`**）；已有实例无调试端口时转 `needs_user(close_existing_instance)`，绝不 kill 用户进程 | 工作目录（回读校验）、模型（精确匹配 + 回读）、设计系统（搜索过滤 + 精确点选 + 回读）、设计方向、任务书（可信输入 + 回读）、对话文本哈希与产物指纹（三信号） | **`ELECTRON_RUN_AS_NODE` 会让启动器退化成 Node 而拒绝 `--remote-debugging-port`**（受管启动已自动净化环境）；启动器是「分离子进程形态」（宣告端口后自行 `exit=0`）；端口基准 9889（9777 已被 Qoder CN 占用）。设计方向只支持原型/文档/网站复刻。运行检测为**三信号**（停止按钮 + 对话文本哈希 + 产物指纹）。详见 [opendesign-cdp.md](opendesign-cdp.md) |
@@ -26,11 +25,10 @@
 | Agent | 是否上报 | 发射的事件 |
 |---|---|---|
 | **Codex** | ✅ 已实现 | `task_dispatched` / `confirmation_dialog_detected`（残留弹窗清理、原生「选择文件夹」）/ `awaiting_user_authorization`（`loginIndicator`、`needs_login`、`needs_user`）/ `file_modification_started`（运行信号首次出现） |
-| **TraeWork** | ✅ 已实现 | `task_dispatched` / `confirmation_dialog_detected`（`bindProject` 经原生「选择文件夹」）/ `awaiting_user_authorization`（`ask_user` 挂起）/ `file_modification_started`（运行信号首次出现） |
 | **ZCode** | ⬜ 保留接口、暂不上报 | — |
 | **Kimi Code** | ⬜ 保留接口、暂不上报 | — |
 | **Qoder CN** | ⬜ 保留接口、暂不上报 | — |
-| **Open Design** | ⬜ 保留接口、暂不上报（`run.ts` 已接入 `onProgress` 阶段日志；`onEvent` 暂未上报） | — |
+| **Open Design** | ✅ 已实现 | `task_dispatched` / `confirmation_dialog_detected` / `awaiting_user_authorization` / `file_modification_started`（`run.ts` 已接入 `onEvent`） |
 | **CLI 类 agent**（含 stub） | ⬜ 不适用（无 GUI 交互节点） | — |
 | 引擎侧（与适配器无关） | ✅ | `rework_triggered`（自动返修 `mode:"auto"`、手动 `rework_task` `mode:"manual"`） |
 
@@ -72,41 +70,6 @@
   "executableDiscovery": { "dirs": ["C:/Users/Lenovo/AppData/Local/OpenAI/Codex/bin"], "fileNames": ["codex.exe"] }
 }
 ```
-
-## T1 — TraeWork / TRAE SOLO CN 驱动接口（2026-09-07 初判 unsupported → 2026-09-08 更正为已接入）
-
-**最终结论：`ready`（driver=gui）——无头 CLI 确实不存在，但 CDP 驱动桌面 UI 可行，已实现并真机验证。**
-
-### T1.1 初判（2026-09-07）：无头 CLI 不存在（该部分结论成立）
-
-实测证据（安装目录 `D:\TRAE Work CN`，即 TRAE SOLO CN）：
-
-- 应用：`D:\TRAE Work CN\TRAE SOLO CN.exe`（Electron，product.json `name: TRAE SOLO CN`，version `1.107.1`）。
-- 提供的 CLI 仅 VS Code 家族命令（`bin/trae-solo-cn.cmd` 以 ELECTRON_RUN_AS_NODE 调 `resources/app/out/cli.js`）：
-  - `open` / `open-url` / `serve-web` / `install-extension` / `uninstall-extension` / `list-extensions` / `locate-extension` / `version` / `tunnel` / `command` / `open-devtools`
-  - **没有任何 `agent exec` / headless agent 驱动子命令**。
-- 全安装目录（排除 node_modules）`find -iname "*codex*" -o -iname "*agent*.exe" -o -iname "*solo*cli*"` 无结果；无独立 agent CLI 二进制。
-- 扩展含 `byted-solo.builtin-mcp`（MCP **客户端**扩展，供 IDE 内接 MCP server）与 `cloudide.icube-agent-shell-exec`；这些是 IDE 侧能力，不是可供本 MCP server 外部调用的无头接口。
-- `%PATH%` 无 trae；无 `--headless`/远程 agent API。
-
-**该结论只覆盖「无头 CLI」这一条路线**，当时据此把 profile 标为 `status: "unsupported"`。
-
-### T1.2 更正（2026-09-08）：CDP GUI 驱动可行并已接入
-
-复核发现 TraeWork 支持 `--remote-debugging-port`（Electron/VS Code 家族），且同目录项目
-`oh-dsh-trae-api` 已用该机制跑通「驱动聊天 UI → 提取回复」。据此新增 GUI 驱动路线：
-
-- 连接：`TRAE SOLO CN.exe --remote-debugging-port=<port>` → `GET /json` 取页面 WS（页面为 `solo-lite.html`）。
-- 已实测选择器：聊天输入框、新建任务、任务列表（`.taskText` / `.task-list-group-name`）、
-  模式切换器、模型下拉、项目文件夹下拉（`cascadeMenu` + `cascadeMenuItemWithSubtitle` + `cascadeFooterButton`）。
-- 项目登记：下拉未命中时经 Windows 原生对话框写入路径，实测成功登记项目目录。
-- 端到端：`run_task(agentId="traework", model="GLM-5.3", autoVerify=true)` 驱动 TraeWork 创建文件并验收通过。
-
-**为什么不走 HTTP**：LLM/agent 请求在 TTNet 层 TDE 加密，无法在客户端外构造；CDP 驱动完整客户端是唯一可行路径。
-实现与踩坑记录见 [traework-cdp.md](traework-cdp.md)。
-
-> 更正记录：早前版本基于 `%APPDATA%` 误判「本机未安装 Trae」；随后在 `D:/` 发现真实安装并定论「无无头 CLI」；
-> 本次进一步确证 GUI 路线可行，profile 已改为 `status: "ready"` + `driver: "gui"`。
 
 ## Z1 — Zcode headless 入口（2026-09-07 实测，结论仅限无头路线）
 

@@ -7,6 +7,48 @@
 
 ---
 
+## [0.9.9] — 2026-11-02
+
+> **移除 TraeWork 调用支持（BREAKING）**：整个 `src/agents/traework/` 目录删除，
+> `traework` 不再是可用 agentId。这是「移除 TraeWork 与 Qoder CN」六版计划的第 2 版。
+
+**破坏性变更**：宿主若在配置里固定了 `agentId: "traework"`，升级后调用会失败（`agent_unresolved`）。
+
+### 移除
+
+- `src/agents/traework/` 整目录（12 文件）：`adapter.ts` / `discovery.ts` / `launcher.ts` /
+  `run.ts` / `cdp/client.ts`（0.9.8 的薄壳）/ `cdp/selectors.ts` / `computeruse/*` / `ui/*`。
+- `src/agents/builtin.ts` 的 `traework` profile 整块；`src/agents/registry.ts` 的
+  `TraeworkGuiAdapter` / `discoverTraework` 接线与默认 CLI 列表项。
+- 15 个 traework 测试文件；`test/integration/traework-fake-cdp.test.ts` 的假 CDP 驱动方式由
+  `test/fake-cdp.ts` 保留（仍服务 kimicode / opendesign）。
+
+### 变更（行为变化，须留意）
+
+- **`driver="gui"` 缺省回退取消**：旧版「`driver="gui"` 未写 `adapter`」会静默回落到
+  `traework-gui`；现改为 `AgentProfileSchema.superRefine` **fail-closed 报错**，报错文案给出
+  可照做的迁移路径（列出全部可选 adapter）。依赖该旧缺省的用户自定义 GUI profile 升级后需显式补 `adapter`。
+- **`mode` 参数废弃**：原为 TraeWork 的 Work/Code/Design 面板模式，随适配器移除而失去全部消费者。
+  现在**任何 agent** 传入 `mode` 都会被 handler 统一拒绝，并提示改用 `designDirection`（Open Design）。
+  （此前五个 GUI agent 各自回一句「不支持 mode」；现收敛为一条可照做的迁移文案。）
+- `query_info(type="profiles")` 不再返回 `traework`；`run_task(agentId="traework")` → `agent_unresolved`。
+
+### 不变
+
+- 其余六个 agent（codex / zcode / kimicode / qoder / opendesign / minimax）与 `stub` 行为零变化；
+  共享 CDP 传输（`GuiCdpClient`）一行未动。
+- 工具面仍是 8 个工具。
+
+### 测试
+
+- `test/unit/traework-driver.test.ts` → `test/unit/registry-driver.test.ts`（改测 registry 的
+  driver/adapter 选择与 fail-closed 行为）。
+- `test/unit/traework-repair-plan.test.ts` → `test/unit/repair-plan.test.ts`（与 TraeWork 无关，仅改名）。
+- `issue38-acceptance-setup-failed` / `last-run-signal-contract` / `gui-stop-disclosure` /
+  `protocol-text` / `zcode-handler` 五处跨文件用例改写为仍在的 agent。
+
+---
+
 ## [0.9.8] — 2026-11-01
 
 > **共享 CDP 底座迁址改名（纯重构，零行为变化）**：把被六个 GUI 适配器共用的

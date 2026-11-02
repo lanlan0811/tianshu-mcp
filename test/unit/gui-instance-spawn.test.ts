@@ -13,7 +13,7 @@ describe("GUI 桌面实例的 spawn 选项", () => {
     expect(options.windowsHide).toBe(false);
   });
 
-  it("默认隐藏窗口；ZCode / TraeWork 这类需要可见窗口的 GUI 显式传 false", () => {
+  it("默认隐藏窗口；需要可见窗口的 GUI 实例显式传 false", () => {
     expect(guiInstanceSpawnOptions().windowsHide).toBe(true);
   });
 });

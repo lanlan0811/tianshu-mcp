@@ -41,7 +41,7 @@ export interface NewTaskInput {
   agentId: string;
   task: string;
   context?: string;
-  /** GUI 类 agent（traework/codex）使用的模型名；CLI 类忽略 */
+  /** GUI 类 agent 使用的模型名；CLI 类忽略 */
   model?: string;
   /** Codex GUI 思考等级；其他 agent 忽略 */
   reasoningLevel?: ReasoningLevel;
@@ -58,7 +58,10 @@ export interface NewTaskInput {
   exportTimeoutMs?: number;
   /** MiniMax Code 上下文窗口（界面候选文本）；其他 agent 忽略 */
   contextWindow?: string;
-  /** GUI 类 agent（traework）使用的面板模式；CLI 类忽略 */
+  /**
+   * 已废弃的面板模式。原消费者已移除，现无任何消费者；
+   * 仅为读取旧任务快照与给出迁移文案而保留字段。
+   */
   mode?: TraeworkMode;
   /** ZCode 专用：目标项目未登记时是否允许自动导入（省略 = 允许）。 */
   allowCreateProject?: boolean;

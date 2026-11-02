@@ -63,7 +63,7 @@ Tianshu (TUI × GUI)              ← commander / user surface / verdict
               ↓  MCP over stdio (stdout carries JSON-RPC only)
         tianshu-mcp              ← scheduling · execution surface · acceptance gate
               ↓
-Codex · TraeWork · ZCode · Kimi Code · Qoder CN · Open Design · MiniMax Code
+Codex · ZCode · Kimi Code · Qoder CN · Open Design · MiniMax Code
               ↓ (GUI driven over CDP; CLI via child process)
         target project workspace ← git repo + tests + .tianshu-mcp/
 ```
@@ -133,7 +133,7 @@ Five conceptual illustrations summarizing the shape and mechanisms of this serve
 Once development work is handed to an AI agent, the hard part is not whether it *can* work — it is **how to confirm the work is actually finished and actually correct**:
 
 - **Self-reports are not evidence** — "done" is a natural-language conclusion, not proof. Without independent acceptance, a half-finished job looks identical to a real delivery.
-- **The environment is a black box** — desktop agents encrypt their requests in the transport layer (e.g. TraeWork's TTNet/TDE), so requests cannot be constructed outside the client; the only viable path is to drive the UI and read the result.
+- **The environment is a black box** — desktop agents encrypt their requests in the transport layer (e.g. ZCode's TTNet/TDE), so requests cannot be constructed outside the client; the only viable path is to drive the UI and read the result.
 - **The host tool surface is narrow** — Tianshu's MCP tools **return text only** (`content[].text` is concatenated, `isError` passed through) and are called **synchronously per call**, so long tasks must be made async and no server-side push is available.
 - **Nobody picks up after a failure** — if no one feeds back "which line is wrong, what to change", the agent simply repeats the same mistake.
 
@@ -249,7 +249,7 @@ run_task(projectPath=D:/xxx/my-app, task="…task brief…", agentId=codex,
 
 > "In project `D:\xxx`, use codex to implement 『task』. First run `run_task(autoVerify:true, autoFixRounds:2)`, then `wait_task` until it reaches a stop point; if the report shows `needs_attention`, pass the failure summary from `get_task_report` as `feedback` to `rework_task` for another round; when everything passes, report `changedFiles` and `diffstat` back to me."
 
-> "In project `D:\xxx`, use traework with `mode=Code` to implement 『task』; it switches to Code mode, binds the project, sends the task, verifies automatically, and on failure generates a repair plan and reworks."
+> "In project `D:\xxx`, use opendesign with `designDirection=prototype` to implement 『task』; it drives the Open Design desktop app along that design direction, sends the task, verifies automatically, and on failure generates a repair plan and reworks."
 
 ## Tool surface
 
@@ -278,14 +278,13 @@ run_task(projectPath=D:/xxx/my-app, task="…task brief…", agentId=codex,
 |---|---|---|---|
 | `codex` | `gui` / `codex-gui` | **ready** (`research` on macOS) | Codex desktop GUI (Windows: MSIX COM activation + CDP; macOS: spawn .app + CDP); supports `model` / `reasoningLevel` / `planDoc` / `designSystem`; user-confirmation wait, cancellation and re-dispatch guards are all machine-verified |
 | `zcode` | `gui` / `zcode-gui` | **ready** (closed-loop verified on real Windows; macOS unverified) | CDP GUI adapter; supports project-less dispatch, `allowCreateProject` and `reasoningLevel` (the tier set **varies per model**; out-of-range tiers fail **before sending**); **v0.7.4 adapted to the missing 3.14.x path contracts** (the binding verdict became "path first, display-name when no path is available + global name disambiguation", failing closed on duplicates); **v0.7.6 fixes the binding deadlock** (sidebar `workspace-item-*` nodes scrolled out of view were still collected, short-circuiting the only trustworthy menu channel), **adds a recovery entry point for runtime CDP disconnects** (reconnect once for observation, never resend; a failed reconnect lands on `needs_user(setup_recovery)`) and **fixes the two-level model menu** (provider groups render their submenu only on hover); **v0.8.0 keeps the original session permission on resume rounds** (issue #30: `continue_task` / `rework_task` are no longer silently overwritten by the profile default) |
-| `traework` | `gui` / `traework-gui` | **ready** | CDP-driven TRAE SOLO CN desktop UI; supports `mode` (Work / Code / Design, each of the three modes maintaining its own project binding); all three modes machine-verified; **v0.8.0 removes the cross-mode project-binding fallback** (issue #35: a failed non-Work bind no longer falls back to Work and silently rewrites the target mode — it now fails honestly) |
-| `kimicode` | `gui` / `kimicode-gui` | **ready** (`research` on macOS) | Kimi Code desktop (Electron); **dual renderer processes** (main window plus a `Kimi Browser Overlay` that hosts the model / reasoning / mode menus); workspaces bind by full path; supports `model` / `reasoningLevel`, **not `mode`**, and **not project-less dispatch** |
+| `kimicode` | `gui` / `kimicode-gui` | **ready** (`research` on macOS) | Kimi Code desktop (Electron); **dual renderer processes** (main window plus a `Kimi Browser Overlay` that hosts the model / reasoning / mode menus); workspaces bind by full path; supports `model` / `reasoningLevel`, and **not project-less dispatch** |
 | `qoder` | `gui` / `qoder-gui` | closed-loop verified on Windows; **research** on macOS | Qoder CN only; requires an existing `projectPath` and a readable `planDoc`; `modelSource=default\|custom` disambiguates same-named models, and the reasoning level is saved as a global preference via "Model management" and read back |
 | `opendesign` | `gui` / `opendesign-gui` | **ready** (`research` on macOS) | Open Design desktop GUI; selectors are taken from the product's own web-frontend `data-testid` hooks, the full 12-step execution chain is wired, and the acceptance → auto-rework → re-acceptance loop is connected; it is the only driver with an "artifact signal" (file mtime / size fingerprint) |
-| `minimax` | `gui` / `minimax-gui` | **ready** (`research` on macOS) | MiniMax Code desktop (Electron); **dual renderer processes** (main window plus a `Model menu` popup); the reasoning level / context window live in a **second-level submenu that only appears on hovering a model row**, and their **candidate sets vary per model** (requesting them on a submenu-less model is fail-closed); supports `model` / `reasoningLevel` / **`contextWindow`** (this adapter only), **not `mode`**, and **not project-less dispatch**; "New project" takes **two steps: in-app modal → native `Select Directory` → modal submit** |
+| `minimax` | `gui` / `minimax-gui` | **ready** (`research` on macOS) | MiniMax Code desktop (Electron); **dual renderer processes** (main window plus a `Model menu` popup); the reasoning level / context window live in a **second-level submenu that only appears on hovering a model row**, and their **candidate sets vary per model** (requesting them on a submenu-less model is fail-closed); supports `model` / `reasoningLevel` / **`contextWindow`** (this adapter only), and **not project-less dispatch**; "New project" takes **two steps: in-app modal → native `Select Directory` → modal submit** |
 | `stub` | `spawn` | tests only | `test/stub-agent/stub-agent.mjs` with three scripts (good / fix-on-first / never) |
 
-> `mode` supports `Work` / `Code` / `Design` (TraeWork only) and is inferred from the task text when omitted. Kimi Code's `reasoningLevel` is validated against the **set of levels actually rendered by the UI** (official models `low` / `high` / `max`; unofficial models only `on` / `off`). MiniMax Code's `reasoningLevel` / `contextWindow` are likewise validated against the **actual UI candidates** (e.g. `M3.1-Flash-Preview` offers `default`/`low`/`medium`/`high`/`xhigh`/`max` plus `512K`/`1M`, while `M3` has no level group and `deepseek-v4.1-flash` has no window group); an out-of-range or unreadable value is fail-closed. Adding an agent is usually just a profile — see [docs/agent-profiles.en.md](docs/agent-profiles.en.md) and [CONTRIBUTING.en.md](CONTRIBUTING.en.md).
+> **`mode` is deprecated** (since v0.9.9): it was the Work / Code / Design panel mode of an early GUI adapter that has since been removed, and **no adapter consumes it any more**; passing it is rejected uniformly by the handler with a pointer to `designDirection` (Open Design). Kimi Code's `reasoningLevel` is validated against the **set of levels actually rendered by the UI** (official models `low` / `high` / `max`; unofficial models only `on` / `off`). MiniMax Code's `reasoningLevel` / `contextWindow` are likewise validated against the **actual UI candidates** (e.g. `M3.1-Flash-Preview` offers `default`/`low`/`medium`/`high`/`xhigh`/`max` plus `512K`/`1M`, while `M3` has no level group and `deepseek-v4.1-flash` has no window group); an out-of-range or unreadable value is fail-closed. Adding an agent is usually just a profile — see [docs/agent-profiles.en.md](docs/agent-profiles.en.md) and [CONTRIBUTING.en.md](CONTRIBUTING.en.md).
 
 ### macOS headless path: codex-cli (user profile)
 
@@ -337,7 +336,7 @@ The built-in `codex` drives the desktop GUI; if you would rather not depend on G
 
 1. **Never blind-kill a GUI instance by process tree** — only PIDs created by this module and verified by command line are terminated.
 2. **Reuse the user's instance by default** — never start a second one; managed instances never touch an instance the user opened manually.
-3. **computer-use allowlist** — only the TraeWork folder-selection dialog (window title + host process double-checked).
+3. **computer-use allowlist** — a native folder-selection dialog must pass both a window-title and a host-process check; every other window is rejected.
 4. **Zero credential handling** — no agent credential is read, decrypted or forwarded; GUI adapters only drive the UI.
 5. **Commands never build a shell** — acceptance commands are structured argv with `shell:false`.
 6. **No automatic commit / stash / rollback** — a git baseline is captured before work starts and reports are computed relative to it.
@@ -390,7 +389,7 @@ Allowing and disabling (a CLI flag or its equivalent environment variable; `--no
 
 | Phase | Version | Delivery summary |
 |---|---|---|
-| Orchestration skeleton | 0.1.x | 8 tools, state machine / queue / concurrency gate / cancellation (kill tree), acceptance engine, automatic rework; TraeWork CDP driver and mode switching |
+| Orchestration skeleton | 0.1.x | 8 tools, state machine / queue / concurrency gate / cancellation (kill tree), acceptance engine, automatic rework; the first CDP desktop driver |
 | ZCode GUI | 0.2.0 | ZCode unified closed loop (development → controlled failure → same-session rework → `continue_task`) |
 | Codex desktop | 0.3.x | Codex MSIX COM activation + CDP (**breaking**: `codex` moved from headless to GUI); user-wait detection, cancel that actually stops the GUI, acceptance engine fail-closed |
 | macOS and gates | 0.4.x | macOS dual drivers (spawn .app + CDP), `projectPath` safety gate, bounded-parallel acceptance commands (test suite 267s → 51s) |
@@ -404,6 +403,7 @@ Allowing and disabling (a CLI flag or its equivalent environment variable; `--no
 | TraeWork binding chain | 0.8.3 | Footer click now uses a side-effect-driven three-tier ladder (#38: `element.click()` returning true ≠ the native popup was raised — the old code idled the full 20 s with no remediation; the judge is now "did the dialog appear", coordinate click first, live 20 s → 5.9 s). Total probe budget no longer inflates (deadline check moved before probing, live 28.2 s → 19.2 s). Logical setup failures no longer land on `errorType=spawn` (new `setup_failed`, declared by the adapter; the other six agents are unchanged) |
 | Tool-surface slimming | 0.8.4 | `acceptanceOverride` on `run_task` / `verify_task` is now declared as a skeleton on the wire — measured `tools/list` **35,581 → 11,717 chars (−67.1%)**; root cause was `VisualConfigSchema` (9,579 chars) being inlined once per tool (MCP serialises each tool's schema independently, so `$ref` cannot be shared). Tool names / parameter sets / validation semantics all unchanged; the **validation sink** (strict re-check inside the handlers) ships as a pair with this change — without it, opaque `visual` would let invalid inner fields fail open |
 | CDP transport refactor | 0.9.8 | `TraeworkCdpClient` — the transport shared by six GUI adapters — moves to `src/agents/cdp/client.ts` and is renamed `GuiCdpClient`, with the transport/generic-input layer split from the selector-semantics layer: the shared transport no longer imports any selector table, preparing for the removal of TraeWork / Qoder CN. Pure refactor, zero behaviour change |
+| TraeWork removal | 0.9.9 | **Breaking**: the `traework` agent's dispatch support is removed entirely (directory / tests / registry wiring / docs all cleaned up); the historical `driver="gui"`-without-`adapter` fallback to that adapter is gone too, replaced by a **fail-closed error** carrying a migration path; the `mode` parameter is deprecated alongside it (one unified rejection message). The other six agents are unchanged |
 | Log viewer GUI | `gui-v*` (separate line) | `mcp-gui/` local read-only log viewer (Tauri 2.x + Vue 3), independent version and tag, **not released with the MCP main package** |
 
 > The complete per-version record is in [CHANGELOG.en.md](CHANGELOG.en.md); handoff status and the troubleshooting handbook are in [HANDOFF.md](HANDOFF.md); engineering-metric definitions are in [ARCHITECTURE.en.md](ARCHITECTURE.en.md).
@@ -478,7 +478,6 @@ Decoupling and release boundaries (read before changing anything here):
 | Document | Contents |
 |---|---|
 | [docs/codex-gui-cdp.en.md](docs/codex-gui-cdp.en.md) | Codex desktop: MSIX COM activation, CDP takeover, selectors, liveness, acceptance and rework |
-| [docs/traework-cdp.en.md](docs/traework-cdp.en.md) | TraeWork: principles, configuration, mode switching, selectors, safety red lines, pitfalls |
 | [docs/zcode-cdp.en.md](docs/zcode-cdp.en.md) | ZCode: install discovery, exact project / model, full access, pause-resume, project-less dispatch and both-platform status |
 | [docs/kimi-cdp.en.md](docs/kimi-cdp.en.md) | Kimi Code: dual renderer processes, workspace full-path binding and native import, three-level model selection and reasoning levels |
 | [docs/qoder-cdp.en.md](docs/qoder-cdp.en.md) | Qoder CN: install discovery and instance reuse, native workspace import, `modelSource` and global reasoning level, same-session rework |

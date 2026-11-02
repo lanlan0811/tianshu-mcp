@@ -11,11 +11,11 @@ describe("guiAppNameOf：profile 派生的窗口称呼", () => {
   it("剥掉括号内的说明段与通用后缀，保留产品名", () => {
     expect(guiAppNameOf("Codex (ChatGPT 桌面端 GUI)", "codex")).toBe("Codex");
     expect(guiAppNameOf("Kimi Code 桌面端", "kimicode")).toBe("Kimi Code");
-    expect(guiAppNameOf("TraeWork (GUI)", "traework")).toBe("TraeWork");
+    expect(guiAppNameOf("Codex (GUI)", "codex")).toBe("Codex");
   });
 
   it("保留有实际意义的括号段（不做无限剥离）", () => {
-    expect(guiAppNameOf("TraeWork（测试）", "traework")).toBe("TraeWork（测试）");
+    expect(guiAppNameOf("ZCode（测试）", "zcode")).toBe("ZCode（测试）");
     expect(guiAppNameOf("Qoder CN", "qoder")).toBe("Qoder CN");
     expect(guiAppNameOf("ZCode", "zcode")).toBe("ZCode");
   });

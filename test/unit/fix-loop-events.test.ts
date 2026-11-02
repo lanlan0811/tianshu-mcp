@@ -1,7 +1,7 @@
 /**
  * 单元测试：编排器把适配器的 onEvent 上报落进任务事件流（issue #18）。
  *
- * 用一个只实现 run() 的假 GUI 适配器替换真实 agent：适配器内部按真实 codex/traework 的
+ * 用一个只实现 run() 的假 GUI 适配器替换真实 agent：适配器内部按真实 codex 的
  * 位置调用 opts.onEvent，验证编排器「只落盘、不解释」的接线以及快照同步。
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -35,7 +35,7 @@ afterEach(async () => {
 
 const FAKE_ID = "fake-gui";
 
-/** 只实现 run() 的假适配器：模拟 codex/traework 在关键节点上报事件 */
+/** 只实现 run() 的假适配器：模拟 codex 在关键节点上报事件 */
 class FakeEventAdapter implements AgentAdapter {
   readonly id = FAKE_ID;
   constructor(
@@ -52,7 +52,7 @@ class FakeEventAdapter implements AgentAdapter {
   }
 
   async run(ctx: TaskContext, _resolved: ResolvedAgent, opts: AgentRunOptions): Promise<AgentRunResult> {
-    // 与真实 codex/traework 适配器一致：经 makeEmitter 上报，上报失败被隔离在本行内。
+    // 与真实 codex 适配器一致：经 makeEmitter 上报，上报失败被隔离在本行内。
     const emit = makeEmitter(opts.onEvent);
     for (const kind of this.emitKinds) {
       await emit(kind as never, `detail:${kind}`, { round: ctx.round });
@@ -223,15 +223,15 @@ describe("hardFailure 的失败分类细化（issue #38 问题 B）", () => {
 
   it("适配器未声明 errorType → 缺省仍为 spawn，且文案保持「agent 基础设施失败」（I6 回归锁）", async () => {
     const { store, meta, orchestrator } = await fixture([], {
-      error: "未找到 TraeWork 可执行文件",
-      // 故意不传 errorType：非 traework 的 6 个 agent 均走这条路径，行为必须逐字不变
+      error: "未找到 Codex 可执行文件",
+      // 故意不传 errorType：未自归类失败性质的 agent 均走这条路径，行为必须逐字不变
     });
 
     const res = await orchestrator.run();
     expect(res.status).toBe("failed");
     expect(meta.errorType).toBe("spawn");
     expect(meta.lastMessage).toContain("agent 基础设施失败");
-    expect(meta.lastMessage).toContain("未找到 TraeWork 可执行文件");
+    expect(meta.lastMessage).toContain("未找到 Codex 可执行文件");
 
     const snap = JSON.parse(await fs.readFile(path.join(store.dir(meta.taskId), "task.json"), "utf8"));
     expect(snap.errorType).toBe("spawn");

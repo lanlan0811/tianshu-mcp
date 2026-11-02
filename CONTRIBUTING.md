@@ -85,7 +85,8 @@ src/
 ├── tasks/                任务状态机、队列、并发闸、事件流落盘
 ├── loop/                 单任务编排（返修循环）与修复计划生成
 ├── agents/               adapter 抽象、registry、spawn 封装、内置 profiles
-│   └── traework/         GUI 驱动（CDP 客户端 / 选择器 / 启动器 / UI / 受限 computer-use）
+│   ├── cdp/              共享 CDP 传输底座（GuiCdpClient，全部 GUI adapter 复用）
+│   └── codex/ zcode/ kimicode/ qoder/ opendesign/ minimax/  各 GUI 驱动（CDP 客户端 / 选择器 / 启动器 / UI）
 ├── verify/               验收引擎（命令检查 + 代码分析 + git 基线 + 报告）
 └── util/                 日志、路径、文件、超时等
 ```
@@ -95,7 +96,7 @@ src/
 | 层级 | 位置 | 说明 |
 |---|---|---|
 | 单元 | `test/unit/` | 纯函数与组件逻辑 |
-| 集成 | `test/integration/` | stub-agent 三剧本、TraeWork 假 CDP 端到端 |
+| 集成 | `test/integration/` | stub-agent 三剧本、各 GUI agent 假 CDP 端到端 |
 | 协议 | `test/protocol/` | 官方 SDK stdio/in-memory 客户端断言工具面与返回格式 |
 | 真实进程 | `scripts/check-stdio.mjs` | 严格 stdio 门禁：真实子进程字节流，stdout 只允许合法 MCP 消息 |
 | 真机探针 | `scripts/probe-traework.mjs` | 需真实 TraeWork，**不入 CI** |

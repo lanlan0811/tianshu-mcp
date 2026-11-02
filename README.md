@@ -63,7 +63,7 @@
               ↓  MCP over stdio（stdout 仅承载 JSON-RPC）
         tianshu-mcp              ← 调度 · 执行面 · 验收仪
               ↓
-Codex · TraeWork · ZCode · Kimi Code · Qoder CN · Open Design · MiniMax Code
+Codex · ZCode · Kimi Code · Qoder CN · Open Design · MiniMax Code
               ↓（GUI 经 CDP 驱动桌面 UI；CLI 走子进程）
         目标项目工作区            ← git 仓库 + 测试 + .tianshu-mcp/
 ```
@@ -133,7 +133,7 @@ Codex · TraeWork · ZCode · Kimi Code · Qoder CN · Open Design · MiniMax Co
 把开发任务交给 AI-Agent 之后，真正的困难不在「它能不能干活」，而在**怎么确认它真的干完了、干对了**：
 
 - **自述不可信** —— agent 的「已完成」是自然语言结论，不是证据。没有独立验收时，半成品与真交付长得一模一样。
-- **环境是黑盒** —— 桌面 agent 的请求在传输层加密（如 TraeWork 的 TTNet 层 TDE），无法在客户端外构造，唯一可行路径是驱动 UI 取结果。
+- **环境是黑盒** —— 桌面 agent 的请求在传输层加密（如 ZCode 的 TTNet 层 TDE），无法在客户端外构造，唯一可行路径是驱动 UI 取结果。
 - **宿主工具面很窄** —— 天枢的 MCP 工具**只回文本**（`content[].text` 被拼成字符串、`isError` 透传），且**按次同步**调用，长任务必须自己异步化，也不能依赖服务端推送。
 - **失败后没人接手** —— 验收不通过时，如果没有人把「哪一行错了、该改什么」喂回去，agent 只会重复同一次错误。
 
@@ -249,7 +249,7 @@ run_task(projectPath=D:/xxx/my-app, task="…任务书…", agentId=codex,
 
 > 「在项目 `D:\xxx` 用 codex 实现『任务』。先跑 `run_task(autoVerify:true, autoFixRounds:2)`，完成后用 `wait_task` 等到停点再看结果；若报告显示 `needs_attention`，把 `get_task_report` 的失败项摘要作为 `feedback` 调 `rework_task` 再验一轮；全部通过后向我汇报 `changedFiles` 与 `diffstat`。」
 
-> 「在项目 `D:\xxx` 用 traework、`mode=Code` 实现『任务』；它会先切到 Code 模式再绑定项目，然后发任务、自动验收，失败自动生成修复计划并返修。」
+> 「在项目 `D:\xxx` 用 opendesign、`designDirection=prototype` 实现『任务』；它会按设计方向驱动 Open Design 桌面端，然后发任务、自动验收，失败自动生成修复计划并返修。」
 
 ## 工具面
 
@@ -278,14 +278,13 @@ run_task(projectPath=D:/xxx/my-app, task="…任务书…", agentId=codex,
 |---|---|---|---|
 | `codex` | `gui` / `codex-gui` | **ready**（macOS 为 `research`） | Codex 桌面端 GUI（Windows：MSIX COM 激活 + CDP；macOS：spawn .app + CDP）；支持 `model` / `reasoningLevel` / `planDoc` / `designSystem`；等待用户确认、取消与重派护栏均已真机验证 |
 | `zcode` | `gui` / `zcode-gui` | **ready**（Windows 真机闭环；macOS 未验证） | CDP GUI adapter；支持无项目派发、`allowCreateProject` 与 `reasoningLevel`（档位集合**随模型变化**，越权在**发送前**报错）；**v0.7.4 适配 3.14.x 的路径契约缺席**（绑定判据改为「路径优先、无路径渠道时按显示名 + 全局同名消歧」，同名即 fail-closed）；**v0.7.6 修掉绑定死锁**（侧边栏 `workspace-item-*` 滚出视口仍被采集 → 唯一可信的菜单渠道被短路）、**运行期 CDP 断连的恢复入口**（重连观察一次、绝不重发，失败落 `needs_user(setup_recovery)`）与**两级模型菜单**（provider 分组须 hover 才渲染子项）；**v0.8.0 恢复轮保留原会话权限**（issue #30：`continue_task` / `rework_task` 不再被 profile 默认值静默覆盖） |
-| `traework` | `gui` / `traework-gui` | **ready** | CDP 驱动 TRAE SOLO CN 桌面 UI；支持 `mode`（Work / Code / Design，三种模式各自维护独立项目绑定）；三种面板模式真机验证通过；**v0.8.0 移除跨模式项目绑定兜底**（issue #35：非 Work 模式绑定失败不再回落 Work 并静默改写目标模式，失败即如实返回） |
-| `kimicode` | `gui` / `kimicode-gui` | **ready**（macOS 为 `research`） | Kimi Code 桌面端（Electron）；**双渲染进程**（主窗口 + `Kimi Browser Overlay` 浮层承载模型 / 档位 / 模式菜单）；工作区以完整路径绑定；支持 `model` / `reasoningLevel`，**不支持 `mode`**，且**不支持无项目派发** |
+| `kimicode` | `gui` / `kimicode-gui` | **ready**（macOS 为 `research`） | Kimi Code 桌面端（Electron）；**双渲染进程**（主窗口 + `Kimi Browser Overlay` 浮层承载模型 / 档位 / 模式菜单）；工作区以完整路径绑定；支持 `model` / `reasoningLevel`，且**不支持无项目派发** |
 | `qoder` | `gui` / `qoder-gui` | Windows 真机闭环通过；macOS **research** | 仅 Qoder CN；必须提供已有 `projectPath` 与可读 `planDoc`；`modelSource=default\|custom` 消除同名模型歧义，思考等级经「模型管理」保存为全局偏好并回读 |
 | `opendesign` | `gui` / `opendesign-gui` | **ready**（macOS 为 `research`） | Open Design 桌面端 GUI；选择器取自产品自身 Web 前端的 `data-testid` 钩子，12 步执行链全部接线，并接入验收 → 自动返修 → 再验收闭环；它是唯一带「产物信号」（文件 mtime / 大小指纹）的 driver |
-| `minimax` | `gui` / `minimax-gui` | **ready**（macOS 为 `research`） | MiniMax Code 桌面端（Electron）；**双渲染进程**（主窗口 + `Model menu` 弹层）；推理等级 / 上下文窗口在**悬停模型项展开的二级子菜单**里，且**候选集合随模型变化**（无子菜单的模型请求这两项即 fail-closed）；支持 `model` / `reasoningLevel` / **`contextWindow`**（本适配器专属），**不支持 `mode`**，且**不支持无项目派发**；「新建项目」为**应用内模态框 → 原生 `Select Directory` → 模态框提交**两步 |
+| `minimax` | `gui` / `minimax-gui` | **ready**（macOS 为 `research`） | MiniMax Code 桌面端（Electron）；**双渲染进程**（主窗口 + `Model menu` 弹层）；推理等级 / 上下文窗口在**悬停模型项展开的二级子菜单**里，且**候选集合随模型变化**（无子菜单的模型请求这两项即 fail-closed）；支持 `model` / `reasoningLevel` / **`contextWindow`**（本适配器专属），且**不支持无项目派发**；「新建项目」为**应用内模态框 → 原生 `Select Directory` → 模态框提交**两步 |
 | `stub` | `spawn` | 仅测试 | `test/stub-agent/stub-agent.mjs` 三剧本（good / fix-on-first / never） |
 
-> `mode` 支持 `Work` / `Code` / `Design`（仅 TraeWork），不传时从任务书文本识别。Kimi Code 的 `reasoningLevel` 按**界面实际渲染的档位集合**校验（官方模型 `低` / `高` / `max`，非官方模型仅 `on` / `off`）。MiniMax Code 的 `reasoningLevel` / `contextWindow` 同样按**界面实际候选**校验（如 `M3.1-Flash-Preview` 为 `default`/`low`/`medium`/`high`/`xhigh`/`max` 与 `512K`/`1M`，而 `M3` 无档位组、`deepseek-v4.1-flash` 无窗口组），越权或读不到即 fail-closed。新增 agent 通常只需加一个 profile，详见 [docs/agent-profiles.md](docs/agent-profiles.md) 与 [CONTRIBUTING.md](CONTRIBUTING.md)。
+> **`mode` 已废弃**（v0.9.9 起）：它是早期 GUI 适配器的 Work / Code / Design 面板模式，该适配器已移除，现**没有任何适配器消费**；传入会被 handler 统一拒绝并提示改用 `designDirection`（Open Design）。Kimi Code 的 `reasoningLevel` 按**界面实际渲染的档位集合**校验（官方模型 `低` / `高` / `max`，非官方模型仅 `on` / `off`）。MiniMax Code 的 `reasoningLevel` / `contextWindow` 同样按**界面实际候选**校验（如 `M3.1-Flash-Preview` 为 `default`/`low`/`medium`/`high`/`xhigh`/`max` 与 `512K`/`1M`，而 `M3` 无档位组、`deepseek-v4.1-flash` 无窗口组），越权或读不到即 fail-closed。新增 agent 通常只需加一个 profile，详见 [docs/agent-profiles.md](docs/agent-profiles.md) 与 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ### macOS 无头路径：codex-cli（用户 profile）
 
@@ -337,7 +336,7 @@ run_task(projectPath=D:/xxx/my-app, task="…任务书…", agentId=codex,
 
 1. **绝不按进程树盲杀 GUI 实例** —— 只终止本模块创建、且命令行核对通过的 PID。
 2. **默认复用用户实例** —— 绝不新起第二个；受管实例也不触碰用户手动打开的实例。
-3. **computer-use 白名单** —— 仅允许 TraeWork 文件夹选择对话框（窗口标题 + 宿主进程双校验）。
+3. **computer-use 白名单** —— 原生文件夹选择对话框需经窗口标题 + 宿主进程双校验，其余窗口一律拒绝。
 4. **凭证零管理** —— 不读取 / 解密 / 转发任何 agent 凭证；GUI adapter 只驱动 UI。
 5. **命令不拼 shell** —— 验收命令是结构化 argv，`shell:false`。
 6. **不自动 commit / stash / 回滚** —— 动工前采集 git 基线，报告相对基线计算。
@@ -390,7 +389,7 @@ run_task(projectPath=D:/xxx/my-app, task="…任务书…", agentId=codex,
 
 | 阶段 | 版本 | 交付概要 |
 |---|---|---|
-| 编排骨架 | 0.1.x | 8 工具、状态机 / 队列 / 并发闸 / 取消（kill tree）、验收引擎、自动返修；TraeWork CDP 驱动接入与模式切换 |
+| 编排骨架 | 0.1.x | 8 工具、状态机 / 队列 / 并发闸 / 取消（kill tree）、验收引擎、自动返修；首个 CDP 桌面驱动接入 |
 | ZCode GUI | 0.2.0 | ZCode 统一闭环（开发 → 受控失败 → 同会话返修 → `continue_task`） |
 | Codex 桌面端 | 0.3.x | Codex MSIX COM 激活 + CDP（**破坏性**：`codex` 由无头改为 GUI）；等待用户检测、取消真停 GUI、验收引擎 fail-closed |
 | macOS 与闸门 | 0.4.x | macOS 双驱动（spawn .app + CDP）、`projectPath` 安全闸门、验收命令有界并行（测试套件 267s → 51s） |
@@ -404,6 +403,7 @@ run_task(projectPath=D:/xxx/my-app, task="…任务书…", agentId=codex,
 | TraeWork 绑定链路 | 0.8.3 | footer 点击改「副作用驱动三级阶梯」（#38：`element.click()` 返回 true ≠ 原生弹窗已唤起——旧实现据此白等满 20s 无补救；现以「对话框是否出现」为判据、坐标点击优先，真机 20s → 5.9s）；总探测预算不再膨胀（检测点移到探测前，真机 28.2s → 19.2s）；逻辑性 setup 失败不再落 `errorType=spawn`（新增 `setup_failed`，由适配器自归类，其余 6 个 agent 零行为变化） |
 | 工具面瘦身 | 0.8.4 | `run_task` / `verify_task` 的 `acceptanceOverride` 线上声明骨架化——实测 `tools/list` **35581 → 11717 字符（−67.1%）**；根因是 `VisualConfigSchema`（9579 字符）在两个工具里各内联一份（MCP 每工具独立序列化，`$ref` 不可跨工具共享）。工具名 / 参数集 / 校验语义全部不变；**校验下沉**（handler 内严格复核）与本改动成对实施，否则 `visual` 转不透明后其内部非法输入会 fail-open |
 | CDP 底座重构 | 0.9.8 | `TraeworkCdpClient`（六个 GUI 适配器共用的传输底座）迁至 `src/agents/cdp/client.ts` 改名 `GuiCdpClient`，并把「传输 + 通用输入原语」与「选择器语义层」切开——共享传输不再 import 任何选择器表，为后续删除 TraeWork / Qoder CN 铺路。纯重构，零行为变化 |
+| 移除 TraeWork | 0.9.9 | **破坏性**：彻底移除 `traework` agent 的调用支持（目录 / 测试 / registry 接线 / 文档全量清理）；`driver="gui"` 缺省回落到该适配器的历史行为一并取消，改为 **fail-closed 报错**并给出迁移路径；`mode` 参数随之废弃（统一拒绝文案）。其余六个 agent 零行为变化 |
 | 日志台 GUI | `gui-v*`（独立线） | `mcp-gui/` 本地只读日志台（Tauri 2.x + Vue 3），独立版本与 tag，**不随 MCP 主包发布** |
 > 完整逐版记录见 [CHANGELOG.md](CHANGELOG.md)，交接状态与排障手册见 [HANDOFF.md](HANDOFF.md)，工程质量口径见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
@@ -476,7 +476,6 @@ run_task(projectPath=D:/xxx/my-app, task="…任务书…", agentId=codex,
 | 文档 | 说明 |
 |---|---|
 | [docs/codex-gui-cdp.md](docs/codex-gui-cdp.md) | Codex 桌面端：MSIX COM 激活、CDP 接管、选择器、运行检测、验收返修 |
-| [docs/traework-cdp.md](docs/traework-cdp.md) | TraeWork：原理、配置、模式切换、选择器、安全红线、踩坑记录 |
 | [docs/zcode-cdp.md](docs/zcode-cdp.md) | ZCode：安装探测、精确项目 / 模型、完全访问、暂停继续、无项目派发与双平台状态 |
 | [docs/kimi-cdp.md](docs/kimi-cdp.md) | Kimi Code：双渲染进程、工作区完整路径绑定与原生导入、模型三级选择与思考档位 |
 | [docs/qoder-cdp.md](docs/qoder-cdp.md) | Qoder CN：安装发现与实例复用、工作区原生导入、`modelSource` 与全局思考等级、原会话返修 |

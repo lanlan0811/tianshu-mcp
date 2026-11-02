@@ -4,14 +4,13 @@
  * 背景（真机测试发现）：`fix-loop.ts` 的 onProgress 用 `/运行证据=([^；]+)/` 从适配器的
  * 进度 note 里提取 `lastRunSignal`，该字段是 query_task meta 的对外文档化字段
  * （usage-examples.md 明列）。codex / kimicode / minimax / opendesign / zcode
- * 五个适配器均按 `运行证据=` 契约书写 note；traework 曾用 `运行信号：` / `诊断：`，
+ * 五个适配器均按 `运行证据=` 契约书写 note；早期某个适配器曾用 `运行信号：` / `诊断：`，
  * 导致它的 `lastRunSignal` 永远为 undefined —— smoke 脚本的取消触发条件
  * （`status===running && lastRunSignal==="stop_button"`）因此永不成立，
- * 取消路径在真机上完全走不到。
+ * 取消路径在真机上完全走不到。该适配器已移除，契约本身仍然有效。
  *
  * 本测试锁定「适配器 note 文案 → lastRunSignal」这一跨模块契约：
- *   1. 每个 GUI 适配器的 note 都能被 fix-loop 的正则提取出非空 evidence；
- *   2. traework 的两种 note 形态（运行中 / 静止）都能提取。
+ * 每个 GUI 适配器的 note 都能被 fix-loop 的正则提取出非空 evidence。
  */
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
@@ -40,7 +39,7 @@ function extractNotes(agentId: string): string[] {
   return notes;
 }
 
-const GUI_AGENTS = ["codex", "kimicode", "minimax", "opendesign", "zcode", "traework"];
+const GUI_AGENTS = ["codex", "kimicode", "minimax", "opendesign", "zcode"];
 
 describe("适配器进度 note 的 lastRunSignal 提取契约", () => {
   it.each(GUI_AGENTS)("%s 的 note 使用「运行证据=」契约且可被 fix-loop 提取", (agentId) => {
@@ -56,18 +55,5 @@ describe("适配器进度 note 的 lastRunSignal 提取契约", () => {
     }
   });
 
-  it("traework 运行中与静止两种 note 都能提取出非空 evidence", () => {
-    const notes = extractNotes("traework");
-    // 至少两条：running 分支与等待分支
-    expect(notes.length, "traework 应有两个分支的 note 均带「运行证据=」").toBeGreaterThanOrEqual(2);
-    for (const tpl of notes) {
-      const extracted = LAST_RUN_SIGNAL_RE.exec(tpl)?.[1];
-      expect(extracted, `无法从 note「${tpl}」提取 evidence`).toBe("SENTINEL");
-    }
-    // 反向锁：旧的「运行信号：」措辞不应再出现在源码中（避免回归）
-    const file = path.join(REPO, "src", "agents", "traework", "run.ts");
-    const src = fs.readFileSync(file, "utf8");
-    expect(src.includes("运行信号："), "traework 的进度 note 不应再使用「运行信号：」（fix-loop 提取不到）")
-      .toBe(false);
-  });
+
 });

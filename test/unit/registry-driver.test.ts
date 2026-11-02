@@ -1,10 +1,10 @@
 /**
- * 单元测试：driver 驱动的 adapter 选择 + model 参数贯通（开发计划 §4.2/§4.3）。
+ * 单元测试：driver 驱动的 adapter 选择（开发计划 §4.2/§4.3）。
  */
 import { describe, it, expect } from "vitest";
 import { AgentAdapterRegistry } from "../../src/agents/registry.js";
 import { CliAdapter } from "../../src/agents/cli.js";
-import { TraeworkGuiAdapter } from "../../src/agents/traework/adapter.js";
+import { CodexGuiAdapter } from "../../src/agents/codex/adapter.js";
 import { AgentProfileSchema, RunTaskParamsSchema } from "../../src/config/schema.js";
 import type { AgentProfile } from "../../src/config/schema.js";
 import { Logger } from "../../src/util/log.js";
@@ -25,7 +25,7 @@ describe("AgentProfileSchema driver/gui 字段", () => {
   });
 
   it("driver=gui 时 gui 配置可解析并带默认值", () => {
-    const p = profile({ driver: "gui", gui: {} });
+    const p = profile({ driver: "gui", adapter: "codex-gui", gui: {} });
     expect(p.driver).toBe("gui");
     expect(p.gui?.cdpPort).toBe(9222);
     expect(p.gui?.cdpPortAuto).toBe(true);
@@ -39,11 +39,27 @@ describe("AgentProfileSchema driver/gui 字段", () => {
   });
 
   it("gui 字段可覆盖", () => {
-    const p = profile({ driver: "gui", gui: { cdpPort: 9333, windowMode: "launch", stableRounds: 5, selectors: { chatInput: ".x" } } });
+    const p = profile({ driver: "gui", adapter: "codex-gui", gui: { cdpPort: 9333, windowMode: "launch", stableRounds: 5, selectors: { chatInput: ".x" } } });
     expect(p.gui?.cdpPort).toBe(9333);
     expect(p.gui?.windowMode).toBe("launch");
     expect(p.gui?.stableRounds).toBe(5);
     expect(p.gui?.selectors.chatInput).toBe(".x");
+  });
+
+  it("driver=gui 但缺 adapter → fail-closed，且报错给出可照做的迁移路径", () => {
+    let issue: string | undefined;
+    try {
+      AgentProfileSchema.parse({ displayName: "custom", driver: "gui" });
+    } catch (e) {
+      issue = (e as { issues?: { message: string }[] }).issues?.[0]?.message;
+    }
+    expect(issue, "driver=gui 缺 adapter 必须被 schema 拒绝").toBeTruthy();
+    expect(issue).toContain("未指定 adapter");
+    expect(issue).toContain("该默认已取消");
+    // 迁移路径必须可照做：把可选 adapter 都列出来
+    for (const a of ["codex-gui", "zcode-gui", "kimicode-gui", "opendesign-gui", "minimax-gui"]) {
+      expect(issue).toContain(a);
+    }
   });
 });
 
@@ -56,28 +72,18 @@ describe("RunTaskParamsSchema model / mode 字段", () => {
     const r = RunTaskParamsSchema.parse({ projectPath: "/tmp", task: "t", model: "GLM-5.3" });
     expect(r.model).toBe("GLM-5.3");
   });
-  it("mode 可选，合法值透传", () => {
-    expect(RunTaskParamsSchema.parse({ projectPath: "/tmp", task: "t" }).mode).toBeUndefined();
-    for (const m of ["Work", "Code", "Design"] as const) {
-      expect(RunTaskParamsSchema.parse({ projectPath: "/tmp", task: "t", mode: m }).mode).toBe(m);
-    }
-  });
-  it("mode 非法值被拒绝", () => {
-    expect(() => RunTaskParamsSchema.parse({ projectPath: "/tmp", task: "t", mode: "Agent" })).toThrow();
-    expect(() => RunTaskParamsSchema.parse({ projectPath: "/tmp", task: "t", mode: "work" })).toThrow();
-  });
   it("gui.modeSwitch 默认 true，可覆盖", () => {
-    expect(profile({ driver: "gui", gui: {} }).gui?.modeSwitch).toBe(true);
-    expect(profile({ driver: "gui", gui: { modeSwitch: false } }).gui?.modeSwitch).toBe(false);
+    expect(profile({ driver: "gui", adapter: "codex-gui", gui: {} }).gui?.modeSwitch).toBe(true);
+    expect(profile({ driver: "gui", adapter: "codex-gui", gui: { modeSwitch: false } }).gui?.modeSwitch).toBe(false);
   });
 });
 
 describe("registry 按 driver 选择 adapter", () => {
-  it("driver=gui → TraeworkGuiAdapter（具备 run 执行面）", async () => {
-    const reg = new AgentAdapterRegistry(async () => ({ traework: profile({ driver: "gui", gui: {} }) }), silentLogger);
-    await reg.resolve("traework");
-    const a = reg.getAdapter("traework");
-    expect(a).toBeInstanceOf(TraeworkGuiAdapter);
+  it("driver=gui + adapter=codex-gui → CodexGuiAdapter（具备 run 执行面）", async () => {
+    const reg = new AgentAdapterRegistry(async () => ({ codex: profile({ driver: "gui", adapter: "codex-gui" }) }), silentLogger);
+    await reg.resolve("codex");
+    const a = reg.getAdapter("codex");
+    expect(a).toBeInstanceOf(CodexGuiAdapter);
     expect(typeof a!.run).toBe("function");
   });
 
@@ -94,24 +100,16 @@ describe("registry 按 driver 选择 adapter", () => {
     const reg = new AgentAdapterRegistry(async () => ({ x: p }), silentLogger);
     await reg.resolve("x");
     expect(reg.getAdapter("x")).toBeInstanceOf(CliAdapter);
-    p = profile({ driver: "gui", gui: {} });
+    p = profile({ driver: "gui", adapter: "codex-gui" });
     reg.invalidate("x");
     await reg.resolve("x", false);
-    expect(reg.getAdapter("x")).toBeInstanceOf(TraeworkGuiAdapter);
+    expect(reg.getAdapter("x")).toBeInstanceOf(CodexGuiAdapter);
   });
 });
 
-describe("TraeworkGuiAdapter", () => {
+describe("CodexGuiAdapter 契约", () => {
   it("buildInvocation 明确报错（GUI 不走 spawn）", () => {
-    const a = new TraeworkGuiAdapter("traework");
-    expect(() => a.buildInvocation({} as never, {} as never)).toThrow(/driver=gui/);
-  });
-
-  it("isInfraError 识别 CDP/可执行缺失类错误", async () => {
-    const { isInfraError } = await import("../../src/agents/traework/adapter.js");
-    expect(isInfraError("CDP_UNAVAILABLE: 无法连接端口 9222")).toBe(true);
-    expect(isInfraError("未找到 TraeWork 可执行文件")).toBe(true);
-    expect(isInfraError("ECONNREFUSED")).toBe(true);
-    expect(isInfraError("模型切换失败：下拉中未找到")).toBe(false);
+    const a = new CodexGuiAdapter("codex");
+    expect(() => a.buildInvocation()).toThrow(/spawn/);
   });
 });

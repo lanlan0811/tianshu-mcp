@@ -96,7 +96,7 @@ function handlers(metaOverride?: Record<string, unknown>, opts: HandlerOpts = {}
 }
 
 describe("ZCode run_task 参数与 profile 默认值", () => {
-  it("拒绝 TraeWork 专属 mode，且不提交任务", async () => {
+  it("拒绝已废弃的 mode，且不提交任务", async () => {
     projectPath ||= await makeTmpRoot("zcode-handler");
     submissions.length = 0;
     const result = await handlers().run_task({
@@ -107,7 +107,7 @@ describe("ZCode run_task 参数与 profile 默认值", () => {
       mode: "Code",
     });
     expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toMatch(/ZCode 不支持 mode/);
+    expect(result.content[0]?.text).toMatch(/mode 已废弃/);
     expect(submissions).toHaveLength(0);
   });
 

@@ -4,7 +4,7 @@
  * parseExit 判定结果。新增 agent = 新 profile +（如需）子类 adapter。
  */
 import type { SpawnSpec } from "./spawn.js";
-import type { AgentProfile, TraeworkMode } from "../config/schema.js";
+import type { AgentProfile } from "../config/schema.js";
 import type { ReasoningLevel } from "../config/schema.js";
 import type { WorkspaceMode } from "../tasks/task.js";
 import type { OnAgentEvent } from "./agent-events.js";
@@ -35,7 +35,7 @@ export interface TaskContext {
   taskDir: string;
   workDir: string;
   taskTimeoutMs: number;
-  /** GUI 类 agent（traework）使用的模型名；CLI 类忽略 */
+  /** GUI 类 agent 使用的模型名；CLI 类忽略 */
   model?: string;
   /** Codex GUI 思考等级（已归一 low/medium/high）；其他 agent 忽略 */
   reasoningLevel?: ReasoningLevel;
@@ -60,8 +60,11 @@ export interface TaskContext {
    * 合法性（是否落在界面实际候选内）只能在运行期读界面候选项校验，见 minimax/run.ts。
    */
   contextWindow?: string;
-  /** GUI 类 agent（traework）使用的面板模式；CLI 类忽略 */
-  mode?: TraeworkMode;
+  /**
+   * 已废弃的面板模式。原消费者已移除，现由 `handlers.ts` 统一拒绝并提示迁移；
+   * 保留字段只为让旧调用方拿到可读文案，而不是被静默丢弃。
+   */
+  mode?: string;
   /**
    * ZCode：目标项目未登记时是否允许自动导入（添加项目）。省略视为允许，
    * 显式 false 时驱动层必须在任何导入动作之前停止派发。
@@ -197,7 +200,7 @@ export interface AgentAdapter {
   }): AgentRunResult;
   /**
    * 可选：自定义执行面。存在时 TaskOrchestrator 不再 spawn 子进程，
-   * 而是调用它（GUI 类 adapter 如 traework 实现；CLI 类不实现，走原 spawn 路径）。
+   * 而是调用它（GUI 类 adapter 实现；CLI 类不实现，走原 spawn 路径）。
    */
   run?(ctx: TaskContext, resolved: ResolvedAgent, opts: AgentRunOptions): Promise<AgentRunResult>;
 }

@@ -1,7 +1,7 @@
 ---
 name: tianshu-mcp
-description: 让外部 AI-Agent（codex/zcode/traework/kimicode/qoder/opendesign/minimax）做项目开发并自动验收、失败返修的编排方法。当任务需要“叫一个 AI-Agent 去开发/改代码/补测试并验收，不行就返修”时先加载本技能：按它用 mcp__tianshu-mcp__ 的 8 个工具（run_task/query_task/manage_task/verify_task/query_info/wait_task/prepare_visual_baseline/approve_visual_baseline）派活、等待、验收、返修、视觉基准，并按硬失败错误码快速定位卡点。小改动或纯问答不需要。
-triggers: '开发|编码|写代码|改代码|实现功能|加功能|修复|重构|补测试|写测试|验收|返修|返工|重做|自动验收|自动返修|任务书|ai.?agent|子代理|外部.?agent|agent|codex|zcode|traework|kimicode|kimi.?code|qoder|opendesign|open.?design|minimax|mini.?max|claude|编排|项目开发|派活|派单'
+description: 让外部 AI-Agent（codex/zcode/kimicode/qoder/opendesign/minimax）做项目开发并自动验收、失败返修的编排方法。当任务需要“叫一个 AI-Agent 去开发/改代码/补测试并验收，不行就返修”时先加载本技能：按它用 mcp__tianshu-mcp__ 的 8 个工具（run_task/query_task/manage_task/verify_task/query_info/wait_task/prepare_visual_baseline/approve_visual_baseline）派活、等待、验收、返修、视觉基准，并按硬失败错误码快速定位卡点。小改动或纯问答不需要。
+triggers: '开发|编码|写代码|改代码|实现功能|加功能|修复|重构|补测试|写测试|验收|返修|返工|重做|自动验收|自动返修|任务书|ai.?agent|子代理|外部.?agent|agent|codex|zcode|kimicode|kimi.?code|qoder|opendesign|open.?design|minimax|mini.?max|claude|编排|项目开发|派活|派单'
 ---
 
 # tianshu-mcp 编排技能：叫外部 AI-Agent 开发并验收
@@ -51,7 +51,7 @@ run_task（秒回 taskId，异步）
 | action | 作用 | 关键入参 |
 |---|---|---|
 | `cancel` | 取消运行中任务（GUI agent 尽力点停止并回读）；对已终态 GUI 任务兼任「人工确认残留」入口 | `reason?` |
-| `continue` | 恢复 `needs_user`（仅 codex/zcode/kimicode/qoder/opendesign/minimax；traework 与 spawn 类不支持） | `message`（**必填**） |
+| `continue` | 恢复 `needs_user`（仅 codex/zcode/kimicode/qoder/opendesign/minimax；spawn 类不支持） | `message`（**必填**） |
 | `rework` | 手动返修：终态任务重新入队续跑（同 agent/项目、同一轮次记账） | `feedback?`、`repairHint?`（≤4000 字符） |
 
 **`query_info` 的三个 type**：
@@ -78,19 +78,21 @@ run_task（秒回 taskId，异步）
 
 ### 3.1 参数兼容矩阵（传错即报错，不会静默忽略）
 
-| 参数 | codex | zcode | traework | kimicode | qoder | opendesign | minimax |
-|---|---|---|---|---|---|---|---|
-| `projectPath` | 必填 | **可省略**（无项目模式，见 §3.4） | 必填 | 必填 | 必填 | 必填（无项目派发现仅支持 zcode） | 必填（**不支持无项目派发**） |
-| `model` | **必填**（面板模型名） | **必填**，`供应商/模型` | 可选 | **必填**（界面模型名） | 可选 | **必填**（界面模型名；精确匹配，未命中回显候选） | **必填**（界面模型名；精确匹配，未命中回显候选） |
-| `modelSource` | ✗ | ✗ | ✗ | ✗ | 可选 `default`/`custom` | ✗ | ✗ |
-| `reasoningLevel` | `低/中/高`（`low/medium/high`） | `低/low`、`中/medium`、`高/high`、`max`、`on/off`（以界面实际档位为准） | ✗ | `低/low`、`高/high`、`max`、`on`、`off` | `低/中/高/极高/最大/关闭思考` | ✗ | `default`/`低·low`/`中·medium`/`高·high`/`极高·xhigh`/`最大·max`（**含 `中`/`medium`**；以界面实际档位为准） |
-| `mode` | ✗ | ✗ | **唯一支持**（`Work`/`Code`/`Design`） | ✗ | ✗ | ✗（用 `designDirection`） | ✗ |
-| `designDirection` | ✗ | ✗ | ✗ | ✗ | ✗ | **必填**（`原型`/`文档`/`网站复刻`） | ✗ |
-| `planDoc` | 可选 | ✗ | ✗ | ✗ | **必填**且必须可读 | ✗ | ✗ |
-| `designSystem` | 可选 | ✗ | ✗ | ✗ | ✗ | 可选（**设计系统名**，如 `Claude`） | ✗ |
-| `allowCreateProject` | ✗ | 可选（`false` 关自动导入） | ✗ | ✗ | ✗ | ✗ | ✗ |
-| `contextWindow` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | **可选**（`512K`/`1M` 等界面候选文本；**本适配器专属**） |
-| `manage_task(action="continue")` | 仅 `login_required` / `user_confirmation` | `agent_question` 回发答案；其余作已处理确认 | **不支持** | 见 §5 | 见 §5 | 见 §5 | 见 §5 |
+| 参数 | codex | zcode | kimicode | qoder | opendesign | minimax |
+|---|---|---|---|---|---|---|
+| `projectPath` | 必填 | **可省略**（无项目模式，见 §3.4） | 必填 | 必填 | 必填（无项目派发现仅支持 zcode） | 必填（**不支持无项目派发**） |
+| `model` | **必填**（面板模型名） | **必填**，`供应商/模型` | **必填**（界面模型名） | 可选 | **必填**（界面模型名；精确匹配，未命中回显候选） | **必填**（界面模型名；精确匹配，未命中回显候选） |
+| `modelSource` | ✗ | ✗ | ✗ | 可选 `default`/`custom` | ✗ | ✗ |
+| `reasoningLevel` | `低/中/高`（`low/medium/high`） | `低/low`、`中/medium`、`高/high`、`max`、`on/off`（以界面实际档位为准） | `低/low`、`高/high`、`max`、`on`、`off` | `低/中/高/极高/最大/关闭思考` | ✗ | `default`/`低·low`/`中·medium`/`高·high`/`极高·xhigh`/`最大·max`（**含 `中`/`medium`**；以界面实际档位为准） |
+| `mode` | ✗ | ✗ | ✗ | ✗ | ✗（用 `designDirection`） | ✗ |
+| `designDirection` | ✗ | ✗ | ✗ | ✗ | **必填**（`原型`/`文档`/`网站复刻`） | ✗ |
+| `planDoc` | 可选 | ✗ | ✗ | **必填**且必须可读 | ✗ | ✗ |
+| `designSystem` | 可选 | ✗ | ✗ | ✗ | 可选（**设计系统名**，如 `Claude`） | ✗ |
+| `allowCreateProject` | ✗ | 可选（`false` 关自动导入） | ✗ | ✗ | ✗ | ✗ |
+| `contextWindow` | ✗ | ✗ | ✗ | ✗ | ✗ | **可选**（`512K`/`1M` 等界面候选文本；**本适配器专属**） |
+| `manage_task(action="continue")` | 仅 `login_required` / `user_confirmation` | `agent_question` 回发答案；其余作已处理确认 | 见 §5 | 见 §5 | 见 §5 | 见 §5 |
+
+> **`mode` 已废弃**（v0.9.9 起）：它是早期 GUI 适配器的 Work / Code / Design 面板模式，该适配器已移除，现**无任何适配器消费**；任何 agent 传入都会被 handler 统一拒绝并提示改用 `designDirection`（Open Design）。
 
 `reasoningLevel` 的中文别名 `极高`/`xhigh`、`最大`、`关闭思考` **只有 qoder 与 minimax 接受**（minimax 无 `关闭思考` 档，传了按越权报错），传给其他 agent 会直接报错。`max`/`off` 是全局取值，各适配器自行判定是否支持。`contextWindow` **仅 minimax 可用**，传给其他 agent 直接报错。
 
@@ -99,7 +101,7 @@ run_task（秒回 taskId，异步）
 | 项 | 优先级 |
 |---|---|
 | `autoVerify` | 调用参数 > server 默认（**默认 `true`**，即默认开验收） |
-| `autoFixRounds` | 调用参数 > agent 缺省 > server 默认 `0`（=不自动返修）。agent 缺省：codex 5，zcode 2，kimicode 2，qoder 3，minimax 2，traework 未设（落 server 默认 0） |
+| `autoFixRounds` | 调用参数 > agent 缺省 > server 默认 `0`（=不自动返修）。agent 缺省：codex 5，zcode 2，kimicode 2，qoder 3，minimax 2 |
 | `taskTimeoutMs` | 调用参数 > profile `timeoutMs`（GUI agent 均 30 分钟）> server 默认 30 分钟 |
 
 ### 3.2 逐个 agent 要点
@@ -109,7 +111,6 @@ run_task（秒回 taskId，异步）
 - **`zcode`**：ZCode 桌面端（Electron CDP）。`model` 必填 `供应商/模型`（如 `DeepSeek/deepseek-flash`）；发送前确认「完全访问」权限模式；**不支持 `mode`**。支持省略 `projectPath` 的无项目模式（§3.4）。
   `reasoningLevel` 可选：档位集合**随模型变化**，以界面实际渲染的选项为准（真机实测 3.14.3：当前模型只有 `on`/`off` 两档，触发器 `chat-thought-level-select-trigger`）。传了界面不存在的档位在**发送前**报错（`reasoning_level_invalid`），绝不静默沿用；不传则不触碰档位界面（沿用当前值）。**换模型必须重开任务**（`model` 在 `run_task` 时固化）。
   项目绑定按「路径优先、无路径时按显示名」分层判定；3.14.x 侧边栏的 `workspace-item-*` 可能仍挂在 DOM 里但被滚出视口（issue #27：实测 42 个中 40 个不可见），采集时按可见性过滤，不可达时回落「打开文件夹」导入路径。
-- **`traework`**：TraeWork / TRAE SOLO CN。`model` 可选；**唯一支持 `mode`**（不传时从任务书文本识别「切换 X 模式」，识别不到保持 `Work`）；实现顺序固定为「新建会话 → 切模式 → 在目标模式内绑定项目」。窗口必须保持可见（发送依赖模拟输入）。**`manage_task(action="continue")` 不支持**。
 - **`kimicode`**：Kimi Code 桌面端（普通 Electron，实测 1.0.2；CDP 基准端口 9666）。`model` 必填，直接填**界面模型名**（如 `K3`、`K2.8 Preview`、`stepfun/step-3.7-flash:free`）。
   `reasoningLevel` 取值域刻意**不含 `中`/`medium`**（那不是任何模型的合法档位）：官方模型 `低/low`、`高/high`、`max`；非官方模型只有 `on`/`off`。档位集合以**界面实际渲染的标签**为准，传了界面不存在的档位在发送前报错，绝不静默沿用；不传时官方档位沿用界面当前值、非官方强制 `on`。
   **不支持 `mode`**；**`allowCreateProject` 不适用**；**`projectPath` 必填**（以工作区组织任务，不支持无项目派发）。未登记工作区经原生「添加工作区」对话框导入，同名/同路径歧义一律 fail-closed。
@@ -147,9 +148,9 @@ run_task（秒回 taskId，异步）
 | `research` | 已实现但真机矩阵未覆盖 | **可**（探测成功即可跑；失败会说明原因） |
 | `unsupported` | 明确不支持 | 否 |
 
-内置取值：`traework` 恒为 `ready`；`zcode` 恒为 `research`（Windows 闭环已通过，macOS 取消/返修/新建项目矩阵未齐）；`codex` 在 Windows `ready`、darwin `research`；`kimicode` 在 Windows `ready`、darwin `research`；`qoder` 在 Windows `ready`、其他平台 `research`；`minimax` 在 Windows `ready`、darwin `research`；`opendesign` 在 Windows `ready`、darwin `research`。
+内置取值：`zcode` 恒为 `research`（Windows 闭环已通过，macOS 取消/返修/新建项目矩阵未齐）；`codex` 在 Windows `ready`、darwin `research`；`kimicode` 在 Windows `ready`、darwin `research`；`qoder` 在 Windows `ready`、其他平台 `research`；`minimax` 在 Windows `ready`、darwin `research`；`opendesign` 在 Windows `ready`、darwin `research`。
 
-**`ready` ≠ 全平台无限制**：TraeWork 与 Kimi Code 的 macOS 可执行探测与原生对话框驱动仍 fail-closed；qoder / minimax / opendesign 在非 Windows 直接拒绝派发。
+**`ready` ≠ 全平台无限制**：Kimi Code 的 macOS 可执行探测与原生对话框驱动仍 fail-closed；qoder / minimax / opendesign 在非 Windows 直接拒绝派发。
 
 不确定时问用户，或读项目 `projects.json` 的 `defaultAgentId`；用 `query_info(type="profiles")` 看当前机器实际探测结果（含未安装提示与用户自定义 profile）。
 
@@ -200,7 +201,7 @@ meta 的 `needsUserKind` 给出等待类型，`pendingQuestion` 给出问题原�
 
 限制与纪律：
 
-- **codex 只支持 `login_required` / `user_confirmation`**，其余等待类型会被明确拒绝；**traework 与 spawn 类 agent 完全不支持 `manage_task(action="continue")`**。
+- **codex 只支持 `login_required` / `user_confirmation`**，其余等待类型会被明确拒绝；**spawn 类 agent 完全不支持 `manage_task(action="continue")`**。
 - `agent_question` 的恢复依赖服务端保存的**原会话锚点**（zcode `zcodeSessionId`/`zcodeSessionTitle`、kimicode 同名锚点、qoder `qoderSessionId`、minimax `minimaxSessionId`/`minimaxSessionTitle`）。锚点丢失时**明确拒绝**，绝不擅自打开“最近会话”。
 - **禁止新开会话冒充恢复**；用户处理后的确认文本不会作为问题发给模型。
 - 用户尚未处理就调 `manage_task(action="continue")`，任务会再次转 `needs_user`（如实反映 GUI 状态），稍后再试即可。
@@ -336,7 +337,7 @@ meta 的 `needsUserKind` 给出等待类型，`pendingQuestion` 给出问题原�
 
 `errorType` 取值：`timeout` / `spawn` / `setup_failed` / `agent_failed` / `verify_failed` / `cancelled` / `interrupted` / `agent_unresolved` / `internal`。
 
-工具层面的**参数拒绝**（不是任务终态）也会直接报错，常见的有：`allowCreateProject` 非 ZCode、`mode` 非 traework、`modelSource` 非 qoder、`极高/最大/关闭思考` 非 qoder（minimax 例外，它接受）、`contextWindow` 非 minimax、Qoder 缺 `planDoc` 或计划文件不可读、无项目模式传 `autoVerify=true`。
+工具层面的**参数拒绝**（不是任务终态）也会直接报错，常见的有：`allowCreateProject` 非 ZCode、`mode` 已废弃（任何 agent 传入都拒绝）、`modelSource` 非 qoder、`极高/最大/关闭思考` 非 qoder（minimax 例外，它接受）、`contextWindow` 非 minimax、Qoder 缺 `planDoc` 或计划文件不可读、无项目模式传 `autoVerify=true`。
 
 **幂等键冲突（issue #15）**：`run_task` / `verify_task` 报「`idempotencyKey '<key>'` 已被任务/验收记录 `<id>` 占用，但本次参数与首次提交不同」时，说明你**复用了旧 key 却改了参数**（例如同一条 key 换了项目、任务书或 agent）。处置：改用一条**新的** key 重新调用，或直接对原记录 id 操作（`query_task` / `query_info(type="report")` / `manage_task(action="rework")`）——**不要**通过改动参数绕过冲突后继续复用该 key。
 

@@ -87,7 +87,7 @@ export async function buildServer(
     {
       capabilities: { tools: {} },
       instructions:
-        "tianshu-mcp：调度外部 AI-Agent（codex/zcode/traework/kimicode/qoder）完成项目开发、验收、返修闭环。ZCode 提问或等待用户环境处理时进入 needs_user，可用 manage_task(taskId, action=\"continue\", message) 恢复原会话。run_task 异步返回 taskId；随后用 wait_task 阻塞等待任务到达停点（终态或 needs_user；单任务给 taskId，批量给 taskIds 等首个），超时则再次调用继续等待；需要看进度细节时用 query_task 轮询，历史任务/验收报告/agent 适配用 query_info。",
+        "tianshu-mcp：调度外部 AI-Agent（codex/zcode/kimicode/qoder/opendesign/minimax）完成项目开发、验收、返修闭环。ZCode 提问或等待用户环境处理时进入 needs_user，可用 manage_task(taskId, action=\"continue\", message) 恢复原会话。run_task 异步返回 taskId；随后用 wait_task 阻塞等待任务到达停点（终态或 needs_user；单任务给 taskId，批量给 taskIds 等首个），超时则再次调用继续等待；需要看进度细节时用 query_task 轮询，历史任务/验收报告/agent 适配用 query_info。",
     },
   );
 

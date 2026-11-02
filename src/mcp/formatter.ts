@@ -13,9 +13,9 @@ export interface MetaBlockFields {
   status?: string;
   agentId?: string;
   projectPath?: string;
-  /** GUI 类 agent 使用的模型（traework） */
+  /** GUI 类 agent 使用的模型 */
   model?: string;
-  /** GUI 类 agent 使用的面板模式（traework：Work/Code/Design） */
+  /** 已废弃的面板模式（仅回显旧任务快照） */
   mode?: string;
   round?: number;
   checks?: { name: string; passed: boolean; durationMs: number }[];

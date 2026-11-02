@@ -146,7 +146,7 @@ export interface TaskMeta {
   agentId: string;
   task: string;
   context?: string;
-  /** GUI 类 agent（traework/codex）使用的模型名；CLI 类忽略 */
+  /** GUI 类 agent 使用的模型名；CLI 类忽略 */
   model?: string;
   /** Codex GUI 思考等级（已归一 low/medium/high）；其他 agent 忽略 */
   reasoningLevel?: ReasoningLevel;
@@ -166,7 +166,10 @@ export interface TaskMeta {
   /** MiniMax Code 原会话锚点（id 来自主窗口 URL；标题来自侧栏会话列表） */
   minimaxSessionId?: string;
   minimaxSessionTitle?: string;
-  /** GUI 类 agent（traework）使用的面板模式（Work/Code/Design）；CLI 类忽略 */
+  /**
+   * 已废弃的面板模式。原消费者已移除，现无任何消费者；
+   * 仅为读取旧任务快照与给出迁移文案而保留字段。
+   */
   mode?: TraeworkMode;
   /**
    * ZCode 专用：目标项目未登记时是否允许自动导入。省略视为允许；
@@ -380,7 +383,7 @@ export function isDefaultWorkspace(meta: Pick<TaskMeta, "workspaceMode">): boole
 export function guiAppNameOf(displayName: string | undefined, agentId: string): string {
   const raw = (displayName ?? "").trim() || agentId;
   // 只剥"说明性质"的括号段（含 GUI/桌面/客户端/Desktop 等描述词），以及这些通用后缀词本身。
-  // 刻意不做无限剥离：像「TraeWork（测试）」这类有实际意义的括号段必须保留；
+  // 刻意不做无限剥离：像「XCode（测试）」这类有实际意义的括号段必须保留；
   // 凡是剥空的都不采纳，退回原名——文案可以长，不能失真。
   const stripped = raw
     .replace(/[（(]([^（()）]*)[)）]/g, (whole: string, inner: string) =>

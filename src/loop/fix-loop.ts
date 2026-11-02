@@ -621,7 +621,7 @@ export class TaskOrchestrator {
    * - server 关闭/EOF/未显式取消的中止 → interrupted
    * - 超时 → failed(timeout) + timeout_killed（委托 timeoutTerminal）
    * guiStop（issue #6 / #14）：GUI 停止结果必须如实写进**终态文案与结构化字段**——
-   * `idle=false` 与"无停止结果"（ZCode/TraeWork 无停止能力、或未及尝试）都不得声称已停止。
+   * `idle=false` 与"无停止结果"（该 agent 无停止能力、或未及尝试）都不得声称已停止。
    * 窗口名按 profile 派生，不再按 agentId 硬编码（旧实现把 zcode/qoder 都写成 "Codex" 是失真的）。
    */
   private async abortTerminal(guiStop?: {
@@ -702,7 +702,7 @@ export class TaskOrchestrator {
     const adapter = this.deps.registry.getAdapter(ctx.agentId);
     if (!adapter) throw new Error(`agent '${ctx.agentId}' 无 adapter`);
 
-    // GUI 类 adapter（traework）自带执行面：不 spawn 子进程，直接驱动桌面 UI。
+    // GUI 类 adapter 自带执行面：不 spawn 子进程，直接驱动桌面 UI。
     if (typeof adapter.run === "function") {
       return adapter.run(ctx, resolved, {
         signal: this.signal,

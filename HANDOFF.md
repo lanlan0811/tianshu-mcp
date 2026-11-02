@@ -9,6 +9,14 @@
 >   「选择器语义层」切开：选择器相关的 exists / text / click / focus / center / `interpretLiveness`
 >   留在 `traework/cdp/client.ts` 的子类里，共享传输不再 import 任何选择器表。
 >
+> - **0.9.9 · 移除 TraeWork 调用（BREAKING）**：整个 `src/agents/traework/` 目录删除（12 文件），
+>   `traework` 从内置 profile / registry 默认列表 / `driver="gui"` 缺省回退中移除；`mode` 参数随之废弃
+>   （统一拒绝文案，指向 `designDirection`）。`AgentProfileSchema` 新增 `superRefine`：**`driver="gui"`
+>   却不写 `adapter` 一律 fail-closed 报错**并给出迁移路径（旧版静默回落到该适配器）。
+>   15 个 traework 测试删除、1 个改写保留；`issue38` / `last-run-signal` / `gui-stop-disclosure` /
+>   `protocol-text` / `zcode-handler` 五处跨文件用例改写。其余六个 agent 零行为变化（`test/fake-cdp.ts`
+>   保留，仍服务 kimicode / opendesign）。
+>
 > **历史快照（0.8.2 → 0.9.4）**
 >
 > **本轮（0.8.2 → 0.9.4）交付**：7 个版本累积。**v0.9.0 是破坏性变更（工具面 13 → 8）**，升级调用方前
