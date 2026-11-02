@@ -16,7 +16,7 @@ Security vulnerabilities: do NOT report here; follow SECURITY.md.
 - Node 版本 / Node version：
 - 操作系统 / OS：
 - 宿主 / Host（天枢版本，如相关 / Tianshu version if relevant）：
-- 目标 agent / Target agent（`codex` / `traework` / 其他）：
+- 目标 agent / Target agent（`codex` / `zcode` / `kimicode` / `opendesign` / `minimax` / 其他）：
 
 ## 复现步骤 / Steps to reproduce
 

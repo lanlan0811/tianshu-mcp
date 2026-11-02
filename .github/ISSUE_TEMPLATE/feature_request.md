@@ -18,7 +18,7 @@ labels: ["enhancement"]
 - [ ] 新 agent 适配 / new agent adapter
 - [ ] 验收引擎 / acceptance engine
 - [ ] 编排与任务模型 / orchestration & task model
-- [ ] TraeWork GUI 驱动 / TraeWork GUI driver
+- [ ] GUI 驱动 / GUI driver
 - [ ] 文档 / docs
 - [ ] 其他 / other：
 

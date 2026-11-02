@@ -160,8 +160,7 @@ jobs:
           MISSING=0
           for f in package/dist/index.js package/skills/tianshu-mcp/SKILL.md \
                    package/dist/agents/zcode/adapter.js package/dist/agents/zcode/run.js \
-                   package/scripts/probe-zcode.mjs package/dist/agents/qoder/adapter.js package/dist/agents/qoder/run.js \
-                   package/scripts/probe-qoder.mjs package/docs/qoder-cdp.md package/docs/qoder-cdp.en.md \
+                   package/scripts/probe-zcode.mjs \
                    package/dist/agents/minimax/adapter.js package/dist/agents/minimax/run.js \
                    package/scripts/probe-minimax.mjs package/docs/minimax-cdp.md package/docs/minimax-cdp.en.md \
                    package/docs/agent-profiles.md package/docs/agent-profiles.en.md \
