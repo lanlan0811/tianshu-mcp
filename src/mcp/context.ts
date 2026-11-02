@@ -106,19 +106,6 @@ function buildResume(meta: TaskMeta, round: number): TaskContext["resume"] {
       permissionMode: meta.permissionMode,
     };
   }
-  if (meta.agentId === "qoder") {
-    if (!continuing && round <= 0) return undefined;
-    return {
-      kind: continuing ? "continue" : "rework",
-      message: meta.continueMessage,
-      sendMessage: meta.continueSendMessage ?? round > 0,
-      reobserve: meta.continueReobserve,
-      sessionId: meta.qoderSessionId,
-      boundProjectPath: meta.boundProjectPath,
-      model: meta.actualModel ?? meta.model,
-      permissionMode: meta.permissionMode,
-    };
-  }
   if (meta.agentId === "kimicode") {
     if (!continuing && round <= 0) return undefined;
     return {

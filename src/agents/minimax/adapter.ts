@@ -10,7 +10,7 @@ import type {
 import type { SpawnResult } from "../spawn.js";
 
 /**
- * 同一台机器上 MiniMax Code 只有一个受管实例：与 Kimi Code / Qoder / Open Design 同构的
+ * 同一台机器上 MiniMax Code 只有一个受管实例：与 Kimi Code / Open Design 同构的
  * **全局串行门**。并行派活会两条流程同时点同一个「模型」/「项目」菜单，必然互相踩踏；
  * 而模型弹层是**独立窗口**，两条流程的 hover 二级子菜单会互相覆盖。
  */

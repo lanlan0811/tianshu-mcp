@@ -226,7 +226,7 @@ function pathCandidates(platform: NodeJS.Platform): string[] {
 /**
  * 数据驱动的 Open Design 探测：显式路径 → 固定盘相对路径（preferredDrives 优先）
  * → 注册表安装位置 → 标准目录（含 macOS .app bundle）→ PATH。
- * 可选注入输入让顺序/平台行为可单测（与 kimicode/qoder 的 discovery 同构）。
+ * 可选注入输入让顺序/平台行为可单测（与 kimicode 的 discovery 同构）。
  */
 export async function discoverOpenDesign(
   profile: AgentProfile,

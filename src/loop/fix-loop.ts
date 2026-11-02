@@ -184,22 +184,6 @@ export class TaskOrchestrator {
 
       // Manual rework starts a new orchestrator, so it must also materialize a plan
       // before dispatch; the automatic loop below already does this per failed round.
-      if (meta.agentId === "qoder" && round > 0 && meta.continueMessage === undefined) {
-        const report = meta.reportJson ? await readJsonSafe<VerifyReport>(meta.reportJson) : null;
-        if (!report || report.taskId !== meta.taskId || !meta.reportMd || await readTextSafe(meta.reportMd) == null) {
-          return this.finish("failed", "internal", "Qoder 原验收报告不可读，无法生成返修计划，拒绝发送。");
-        }
-        const plan = await writeRepairPlan({
-          taskId: meta.taskId, round: round - 1, projectPath: meta.projectPath,
-          displayPath: meta.displayPath, taskText: meta.task, report,
-          taskDir: store.dir(meta.taskId), logger,
-        });
-        if (feedback) await fsp.appendFile(plan.taskPath, `\n## 用户追加修复或优化要求\n\n${feedback}\n`);
-        const planText = await readTextSafe(plan.taskPath);
-        if (planText == null) return this.finish("failed", "internal", "Qoder 返修计划不可读，拒绝发送。");
-        feedback = `${buildFixFeedback(meta.task, report.message, meta.reportMd, plan.taskPath)}\n\n修复计划全文（${plan.fileName}）：\n${planText}`;
-      }
-
       if (meta.agentId === "opendesign" && round > 0 && meta.continueMessage === undefined) {
         // 手动返修同样要先落「项目内」的计划文档再发送（Open Design 读不到任务数据目录）。
         const report = meta.reportJson ? await readJsonSafe<VerifyReport>(meta.reportJson) : null;
@@ -262,20 +246,18 @@ export class TaskOrchestrator {
         meta.lastRunSignal = runRes.endReason ?? meta.lastRunSignal;
         meta.keptInstance = runRes.keptInstance;
         meta.progressSummary = runRes.progressSummary;
-        if (meta.agentId === "qoder") {
-          meta.actualModel = runRes.actualModel ?? meta.actualModel;
-          meta.actualReasoningLevel = runRes.actualReasoningLevel ?? meta.actualReasoningLevel;
-          meta.modelSource = runRes.actualModelSource ?? meta.modelSource;
-        }
+        // 实际生效的模型：**无条件落盘**。此前这三行在 `if (meta.agentId === "qoder")` 门内，
+        // 于是 Open Design（唯一另一个生产方）的 `actualModel` 从未落盘，`context.ts` 的
+        // `meta.actualModel ?? meta.model` 对它永远走 `??` 右侧——这是移除 Qoder 顺带暴露的
+        // 既存缺陷，本版一并修正（属行为变化）。
+        meta.actualModel = runRes.actualModel ?? meta.actualModel;
         // GUI 停止结果对所有 agent 落盘（issue #14）：此前只写 qoder，导致其余 GUI agent
         // 在 shutdown 竞态里丢失适配器已回报的停止结果，只能写"无停止结果可确认"。
         if (runRes.guiStop) meta.guiStop = runRes.guiStop;
         if (runRes.session) {
           // 会话锚点按 agent 分槽存放：zcodeSession* 与 kimicodeSession*/minimaxSession* 语义不同
           // （旧快照里的 zcodeSession* 是 ZCode 会话，拿去 MiniMax Code 里定位必然失败）。
-          if (meta.agentId === "qoder") {
-            meta.qoderSessionId = runRes.session.id ?? meta.qoderSessionId;
-          } else if (meta.agentId === "kimicode") {
+          if (meta.agentId === "kimicode") {
             meta.kimicodeSessionId = runRes.session.id ?? meta.kimicodeSessionId;
             meta.kimicodeSessionTitle = runRes.session.title ?? meta.kimicodeSessionTitle;
           } else if (meta.agentId === "minimax") {
@@ -565,7 +547,6 @@ export class TaskOrchestrator {
             plan.taskPath,
             verdict.report.repairDirectives,
           );
-          if (meta.agentId === "qoder") feedback += `\n\n修复计划全文（${path.basename(plan.taskPath)}）：\n${planReadable}`;
           continue;
         }
         if (maxRounds === 0) {
@@ -622,7 +603,7 @@ export class TaskOrchestrator {
    * - 超时 → failed(timeout) + timeout_killed（委托 timeoutTerminal）
    * guiStop（issue #6 / #14）：GUI 停止结果必须如实写进**终态文案与结构化字段**——
    * `idle=false` 与"无停止结果"（该 agent 无停止能力、或未及尝试）都不得声称已停止。
-   * 窗口名按 profile 派生，不再按 agentId 硬编码（旧实现把 zcode/qoder 都写成 "Codex" 是失真的）。
+   * 窗口名按 profile 派生，不再按 agentId 硬编码（旧实现把各 GUI agent 都写成 "Codex" 是失真的）。
    */
   private async abortTerminal(guiStop?: {
     clicked: boolean;

@@ -4,8 +4,6 @@
  * wait_task（issue #28；v0.9.0 合并 wait_any）额外接收 SDK 的请求 `extra`（用其 `signal` 感知中断）。
  */
 import fsp from "node:fs/promises";
-import { validateQoderReferences } from "../agents/qoder/references.js";
-import { normalizeLevel } from "../agents/qoder/model.js";
 import { normalizeOpenDesignDirection } from "../agents/opendesign/model.js";
 import {
   prepareBaseline,
@@ -416,6 +414,12 @@ function runTaskHandler(
           "需要表达设计取向时改用 designDirection（Open Design：prototype / document / clone）。",
       );
     }
+    // modelSource 已废弃（原先只有已移除的 Qoder CN 适配器消费它）：同样在任何 agent 分支前统一拒绝。
+    if (args.modelSource !== undefined) {
+      return errorResult(
+        "modelSource 已废弃（原为已移除的 Qoder CN 适配器的模型分组消歧参数），当前没有任何适配器消费它；请移除 modelSource 后重试。",
+      );
+    }
     if (finalAgentId === "zcode") {
       try {
         // 参数级只做「格式 + 取值域」校验（issue #27 问题三）：档位集合随模型变化，
@@ -438,16 +442,6 @@ function runTaskHandler(
       }
     }
 
-    if (args.modelSource !== undefined && resolved.profile.adapter !== "qoder-gui")
-      return errorResult("modelSource 是 Qoder CN 专用参数");
-    if (args.reasoningLevel && ["极高", "xhigh", "最大", "关闭思考"].includes(args.reasoningLevel) && resolved.profile.adapter !== "qoder-gui")
-      return errorResult("该思考等级别名仅由 Qoder CN 适配器支持；其他适配器须使用其已支持的档位");
-    if (resolved.profile.adapter === "qoder-gui") {
-      try {
-        await validateQoderReferences(dir.canonical, args.planDoc);
-        normalizeLevel(args.reasoningLevel);
-      } catch (error) { return errorResult(String(error)); }
-    }
     if (finalAgentId === "kimicode") {
       try {
         // 参数级只做「格式 + 取值合法性」：`中/medium` 之类不在档位取值域内的值在这里就报错；
@@ -612,6 +606,12 @@ async function runTaskWithoutProject(
     return errorResult(
       'mode 已废弃（原为已移除的 GUI 适配器的面板模式），当前没有任何适配器消费它。请移除 mode；' +
         "需要表达设计取向时改用 designDirection（Open Design：prototype / document / clone）。",
+    );
+  }
+  // modelSource 已废弃（与有项目路径的门禁同一条文案）。
+  if (args.modelSource !== undefined) {
+    return errorResult(
+      "modelSource 已废弃（原为已移除的 Qoder CN 适配器的模型分组消歧参数），当前没有任何适配器消费它；请移除 modelSource 后重试。",
     );
   }
   if (args.acceptanceOverride !== undefined) {

@@ -487,7 +487,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
     let answeredQuestion = false;
     /**
      * 运行期 CDP 断连的恢复位（issue #27）：单次 evaluate 超时或端点抖动不等于 CDP 已死。
-     * 首次断连只**重连观察一次**（对齐 qoder/run.ts 与 codex/run.ts 的既有范式）——
+     * 首次断连只**重连观察一次**（对齐 codex/run.ts 的既有范式）——
      * 重连只用于继续观察，绝不重发任务；重连失败或再次断连才归位到可恢复出口。
      *
      * 护栏从**发送阶段**就生效，而不只是主循环：issue 的物理现场正是「任务已经发出、

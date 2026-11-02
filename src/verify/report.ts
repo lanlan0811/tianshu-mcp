@@ -17,7 +17,7 @@ export function reportToJsonable(report: VerifyReport): Record<string, unknown> 
     message: report.message,
     ...(report.blockingIssues ? { blockingIssues: report.blockingIssues } : {}),
     ...(report.visual ? { visual: report.visual } : {}),
-    // issue #19：持久化结构化修复指令。手动返修路径（fix-loop 的 qoder 分支）会重读 report.json，
+    // issue #19：持久化结构化修复指令。手动返修路径（fix-loop 的手动返修路径）会重读 report.json，
     // 且跨 server 重启后仍要能拿到指令，故必须落盘而非仅存内存。
     ...(report.repairDirectives ? { repairDirectives: report.repairDirectives } : {}),
   };

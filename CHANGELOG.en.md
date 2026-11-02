@@ -8,6 +8,55 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [0.9.10] — 2026-11-02
+
+> **Qoder CN dispatch support removed (BREAKING)**: the whole `src/agents/qoder/` directory is
+> deleted and `qoder` is no longer a usable agentId. This is release 3 of the six-release plan
+> "remove TraeWork and Qoder CN support".
+
+**Breaking change**: a host that pinned `agentId: "qoder"` in its config will fail after upgrading
+(`agent_unresolved`).
+
+### Removed
+
+- The entire `src/agents/qoder/` directory (13 files): `adapter.ts` / `cdp.ts` / `dialog.ts` /
+  `discovery.ts` / `instance.ts` / `liveness.ts` / `model.ts` / `profile.ts` / `questions.ts` /
+  `references.ts` / `run.ts` / `selectors.ts` / `workspace.ts`.
+- `QODER_PROFILE` in `src/agents/builtin.ts`; the `QoderGuiAdapter` / `discoverQoder` wiring, the
+  default CLI list entry and the `qoder-gui` branch in `src/agents/registry.ts`.
+- The qoder-specific rework branches in `src/loop/fix-loop.ts` (original-report gate, full-plan
+  injection, session persistence); the qoder rework/continue branches in
+  `src/tasks/task-manager.ts`; the qoder resume context in `src/mcp/context.ts`; the
+  `qoderSessionId` / `qoderTurnId` fields in `src/mcp/formatter.ts` / `src/tasks/task.ts`.
+- 10 qoder test files.
+
+### Changed (behaviour changes worth noting)
+
+- **The `modelSource` parameter is deprecated**: it was Qoder CN's model-group disambiguation
+  parameter and lost every consumer when the adapter was removed. Now **any agent** passing
+  `modelSource` is rejected uniformly by the handler (the key stays in the schema so the message is
+  readable, since the schema is a bare `z.object` and deleting the key would silently strip it).
+- **`actualModel` persistence fix (pre-existing defect)**: `meta.actualModel = ...` in `fix-loop`
+  was inside `if (meta.agentId === "qoder")`, so **the other producer, Open Design**, never had its
+  model read-back persisted — `context.ts`'s `meta.actualModel ?? meta.model` always took the `??`
+  right side for it. It is now persisted **unconditionally**.
+- **Legacy `agentId:"qoder"` tasks fail closed on re-run**: the registry no longer pre-registers a
+  CLI base for qoder, `resolve("qoder")` returns `ok:false`, and `rework` / `continue` land on
+  `failed(agent_unresolved)` — **never silently re-run by a CLI adapter** (locked by a new
+  integration test).
+
+### Unchanged
+
+- The other five agents (codex / zcode / kimicode / opendesign / minimax) and `stub` are
+  behaviourally unchanged.
+- The tool surface is still 8 tools.
+
+### Tests
+
+- 10 `qoder-*` cases deleted; `test/integration/legacy-removed-agent-rework.test.ts` added.
+
+---
+
 ## [0.9.9] — 2026-11-02
 
 > **TraeWork dispatch support removed (BREAKING)**: the whole `src/agents/traework/` directory is

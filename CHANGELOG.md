@@ -7,6 +7,48 @@
 
 ---
 
+## [0.9.10] — 2026-11-02
+
+> **移除 Qoder CN 调用支持（BREAKING）**：整个 `src/agents/qoder/` 目录删除，
+> `qoder` 不再是可用 agentId。这是「移除 TraeWork 与 Qoder CN」六版计划的第 3 版。
+
+**破坏性变更**：宿主若在配置里固定了 `agentId: "qoder"`，升级后调用会失败（`agent_unresolved`）。
+
+### 移除
+
+- `src/agents/qoder/` 整目录（13 文件）：`adapter.ts` / `cdp.ts` / `dialog.ts` / `discovery.ts` /
+  `instance.ts` / `liveness.ts` / `model.ts` / `profile.ts` / `questions.ts` / `references.ts` /
+  `run.ts` / `selectors.ts` / `workspace.ts`。
+- `src/agents/builtin.ts` 的 `QODER_PROFILE`；`src/agents/registry.ts` 的 `QoderGuiAdapter` /
+  `discoverQoder` 接线、默认 CLI 列表项与 `qoder-gui` 分支。
+- `src/loop/fix-loop.ts` 的 qoder 专用返修分支（原验收报告门禁、修复计划全文注入、session 落盘）；
+  `src/tasks/task-manager.ts` 的 qoder rework/continue 分支；`src/mcp/context.ts` 的 qoder 恢复上下文；
+  `src/mcp/formatter.ts` / `src/tasks/task.ts` 的 `qoderSessionId` / `qoderTurnId` 字段。
+- 10 个 qoder 测试文件。
+
+### 变更（行为变化，须留意）
+
+- **`modelSource` 参数废弃**：原为 Qoder CN 的模型分组消歧参数，随适配器移除而失去全部消费者。
+  现在**任何 agent** 传入 `modelSource` 都会被 handler 统一拒绝（键仍保留在 schema 里以给出可读文案，
+  因为 schema 是裸 `z.object`，删键只会让参数被静默 strip）。
+- **`actualModel` 落盘修正（既存缺陷）**：`fix-loop` 里 `meta.actualModel = ...` 原在
+  `if (meta.agentId === "qoder")` 门内，导致**另一个生产方 Open Design** 的模型回读从未落盘，
+  `context.ts` 的 `meta.actualModel ?? meta.model` 对它永远走 `??` 右侧。现改为**无条件落盘**。
+- **历史 `agentId:"qoder"` 任务重跑 fail-closed**：registry 不再预置 qoder 的 CLI 基座，
+  `resolve("qoder")` 返回 `ok:false`，`rework` / `continue` 落到 `failed(agent_unresolved)`，
+  **绝不被 CLI adapter 兜底误跑**（新增集成用例锁死）。
+
+### 不变
+
+- 其余五个 agent（codex / zcode / kimicode / opendesign / minimax）与 `stub` 行为零变化。
+- 工具面仍是 8 个工具。
+
+### 测试
+
+- 删除 10 个 `qoder-*` 用例；新增 `test/integration/legacy-removed-agent-rework.test.ts`。
+
+---
+
 ## [0.9.9] — 2026-11-02
 
 > **移除 TraeWork 调用支持（BREAKING）**：整个 `src/agents/traework/` 目录删除，

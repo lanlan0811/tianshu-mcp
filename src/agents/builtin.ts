@@ -1,5 +1,4 @@
 import { ZCODE_SETUP_DEFAULTS } from "../config/schema.js";
-import { QODER_PROFILE } from "./qoder/profile.js";
 import { MINIMAX_PROFILE } from "./minimax/profile.js";
 /**
  * 内置 agent profiles（开发计划 §7.2）。用户数据目录 agent-profiles.json 可整键覆盖。
@@ -8,7 +7,6 @@ import { MINIMAX_PROFILE } from "./minimax/profile.js";
 import type { AgentProfile } from "../config/schema.js";
 
 export const BUILTIN_PROFILES: Record<string, AgentProfile> = {
-  qoder: QODER_PROFILE,
   minimax: MINIMAX_PROFILE,
   codex: {
     displayName: "Codex (ChatGPT 桌面端 GUI)",
@@ -227,8 +225,8 @@ export const BUILTIN_PROFILES: Record<string, AgentProfile> = {
     },
     gui: {
       ...ZCODE_SETUP_DEFAULTS,
-      // 端口基准 9889：实测已占用的基准为 zcode 9333 / codex 9333 / kimicode 9666 /
-      // qoder 9777（qoder 区段 9777-9796），9889-9898 与它们均不重叠。
+      // 端口基准 9889：实测已占用的基准为 zcode 9333 / codex 9333 / kimicode 9666，
+      // 9889-9898 与它们均不重叠（9777-9796 区段已随 Qoder CN 移除而空出）。
       cdpPort: 9889,
       cdpPortAuto: true,
       cdpPortRange: 10,

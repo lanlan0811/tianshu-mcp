@@ -257,15 +257,7 @@ export interface TaskMeta {
   pendingQuestion?: string;
   zcodeSessionId?: string;
   zcodeSessionTitle?: string;
-  /**
-   * Qoder CN 专用会话锚点与实况（**不复用 zcodeSession\***：语义与迁移风险不同——
-   * 旧快照里的 zcodeSession\* 是 ZCode 会话，拿它去 Qoder 里定位会话必然失败）。
-   * `qoderSessionId` 由 fix-loop 从 AgentRunResult.session 落盘，continue_task/rework 恢复时
-   * 用于唯一定位原会话；`qoderTurnId` 预留给按轮定位，当前无写入方。
-   */
-  qoderSessionId?: string;
-  qoderTurnId?: string;
-  /** Qoder CN 实际生效的模型 / 等级 / 模型来源（由适配器回读，写入任务报告） */
+  /** 实际生效的模型 / 等级（由适配器回读，写入任务报告；Open Design 是当前唯一生产方） */
   actualModel?: string;
   actualReasoningLevel?: string;
   /**

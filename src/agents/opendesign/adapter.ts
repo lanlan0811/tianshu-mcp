@@ -10,7 +10,7 @@ import type {
 import type { SpawnResult } from "../spawn.js";
 
 /**
- * 同一台机器上 Open Design 只有一个受管实例：与 Kimi Code / Qoder 同构的**全局串行门**。
+ * 同一台机器上 Open Design 只有一个受管实例：与 Kimi Code 同构的**全局串行门**。
  * 并行派活会两条流程同时点同一个「工作目录」/「模型」菜单，必然互相踩踏。
  */
 let serial: Promise<void> = Promise.resolve();

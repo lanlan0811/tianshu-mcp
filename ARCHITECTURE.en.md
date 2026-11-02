@@ -1,6 +1,6 @@
 # ARCHITECTURE.md — tianshu-mcp Architecture
 
-> Applies to version `0.9.9` (2026-11-02).
+> Applies to version `0.9.10` (2026-11-02).
 > This document describes the **system structure and module boundaries** for developers who will modify this repository; the version marker is only bumped on release commits, and the latest release notes live in `docs/release-v<latest>.md`.
 > This document describes the **system structure and module boundaries** for developers who will modify this repository.
 > For installation, usage, and host integration see [README.en.md](README.en.md); for handover status, troubleshooting, and lessons learned see [HANDOFF.md](HANDOFF.md).
@@ -143,7 +143,6 @@ Per-task directory (`src/tasks/task-store.ts`):
 | `report-<round>.md` / `.json` | Acceptance report (`.md` for humans, `.json` for machines) |
 | `report-<round>.html` | Offline visual report, **only when the report contains visual results** |
 | `rework-<taskId>-r<round>.md` | Repair plan (non-Codex path) |
-| `qoder-session.json` | Qoder CN send checkpoint (**Qoder only**, see §8.2) |
 | `visual/<round>/<pageId>/<viewportId>/` | Visual quadruple: `actual/baseline/diff/regions.png` + `metrics.json` |
 | `visual-snapshot.json` | Visual rules snapshot frozen for the task's duration |
 
@@ -273,7 +272,7 @@ Cancellation of a GUI agent is **best-effort and honestly reported**, but the ad
 
 | Adapter | Clicks the in-UI stop button on cancel? | Reports `guiStop`? |
 |---|---|---|
-| Codex / Kimi Code / Qoder CN | Yes — clicks stop over CDP and bounded-waits (`cancelWaitMs`) for the GUI to go idle | Yes (when `idle=false` the terminal message must admit the stop is unconfirmed) |
+| Codex / Kimi Code | Yes — clicks stop over CDP and bounded-waits (`cancelWaitMs`) for the GUI to go idle | Yes (when `idle=false` the terminal message must admit the stop is unconfirmed) |
 | ZCode | **No** — only stops MCP-side observation and keeps the instance | No (the terminal message states "no stop result to confirm") |
 
 Shutdown (`shutdownInterrupt()`, issue #14): abort every controller → **spawn tasks keep their bounded 2 s wait per task, while GUI tasks wait until the shared `shutdown.guiStopWaitMs` (15 s by default) global deadline** → mark both `running` and `queued` as `interrupted`. A GUI task's terminal message branches honestly on `guiStop` (confirmed / unconfirmed / no stop result) and **never** claims "the process has been terminated", which only holds for spawn children.
@@ -355,7 +354,7 @@ The vocabulary lives in `src/agents/agent-events.ts` (**zero dependencies**, to 
 | Bounded memory | Handled on the **read** side: new `readTextTail(p, maxBytes)` (`src/util/fs.ts`) + `TaskStore.readRecentAgentEvents(taskId, limit, maxBytes=64KiB)` read only a tail window, so memory use is decoupled from total file size. `readTextTail` guarantees the result starts at a whole line (it does not drop a whole line when the cut lands on a newline) |
 | Reporting robustness | Adapters always report through `makeEmitter`: a no-op when no hook is provided, and it **swallows reporting exceptions** — event reporting is an observability concern and must never affect the task itself |
 | Exposure | `query_task`'s `eventLimit` (1..50, default 10); `MetaBlockFields.recentEvents` (passed through `metaFromTask(meta, extra)`'s `...extra`) plus a "recent events" section in the text area. Non-reporting adapters return an empty array and every other field matches v0.6.2 |
-| Scope in this version | Currently only **codex** and **opendesign** actually report; zcode / kimicode / qoder / minimax and all CLI adapters keep the interface but do not report yet |
+| Scope in this version | Currently only **codex** and **opendesign** actually report; zcode / kimicode / minimax and all CLI adapters keep the interface but do not report yet |
 | Relationship to `note` | `note` is unchanged and remains the progress / audit channel (carrying `progressSummary` / `lastRunSignal`); `recentEvents` filters only the five vocabulary kinds and never mixes `note` in |
 
 **Disclosed honestly**: events are an observability capability, not a delivery guarantee — delivery is not guaranteed, and `query_task` reflects only the last persisted event; `file_modification_started` is a heuristic, so read `changedFiles` / `diffstat` from the acceptance report for hard evidence of changes. See [event stream](docs/event-stream.en.md).
@@ -526,7 +525,7 @@ read-only constraint relies on task-book instructions plus the post-hoc gate, so
 and reported honestly but changes that already happened are not rolled back** (the MCP never auto-commits,
 auto-stashes or auto-checks-out); the static checks can only verify "the file exists, the location matches,
 no obvious contradiction" and **cannot judge whether the plan itself is sensible** — which is exactly what
-the human review step is for. Also note `planDoc` is currently consumed only by **Codex and Qoder CN**;
+the human review step is for. Also note `planDoc` is currently consumed only by **Codex**;
 CLI agents and ZCode/Kimi Code do not read it, so for those the plan path must go into the `task`
 text. See [dryRun mode](docs/dry-run.en.md).
 
@@ -549,7 +548,7 @@ interface AgentAdapter {
 
 - **CLI path** (`src/agents/cli.ts` + `src/agents/spawn.ts`): `cross-spawn` launches a child process, stdout/stderr go to the log, and the exit code decides the outcome. `promptMode` supports `arg` / `stdin` / `file` for brief delivery.
 - **Shared transport** (`src/agents/cdp/client.ts`, v0.9.8): `GuiCdpClient` carries the page-level transport every GUI adapter reuses — WebSocket connection, `send` timeouts, `CdpDisconnectedError` / `CdpUnavailableError` disconnect semantics, `listTargets` / `probe` readiness probing, coordinate clicks and key presses, visible-label diagnostics, and the semantically neutral liveness probe `probeSignals(candidates)`. It **imports no selector table**: semantic-key `exists` / `text` / `click` / `focus` / `center` belong to each adapter's own layer. Deleting any one product's selectors therefore cannot ripple into the shared transport.
-- **GUI path**: the six adapters' `buildInvocation()` throws outright and `run()` carries the entire CDP orchestration. **Each of them (Codex / ZCode / Kimi Code / Qoder CN / Open Design / MiniMax Code) adds a module-level serial gate** where tasks of the same adapter queue up and a cancelled waiter returns `aborted` without overtaking the current holder.
+- **GUI path**: the five adapters' `buildInvocation()` throws outright and `run()` carries the entire CDP orchestration. **Each of them (Codex / ZCode / Kimi Code / Open Design / MiniMax Code) adds a module-level serial gate** where tasks of the same adapter queue up and a cancelled waiter returns `aborted` without overtaking the current holder.
 
 `AgentRunResult` is the cross-layer information carrier; the key fields:
 
@@ -616,27 +615,6 @@ Discover install → launch/reuse CDP instance (an existing non-CDP instance →
 > "Is the menu open?" must be judged from the overlay's `visibilityState` — content may linger briefly after closing.
 > Kimi Code **does not support project-less dispatch**: the task must bind a workspace folder, and `workspaceMode=default`
 > or a missing `projectPath` is rejected with `setup_failed`.
-
-**Qoder CN** (CDP-driven, ships its own send checkpoint):
-
-```text
-discover installation (explicit gui.exePath → D-drive-first candidates → relative-path templates → standard dirs;
-                       non-win32 fails immediately with hardFailure(unsupported_platform))
-  → launch/reuse the CDP instance (a live instance without usable CDP → needs_user(close_existing_instance); never restarted)
-  → new session (or restore the original by resumeId) → bind workspace (full-path criterion; unregistered goes through "new workspace" + native picker)
-  → pick model (exact match inside the default/custom group, disambiguated by modelSource) → thinking tier (saved in Model Management, re-read by reopening)
-  → write checkpoint qoder-session.json BEFORE sending → marker + bounded acknowledgement → run detection (data-send-button=generating)
-  → this turn's user id paired with assistant:<user id> plus data-assistant-actions → poll to completion
-```
-
-> **Completion must belong to this turn's user message**: a "done" in an older reply, a static screen, or a dropped connection never qualifies.
-> Pending interactions (question/approval) outrank the stop button — judge `needs_user` first, or the task deadlocks as `running`.
-> A checkpoint is written before sending or submitting answers, and **an unconfirmed acknowledgement means observe-only, never an automatic resend**;
-> `manage_task(action="continue")` merely re-observes for approval/login waits, and only `agent_question` submits answers back to the original session
-> (multi-question answers use a JSON object keyed by the UI's exact question text).
-> A static screen with no this-turn completion evidence pauses as `setup_recovery` and **never enters acceptance** — Qoder emits no `idle_timeout`.
-> Cancellation stops **only the bound original session** (`stopQoder` requires two consecutive non-running polls before it reports `idle`);
-> when unconfirmed, the instance is kept and re-dispatch is blocked. macOS is `research` and dispatch is disabled.
 
 **Open Design** (CDP-driven, **artifact signal**; UI driver wired up; Windows machine-verified, macOS `research` and fail-closed):
 
@@ -771,31 +749,29 @@ Idle for idleTimeoutMs (default 10 min)                               → idle_t
 
 `endReason`:
 
-| Codex | ZCode | Kimi Code | Qoder CN |
-|---|---|---|---|
-| `reply_stable` (success) | `reply_stable` (success) | `reply_stable` (success) | `completion_mark` (success) |
-| `aborted` | `aborted` | `aborted` | `aborted` |
-| `task_timeout` | `task_timeout` | `task_timeout` | `task_timeout` |
-| `idle_timeout` | `idle_timeout` | `idle_timeout` | **never emitted** (static screen without this-turn evidence → `setup_recovery`) |
-| `needs_user` | `needs_user` | `needs_user` | `needs_user` (`pause()` reuses the kind as the endReason) |
-| `setup_failed` | `setup_failed` | `setup_failed` | `unsupported_platform` (non-Windows) |
-| `instance_busy` | `cdp_disconnected` | `instance_busy` | `qoder_error` (runtime error; the text carries the specific cause) |
-| `project_ambiguous` | `project_ambiguous` | — | — |
-| `project_create_failed` | `project_mismatch` | — | — |
-| `project_mismatch` | `project_not_registered` | — | — |
-| `model_unavailable` | `model_unavailable` | `model_unavailable` | — |
-| `model_mismatch` | `model_mismatch` | `model_mismatch` | — |
-| `permission_unknown` | `permission_unknown` | `permission_unknown` | — |
-| `input_mismatch` | `input_mismatch` | `input_mismatch` | — |
-| `send_unknown` | `send_unknown` | `send_unknown` | — |
-| `cdp_disconnected` | `session_lost` | `cdp_disconnected` | — |
-| `internal` | `internal` | `internal` | — |
-| — | — | `agent_error` (the UI shows a "continue" button or a failure message) | — |
+| Codex | ZCode | Kimi Code |
+|---|---|---|
+| `reply_stable` (success) | `reply_stable` (success) | `reply_stable` (success) |
+| `aborted` | `aborted` | `aborted` |
+| `task_timeout` | `task_timeout` | `task_timeout` |
+| `idle_timeout` | `idle_timeout` | `idle_timeout` |
+| `needs_user` | `needs_user` | `needs_user` |
+| `setup_failed` | `setup_failed` | `setup_failed` |
+| `instance_busy` | `cdp_disconnected` | `instance_busy` |
+| `project_ambiguous` | `project_ambiguous` | — |
+| `project_create_failed` | `project_mismatch` | — |
+| `project_mismatch` | `project_not_registered` | — |
+| `model_unavailable` | `model_unavailable` | `model_unavailable` |
+| `model_mismatch` | `model_mismatch` | `model_mismatch` |
+| `permission_unknown` | `permission_unknown` | `permission_unknown` |
+| `input_mismatch` | `input_mismatch` | `input_mismatch` |
+| `send_unknown` | `send_unknown` | `send_unknown` |
+| `cdp_disconnected` | `session_lost` | `cdp_disconnected` |
+| `internal` | `internal` | `internal` |
+| — | — | `agent_error` (the UI shows a "continue" button or a failure message) |
 
 > Kimi Code organises tasks by **workspace** rather than project, so it never produces the `project_*` family;
 > binding failures surface as `setup_failed` or `needs_user(setup_recovery / system_permission)`.
-> Qoder CN puts the concrete cause in the `error` text (`qoder_model_ambiguous` / `qoder_workspace_mismatch` /
-> `qoder_question_*` / `qoder_session_lost` and friends) while `endReason` stays `qoder_error`.
 
 **Open Design** (UI driver wired up, values actually produced):
 
@@ -843,29 +819,28 @@ Idle for idleTimeoutMs (default 10 min)                               → idle_t
 
 | Value | Meaning | Producer |
 |---|---|---|
-| `agent_question` | The agent is asking the user something in the UI | ZCode, Kimi Code (heuristic question detection only when `gui.selectors.userGate` is configured), Qoder CN (dedicated answer controls), **MiniMax Code** |
-| `user_confirmation` | Parked on a confirmation screen | Codex, Kimi Code, Qoder CN, **Open Design**, **MiniMax Code** |
-| `login_required` | Login needed | Codex, ZCode, Kimi Code, Qoder CN, **Open Design**, **MiniMax Code** |
-| `close_existing_instance` | An existing instance holds no CDP port; the user must close it | ZCode, Kimi Code, Qoder CN, **Open Design**, **MiniMax Code** (**not Codex**: its `ensureInstance` declares `needsClose` but never returns true) |
+| `agent_question` | The agent is asking the user something in the UI | ZCode, Kimi Code (heuristic question detection only when `gui.selectors.userGate` is configured), **MiniMax Code** |
+| `user_confirmation` | Parked on a confirmation screen | Codex, Kimi Code, **Open Design**, **MiniMax Code** |
+| `login_required` | Login needed | Codex, ZCode, Kimi Code, **Open Design**, **MiniMax Code** |
+| `close_existing_instance` | An existing instance holds no CDP port; the user must close it | ZCode, Kimi Code, **Open Design**, **MiniMax Code** (**not Codex**: its `ensureInstance` declares `needsClose` but never returns true) |
 | `system_permission` | Missing system permission (e.g. macOS Accessibility) | ZCode, Kimi Code, **Open Design**, **MiniMax Code** |
-| `setup_recovery` | Automatic recovery budget exhausted / send result unknown; a human must step in | ZCode, Kimi Code, Qoder CN, **Open Design**, **MiniMax Code** |
+| `setup_recovery` | Automatic recovery budget exhausted / send result unknown; a human must step in | ZCode, Kimi Code, **Open Design**, **MiniMax Code** |
 
-> **Qoder CN and MiniMax Code are the only two adapters that can emit all six kinds** (Qoder CN's `pause(kind, …)` uses the
-> kind as the endReason too; MiniMax Code's `continue` dispatches by kind).
+> **MiniMax Code is the only adapter that can emit all six kinds** (its `continue` dispatches by kind).
 > **Open Design emits five kinds** (`login_required` / `user_confirmation` / `system_permission` / `setup_recovery` / `close_existing_instance`),
 > and notably not `agent_question` (its "asking the user" case is not an answerable form control).
 
 ### 8.5 Registry and executable discovery (`src/agents/registry.ts`)
 
-- The constructor pre-registers seven `CliAdapter` bases (codex / zcode / kimicode / qoder / opendesign / minimax / stub), then swaps in the GUI implementation based on `profile.adapter` (`codex-gui` / `zcode-gui` / `kimicode-gui` / `qoder-gui` / `opendesign-gui` / `minimax-gui`); it only rebuilds when the implementation class changes. **`driver="gui"` without an `adapter` no longer has a default**: `AgentProfileSchema`'s `superRefine` fails closed at parse time (the old version silently fell back to a since-removed adapter), with a defensive fallback in the registry too.
+- The constructor pre-registers six `CliAdapter` bases (codex / zcode / kimicode / opendesign / minimax / stub), then swaps in the GUI implementation based on `profile.adapter` (`codex-gui` / `zcode-gui` / `kimicode-gui` / `opendesign-gui` / `minimax-gui`); it only rebuilds when the implementation class changes. **`driver="gui"` without an `adapter` no longer has a default**: `AgentProfileSchema`'s `superRefine` fails closed at parse time (the old version silently fell back to a since-removed adapter), with a defensive fallback in the registry too.
 - `resolve(agentId)` branches on the profile's `status`:
   - `unsupported` → immediate failure;
   - `research` → ZCode goes through the dedicated `discoverZcode`, others through generic probing;
   - `ready` → in order: explicit absolute path → discovery-directory scan → PATH (`where` / `which`). Placeholder commands (`<...>`) are rejected.
-- `codex-gui`, `kimicode-gui`, `qoder-gui`, `opendesign-gui` and `minimax-gui` skip generic probing: they resolve their executable through `discoverCodex` (Appx query + disk scan), `discoverKimicode` (drive-root relative paths + standard directories + macOS bundle), `discoverQoder`, `discoverOpenDesign` and `discoverMinimax` respectively. **`qoder-gui`, `opendesign-gui` and `minimax-gui` additionally require `process.platform === "win32"`** — on any other platform `resolve` returns `ok:false` even when an installation was found, so they can never be dispatched on macOS. All six `discovery.ts` modules share one order skeleton: explicit path → fixed-drive relative paths (`preferredDrives` first) → registry `InstallLocation` → shortcut (qoder) → standard dirs (incl. macOS bundle) → PATH.
+- `codex-gui`, `kimicode-gui`, `opendesign-gui` and `minimax-gui` skip generic probing: they resolve their executable through `discoverCodex` (Appx query + disk scan), `discoverKimicode` (drive-root relative paths + standard directories + macOS bundle), `discoverOpenDesign` and `discoverMinimax` respectively. **`opendesign-gui` and `minimax-gui` additionally require `process.platform === "win32"`** — on any other platform `resolve` returns `ok:false` even when an installation was found, so they can never be dispatched on macOS. All five `discovery.ts` modules share one order skeleton: explicit path → fixed-drive relative paths (`preferredDrives` first) → registry `InstallLocation` → standard dirs (incl. macOS bundle) → PATH.
 - `profile.adapter` explicitly outranks `driver`: `driver:"spawn"` + `adapter:"codex-gui"` still installs the GUI implementation. `ensureAdapterFor` rebuilds only when the implementation class changes, so an ad-hoc swap does not disturb a running task.
-- Selector overrides: ZCode / Codex / Kimi Code / Qoder CN / **Open Design** / **MiniMax Code** all use **override → primary → fallback chain** (Kimi Code namespaces overlay keys as `overlay.<key>`). As of v0.6.2 Qoder CN was upgraded from a single-value override to a layered structure matching Codex (`QoderSelectorSpec`: `primary/fallbacks/texts/ariaLabels/ariaPatterns/verifiedVersion`); `QoderCdpClient.selector()` still returns the string primary to keep existing semantics, and adds `candidates()/existsKey()/clickKey()` that probe candidates in order before clicking.
-- Selector-drift diagnostics (v0.6.2, issue #23): `src/agents/gui-diagnostics.ts` provides `visibleLabelsExpr()` (a page expression that collects visible candidate aria-labels / short texts) and `withDiagnostics()` (idempotently appends "页面可见候选=[…]"). codex / qoder and others attach this on selector-resolution failure so drift can be located in one step; each agent's `selectors.ts` records the tested version via `verifiedVersion`.
+- Selector overrides: ZCode / Codex / Kimi Code / **Open Design** / **MiniMax Code** all use **override → primary → fallback chain** (Kimi Code namespaces overlay keys as `overlay.<key>`).
+- Selector-drift diagnostics (v0.6.2, issue #23): `src/agents/gui-diagnostics.ts` provides `visibleLabelsExpr()` (a page expression that collects visible candidate aria-labels / short texts) and `withDiagnostics()` (idempotently appends "页面可见候选=[…]"). codex and others attach this on selector-resolution failure so drift can be located in one step; each agent's `selectors.ts` records the tested version via `verifiedVersion`.
 - Directory scans look up to depth 6, skipping `node_modules` and dot-directories, and **pick the newest by mtime**.
 - Profile hot reload keys off a sha256 content stamp (not mtime), so edits within the same timestamp tick are still detected.
 - `query_info(type=profiles)` lists the union of registered adapter keys and profile keys (custom profiles that failed to resolve still appear) and reports `[PASS]/[FAIL]` with the discovery source for each.
@@ -875,12 +850,12 @@ Idle for idleTimeoutMs (default 10 min)                               → idle_t
 | Stage | Mechanism |
 |---|---|
 | Launch | Six go through `guiInstanceSpawnOptions()`: **unconditional** `detached: true` + `unref()` (`stdio:"ignore"`); Open Design additionally uses the `guiInstanceDiagSpawnOptions()` variant (stderr captured into a bounded pipe for launch-failure diagnosis) |
-| Reuse | Prefer a managed instance (Codex matches the dedicated `--user-data-dir`; ZCode / Kimi Code / Qoder CN / Open Design / MiniMax Code scan a port range). **Qoder CN spawns only when no root process exists, and reuses the existing CDP port when the launcher forwards an exit** (Open Design / MiniMax Code share that forward-and-reuse semantics) |
+| Reuse | Prefer a managed instance (Codex matches the dedicated `--user-data-dir`; ZCode / Kimi Code / Open Design / MiniMax Code scan a port range). **Open Design / MiniMax Code spawn only when no root process exists, and reuse the existing CDP port when the launcher forwards an exit** |
 | Attach | A CDP connection is only accepted after one real DOM round trip (`exists("chatInput")`) |
 | Liveness | One DOM evaluation per tick, handed to the respective `judge*Poll` |
-| Keeping | Codex / ZCode / Kimi Code / Qoder CN / Open Design / MiniMax Code set `keptInstance: true` on nearly every return path and never kill the process |
+| Keeping | Codex / ZCode / Kimi Code / Open Design / MiniMax Code set `keptInstance: true` on nearly every return path and never kill the process |
 | Ownership checks | Before releasing a managed instance the driver **re-reads the live command line** and requires both the recorded `--remote-debugging-port=<port>` and the exe basename; if it cannot read or match them it gives up (avoiding a wrong kill), and its `taskkill` **omits `/T`**. Codex stops only managed instances |
-| Orphans | ZCode / Kimi Code / Qoder CN / Open Design / MiniMax Code meeting a live instance *without* a CDP port yield `needs_user(close_existing_instance)` for the user to handle; they never kill blindly. (Codex declares `needsClose` in its instance contract but never returns true, so it has no such path) |
+| Orphans | ZCode / Kimi Code / Open Design / MiniMax Code meeting a live instance *without* a CDP port yield `needs_user(close_existing_instance)` for the user to handle; they never kill blindly. (Codex declares `needsClose` in its instance contract but never returns true, so it has no such path) |
 
 > **`detached: true` is an invariant, not a platform preference**: the desktop instance must outlive the MCP server to honor the `keptInstance` contract. Before v0.5.3 the spawn was platform-branched (not detached on Windows), so the GUI was killed along with the server on exit; that is fixed.
 >
@@ -975,7 +950,7 @@ Task timeout resolution: call argument `taskTimeoutMs` > profile `timeoutMs` > `
 
 | Group | Fields |
 |---|---|
-| Identity and shape | `id`, `displayName`, `type`, `driver` (spawn\|gui), `adapter` (zcode-gui\|codex-gui\|kimicode-gui\|qoder-gui\|opendesign-gui\|minimax-gui), `status` (ready\|research\|unsupported) |
+| Identity and shape | `id`, `displayName`, `type`, `driver` (spawn\|gui), `adapter` (zcode-gui\|codex-gui\|kimicode-gui\|opendesign-gui\|minimax-gui), `status` (ready\|research\|unsupported) |
 | CLI execution | `command`, `argsTemplate`, `promptMode` (arg\|stdin\|file), `cwd` (task\|home), `env`, `timeoutMs`, `killTree` |
 | Executable discovery | `executableDiscovery`: `dirs`, `fileNames`, `fallbackCommand`, `preferredDrives`, `appxPackageName`, `scanRoots`, and more |
 | GUI orchestration | `gui`: `cdpPort` (9222), `cdpPortRange`, `exePath`, `windowMode`, `launchTimeoutMs` (60 s), `pollIntervalMs` (3 s), `stableRounds` (12), `idleTimeoutMs` (10 min), `stallTimeoutMs` (300 s), `cancelWaitMs` (15 s), `cdpSendTimeoutMs` (15 s), `progressIntervalMs` (30 s), `projectTriggerTimeoutMs` (15 s), `workspaceTriggerTimeoutMs` (15 s, Kimi Code draft-page criterion), `selectors`, `defaultPermissionMode`, `defaultAutoFixRounds`, `activation` (spawn\|msix-com), `userDataDir`, `fixPlanDir`, and more |
@@ -1065,7 +1040,7 @@ This requires a new adapter directory implementing `AgentAdapter` with `run()` a
 | Layer | Location | Coverage |
 |---|---|---|
 | Unit | `test/unit/` | Pure functions and component logic: reply / selectors / launcher / liveness / recovery for all seven drivers, the acceptance engine (including parallelism), baseline attribution, atomic writes, hot reload, the path gate, the visual module |
-| Integration | `test/integration/` | The three stub-agent scripts, cancel / timeout / baseline, fake-CDP Codex / ZCode / Kimi Code / Qoder CN / Open Design / MiniMax Code end-to-end and rework loops, race regressions, visual services / capture / flow |
+| Integration | `test/integration/` | The three stub-agent scripts, cancel / timeout / baseline, fake-CDP Codex / ZCode / Kimi Code / Open Design / MiniMax Code end-to-end and rework loops, race regressions, visual services / capture / flow |
 | Protocol | `test/protocol/` | An official SDK client asserting the 8-tool surface and return format |
 | Real-hardware (manual) | `scripts/probe-*.mjs`, `scripts/smoke-zcode.mjs`, `scripts/evidence-visual-windows.mjs` | Require a real client or an installed browser |
 | Consumer | `scripts/check-visual-consumer.mjs` | Installs the production tarball into a directory with no dev dependencies and runs real-browser visual acceptance plus the offline report |
@@ -1094,7 +1069,7 @@ Ordered by impact on a successor:
 1. **UI signals are the only reliable completion criterion** — all seven GUI drivers depend on DOM structure and visible signals. Client upgrades can drift selectors; fix in `selectors.ts` or via a profile override, and real-hardware re-verification is not optional.
 2. **A session waiting in the GUI cannot be stopped while the task is `needs_user`** — the MCP side holds no CDP connection. Terminal messages state this honestly. Stopping via a temporary CDP connection is listed under "planned" in `CHANGELOG.md`.
 3. **Single-session serialization** — a GUI is a single-session resource, same-project tasks serialize behind `projectBusy()`, and global concurrency is capped by `maxRunning`. This is a design constraint, not a defect.
-4. **macOS verification matrix is incomplete** — Codex and ZCode have real-hardware macOS happy paths, but cancel / rework / `manage_task(action="continue")` / new-project matrices are uncovered, so both stay `research` on darwin; Kimi Code, Qoder CN, Open Design and MiniMax Code fail closed on macOS (all four stay `research` on darwin).
+4. **macOS verification matrix is incomplete** — Codex and ZCode have real-hardware macOS happy paths, but cancel / rework / `manage_task(action="continue")` / new-project matrices are uncovered, so both stay `research` on darwin; Kimi Code, Open Design and MiniMax Code fail closed on macOS (all three stay `research` on darwin).
 5. **No-project dispatch is ZCode-only and Windows-verified only**; ZCode's auto-import of unregistered projects is unavailable on Windows (register the directory manually first, or pass `allowCreateProject=false` to fail explicitly). **Kimi Code does not support project-less dispatch at all** (it must bind a workspace).
 6. **Kimi Code cancellation / question answering / same-name workspace ambiguity are covered by hermetic integration tests only** (no hardware stop click, no real question card triggered).
 7. **Visual module platform-evidence boundary** — macOS evidence comes from CI-hosted runners and has not been re-confirmed on the maintainer's own macOS device.
@@ -1356,7 +1331,6 @@ UI states this).
 | Codex desktop GUI driver details | [docs/codex-gui-cdp.md](docs/codex-gui-cdp.md) |
 | ZCode GUI driver details | [docs/zcode-cdp.md](docs/zcode-cdp.md) |
 | Kimi Code GUI driver details | [docs/kimi-cdp.md](docs/kimi-cdp.md) |
-| Qoder CN GUI driver details | [docs/qoder-cdp.md](docs/qoder-cdp.md) |
 | Full agent profile field reference | [docs/agent-profiles.md](docs/agent-profiles.md) |
 | Per-agent capability research matrix | [docs/adapter-matrix.md](docs/adapter-matrix.md) |
 | Project-level acceptance config spec | [docs/acceptance-config.md](docs/acceptance-config.md) |

@@ -325,9 +325,6 @@ export class TaskManager {
     if (!isTerminal(meta.status)) {
       return { found: false, reason: `任务仍在进行中（status=${meta.status}），无法 rework` };
     }
-    if (meta.agentId === "qoder" && (!meta.qoderSessionId || !meta.reportJson)) {
-      return { found: false, reason: "Qoder 原会话或验收报告缺失，无法生成原会话返修计划" };
-    }
     if (
       meta.agentId === "zcode" &&
       !meta.pendingVisualVerification &&
@@ -407,12 +404,6 @@ export class TaskManager {
           reason: `codex 任务等待类型为 ${meta.needsUserKind ?? "unknown"}，仅支持 login_required / user_confirmation`,
         };
       }
-    } else if (meta.agentId === "qoder") {
-      if (meta.needsUserKind === "agent_question" && !meta.qoderSessionId)
-        return { found: false, reason: "原 Qoder 会话锚点丢失，拒绝打开最近会话" };
-      meta.continueMessage = message.trim();
-      meta.continueSendMessage = meta.needsUserKind === "agent_question";
-      meta.continueReobserve = !!meta.qoderSessionId && !meta.continueSendMessage;
     } else if (meta.agentId === "kimicode") {
       if (meta.needsUserKind === "agent_question") {
         // 提问必须回答到**原会话**里：缺会话锚点就无法唯一定位，直接拒绝（绝不退化打开最近会话）
@@ -463,7 +454,7 @@ export class TaskManager {
     } else {
       return {
         found: false,
-        reason: `manage_task(action="continue") 当前仅支持 zcode/codex/kimicode/qoder/opendesign 任务（agentId=${meta.agentId}）`,
+        reason: `manage_task(action="continue") 当前仅支持 zcode/codex/kimicode/opendesign 任务（agentId=${meta.agentId}）`,
       };
     }
     meta.status = "queued";

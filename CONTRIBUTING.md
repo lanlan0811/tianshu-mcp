@@ -86,7 +86,7 @@ src/
 ├── loop/                 单任务编排（返修循环）与修复计划生成
 ├── agents/               adapter 抽象、registry、spawn 封装、内置 profiles
 │   ├── cdp/              共享 CDP 传输底座（GuiCdpClient，全部 GUI adapter 复用）
-│   └── codex/ zcode/ kimicode/ qoder/ opendesign/ minimax/  各 GUI 驱动（CDP 客户端 / 选择器 / 启动器 / UI）
+│   └── codex/ zcode/ kimicode/ opendesign/ minimax/  各 GUI 驱动（CDP 客户端 / 选择器 / 启动器 / UI）
 ├── verify/               验收引擎（命令检查 + 代码分析 + git 基线 + 报告）
 └── util/                 日志、路径、文件、超时等
 ```

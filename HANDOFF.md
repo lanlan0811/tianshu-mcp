@@ -17,6 +17,14 @@
 >   `protocol-text` / `zcode-handler` 五处跨文件用例改写。其余六个 agent 零行为变化（`test/fake-cdp.ts`
 >   保留，仍服务 kimicode / opendesign）。
 >
+> - **0.9.10 · 移除 Qoder CN 调用（BREAKING）**：整个 `src/agents/qoder/` 目录删除（13 文件），
+>   `qoder` 从内置 profile / registry 默认列表 / 适配器分支 / `discoverQoder` 分支移除；
+>   `modelSource` 参数随之废弃（统一拒绝文案）。`fix-loop` 的 qoder 专用返修分支删除，同时**修正
+>   `actualModel` 落盘**（原三行在 `agentId==="qoder"` 门内，导致 Open Design 的模型回读从未写入——
+>   这是移除 Qoder 顺带暴露的既存缺陷）。10 个 qoder 测试删除；新增
+>   `test/integration/legacy-removed-agent-rework.test.ts` 锁死「历史 `agentId:"qoder"` 任务重跑
+>   必须硬失败 `agent_unresolved`，绝不被 CLI adapter 兜底」。其余五个 agent 零行为变化。
+>
 > **历史快照（0.8.2 → 0.9.4）**
 >
 > **本轮（0.8.2 → 0.9.4）交付**：7 个版本累积。**v0.9.0 是破坏性变更（工具面 13 → 8）**，升级调用方前

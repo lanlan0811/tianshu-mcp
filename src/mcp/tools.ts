@@ -45,7 +45,7 @@ export const TOOL_DEFS: ToolDef[] = [
   {
     name: "run_task",
     description:
-      "派活：启动外部 AI-Agent 开发任务并可自动验收返修，异步返回 taskId。ZCode 要求 model=供应商/模型。mode 已废弃（原为已移除的 GUI 适配器的面板模式），传入会被拒绝（设计取向请改用 designDirection）。task/context 内的 ZCode 项目路径引用会在发送前校验。Qoder CN 要求已有 projectPath 和可读 planDoc；modelSource 可选 default/custom，省略模型或等级则沿用当前设置。思考等级通过模型管理保存为全局偏好，权限模式不变；macOS research 禁止派发。可选 idempotencyKey（1..128 字符）：同一 key 在 TTL（默认 24h）内重复提交恒返回原 taskId 与当前状态、不新建任务，参数变更则报冲突——重试请复用同一 key。 " +
+      "派活：启动外部 AI-Agent 开发任务并可自动验收返修，异步返回 taskId。ZCode 要求 model=供应商/模型。mode 与 modelSource 已废弃（原为已移除的 GUI 适配器参数），传入会被拒绝（设计取向请改用 designDirection）。task/context 内的 ZCode 项目路径引用会在发送前校验。思考等级按界面实际档位核对，权限模式不变；macOS research 禁止派发。可选 idempotencyKey（1..128 字符）：同一 key 在 TTL（默认 24h）内重复提交恒返回原 taskId 与当前状态、不新建任务，参数变更则报冲突——重试请复用同一 key。 " +
       "可选 dryRun=true 进入干跑模式（先审后做）：agent 只分析规划、输出将要修改的文件清单与方案、不动源码；验收引擎只做静态分析（引用文件是否存在、拟改位置是否存在、明显逻辑冲突），跳过 typecheck/test/build。dryRun 需提供 projectPath、忽略 autoVerify、不进入自动返修；产物为独立报告（meta.dryRunReportFiles，不消耗验收轮次）与方案文档（meta.dryRunPlanDoc，可直接作为后续正式任务的 planDoc）。默认关闭。",
     inputSchema: RunTaskWireSchema,
     capability: "write",
@@ -69,7 +69,7 @@ export const TOOL_DEFS: ToolDef[] = [
       "任务生命周期管理（合并原 cancel_task / continue_task / rework_task），用 action 区分：" +
       "action=cancel 取消运行中任务（CLI 终止进程树；GUI 点击界面停止按钮并等待空闲，未确认停止时结果中明示。排队中任务直接移除。对已终态的 GUI 任务兼任人工确认入口：核实窗口无残留运行后调用可清除 guiStopUnconfirmed 标记）——" +
       "可选 reason 为取消原因；" +
-      "action=continue 恢复 needs_user 状态的任务（message 必填）：zcode 在 agent_question 时把 message 发往原会话，关闭旧实例/登录/系统权限场景中 message 仅作已处理确认；codex 的 user_confirmation 重新接入观察（不发送消息）、login_required 复检环境后重发任务书；qoder 通过专用答题控件回复，多题时 message 使用完整问题文字到答案的 JSON 对象。审批或环境处理后仅恢复观察，提交不明时禁止重发；" +
+      "action=continue 恢复 needs_user 状态的任务（message 必填）：zcode 在 agent_question 时把 message 发往原会话，关闭旧实例/登录/系统权限场景中 message 仅作已处理确认；codex 的 user_confirmation 重新接入观察（不发送消息）、login_required 复检环境后重发任务书；kimicode/minimax 的 agent_question 把 message 发往原会话。审批或环境处理后仅恢复观察，提交不明时禁止重发；" +
       "action=rework 手动返修终态任务（failed/needs_attention）重新入队续跑，同一 agent/项目与轮次记账：feedback 为追加指示（建议带上一次验收失败摘要），repairHint 为可选的结构化修复提示（自由字符串，上限 4000 字符）——写「文件:行 / 问题 / 做什么」，会以【结构化修复提示】块置于 feedback 之前，不传则行为不变。" +
       "注意：本工具含破坏性 action（cancel / rework）。",
     inputSchema: ManageTaskParamsSchema,

@@ -168,11 +168,14 @@ export const RunTaskParamsSchema = z.object({
    */
   model: z.string().min(1).optional(),
   /**
-   * GUI 思考等级；由具体适配器核对档位。Qoder CN 支持动态菜单校验。
-   * 未传时沿用当前等级。
+   * GUI 思考等级；由具体适配器按界面实际档位核对。未传时沿用当前等级。
    */
   reasoningLevel: ReasoningLevelSchema.optional(),
-  /** Qoder CN model group; omitted means unique exact match across groups. */
+  /**
+   * 已废弃：原为 Qoder CN 的模型分组消歧参数（`default` / `custom`）。
+   * 该适配器已移除，当前**无任何适配器消费**；键保留仅为旧调用方拿到可读文案
+   * （schema 是裸 `z.object`，删键只会让参数被静默 strip）。
+   */
   modelSource: z.enum(["default", "custom"]).optional(),
   /**
    * **已废弃**：早期 GUI 适配器的面板模式（Work / Code / Design）。
@@ -183,7 +186,7 @@ export const RunTaskParamsSchema = z.object({
    */
   mode: TraeworkModeSchema.optional(),
   /**
-   * 计划文档路径（Codex / Qoder CN）：相对项目根或绝对路径，Qoder CN 必填。
+   * 计划文档路径（Codex）：相对项目根或绝对路径。
    * 会被拼进初始开发指令「根据计划文档(<planDoc>)…」。
    */
   planDoc: z.string().min(1).optional(),
@@ -788,7 +791,6 @@ export const AgentProfileSchema = z.object({
       "zcode-gui",
       "codex-gui",
       "kimicode-gui",
-      "qoder-gui",
       "opendesign-gui",
       "minimax-gui",
     ])
@@ -824,7 +826,7 @@ export const AgentProfileSchema = z.object({
       message:
         'profile 声明了 driver="gui" 但未指定 adapter；旧版默认回落到一个已移除的 GUI 适配器，' +
         "该默认已取消。请显式填写 adapter（可选：" +
-        "codex-gui / zcode-gui / kimicode-gui / opendesign-gui / minimax-gui / qoder-gui）",
+        "codex-gui / zcode-gui / kimicode-gui / opendesign-gui / minimax-gui）",
     });
   }
 });

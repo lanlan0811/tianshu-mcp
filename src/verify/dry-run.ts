@@ -313,7 +313,7 @@ export function dryRunReportToJsonable(r: DryRunReport): Record<string, unknown>
   return { ...r, kind: "dry-run" };
 }
 
-/** 后续正式任务复用的计划文档：落在**项目内**，因为 codex/qoder 的 `planDoc` 只能读项目文件 */
+/** 后续正式任务复用的计划文档：落在**项目内**，因为 codex 的 `planDoc` 只能读项目文件 */
 export function dryRunPlanDocRelPath(taskId: string): string {
   return toPosix(path.join(".tianshu-mcp", `dry-run-plan-${taskId}.md`));
 }

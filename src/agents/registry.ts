@@ -8,8 +8,6 @@ import type { AgentAdapter, ResolvedAgent, AgentRunResult, TaskContext } from ".
 import { CliAdapter } from "./cli.js";
 import { ZcodeGuiAdapter } from "./zcode/adapter.js";
 import { CodexGuiAdapter } from "./codex/adapter.js";
-import { QoderGuiAdapter } from "./qoder/adapter.js";
-import { discoverQoder } from "./qoder/discovery.js";
 import { KimicodeGuiAdapter } from "./kimicode/adapter.js";
 import { OpenDesignGuiAdapter } from "./opendesign/adapter.js";
 import { MinimaxGuiAdapter } from "./minimax/adapter.js";
@@ -38,7 +36,6 @@ export class AgentAdapterRegistry {
       "codex",
       "zcode",
       "kimicode",
-      "qoder",
       "opendesign",
       "minimax",
       "stub",
@@ -62,9 +59,6 @@ export class AgentAdapterRegistry {
     if (adapterType === "minimax-gui") {
       if (!(current instanceof MinimaxGuiAdapter))
         this.adapters.set(agentId, new MinimaxGuiAdapter(agentId));
-    } else if (adapterType === "qoder-gui") {
-      if (!(current instanceof QoderGuiAdapter))
-        this.adapters.set(agentId, new QoderGuiAdapter(agentId));
     } else if (adapterType === "opendesign-gui") {
       if (!(current instanceof OpenDesignGuiAdapter))
         this.adapters.set(agentId, new OpenDesignGuiAdapter(agentId));
@@ -81,7 +75,6 @@ export class AgentAdapterRegistry {
       current instanceof ZcodeGuiAdapter ||
       current instanceof CodexGuiAdapter ||
       current instanceof KimicodeGuiAdapter ||
-      current instanceof QoderGuiAdapter ||
       current instanceof OpenDesignGuiAdapter ||
       current instanceof MinimaxGuiAdapter ||
       !current
@@ -223,29 +216,6 @@ export class AgentAdapterRegistry {
         message:
           profile.note ||
           "未探测到 MiniMax Code 桌面端（固定盘相对路径、注册表卸载信息与标准安装目录均未命中）；请确认已安装 MiniMax Code",
-      };
-    }
-    if (profile.adapter === "qoder-gui") {
-      const found = await discoverQoder(profile);
-      return {
-        id: agentId,
-        displayName: profile.displayName || agentId,
-        profile,
-        command: found?.path ?? "",
-        argsTemplate: profile.argsTemplate,
-        ok: !!found && process.platform === "win32",
-        message:
-          process.platform !== "win32"
-            ? "Qoder CN macOS research：未完成真机验证，禁止派发"
-            : found
-              ? "探测到 Qoder CN: " + found.path
-              : "未找到 Qoder CN；请配置 gui.exePath",
-        discovered: found
-          ? {
-              source: found.source === "explicit" ? "explicit" : "discovery",
-              version: found.version,
-            }
-          : undefined,
       };
     }
     if (profile.adapter === "kimicode-gui") {

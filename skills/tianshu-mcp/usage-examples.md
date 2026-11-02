@@ -136,33 +136,6 @@ run_task(projectPath=D:/repo/app, agentId=kimicode,
 - 官方额度用尽时界面返回 `provider.auth_error` / `HTTP 403` 并判 `agent_error`——可改用非官方免费模型（如 `stepfun/step-3.7-flash:free`）后重派。
 - 排查提示：模型 / 思考档位 / 执行模式菜单渲染在独立的 `Kimi Browser Overlay` 浮层窗口，**别在主窗口找**。
 
-### 2.7 qoder（仅 Qoder CN；`projectPath` + 可读 `planDoc` 必填）
-
-```text
-run_task(projectPath=D:/repo/app, agentId=qoder,
-  planDoc=./plans/development.md,
-  modelSource=custom,
-  model=<界面模型名>,
-  reasoningLevel=极高,
-  task=按计划实现项目，并满足计划中的验收条件,
-  autoVerify=true, autoFixRounds=3)
-```
-
-- `model` 与 `reasoningLevel` 都可省略（**沿用界面当前值并记录**）；不可把示例名当真实模型。
-- `modelSource=default|custom` 用于消除「默认/自定义」两组**同名**歧义；省略 `modelSource` 但只给 `model` 时要求**跨组唯一精确匹配**，重名报 `qoder_model_ambiguous`，不要靠猜。
-- `reasoningLevel` 支持 `低/中/高/极高/最大/关闭思考`（等价 `low/medium/high/xhigh/max/off`）。可用档位以**该模型在「模型管理」里实际渲染的选项**为准，不支持的档位在**发送前**报错，禁止静默降级。
-- 思考等级是 **Qoder 全局偏好**：保存后影响之后的任务，任务结束**不还原**；报告会记录实际模型与等级。权限模式沿用当前设置，**不自动开「完全访问」**。
-- 工作区以**完整路径**匹配；未登记目录经「新的任务 → 工作区 → 新建工作区 → 添加可读写文件夹 → 创建」导入；目录不存在直接报错，**不会自动创建磁盘目录**。
-- **自动与手动返修都先落修复计划**，再把失败说明、计划文件名、完整路径与**全文**发回原会话（即使计划文件在项目目录外，也有全文可执行）。
-- **macOS 禁止派发**（`unsupported_platform`，状态为 `research`）。
-- 多题续答：`manage_task(action="continue")` 的 `message` 传 **JSON 对象字符串**，键为界面上**完整问题文字**：
-
-```json
-{"选择开发语言":"TypeScript","需要哪些测试":["单元测试","集成测试"]}
-```
-
-多选值用选项文字数组；先全量校验再操作答题控件，题目变化 / 缺答案 / 选项不存在都**保留等待**，**不接受推荐项代替答案**。单题可直接用普通文本。
-
 ### 2.8 opendesign（Open Design 桌面端；Windows 真机取证，macOS `research`）
 
 ```text
@@ -254,8 +227,8 @@ run_task(projectPath=/path/to/项目, agentId=codex-cli,
 - `run_task` 是**异步契约**：立即返回 `taskId` + 队列位置，不要当同步调用等结果。
 - **优先用 `wait_task` 等结果（issue #28）**：回合驱动调用方无法自行轮询，`run_task` 后在本回合内直接 `wait_task(taskId)` 阻塞等到停点，无需用户再发消息触发查询；要看进度细节才用 `query_task` 轮询（间隔 5–10 秒，缺省返回 agent 日志末 40 行）。同项目串行 + 全局并发默认 2，重复派单只会排队。
 - **重试复用同一条 `idempotencyKey`（issue #15）**：`tools/call` 超时、断线、宿主重启后重发同一意图时，`run_task` 会返回**原 `taskId` 与当前状态**（不排队第二轮 agent），`verify_task` 会返回「进行中」或既有报告（不重跑检查）。**参数变了就换 key**——同键异参 fail-closed 报错并回报原记录 id。幂等重放的响应文本以「幂等重放：」开头、meta 带 `idempotencyReplay`，不要汇报成「已重新派单」。
-- 只有 `needs_user` 能用 `manage_task(action="continue")` 恢复，且当前支持 **codex / zcode / kimicode / qoder / opendesign / minimax**（opendesign 会产出 `login_required` / `user_confirmation` / `system_permission` / `setup_recovery` / `close_existing_instance` 五类，均支持 `manage_task(action="continue")` 恢复）；spawn 类会被明确拒绝。
-- `autoVerify` 不传时**默认开**；`autoFixRounds` 不传时取 agent 缺省（codex 5 / zcode 2 / kimicode 2 / qoder 3 / minimax 2）。
+- 只有 `needs_user` 能用 `manage_task(action="continue")` 恢复，且当前支持 **codex / zcode / kimicode / opendesign / minimax**（opendesign 会产出 `login_required` / `user_confirmation` / `system_permission` / `setup_recovery` / `close_existing_instance` 五类，均支持 `manage_task(action="continue")` 恢复）；spawn 类会被明确拒绝。
+- `autoVerify` 不传时**默认开**；`autoFixRounds` 不传时取 agent 缺省（codex 5 / zcode 2 / kimicode 2 / minimax 2）。
 - **`mode` 已废弃**（v0.9.9 起）：任何 agent 传入都会被 handler 统一拒绝并提示改用 `designDirection`（Open Design）。
 
 ### 2.12 等待任务：`wait_task`（issue #28；v0.9.0 合并 `wait_any`）
@@ -319,12 +292,12 @@ wait_task(taskIds=[tsk_a, tsk_b, tsk_c], timeoutMs=50000)   # 批量模式
 
 | 参数 | 谁支持 | 易错点 |
 |---|---|---|
-| `modelSource` | 仅 qoder | 传给其他 agent 直接报错 |
-| `reasoningLevel` 别名 `极高`/`xhigh`/`最大`/`关闭思考` | 仅 qoder | 传给其他 agent 直接报错 |
+| `modelSource` | **已废弃**（无适配器支持） | 任何 agent 传入都报错，提示移除 |
+| `reasoningLevel` 别名 `极高`/`xhigh`/`最大` | 仅 minimax | 传给不支持的 agent 直接报错（`关闭思考` 由 zcode 映射为 `off`） |
 | `contextWindow` | 仅 minimax | 传给其他 agent 直接报错 |
 | `mode` | **已废弃**（无适配器支持） | 任何 agent 传入都报错并提示改用 `designDirection` |
 | `allowCreateProject` | 仅 zcode（有项目模式） | 其他 agent 传了报错 |
-| `planDoc` | codex（可选）、qoder（**必填**） | qoder 的计划文件必须存在且可读，相对路径按项目根解析 |
+| `planDoc` | 仅 codex（可选） | 相对路径按项目根解析，文件必须存在且在项目内 |
 | `designSystem` | 仅 codex | 路径必须存在且在项目内 |
 | `projectPath` 省略 | 仅 zcode | 其余 agent 需要 `projectPath`；Kimi Code 尤其如此 |
 | `extraChecks` / `checksMode` / `baselineRef` | 仅 verify_task | 独立 projectPath 下 `baselineRef` 只能是 git ref，不能是任务 ID |
@@ -350,7 +323,7 @@ wait_task(taskIds=[tsk_a, tsk_b, tsk_c], timeoutMs=50000)   # 批量模式
   "ok": false,
   "taskId": "tsk_20260922120000_a1b2c3",
   "status": "needs_attention",
-  "agentId": "qoder",
+  "agentId": "opendesign",
   "projectPath": "d:/repo/my-app",
   "model": "<派单时的模型参数>",
   "actualModel": "<实际生效模型>",
@@ -365,7 +338,6 @@ wait_task(taskIds=[tsk_a, tsk_b, tsk_c], timeoutMs=50000)   # 批量模式
   "agentEndReason": "completion_mark",
   "reportRound": 1,
   "verificationSource": "auto",
-  "qoderSessionId": "<会话 id>",
   "guiStop": { "clicked": true, "idle": true },
   "message": "验收失败，自动返修轮次已用尽（3/3 轮）。…"
 }
@@ -394,9 +366,9 @@ wait_task(taskIds=[tsk_a, tsk_b, tsk_c], timeoutMs=50000)   # 批量模式
 | `abortSource` | 中断来源：`user`/`shutdown`/`timeout`/`internal` |
 | `cancelReason` / `cancelRequestedAt` | 取消原因与发起时间 |
 | `keptInstance` | 是否因任务未真正完成而保留了 GUI 实例 |
-| `zcodeSessionId` / `qoderSessionId` / `boundProjectPath` | 会话锚点与项目绑定回执（kimicode / minimax 的锚点仅在服务端保留，不回显） |
+| `zcodeSessionId` / `boundProjectPath` | 会话锚点与项目绑定回执（kimicode / minimax 的锚点仅在服务端保留，不回显） |
 | `modelProvider` / `permissionMode` | 实际生效的供应商标识与权限模式（zcode 等） |
-| `actualModel` / `actualReasoningLevel` / `modelSource` | 实际生效模型、等级与模型来源（qoder） |
+| `actualModel` / `actualReasoningLevel` | 实际生效模型与等级（opendesign 是当前生产方） |
 | `guiStop` | 最近一次中断时 GUI 停止的点击与空闲确认结果（`clicked` / `idle`）；`idle=true` 才是**已确认**停止 |
 | `guiStopUnconfirmed` | 出现即为 `true`：GUI 任务的终态**未确认**停止（`guiStop.idle=false` 或重启归档无任何确认手段），重派前必须先人工确认并用 `manage_task(action="cancel")` 消除（§9.5.1） |
 | `progressSummary` / `lastRunSignal` | 轮询期进度摘要 / 最近运行信号 |
@@ -408,7 +380,7 @@ wait_task(taskIds=[tsk_a, tsk_b, tsk_c], timeoutMs=50000)   # 批量模式
 
 规则：`ok=true` 且 `status=succeeded` → 交付达成；否则先读 `message`，再按 `errorType` / `agentEndReason` 查 §5，最后读 `reportFiles.md` 全文定位。
 
-> **注意**：`reasoningLevel` 是**入参**，不回显在 meta 里；qoder 的实际等级看 `actualReasoningLevel`，codex 的实际等级只能在面板上看。
+> **注意**：`reasoningLevel` 是**入参**，不回显在 meta 里；opendesign 的实际等级看 `actualReasoningLevel`，codex 的实际等级只能在面板上看。
 
 ---
 
@@ -420,7 +392,7 @@ wait_task(taskIds=[tsk_a, tsk_b, tsk_c], timeoutMs=50000)   # 批量模式
 
 | `agentEndReason` | 终态 |
 |---|---|
-| `task_timeout` | `needs_attention` + `errorType=timeout`（codex/zcode）；qoder 落 `failed(timeout)` |
+| `task_timeout` | `needs_attention` + `errorType=timeout`（codex/zcode） |
 | `idle_timeout` / `cdp_disconnected` | `needs_attention` + `errorType=agent_failed`（codex/zcode） |
 | 其余 `hardFailure` | `failed` + `errorType=spawn` |
 
@@ -436,18 +408,16 @@ wait_task(taskIds=[tsk_a, tsk_b, tsk_c], timeoutMs=50000)   # 批量模式
 | `permission_unknown` | 权限模式未确认（如 ZCode 未开「完全访问」） | 让用户在 agent 内切好权限模式 |
 | `cdp_disconnected` | CDP 连接断开且未能恢复 | 让用户关掉冲突实例；重试 |
 | `instance_busy` | 同项目/同实例已有未停止的运行（重派护栏） | 先 `manage_task(action="cancel")` 并**确认 GUI 已停**，或等其自行结束 |
-| `session_lost` | zcode/kimicode/qoder/minimax 找不到原会话锚点 | 用新任务重派，不要指望恢复原会话 |
+| `session_lost` | zcode/kimicode/minimax 找不到原会话锚点 | 用新任务重派，不要指望恢复原会话 |
 | `input_mismatch` / `send_unknown` | 发送前回读不一致 / 发送结果无法确认（**绝不自动重发**） | 人工看窗口状态，必要时 `manage_task(action="continue")` 或重派 |
 | `idle_timeout` | GUI 长时间静止且无完成标志（现场已保留） | 看窗口里 agent 是否真卡住；必要时 `manage_task(action="continue")` 或取消 |
 | `agent_error` | Kimi Code 界面出现失败文案/「继续」按钮（如官方额度用尽 `provider.auth_error`） | 读窗口内错误原文；额度/模型类可换非官方免费模型后重派 |
-| `unsupported_platform` | Qoder 在非 Windows 平台派发 | 换平台或换 agent（qoder 的 macOS 状态是 `research`） |
-| `qoder_error` | Qoder 运行期错误，原文带具体码：`qoder_model_ambiguous` / `qoder_model_missing` / `qoder_model_readback_failed` / `qoder_reasoning_unsupported` / `qoder_workspace_mismatch` / `qoder_workspace_ambiguous` / `qoder_folder_dialog` / `qoder_input_readback_failed` / `qoder_question_ambiguous` / `qoder_question_answers_required` / `qoder_question_unknown_title` / `qoder_question_answer_missing` / `qoder_question_option_unavailable` / `qoder_question_not_multiselect` / `qoder_question_changed` / `qoder_session_lost` / `qoder_stage_timeout` / `qoder_checkpoint_missing` | 按码处置：模型/档位类按界面实际值重派；工作区类让用户确认目录；提问类补齐答案或用 JSON 对象、选项文字必须与界面一致；`*_stage_timeout` 多为窗口未前台/被遮挡 |
 | `task_timeout`（`errorType=timeout`） | 任务级超时 | 大任务调大 `taskTimeoutMs`；或拆小任务 |
 | `aborted` | 被取消 / 中断 | 看 `abortSource`，按 SKILL §6 处理 |
 
 上表未覆盖的：先读 `message` 全文（多数带可执行建议），再读 `reportFiles.md`。
 
-**另一类“报错”不是任务终态**，而是工具入参被拒（立即返回，不排队、不产生任务）：`allowCreateProject` 用于非 ZCode、`mode` 已废弃（任何 agent 传入都拒绝）、`modelSource` 用于非 qoder、`极高/最大/关闭思考` 用于非 qoder、qoder 缺 `planDoc` 或计划文件不可读、无项目模式传 `autoVerify=true`/`autoFixRounds>0`、`verify_task` 既没给 `taskId` 也没给 `projectPath`、以及**幂等键冲突**（见下）。这类改参数重试即可。
+**另一类“报错”不是任务终态**，而是工具入参被拒（立即返回，不排队、不产生任务）：`allowCreateProject` 用于非 ZCode、`mode` 与 `modelSource` 均已废弃（任何 agent 传入都拒绝）、无项目模式传 `autoVerify=true`/`autoFixRounds>0`、`verify_task` 既没给 `taskId` 也没给 `projectPath`、以及**幂等键冲突**（见下）。这类改参数重试即可。
 
 **幂等键冲突（issue #15）**：报「`idempotencyKey '<key>'` 已被任务/验收记录 `<id>` 占用，但本次参数与首次提交不同」= 你复用了旧 key 却改了参数（换了项目、任务书、agent、`extraChecks` 等）。处置：**改用一条新 key** 重发，或直接对原记录 id 操作（`query_task` / `query_info(type="report")` / `manage_task(action="rework")`）；不要靠改参数绕过冲突。
 
@@ -584,10 +554,9 @@ parameter of type 'number' (src/run.ts:42)。请只修这一处类型问题并�
 自动返修（`autoFixRounds>0`）落盘规则：
 
 - **`codex`**：修复计划写到**项目内** `gui.fixPlanDir`（默认 `.zcode/plans/codex-fix-r<N>.md`，文件名含轮次、不覆盖历史）——因为 Codex 只能读项目工作区内的文件。
-- **`qoder`**：写到 **MCP 任务目录**（`<home>/tasks/<taskId>/rework-<taskId>-r<N>.md`），并把**文件名、完整路径与全文**一起发回原会话（计划在项目目录外也能执行）。
 - **`zcode` / `kimicode` 等其余 agent**：写到任务目录（`rework-<taskId>-r<N>.md`），把路径引用进下一轮指令，避免临时计划污染项目工作区。
 
-手动 `manage_task(action="rework")` 的 `feedback` 按上面的针对性模板书写；对 qoder，手动返修同样会先生成计划再回原会话（原会话锚点或验收报告缺失时会直接拒绝，不新开任务冒充续修）。
+手动 `manage_task(action="rework")` 的 `feedback` 按上面的针对性模板书写；对 opendesign，手动返修同样会先生成计划再发送。
 
 ---
 
@@ -619,19 +588,6 @@ MCP 复检环境后重新派发任务书（新会话 + 项目绑定 + 完整初�
 2) manage_task(taskId, action="continue", message="已在 ZCode 中确认目标项目")
 3) message 只是「已处理」确认，不会作为问题发送；原任务上下文被保留。
 ```
-
-### 9.4 qoder 提问续答与发送不确定（`agent_question` / `setup_recovery`）
-
-```text
-# 单题
-manage_task(taskId=tsk_..., action="continue", message=使用 TypeScript)
-
-# 多题：message 是 JSON 对象字符串，键为界面上的完整问题文字
-manage_task(taskId=tsk_..., action="continue", message={"选择开发语言":"TypeScript","需要哪些测试":["单元测试","集成测试"]})
-```
-
-- 题目变化、缺答案、选项文字不存在、单选用数组：都会保留等待并报出对应 `qoder_question_*` 错误，**不会**拿推荐项/默认项代替。
-- 若任务是因「发送或答题提交结果不确定」转 `needs_user(setup_recovery)`：**先人工核对原会话**，不要盲目继续或重发（适配器保留检查点，就是不重复提交）。
 
 ### 9.5 取消 GUI agent 任务（manage_task(action="cancel")）
 
@@ -690,7 +646,7 @@ manage_task(taskId, action="cancel", reason="已人工核对窗口无残留运�
 - `stallTimeoutMs`：停止按钮持续可见 + 对话无变化持续此时长 → 判定等待用户（默认 300000 = 5 分钟）。长命令型任务（大依赖安装/构建）建议调大。
 - `cancelWaitMs`：取消时点停止按钮后等待 GUI 空闲的上限（默认 15000 = 15 秒）。
 - `selectors.userGate`：等待用户界面的检测选择器（如结账页 `embedded-checkout`），配置后命中即快速转 `needs_user`；**默认未配置 = 禁用**，配置前请真机核对。
-- `defaultAutoFixRounds`：该 agent 的自动返修缺省轮数（codex 5 / zcode 2 / kimicode 2 / qoder 3）。
+- `defaultAutoFixRounds`：该 agent 的自动返修缺省轮数（codex 5 / zcode 2 / kimicode 2）。
 - 整键覆盖语义：数据目录 `agent-profiles.json` 里同名键会**覆盖**内置 profile 的对应字段；用户自定义 profile（如 `codex-cli`）会出现在 `query_info(type="profiles")` 中。
 
 ### 9.7 server 级配置（config.json，可选）
