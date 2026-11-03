@@ -36,6 +36,13 @@
 >   `mcp-gui` scanner 测试 fixture 一并收口。**注**：主体已在 0.9.10 提前落地（CI pack-check 因 qoder
 >   必需文件缺失变红所迫），本版收尾剩余项。
 >
+> - **1.0.0-beta.3 · 文档全量收口 + 零残留门禁（无行为变化）**：新增常驻门禁
+>   `scripts/check-removed-agents.mjs`（接入 CI 的 `build-test`）——`src/` / `scripts/` /
+>   `package.json` / `.github/workflows/` 零容忍 `traework` / `qoder`，其余逐条白名单；README /
+>   ARCHITECTURE / HANDOFF / CHANGELOG / SKILL / `docs/*` 全量收口。端到端真机验证：profiles 不含两者、
+>   `run_task` 报 `agent_unresolved`、历史 qoder 任务 rework 落 `agent_unresolved`、`mode`/`modelSource`
+>   得统一废弃文案。**六版计划至此收官。**
+>
 > **历史快照（0.8.2 → 0.9.4）**
 >
 > **本轮（0.8.2 → 0.9.4）交付**：7 个版本累积。**v0.9.0 是破坏性变更（工具面 13 → 8）**，升级调用方前

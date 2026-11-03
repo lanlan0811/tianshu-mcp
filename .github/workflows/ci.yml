@@ -102,6 +102,8 @@ jobs:
         run: npx tsc --noEmit -p tsconfig.json
       - name: Lint
         run: npm run lint
+      - name: Removed-agent zero-residue audit (see scripts/check-removed-agents.mjs)
+        run: npm run check:removed-agents
       - name: Unit & integration & protocol tests (2 attempts on flake)
         shell: bash
         run: |

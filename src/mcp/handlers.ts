@@ -413,10 +413,10 @@ function runTaskHandler(
           "需要表达设计取向时改用 designDirection（Open Design：prototype / document / clone）。",
       );
     }
-    // modelSource 已废弃（原先只有已移除的 Qoder CN 适配器消费它）：同样在任何 agent 分支前统一拒绝。
+    // modelSource 已废弃（原先只有一个已移除的 GUI 适配器消费它）：同样在任何 agent 分支前统一拒绝。
     if (args.modelSource !== undefined) {
       return errorResult(
-        "modelSource 已废弃（原为已移除的 Qoder CN 适配器的模型分组消歧参数），当前没有任何适配器消费它；请移除 modelSource 后重试。",
+        "modelSource 已废弃（原为某个已移除 GUI 适配器的模型分组消歧参数），当前没有任何适配器消费它；请移除 modelSource 后重试。",
       );
     }
     if (finalAgentId === "zcode") {
@@ -609,7 +609,7 @@ async function runTaskWithoutProject(
   // modelSource 已废弃（与有项目路径的门禁同一条文案）。
   if (args.modelSource !== undefined) {
     return errorResult(
-      "modelSource 已废弃（原为已移除的 Qoder CN 适配器的模型分组消歧参数），当前没有任何适配器消费它；请移除 modelSource 后重试。",
+      "modelSource 已废弃（原为某个已移除 GUI 适配器的模型分组消歧参数），当前没有任何适配器消费它；请移除 modelSource 后重试。",
     );
   }
   if (args.acceptanceOverride !== undefined) {

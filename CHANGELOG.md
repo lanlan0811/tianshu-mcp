@@ -7,6 +7,42 @@
 
 ---
 
+## [1.0.0-beta.3] — 2026-11-03
+
+> **文档全量收口 + 已移除 agent 零残留门禁**：本计划（六版）的收官版本。
+
+**无行为变化。**
+
+### 新增
+
+- **常驻门禁** `scripts/check-removed-agents.mjs`（`npm run check:removed-agents`），接入
+  `.github/workflows/ci.yml` 的 `build-test`：
+  - **零容忍**（任何命中即失败）：`src/`、`scripts/`、`package.json`、`.github/workflows/` 中出现
+    `traework` 或 `qoder`（含注释）。
+  - **白名单**（逐条列名，不用宽泛前缀）：历史发布说明、CHANGELOG、HANDOFF、迁移说明、
+    0.9.10 的显式验收用例、`mcp-gui/`。
+  - 既不在零容忍区也不在白名单的命中一律判失败——防止这两个 agent 被静默加回。
+
+### 文档
+
+- README / ARCHITECTURE / HANDOFF / CHANGELOG / SKILL / `docs/*` 全量收口：所有「当前状态」表述
+  不再把两个已移除 agent 列为可用；历史段落（发布说明、交接快照）保留原样。
+
+### 端到端真机验证（本计划唯一需要真机的一步）
+
+| # | 场景 | 期望 | 结果 |
+|---|---|---|---|
+| 1 | `query_info(type="profiles")` | 列出 codex / zcode / kimicode / opendesign / minimax / stub，**无** traework / qoder | ✅ |
+| 2 | `run_task(agentId="traework")` | `agent_unresolved`，不烧验收轮次 | ✅ |
+| 3 | `run_task(agentId="qoder")` | 同上 | ✅ |
+| 7 | 数据目录放一个 `agentId:"qoder"` 的历史 `task.json`，对它 `manage_task(action="rework")` | `failed(agent_unresolved)`，不误跑 | ✅ |
+| 8 | 宿主传 `mode` / `modelSource` | 统一「已废弃」文案（不是 zod 报错） | ✅ |
+
+> 场景 4–6（真实派发 codex / zcode / kimicode / opendesign / minimax 各一轮）需驱动真实桌面端并
+> 消耗额度，按计划「若环境具备」执行；共享 CDP 传输与其余 agent 的行为已由全量测试与上述真机项覆盖。
+
+---
+
 ## [1.0.0-beta.2] — 2026-11-03
 
 > **测试与脚本面收口**：删除两个已移除 agent 的探针/冒烟脚本与 CDP 文档，同步打包与 CI 必需清单。

@@ -226,7 +226,7 @@ export const BUILTIN_PROFILES: Record<string, AgentProfile> = {
     gui: {
       ...ZCODE_SETUP_DEFAULTS,
       // 端口基准 9889：实测已占用的基准为 zcode 9333 / codex 9333 / kimicode 9666，
-      // 9889-9898 与它们均不重叠（9777-9796 区段已随 Qoder CN 移除而空出）。
+      // 9889-9898 与它们均不重叠（9777-9796 区段当前空出）。
       cdpPort: 9889,
       cdpPortAuto: true,
       cdpPortRange: 10,

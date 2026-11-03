@@ -8,6 +8,47 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [1.0.0-beta.3] — 2026-11-03
+
+> **Full docs sweep + zero-residue gate for removed agents**: the closing release of this
+> six-release plan.
+
+**No behaviour change.**
+
+### Added
+
+- A **standing gate** `scripts/check-removed-agents.mjs` (`npm run check:removed-agents`), wired into
+  `.github/workflows/ci.yml`'s `build-test`:
+  - **Zero tolerance** (any hit fails): `traework` or `qoder` appearing in `src/`, `scripts/`,
+    `package.json` or `.github/workflows/` (comments included).
+  - **Whitelist** (named one by one, no broad prefixes): historical release notes, CHANGELOG,
+    HANDOFF, migration notes, the 0.9.10 explicit acceptance test, `mcp-gui/`.
+  - Any hit that is neither zero-tolerance nor whitelisted fails — so these two agents cannot be
+    silently added back.
+
+### Docs
+
+- README / ARCHITECTURE / HANDOFF / CHANGELOG / SKILL / `docs/*` swept: no "current state" text
+  lists the two removed agents as available any more; historical sections (release notes, handoff
+  snapshots) are preserved as-is.
+
+### End-to-end machine verification (the only step in this plan that needs real hardware)
+
+| # | Scenario | Expected | Result |
+|---|---|---|---|
+| 1 | `query_info(type="profiles")` | lists codex / zcode / kimicode / opendesign / minimax / stub, **no** traework / qoder | ✅ |
+| 2 | `run_task(agentId="traework")` | `agent_unresolved`, burns no acceptance rounds | ✅ |
+| 3 | `run_task(agentId="qoder")` | same | ✅ |
+| 7 | Put a legacy `agentId:"qoder"` `task.json` in the data dir and `manage_task(action="rework")` it | `failed(agent_unresolved)`, not re-run | ✅ |
+| 8 | Host passes `mode` / `modelSource` | the unified "deprecated" message (not a zod error) | ✅ |
+
+> Scenarios 4–6 (one real dispatch each of codex / zcode / kimicode / opendesign / minimax) require
+> driving the real desktop apps and spending quota; they run "where the environment allows", as the
+> plan states. The shared CDP transport and the other agents' behaviour are already covered by the
+> full test suite and the machine-verified items above.
+
+---
+
 ## [1.0.0-beta.2] — 2026-11-03
 
 > **Test and script surface cleanup**: deletes the two removed agents' probe/smoke scripts and CDP

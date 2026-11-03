@@ -1,6 +1,6 @@
 # ARCHITECTURE.md — tianshu-mcp 架构说明
 
-> 适用版本：`1.0.0-beta.2`（2026-11-03）。
+> 适用版本：`1.0.0-beta.3`（2026-11-03）。
 > 本文描述**系统结构与模块边界**，面向要改动本仓库的开发者；版本号只在发布时随提交更新，最新发布说明见 `docs/release-v<最新版本>.md`。
 > 本文描述**系统结构与模块边界**，面向要改动本仓库的开发者。
 > 运行方式、安装步骤与用法见 [README.md](README.md)；交接状态、排障手册与踩坑记录见 [HANDOFF.md](HANDOFF.md)。
@@ -980,6 +980,7 @@ CLI 子命令族（`node dist/index.js visual ...`）：`init`（写入禁用的
 1. `test/fake-cdp.ts` 里助手回复必须**同步追加**，不要改回定时器——轮询间隔小 + `stableRounds` 低时定时器会与稳定兜底抢跑。
 2. 集成测试必须**隔离原生对话框枚举**：`depsFor` 的默认 `listDialogs` 桩不可省，否则会触达真实 `listOwnedDialogs`，其 darwin 分支 fail-closed，在无授权的 runner 上直接抛错。
 3. 真实浏览器用例默认 `skipIf(TIANSHU_VISUAL_BROWSER_TEST !== "1")`；CI 的 `visual-browser` 作业显式开户。
+4. **已移除 agent 的零残留门禁**（`scripts/check-removed-agents.mjs`，`npm run check:removed-agents`，接在 CI 的 `build-test` 里）：`src/` / `scripts/` / `package.json` / `.github/workflows/` 中**零容忍**出现 `traework` / `qoder`（含注释），其余位置需逐条进白名单（历史发布说明 / CHANGELOG / HANDOFF / 迁移说明 / 显式验收用例 / `mcp-gui`）。既不在零容忍区也不在白名单的命中一律判失败——防止「哪天有人把这两个 agent 又加回来」。
 
 ### 14.3 CI / 发布
 

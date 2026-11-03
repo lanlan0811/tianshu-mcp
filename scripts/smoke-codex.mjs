@@ -7,7 +7,7 @@
  * GUI adapter 的受管实例启动、**项目绑定/新建**、模型选择、**思考等级（reasoningLevel）**、
  * 权限模式、任务发送、运行检测与自动验收。
  *
- * 护栏（与 scripts/smoke-zcode.mjs / smoke-traework.mjs 一致）：
+ * 护栏（与 scripts/smoke-zcode.mjs 一致）：
  *   必须显式传 `--confirm-send`、`--model`、`--task` 三者齐全才发送；
  *   使用隔离的数据目录（tmp），不污染用户 ~/.tianshu-mcp。
  *

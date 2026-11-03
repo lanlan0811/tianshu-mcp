@@ -1,6 +1,6 @@
 # ARCHITECTURE.md — tianshu-mcp Architecture
 
-> Applies to version `1.0.0-beta.2` (2026-11-03).
+> Applies to version `1.0.0-beta.3` (2026-11-03).
 > This document describes the **system structure and module boundaries** for developers who will modify this repository; the version marker is only bumped on release commits, and the latest release notes live in `docs/release-v<latest>.md`.
 > This document describes the **system structure and module boundaries** for developers who will modify this repository.
 > For installation, usage, and host integration see [README.en.md](README.en.md); for handover status, troubleshooting, and lessons learned see [HANDOFF.md](HANDOFF.md).
@@ -1050,6 +1050,7 @@ This requires a new adapter directory implementing `AgentAdapter` with `run()` a
 1. Assistant replies in `test/fake-cdp.ts` must be **appended synchronously**; do not revert to a timer — with a short poll interval and a low `stableRounds`, a timer races the stability fallback.
 2. Integration tests must **isolate native dialog enumeration**: the default `listDialogs` stub in `depsFor` is not optional, or tests reach the real `listOwnedDialogs`, whose darwin branch fails closed and throws on runners without the required authorization.
 3. Real-browser cases default to `skipIf(TIANSHU_VISUAL_BROWSER_TEST !== "1")`; CI's `visual-browser` job opts in explicitly.
+4. **Zero-residue gate for removed agents** (`scripts/check-removed-agents.mjs`, `npm run check:removed-agents`, wired into CI's `build-test`): `traework` / `qoder` are **zero-tolerance** in `src/` / `scripts/` / `package.json` / `.github/workflows/` (comments included); anywhere else must be listed explicitly in the whitelist (historical release notes / CHANGELOG / HANDOFF / migration notes / the explicit acceptance test / `mcp-gui`). Any hit that is neither zero-tolerance nor whitelisted fails the gate — so nobody can quietly add these two agents back.
 
 ### 14.3 CI and release
 

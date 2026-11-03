@@ -172,7 +172,7 @@ export const RunTaskParamsSchema = z.object({
    */
   reasoningLevel: ReasoningLevelSchema.optional(),
   /**
-   * 已废弃：原为 Qoder CN 的模型分组消歧参数（`default` / `custom`）。
+   * 已废弃：原为某个已移除 GUI 适配器的模型分组消歧参数（`default` / `custom`）。
    * 该适配器已移除，当前**无任何适配器消费**；键保留仅为旧调用方拿到可读文案
    * （schema 是裸 `z.object`，删键只会让参数被静默 strip）。
    */

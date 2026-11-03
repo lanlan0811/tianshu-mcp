@@ -246,12 +246,12 @@ export class TaskOrchestrator {
         meta.lastRunSignal = runRes.endReason ?? meta.lastRunSignal;
         meta.keptInstance = runRes.keptInstance;
         meta.progressSummary = runRes.progressSummary;
-        // 实际生效的模型：**无条件落盘**。此前这三行在 `if (meta.agentId === "qoder")` 门内，
-        // 于是 Open Design（唯一另一个生产方）的 `actualModel` 从未落盘，`context.ts` 的
-        // `meta.actualModel ?? meta.model` 对它永远走 `??` 右侧——这是移除 Qoder 顺带暴露的
+        // 实际生效的模型：**无条件落盘**。此前这三行曾在一个只匹配单个已移除适配器的
+        // 门内，于是 Open Design（唯一另一个生产方）的 `actualModel` 从未落盘，`context.ts` 的
+        // `meta.actualModel ?? meta.model` 对它永远走 `??` 右侧——这是移除该适配器顺带暴露的
         // 既存缺陷，本版一并修正（属行为变化）。
         meta.actualModel = runRes.actualModel ?? meta.actualModel;
-        // GUI 停止结果对所有 agent 落盘（issue #14）：此前只写 qoder，导致其余 GUI agent
+        // GUI 停止结果对所有 agent 落盘（issue #14）：此前只写那一个适配器，导致其余 GUI agent
         // 在 shutdown 竞态里丢失适配器已回报的停止结果，只能写"无停止结果可确认"。
         if (runRes.guiStop) meta.guiStop = runRes.guiStop;
         if (runRes.session) {
