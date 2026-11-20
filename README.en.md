@@ -204,6 +204,33 @@ npx -y tianshu-mcp            # run without installing
 npm install -g tianshu-mcp
 ```
 
+### First start reports a handshake timeout
+
+If the host reports `MCP connect tianshu-mcp timed out after 60000ms` on the **first** `npx` launch, do not suspect the protocol or the version — the server speaks correct JSON-RPC. `npx` with a cold cache downloads and installs the whole dependency tree on the spot, and that time is spent inside the host's handshake window.
+
+Three steps, each with an observable result:
+
+1. **Read the startup breakdown lines** (since v1.0.0-beta.4). Open `logs/server.log` in the data directory and look for:
+
+   ```text
+   [INFO] 启动分段：进程就绪 3ms（node 24.22.1，pid 2520）
+   [INFO] tianshu-mcp 已连接（stdio）。… 启动分段：logger 34ms（create 3ms）/ buildServer 31ms / connect 1ms / 总计 34ms
+   ```
+
+   - **Both lines present** ⇒ the process started and the handshake completed; the delay is in `npx` fetching, not in the server.
+   - **Neither line present** ⇒ the process never reached log initialization; the problem is upstream of `npx` (network, registry, cache).
+   - When the total exceeds 10s, an extra `[WARN]` states the same attribution.
+
+2. **Bypass npx to verify**: run the installed binary directly, `node <path>/dist/index.js`. If that starts instantly, the delay is purely the fetch.
+
+3. **Remove the path entirely**: install globally once, then `npx` resolves to the installed binary and never cold-fetches:
+
+   ```bash
+   npm install -g tianshu-mcp
+   ```
+
+> **About dependency size**: the handshake needs only `@modelcontextprotocol/sdk` + `zod` + `cross-spawn`. `puppeteer-core` / `@puppeteer/browsers` / `pixelmatch` / `sharp` are **dynamically imported** only for visual acceptance and never block the handshake — but npm still installs them (including `sharp`'s native binary) at install time, which is a major part of the first-install cost. For an explicit install, `npm install -g tianshu-mcp --include=optional` guarantees the optional set.
+
 ### Add it to Tianshu (recommended)
 
 In Tianshu, go to **Settings → MCP servers → Add** and fill in the fields below (transport: `stdio (local process)`):

@@ -7,6 +7,67 @@
 
 ---
 
+## [1.0.0-beta.4] — 2026-11-20
+
+> **首次 npx 启动报「握手超时」：补启动分段可观测 + 依赖缺失文案可操作化 + 排障文档**。
+> 输入：用户提供的超时诊断回执（报错 `MCP connect tianshu-mcp timed out after 60000ms`）。
+
+### 新增
+
+- **启动分段计时**（`src/index.ts`）：从进入 `main()` 起用 `performance.now()`（单调时钟）打四段，
+  写 stderr 与 `logs/server.log`：
+  - logger 就绪时：`启动分段：进程就绪 N ms（node …，pid …）`；
+  - `connect()` 完成后：`… 启动分段：logger N ms（create N ms）/ buildServer N ms / connect N ms / 总计 N ms`；
+  - 总计 > 10s 时另打一条 `[WARN]` 给出归因（多为 npx 冷拉取）与建议（全局预装）。
+
+  修复前 `connect()` 之前**一行日志都没有**：宿主报握手超时后，`server.log` 无法区分「进程没拉起来」、
+  「慢在 npx 拉包」与「慢在服务器自身初始化」三种情况。全部走 `logger`（stderr + 文件），
+  **不碰 stdout**，严格 stdio 协议契约不变。
+
+### 变更
+
+- **视觉依赖缺失的报错文案可操作化**（`src/visual/runtime.ts`）：错误码不变
+  （`IMAGE_DEPENDENCY_MISSING` / `BROWSER_DEPENDENCY_MISSING` 被上层判定与测试依赖），
+  但消息从不可执行的短语换成可直接复制执行的命令：
+  - `sharp` 缺失 → `npm install -g tianshu-mcp --include=optional`（仓库内则 `npm install`）；
+  - 浏览器依赖缺失 → `npm install -g tianshu-mcp` + `tianshu-mcp visual browser install`。
+
+- **文档**：`README.md` / `README.en.md` 新增「首次启动报握手超时怎么办」三步排障（看分段行 →
+  绕开 npx 自查 → 全局预装消除路径）；`ARCHITECTURE.md` / `ARCHITECTURE.en.md` 的启动章节补分段计时语义
+  与「握手必需依赖 vs 视觉按需依赖」的分层。
+
+### 实测（本次修复的依据，非推断）
+
+| 实验 | 结果 |
+|---|---|
+| 隔离 cache + 无全局包 + 非仓库 cwd 跑 `npx -y tianshu-mcp` | **101798 ms**（服务端版本 `0.9.10`，证明确实走 registry 拉取） |
+| 同一场景下的宿主握手窗口 | 60000 ms ⇒ **超时已被真实复现**，不是推断 |
+| `npm install --omit=dev`（消费者口径） | 59871 ms / 100 MB / 171 顶层包 |
+| `npm install --omit=dev --omit=optional` | 45810 ms / 77 MB / 165 顶层包 |
+| 仅装握手必需的 3 件套（sdk + zod + cross-spawn） | 24062 ms / 22 MB / 91 顶层包 |
+| 改动后服务器自身启动（本地温态） | logger 3 ms / buildServer 31 ms / connect 1 ms / **总计 34 ms** |
+
+**结论**：慢的部分是安装期，不是服务器启动期（后者 34 ms）。
+
+### 未采纳的方案（实测否证）
+
+原计划拟把 `puppeteer-core` / `@puppeteer/browsers` / `pixelmatch` 从 `dependencies` 移到
+`optionalDependencies`。实测证伪：
+
+1. `npm install --omit=dev` **不**省略 optional —— 该组实测仍装入了 `puppeteer-core`、`pixelmatch`、`sharp`；
+   只有额外的 `--omit=optional` 才减到 165 包 / 77 MB，而 **`npx` 没法注入该 flag**。
+2. `sharp` **本来就在** `optionalDependencies`，但回执现场仍观察到它的 install script 在跑。
+
+因此搬移声明位置**不产生秒数收益**，已放弃，不提交无收益的改动。真正的用户侧缓解仍是全局预装。
+
+### 未修复 / 不在本版范围
+
+- **不声称「修复了 60s 超时」**：首次 `npx` 冷拉取的成本取决于网络与 registry，不在仓库控制内。
+  本版交付的是**可定位性**（分段计时）、**实测依据**与**用户侧排障路径**。
+- 客户端 60000 ms 上限是否可配**未验证**（回执称该错误字符串在原生二进制里，静态查不到）。
+
+---
+
 ## [1.0.0-beta.3] — 2026-11-03
 
 > **文档全量收口 + 已移除 agent 零残留门禁**：本计划（六版）的收官版本。

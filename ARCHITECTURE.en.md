@@ -108,7 +108,10 @@ resolveDataHome → Logger → DataHome(BUILTIN_PROFILES) → init()
   → loadConfig() → maxRunning
   → TaskStore → AgentAdapterRegistry(loadProfiles) → AcceptanceEngine
   → TaskManager(+makeBuildCtx) → manager.initialize({maxRunning, guiStopWaitMs})   # archive leftover active tasks
-  → skill self-install (background, does not block the handshake)
+  → register 8 tools → return ServerAssembly{server, manager, dataHome, store, logger, close}
+```
+
+**Startup breakdown timing** (since v1.0.0-beta.4): four `performance.now()` marks (monotonic clock) are taken from the moment `main()` is entered, and written to stderr plus `logs/server.log` — one "process ready" line once the logger exists, and one summary line after `connect()` completes (`logger` / `buildServer` / `connect` / `total`). The purpose is to make a host-reported handshake timeout attributable: before this change there was **no log output at all** prior to `connect()`, so a timeout could not be told apart between "npx fetching the package" and "the server's own initialization". When the total exceeds 10s an extra `[WARN]` states the attribution and the remedy. **The handshake needs only `@modelcontextprotocol/sdk` + `zod` + `cross-spawn`**; `puppeteer-core` / `@puppeteer/browsers` / `pixelmatch` / `sharp` are all dynamic imports on the visual path and never enter the handshake module graph.
   → register 8 tools → return ServerAssembly{server, manager, dataHome, store, logger, close}
 ```
 

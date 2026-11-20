@@ -1,6 +1,27 @@
 # HANDOFF.md — 项目交接说明
 
-> **本轮（0.9.8 → 1.0.0-beta.3）交付 · 主题「移除 TraeWork 与 Qoder CN 支持」**：6 个版本，破坏性变更。
+> **1.0.0-beta.4 交付 · 主题「首次 npx 握手超时可定位」**：输入是用户提供的超时诊断回执
+> （`MCP connect tianshu-mcp timed out after 60000ms`）。回执把根因判为「npx 首次冷拉取」，
+> 但**自认「冷拉取耗时本身未测量，>60s 是推断」**——本版先把这条推断做成实测：
+>
+> - **超时已真实复现（不再是推断）**：隔离 `npm_config_cache` + 无全局包 + 非仓库 cwd 跑
+>   `npx -y tianshu-mcp`，实测 **101798 ms**，宿主窗口 60000 ms ⇒ 必然超时；服务端自报版本
+>   `0.9.10`，证明走的是 registry 拉取路径。
+> - **慢在安装期，不在服务器启动期**：改动后服务器自身启动 **总计 34 ms**（logger 3 / buildServer 31 /
+>   connect 1）。三组安装实测：`--omit=dev` 59871 ms / 100 MB / 171 包；`--omit=dev --omit=optional`
+>   45810 ms / 77 MB / 165 包；仅握手必需 3 件套 24062 ms / 22 MB / 91 包。
+> - **主修复 = 启动分段可观测**（`src/index.ts`）：`connect()` 之前原本一行日志都没有，超时后
+>   `server.log` 无法区分「进程没拉起」「npx 拉包慢」「服务器初始化慢」。现打两段行（logger 就绪 +
+>   connect 后汇总），总计 >10s 追加 `[WARN]` 归因。全部走 `logger`（stderr + 文件），**stdout 零新增字节**。
+> - **被实测否证并放弃的方案**：原拟把 `puppeteer-core` / `@puppeteer/browsers` / `pixelmatch` 移入
+>   `optionalDependencies`。实测 `--omit=dev` **不**省略 optional（该组仍装 puppeteer-core / pixelmatch /
+>   sharp），只有 `--omit=optional` 才减包，而 **npx 无法注入该 flag** ⇒ 搬移零收益，不提交无收益改动。
+> - **文案可操作化**（`src/visual/runtime.ts`）：错误码不变，消息给出可直接执行的
+>   `npm install -g tianshu-mcp [--include=optional]` 与 `tianshu-mcp visual browser install`。
+> - **已知遗留**：`package-lock.json` 仍停在 `0.9.8`（落后于 `package.json` 多个版本，非本版引入，
+>   本版未扩大范围去修）；客户端 60000 ms 上限是否可配仍未验证（回执称错误字符串在原生二进制内）。
+
+> **1.0.0-beta.1 → beta.3 交付 · 主题「移除 TraeWork 与 Qoder CN 支持」**：6 个版本，破坏性变更。
 > 计划原文见 `.claude/plans/remove-traework-qoder-agents.md`，逐版细节以 `CHANGELOG.md` 为准。
 >
 > - **0.9.8 · 共享 CDP 底座迁址（纯重构，零行为变化）**：`TraeworkCdpClient` 是**六个 GUI 适配器共用的传输底座**，

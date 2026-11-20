@@ -20,7 +20,9 @@ export async function loadSharp() {
   } catch {
     throw new VisualError(
       "IMAGE_DEPENDENCY_MISSING",
-      "Install optional image dependencies: npm install --include=optional",
+      "图像依赖 sharp 未安装。若通过 npm/npx 分发安装，请执行 " +
+        "`npm install -g tianshu-mcp --include=optional` 后重试；" +
+        "若在开发者仓库内，执行 `npm install`。",
     );
   }
 }
@@ -36,7 +38,9 @@ export async function loadBrowserTools() {
   } catch {
     throw new VisualError(
       "BROWSER_DEPENDENCY_MISSING",
-      "Reinstall tianshu-mcp browser dependencies",
+      "浏览器依赖 puppeteer-core / @puppeteer/browsers 未安装。请执行 " +
+        "`npm install -g tianshu-mcp` 重装（视觉依赖随包提供），" +
+        "再执行 `tianshu-mcp visual browser install` 安装受管浏览器。",
     );
   }
 }

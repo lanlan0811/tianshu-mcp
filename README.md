@@ -204,6 +204,33 @@ npx -y tianshu-mcp            # 免安装直接拉起
 npm install -g tianshu-mcp
 ```
 
+### 首次启动报「握手超时」怎么办
+
+如果宿主报 `MCP connect tianshu-mcp timed out after 60000ms`，且是**第一次**用 `npx` 拉起，先不要怀疑协议或版本——服务端协议本身没问题，而是 `npx` 在冷缓存下要现场下载并安装整棵依赖树，这段耗时算在宿主的握手窗口里。
+
+三步定位（每一步都有可观察结果）：
+
+1. **看启动分段行**（v1.0.0-beta.4 起）。打开数据目录下的 `logs/server.log`，找：
+
+   ```text
+   [INFO] 启动分段：进程就绪 3ms（node 24.22.1，pid 2520）
+   [INFO] tianshu-mcp 已连接（stdio）。… 启动分段：logger 34ms（create 3ms）/ buildServer 31ms / connect 1ms / 总计 34ms
+   ```
+
+   - **能看到这两行** ⇒ 进程被拉起且握手已完成，慢在 `npx` 拉包，不在服务器本身。
+   - **一行都没有** ⇒ 进程根本没跑到日志初始化，问题在 `npx` 之前的环节（网络、registry、缓存）。
+   - 总耗时超过 10s 时，另有一条 `[WARN]` 给出同样的归因。
+
+2. **绕开 npx 自查**：直接跑已装二进制，`node <路径>/dist/index.js`；若这一步秒开，则确认问题只在拉取。
+
+3. **消除该路径**：全局预装一次，之后 `npx` 直接命中已装二进制，不再冷拉取：
+
+   ```bash
+   npm install -g tianshu-mcp
+   ```
+
+> **关于依赖体积**：握手只需要 `@modelcontextprotocol/sdk` + `zod` + `cross-spawn`；`puppeteer-core` / `@puppeteer/browsers` / `pixelmatch` / `sharp` 只在视觉验收时才被**动态 import**，不阻塞握手。但 npm 安装期仍会装它们（含 `sharp` 的原生二进制），这是首次安装主要成本之一。显式安装时可用 `npm install -g tianshu-mcp --include=optional` 确保可选依赖齐全。
+
 ### 在天枢里添加（推荐）
 
 天枢「设置 → MCP 服务器 → 添加」，按下面填写即可（传输方式选 `stdio（本地进程）`）：

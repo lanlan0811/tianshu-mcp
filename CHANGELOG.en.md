@@ -8,6 +8,73 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [1.0.0-beta.4] — 2026-11-20
+
+> **First `npx` launch reporting a handshake timeout: startup breakdown timing + actionable dependency errors + troubleshooting docs.**
+> Input: a user-supplied timeout diagnostic ticket (`MCP connect tianshu-mcp timed out after 60000ms`).
+
+### Added
+
+- **Startup breakdown timing** (`src/index.ts`): four `performance.now()` marks (monotonic clock) from the
+  moment `main()` is entered, written to stderr and `logs/server.log`:
+  - once the logger exists: `启动分段：进程就绪 N ms（node …，pid …）`;
+  - after `connect()` completes: `… 启动分段：logger N ms（create N ms）/ buildServer N ms / connect N ms / 总计 N ms`;
+  - when the total exceeds 10s, an extra `[WARN]` states the attribution (usually an `npx` cold fetch) and the remedy (global install).
+
+  Before this change there was **no log output at all** prior to `connect()`: after a host-reported handshake
+  timeout, `server.log` could not distinguish "the process never started", "npx fetching the package", and
+  "the server's own initialization is slow". Everything goes through `logger` (stderr + file) and **never touches
+  stdout**, so the strict stdio contract is unchanged.
+
+### Changed
+
+- **Actionable messages when visual dependencies are missing** (`src/visual/runtime.ts`): error codes are unchanged
+  (`IMAGE_DEPENDENCY_MISSING` / `BROWSER_DEPENDENCY_MISSING` are consumed by upstream verdicts and tests), but the
+  messages now carry copy-and-run commands instead of non-actionable phrases:
+  - missing `sharp` → `npm install -g tianshu-mcp --include=optional` (or `npm install` inside the repo);
+  - missing browser dependencies → `npm install -g tianshu-mcp` + `tianshu-mcp visual browser install`.
+
+- **Docs**: `README.md` / `README.en.md` gain a three-step "first start reports a handshake timeout" section
+  (read the breakdown lines → bypass npx to isolate → install globally to remove the path);
+  `ARCHITECTURE.md` / `ARCHITECTURE.en.md` document the breakdown semantics and the split between
+  handshake-required dependencies and visual on-demand ones.
+
+### Measurements (the basis of this change, not inference)
+
+| Experiment | Result |
+|---|---|
+| `npx -y tianshu-mcp` with isolated cache, no global install, non-repo cwd | **101798 ms** (server reported version `0.9.10`, proving a real registry fetch) |
+| The host handshake window in the same scenario | 60000 ms ⇒ **the timeout was actually reproduced**, not inferred |
+| `npm install --omit=dev` (consumer shape) | 59871 ms / 100 MB / 171 top-level packages |
+| `npm install --omit=dev --omit=optional` | 45810 ms / 77 MB / 165 top-level packages |
+| Only the 3 handshake-required packages (sdk + zod + cross-spawn) | 24062 ms / 22 MB / 91 top-level packages |
+| Server's own startup after the change (local, warm) | logger 3 ms / buildServer 31 ms / connect 1 ms / **34 ms total** |
+
+**Conclusion**: the slow part is installation, not server startup (34 ms).
+
+### Rejected approach (falsified by measurement)
+
+The original plan was to move `puppeteer-core` / `@puppeteer/browsers` / `pixelmatch` from `dependencies` to
+`optionalDependencies`. Measurement falsified it:
+
+1. `npm install --omit=dev` does **not** omit optional dependencies — that group still installed `puppeteer-core`,
+   `pixelmatch` and `sharp`. Only an additional `--omit=optional` brought it down to 165 packages / 77 MB, and
+   **`npx` cannot inject that flag**.
+2. `sharp` was **already** in `optionalDependencies`, yet the original ticket observed its install script running.
+
+Moving the declaration therefore yields **no seconds saved**, so it was dropped rather than shipped as a no-op.
+The real user-side mitigation remains a global install.
+
+### Not fixed / out of scope
+
+- **This release does not claim to "fix the 60s timeout"**: the cost of a first `npx` cold fetch depends on the
+  network and the registry, which the repository cannot control. What ships is **attributability** (breakdown timing),
+  **measured evidence**, and a **user-side troubleshooting path**.
+- Whether the client's 60000 ms ceiling is configurable remains **unverified** (the ticket reports the error string
+  lives in a native binary and cannot be found statically).
+
+---
+
 ## [1.0.0-beta.3] — 2026-11-03
 
 > **Full docs sweep + zero-residue gate for removed agents**: the closing release of this

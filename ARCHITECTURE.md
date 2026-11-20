@@ -87,8 +87,8 @@ node dist/index.js visual <cmd>   → 视觉验收 CLI 子命令族
 
 - 数据目录由 `resolveDataHome()` 解析：环境变量 `TIANSHU_MCP_HOME` 优先，否则 `~/.tianshu-mcp`。
 - 日志器初始化到 `<数据目录>/logs/`。
-- 技能自检安装可经 `--no-skill-install` 或 `TIANSHU_MCP_NO_SKILL_INSTALL=1` 关闭；「需变更但不自动覆盖」（`autoInstall:"prompt"` 或来源不明）可经 `--approve-skill-update` 或 `TIANSHU_MCP_APPROVE_SKILL_UPDATE=1` 放行（见 §3.4）。
 - 退出路径：`SIGINT` / `SIGTERM` / stdin EOF / stdin close → 归档活动任务并终止子进程 → `exit(0)`。
+- **启动分段计时**（v1.0.0-beta.4 起）：从进入 `main()` 起用 `performance.now()`（单调时钟）打四个点，日志走 stderr 与 `logs/server.log`——logger 就绪时打一条「进程就绪」，`connect()` 完成后打一条汇总（`logger` / `buildServer` / `connect` / `总计`）。用途是让「宿主报握手超时」可归因：`connect()` 之前原本一行日志都没有，超时后无法区分「慢在 npx 拉包」与「慢在服务器自身初始化」。总计超过 10s 时追加一条 `[WARN]` 给出归因与建议。**握手所需的依赖只有 `@modelcontextprotocol/sdk` + `zod` + `cross-spawn`**；`puppeteer-core` / `@puppeteer/browsers` / `pixelmatch` / `sharp` 全部是视觉路径上的动态 import，不进握手模块图。
 
 ### 3.2 组装顺序（`src/server.ts`）
 
