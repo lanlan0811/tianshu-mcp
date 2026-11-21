@@ -35,7 +35,7 @@
   <img src="https://img.shields.io/badge/TypeScript-5.7-3178c6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript">
   <img src="https://img.shields.io/badge/node-%E2%89%A520-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node">
   <img src="https://img.shields.io/badge/MCP%20SDK-1.x-6f42c1?style=for-the-badge" alt="MCP SDK">
-  <img src="https://img.shields.io/badge/Tests-1383%20Passed-green?style=for-the-badge" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-1538%20Passed-green?style=for-the-badge" alt="Tests">
 </p>
 
 <p align="center">
@@ -193,7 +193,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 1383 passed / 12 skipped（1395 项，115 个测试文件）
+npm test             # 1538 passed / 12 skipped（1550 项，122 个测试文件）
 ```
 
 ### 安装 npm 包
@@ -434,6 +434,7 @@ run_task(projectPath=D:/xxx/my-app, task="…任务书…", agentId=codex,
 | 参数面收敛 | 1.0.0-beta.1 | 移除 TraeWork 专属的 `mode` 字段与全部透传（TaskContext / TaskMeta / NewTaskInput / formatter / context / handlers）；`mode` 作为「已废弃的显式拒绝」保留在 schema（传入得统一迁移文案，而非被静默 strip）；`TraeworkMode` 类型中性化为 `DeprecatedPanelMode`（`grep traework src/` 归零）。无行为变化 |
 | 脚本与 CI 收口 | 1.0.0-beta.2 | 删已移除 agent 的探针/冒烟脚本与 CDP 文档（`probe/smoke-{traework,qoder}.mjs`、`docs/{traework,qoder}-cdp*.md`、`docs/qoder-evidence/`）；`package.json` 的 `files`/`scripts`/`keywords` 与 CI 两个必需文件清单同步。无行为变化 |
 | 文档收口与零残留门禁 | 1.0.0-beta.3 | 文档全量收口 + 新增常驻门禁 `scripts/check-removed-agents.mjs`（`src/` / `scripts/` / `package.json` / CI 配置零容忍 `traework` / `qoder`，其余逐条白名单），接入 CI；端到端真机验证六个 agent 不受影响。无行为变化 |
+| 首个正式版 | 1.0.0 | 为启动分段埋点补自动化断言（**RED→GREEN 实测**：移除埋点 8/8 FAIL、恢复 8/8 PASS）——此前这两条埋点只对人可见，删掉不会有任何测试变红；同步修正 README 测试数字（1383→1538 / 1395→1550 / 115→122）与 `package-lock.json` 滞后版本号。四个 beta 的汇总：参数面收敛、脚本与 CI 收口、文档收口与零残留门禁、启动分段可观测 |
 | 日志台 GUI | `gui-v*`（独立线） | `mcp-gui/` 本地只读日志台（Tauri 2.x + Vue 3），独立版本与 tag，**不随 MCP 主包发布** |
 > 完整逐版记录见 [CHANGELOG.md](CHANGELOG.md)，交接状态与排障手册见 [HANDOFF.md](HANDOFF.md)，工程质量口径见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 

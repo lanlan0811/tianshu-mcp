@@ -7,6 +7,46 @@
 
 ---
 
+## [1.0.0] — 2026-11-21
+
+> **首个正式版**。相对 `1.0.0-beta.4` 的**代码变更只有一处**：为启动分段埋点补上自动化断言。
+> 其余为版本号转正、文档对齐与测试数字修正。
+
+### 新增
+
+- **启动分段埋点的自动化断言**（`scripts/check-stdio.mjs`）：此前这两条埋点**只对人可见**，
+  删掉它们全量测试与 `check:stdio` 都不会红。现补两条断言——stderr 必须含
+  `启动分段：进程就绪`，且必须匹配四段汇总格式
+  `启动分段：logger Nms（create Nms）/ buildServer Nms / connect Nms / 总计 Nms`。
+  **RED→GREEN 已实测**：移除埋点后 8/8 场景 FAIL（exit=1），恢复后 8/8 PASS（exit=0）。
+
+### 修正
+
+- **README 双语测试数字落后**：徽章与命令示例的 `1383 passed / 1395 项 / 115 个测试文件`
+  修正为实际值 `1538 passed / 1550 项 / 122 个测试文件`（共 4 处）。
+- **`package-lock.json` 版本号**：此前停在 `0.9.8`，落后 `package.json` 多个版本；本版一并转正为 `1.0.0`。
+
+### 累积变更（0.9.10 → 1.0.0）
+
+四个 beta 的汇总，完整细节见各 beta 条目：
+
+- **破坏性**：移除 TraeWork 与 Qoder CN 的调用支持；`mode` / `modelSource` 参数废弃（统一迁移文案）。
+- **新增**：启动分段计时（beta.4）、零残留门禁 `check-removed-agents.mjs`（beta.3）、本版的分段断言。
+- **改进**：视觉依赖缺失报错可操作化；握手依赖 vs 视觉按需依赖的分层已文档化。
+
+### 未采纳（实测否证）
+
+拟将 `puppeteer-core` / `@puppeteer/browsers` / `pixelmatch` 移到 `optionalDependencies` 以减少首装成本。
+实测：`--omit=dev` **不**省略 optional（仍装入上述三件套）；只有 `--omit=optional` 才减包，而 `npx`
+无法注入该 flag；`sharp` 本来就在 optional 但 install script 仍执行。**搬移零收益，已放弃**。
+
+### 已知遗留
+
+- **首次 `npx` 冷启动仍可能超 60s**（实测 101798ms，取决于网络与 registry）。全局预装可规避。
+- 客户端 60000 ms 上限是否可配**未验证**。
+
+---
+
 ## [1.0.0-beta.4] — 2026-11-20
 
 > **首次 npx 启动报「握手超时」：补启动分段可观测 + 依赖缺失文案可操作化 + 排障文档**。

@@ -628,6 +628,19 @@ async function runScenario(name, opts, ctx) {
         assert(client.pending.size === 0, `有 ${client.pending.size} 个请求未收到响应`);
         // 日志必须留在 stderr（默认 INFO 阈值必然产生日志）
         assert(client.stderrText.includes("[INFO]"), "stderr 未包含 INFO 日志（日志通道异常）");
+        // 启动分段计时（v1.0.0 起）：`connect()` 之前原本没有任何日志，宿主报握手超时后
+        // server.log 无法区分「进程没拉起 / npx 拉包慢 / 服务器初始化慢」。这两条埋点是
+        // 那条观测缺口的唯一防线——删掉它们不会让别的断言变红，所以必须在这里显式钉住。
+        assert(
+          client.stderrText.includes("启动分段：进程就绪"),
+          "stderr 缺少「启动分段：进程就绪」——logger 就绪时的第一处埋点丢了（超时将再次无法归因）",
+        );
+        assert(
+          /启动分段：logger \d+ms（create \d+ms）\/ buildServer \d+ms \/ connect \d+ms \/ 总计 \d+ms/.test(
+            client.stderrText,
+          ),
+          "stderr 缺少 connect 后的启动分段汇总行（四段计时格式不符）",
+        );
 
         return {
           name,

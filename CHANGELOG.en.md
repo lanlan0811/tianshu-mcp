@@ -8,6 +8,55 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [1.0.0] — 2026-11-21
+
+> **First stable release.** Relative to `1.0.0-beta.4` there is **exactly one code change**: automated
+> assertions for the startup breakdown markers. Everything else is promoting the version, aligning
+> docs, and correcting test counts.
+
+### Added
+
+- **Automated assertions for the startup breakdown markers** (`scripts/check-stdio.mjs`): those two
+  markers previously had **a human as their only consumer** — deleting them left the full test suite
+  and `check:stdio` green. Two assertions now pin them down: stderr must contain
+  `启动分段：进程就绪`, and must match the four-stage summary format
+  `启动分段：logger Nms（create Nms）/ buildServer Nms / connect Nms / 总计 Nms`.
+  **RED→GREEN verified**: with the markers removed, 8/8 scenarios FAIL (exit=1); restored, 8/8 PASS (exit=0).
+
+### Fixed
+
+- **Stale test counts in both READMEs**: the badge and command example said
+  `1383 passed / 1395 total / 115 test files`; corrected to the actual
+  `1538 passed / 1550 total / 122 test files` (4 places).
+- **`package-lock.json` version**: it had been stuck at `0.9.8`, several versions behind
+  `package.json`; promoted to `1.0.0` in this release.
+
+### Cumulative changes (0.9.10 → 1.0.0)
+
+A consolidation of the four betas; see each beta entry for full detail:
+
+- **Breaking**: TraeWork and Qoder CN agent support removed; `mode` / `modelSource` deprecated
+  (unified migration messages).
+- **Added**: startup breakdown timing (beta.4), the zero-residue gate `check-removed-agents.mjs`
+  (beta.3), and this release's assertions for the markers.
+- **Improved**: actionable errors for missing visual dependencies; the split between
+  handshake-required and visual on-demand dependencies is now documented.
+
+### Rejected (falsified by measurement)
+
+The plan to move `puppeteer-core` / `@puppeteer/browsers` / `pixelmatch` into `optionalDependencies` to
+cut first-install cost. Measured: `--omit=dev` does **not** omit optional (those three were still
+installed); only `--omit=optional` reduces packages, and `npx` cannot inject that flag; `sharp` was
+already optional yet its install script still ran. **No seconds saved, so it was dropped.**
+
+### Known remaining issues
+
+- **A first `npx` cold start may still exceed 60s** (measured 101798 ms; depends on network and registry).
+  A global install avoids it.
+- Whether the client's 60000 ms ceiling is configurable remains **unverified**.
+
+---
+
 ## [1.0.0-beta.4] — 2026-11-20
 
 > **First `npx` launch reporting a handshake timeout: startup breakdown timing + actionable dependency errors + troubleshooting docs.**

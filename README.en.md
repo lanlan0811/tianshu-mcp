@@ -35,7 +35,7 @@
   <img src="https://img.shields.io/badge/TypeScript-5.7-3178c6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript">
   <img src="https://img.shields.io/badge/node-%E2%89%A520-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node">
   <img src="https://img.shields.io/badge/MCP%20SDK-1.x-6f42c1?style=for-the-badge" alt="MCP SDK">
-  <img src="https://img.shields.io/badge/Tests-1383%20Passed-green?style=for-the-badge" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-1538%20Passed-green?style=for-the-badge" alt="Tests">
 </p>
 
 <p align="center">
@@ -193,7 +193,7 @@ git clone https://github.com/lanlan0811/tianshu-mcp.git
 cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
-npm test             # 1383 passed / 12 skipped (1395 total, 115 test files)
+npm test             # 1538 passed / 12 skipped (1550 total, 122 test files)
 ```
 
 ### Install from npm
@@ -434,6 +434,7 @@ Allowing and disabling (a CLI flag or its equivalent environment variable; `--no
 | Parameter surface convergence | 1.0.0-beta.1 | Removes the TraeWork-specific `mode` field and all its pass-through (TaskContext / TaskMeta / NewTaskInput / formatter / context / handlers); `mode` stays in the schema as an **explicit deprecation rejection** (passing it yields the unified migration message instead of being silently stripped); the `TraeworkMode` type is neutralised to `DeprecatedPanelMode` (`grep traework src/` is now zero). No behaviour change |
 | Script and CI cleanup | 1.0.0-beta.2 | Deletes the removed agents' probe/smoke scripts and CDP docs (`probe/smoke-{traework,qoder}.mjs`, `docs/{traework,qoder}-cdp*.md`, `docs/qoder-evidence/`); syncs `package.json`'s `files`/`scripts`/`keywords` and the two CI required-file lists. No behaviour change |
 | Docs sweep and zero-residue gate | 1.0.0-beta.3 | Full docs sweep plus a standing gate `scripts/check-removed-agents.mjs` (zero-tolerance for `traework` / `qoder` in `src/` / `scripts/` / `package.json` / CI config; everything else whitelisted line by line), wired into CI; end-to-end machine verification that the six remaining agents are unaffected. No behaviour change |
+| First stable release | 1.0.0 | Adds automated assertions for the startup breakdown markers (**RED→GREEN verified**: markers removed → 8/8 FAIL; restored → 8/8 PASS) — previously those markers had a human as their only consumer, so deleting them left every test green. Also corrects the README test counts (1383→1538 / 1395→1550 / 115→122) and the lagging `package-lock.json` version. Consolidates the four betas: parameter-surface consolidation, scripts and CI cleanup, docs sweep with a zero-residue gate, and startup breakdown observability |
 | Log viewer GUI | `gui-v*` (separate line) | `mcp-gui/` local read-only log viewer (Tauri 2.x + Vue 3), independent version and tag, **not released with the MCP main package** |
 
 > The complete per-version record is in [CHANGELOG.en.md](CHANGELOG.en.md); handoff status and the troubleshooting handbook are in [HANDOFF.md](HANDOFF.md); engineering-metric definitions are in [ARCHITECTURE.en.md](ARCHITECTURE.en.md).
